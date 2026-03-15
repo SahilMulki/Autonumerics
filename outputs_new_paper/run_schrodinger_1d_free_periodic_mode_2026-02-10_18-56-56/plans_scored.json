@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 45,
+    "rationale": "Low spatial resolution and second-order FD limit accuracy for a periodic, smooth solution. Explicit RK4 is stable here due to small dt, but not optimal for the Schrödinger equation; efficiency is reasonable but accuracy is lacking."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 60,
+    "rationale": "Crank-Nicolson is unconditionally stable and preserves unitarity for linear Schrödinger, and medium resolution improves accuracy. However, FD is less accurate than spectral for periodic, smooth problems."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "score": 92,
+    "rationale": "Fourier spectral is ideal for periodic, smooth solutions, and high resolution ensures high accuracy. Explicit RK4 is stable for this dt and linear problem; cost is high but justified by accuracy."
+  },
+  {
+    "plan_id": "plan_spectral_implicit_mediumres",
+    "score": 85,
+    "rationale": "Spectral with implicit midpoint is stable and accurate for this linear, periodic PDE. Medium resolution is sufficient for the single-mode IC; slightly less accurate than high-res, but more efficient."
+  },
+  {
+    "plan_id": "plan_fem_implicit_lowres",
+    "score": 40,
+    "rationale": "Low resolution and first-order elements limit accuracy. Backward Euler is stable but overly diffusive for Schrödinger, which requires phase accuracy; not well-suited for this smooth, periodic problem."
+  },
+  {
+    "plan_id": "plan_fem_implicit_mediumres",
+    "score": 55,
+    "rationale": "Medium resolution and quadratic elements improve accuracy, and Crank-Nicolson is stable. However, FEM is less efficient and less accurate than spectral for this periodic, smooth PDE."
+  },
+  {
+    "plan_id": "plan_fd_imex_mediumres",
+    "score": 58,
+    "rationale": "IMEX is unnecessary for this linear PDE; accuracy and stability are adequate, but FD is suboptimal for periodic, smooth solutions compared to spectral."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "score": 88,
+    "rationale": "Spectral with ETDRK4 is highly accurate and stable for linear Schrödinger with periodic BCs. Medium resolution is sufficient for the initial condition, and efficiency is good."
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres",
+    "score": 65,
+    "rationale": "High resolution and fourth-order FD improve accuracy, but explicit RK4 is less efficient and less accurate than spectral for this problem. Computational cost is high for the accuracy gained."
+  },
+  {
+    "plan_id": "plan_fem_explicit_lowres",
+    "score": 38,
+    "rationale": "Low resolution and linear FEM elements limit accuracy. Explicit RK4 is stable for this dt, but FEM is not optimal for periodic, smooth problems."
+  }
+]

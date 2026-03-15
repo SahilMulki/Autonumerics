@@ -1,0 +1,172 @@
+[
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "metrics": {
+      "runtime_s": 88.70588064193726,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": null,
+      "relative_residual": 0.03927812610668418,
+      "num_attempts": 6,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_imex_highres",
+      "description": "1D Fourier spectral method with IMEX Crank-Nicolson Adams-Bashforth",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true,
+          "dealiasing": "2/3_rule"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_cn_ab2",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 0.1,
+        "explicit_or_implicit": "imex",
+        "order": 2,
+        "extra_parameters": {
+          "implicit_part": "linear_diffusion",
+          "explicit_part": "nonlinear_terms"
+        }
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "Spectral IMEX (CN-AB2) is well-suited for stiff, periodic, high-order PDEs, offering high accuracy, stability, and efficiency at high resolution. Computational cost is justified."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "metrics": {
+      "runtime_s": 45.83437991142273,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 11004.279533899193,
+      "relative_residual": 15790.847418638907,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_highres",
+      "description": "1D Fourier spectral method with exponential time differencing RK4",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 512,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true,
+          "dealiasing": "2/3_rule"
+        }
+      },
+      "time_stepping": {
+        "method": "etdrk4",
+        "dt": 0.0001,
+        "Nt": null,
+        "t_final": 0.05,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {
+          "stiff_linear_part": "handled_exactly"
+        }
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "ETDRK4 is a state-of-the-art explicit method for stiff, linear-dominated PDEs and, combined with spectral accuracy and high resolution, is highly effective for periodic Cahn-Hilliard. High cost is justified."
+    }
+  },
+  {
+    "plan_id": "plan_fem_imex_highres",
+    "error": "Solver failed after 4 attempts in Coarse_R1.\nFailure: Compliance Error: Solver result is missing 'residual' (L2 error check). You MUST compute and return it.\nPlease implement the residual calculation."
+  },
+  {
+    "plan_id": "plan_fd_imex_highres",
+    "metrics": {
+      "runtime_s": 43.967905044555664,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 19852.94647063285,
+      "relative_residual": 38218.42255107812,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_imex_highres",
+      "description": "1D finite difference IMEX scheme with high spatial resolution",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 256,
+        "Ny": null,
+        "Nz": null,
+        "order": 4,
+        "extra_parameters": {
+          "stencil": "central",
+          "handle_fourth_derivative": "two_second_derivatives"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_bdf2",
+        "dt": 0.0005,
+        "Nt": null,
+        "t_final": 0.1,
+        "explicit_or_implicit": "imex",
+        "order": 2,
+        "extra_parameters": {
+          "implicit_part": "linear_diffusion",
+          "explicit_part": "nonlinear_terms"
+        }
+      },
+      "_llm_score": 75,
+      "_llm_score_rationale": "IMEX with high spatial resolution and higher-order spatial discretization improves both stability and accuracy for stiff, nonlinear PDEs. Cost is higher but justified by improved results."
+    }
+  },
+  {
+    "plan_id": "plan_fem_implicit_midres",
+    "metrics": {
+      "runtime_s": 114.85754704475403,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.000780868752612131,
+      "relative_residual": 0.0009878125605188224,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_implicit_midres",
+      "description": "1D finite element method with quadratic elements and implicit backward Euler",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 100,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "Lagrange",
+          "basis_order": 2,
+          "periodic": true
+        }
+      },
+      "time_stepping": {
+        "method": "backward_euler",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 0.1,
+        "explicit_or_implicit": "implicit",
+        "order": 1,
+        "extra_parameters": {
+          "nonlinear_solver": "newton",
+          "linear_solver": "iterative"
+        }
+      },
+      "_llm_score": 65,
+      "_llm_score_rationale": "FEM with implicit time stepping is stable and flexible, but quadratic elements and first-order time integration limit accuracy. Suitable for generality, but not optimal for this periodic, smooth problem."
+    }
+  }
+]

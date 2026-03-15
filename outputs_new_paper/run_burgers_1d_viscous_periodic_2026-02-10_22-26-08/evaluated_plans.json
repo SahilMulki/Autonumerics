@@ -1,0 +1,167 @@
+[
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "metrics": {
+      "runtime_s": 22.975616931915283,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 8.354618738588586e-18,
+      "relative_residual": 3.946872130437309e-17,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_imex_highres",
+      "description": "1D Burgers spectral with IMEX time stepping: explicit RK4 for nonlinear, implicit for diffusion",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 512,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true
+        }
+      },
+      "time_stepping": {
+        "method": "imex_runge_kutta",
+        "dt": 0.0005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 4,
+        "extra_parameters": {
+          "explicit_part": "RK4",
+          "implicit_part": "Backward_Euler"
+        }
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "Spectral IMEX combines high-order, high-resolution spatial discretization with robust time integration for stiff diffusion and nonlinear convection. This is nearly optimal for smooth, periodic Burgers with moderate viscosity."
+    }
+  },
+  {
+    "plan_id": "plan_fv_imex_highres",
+    "metrics": {
+      "runtime_s": 58.86572217941284,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.8461266595147914,
+      "relative_residual": 3.9916907605168936,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fv_imex_highres",
+      "description": "1D Burgers finite volume with IMEX RK3 time stepping, explicit convection, implicit diffusion",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 400,
+        "Ny": null,
+        "Nz": null,
+        "order": 3,
+        "extra_parameters": {
+          "reconstruction": "WENO3",
+          "flux": "roe",
+          "periodic": true
+        }
+      },
+      "time_stepping": {
+        "method": "imex_runge_kutta",
+        "dt": 0.0005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "explicit_part": "RK3",
+          "implicit_part": "Backward_Euler"
+        }
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "High-res FV with WENO3 and IMEX is robust and accurate for nonlinear advection-diffusion. Well-suited for Burgers, balancing stability, accuracy, and efficiency, especially if shocks develop."
+    }
+  },
+  {
+    "plan_id": "plan_fd_imex_highres",
+    "metrics": {
+      "runtime_s": 42.049861907958984,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 1.0096746413619161e-14,
+      "relative_residual": 4.76676794450166e-14,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_imex_highres",
+      "description": "1D Burgers with high-res IMEX scheme: explicit RK4 for convection, implicit for diffusion",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 400,
+        "Ny": null,
+        "Nz": null,
+        "order": 4,
+        "extra_parameters": {
+          "stencil": "central"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_runge_kutta",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 4,
+        "extra_parameters": {
+          "explicit_part": "RK4",
+          "implicit_part": "Backward_Euler"
+        }
+      },
+      "_llm_score": 78,
+      "_llm_score_rationale": "High spatial and temporal order with IMEX efficiently handles stiff diffusion and nonlinear convection. High resolution improves accuracy, though cost is higher, it is justified by accuracy and robustness."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "metrics": {
+      "runtime_s": 27.584146976470947,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 40.151412431679184,
+      "relative_residual": 56.78624368561092,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_mediumres",
+      "description": "1D Burgers with spectral spatial discretization and explicit RK4 time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true
+        }
+      },
+      "time_stepping": {
+        "method": "runge_kutta_4",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "_llm_score": 75,
+      "_llm_score_rationale": "Spectral methods are highly accurate for smooth, periodic problems, but explicit RK4 requires small dt for stability due to the nonlinear term. Efficiency is moderate, but accuracy is excellent for this problem class."
+    }
+  },
+  {
+    "plan_id": "plan_fem_imex_highres",
+    "error": "Solver failed after 4 attempts in Coarse_R1.\nFailure: Stability Error: Numerical Instability Detected: Solution contains NaNs or Infinities.\nHint: Reduce time step (dt) or check CFL."
+  }
+]

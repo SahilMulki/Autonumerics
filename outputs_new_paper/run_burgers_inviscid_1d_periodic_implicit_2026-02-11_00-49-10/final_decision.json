@@ -1,0 +1,22 @@
+{
+  "best_plan_id": "plan_fv_explicit_muscl_highres",
+  "reasoning": "No analytic L2 error is available, so selection is based on residual errors. 'plan_fv_explicit_muscl_highres' achieves the lowest residual_l2 (0.00100) and relative_residual (0.00056), outperforming all other successful plans by a significant margin. Its runtime (23.49s) is also the fastest among the top three, making it both the most accurate and efficient. Although 'plan_spectral_explicit_rk3_highres' is also accurate (residual_l2 = 0.01007) and 'plan_fv_imex_roe_mediumres' is faster than some, neither matches the accuracy of the MUSCL plan. The failed and unstable plan is excluded.",
+  "ranking": [
+    {
+      "plan_id": "plan_fv_explicit_muscl_highres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_spectral_explicit_rk3_highres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_fv_imex_roe_mediumres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_spectral_explicit_rk4_mediumres",
+      "rank": 4
+    }
+  ]
+}

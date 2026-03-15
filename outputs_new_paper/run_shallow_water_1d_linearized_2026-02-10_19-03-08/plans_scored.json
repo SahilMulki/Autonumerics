@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 55,
+    "rationale": "This plan is stable and efficient, but the low spatial resolution (Nx=50) and second-order accuracy limit its ability to resolve wave propagation accurately for the linearized shallow-water equations. Suitable for coarse tests, but not for high-accuracy needs."
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres",
+    "score": 80,
+    "rationale": "High spatial (Nx=200, 4th order) and temporal (RK4) accuracy with stable explicit time stepping make this plan well-suited for the problem. The computational cost is higher but justified by the accuracy gain for smooth, periodic solutions."
+  },
+  {
+    "plan_id": "plan_fd_implicit_cranknicolson",
+    "score": 70,
+    "rationale": "Crank-Nicolson is unconditionally stable and efficient (low cost), but the second-order accuracy and moderate resolution (Nx=100) are less optimal than high-order explicit or spectral methods for this smooth, non-stiff, periodic problem."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_rk4",
+    "score": 95,
+    "rationale": "Fourier spectral methods are ideal for smooth, periodic, linear problems, and RK4 provides high temporal accuracy. The plan balances accuracy and efficiency, making it the most suitable for this PDE."
+  },
+  {
+    "plan_id": "plan_spectral_implicit_backward_euler",
+    "score": 60,
+    "rationale": "While stable and efficient, backward Euler is only first-order accurate in time and introduces excessive numerical damping, which is undesirable for wave propagation. Spectral space discretization is good, but time accuracy is limiting."
+  },
+  {
+    "plan_id": "plan_fem_cranknicolson",
+    "score": 65,
+    "rationale": "FEM with Crank-Nicolson is robust and stable, but for this smooth, periodic, linear problem, it is less efficient and less accurate than spectral or high-order finite difference approaches. Still reasonable for moderate accuracy needs."
+  },
+  {
+    "plan_id": "plan_fem_implicit_backward_euler",
+    "score": 50,
+    "rationale": "Stable and efficient, but only first-order accurate in both space and time, making it unsuitable for resolving wave propagation accurately in this context."
+  },
+  {
+    "plan_id": "plan_fv_explicit_rk3",
+    "score": 68,
+    "rationale": "Finite volume with MUSCL and RK3 is stable and robust, but the method is more suited for problems with shocks or discontinuities. For this smooth, periodic, linear problem, higher-order FD or spectral methods are preferable."
+  },
+  {
+    "plan_id": "plan_fv_imex",
+    "score": 72,
+    "rationale": "IMEX is robust for stiff problems, but the linearized shallow-water equations here are not stiff. The plan is stable and efficient, but the extra complexity is unnecessary; accuracy is moderate."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_rk3_lowres",
+    "score": 78,
+    "rationale": "Spectral method with RK3 is accurate and efficient, but the lower spatial resolution (Nx=64) and lower time order compared to the RK4 spectral plan reduce its accuracy for this problem."
+  }
+]

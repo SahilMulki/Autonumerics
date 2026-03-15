@@ -1,0 +1,22 @@
+{
+  "best_plan_id": "plan_fem_implicit_midres",
+  "reasoning": "No analytic solution is available, so we prioritize residual errors. 'plan_fem_implicit_midres' achieves by far the smallest residual_l2 (0.00078) and relative_residual (0.00099), which are orders of magnitude better than all other plans. Although its runtime (114.86s) is higher than the others, the accuracy gain is significant and justifies the extra computational cost. The next best plan, 'plan_spectral_imex_highres', has a much larger relative_residual (0.039), and the remaining plans have even worse residuals. Therefore, 'plan_fem_implicit_midres' is the clear choice.",
+  "ranking": [
+    {
+      "plan_id": "plan_fem_implicit_midres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_spectral_imex_highres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_spectral_explicit_highres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fd_imex_highres",
+      "rank": 4
+    }
+  ]
+}

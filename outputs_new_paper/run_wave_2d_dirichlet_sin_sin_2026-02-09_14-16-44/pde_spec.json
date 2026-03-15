@@ -1,0 +1,58 @@
+{
+  "equation_type": "wave",
+  "governing_equation": "u_tt = c^2 * (u_xx + u_yy)",
+  "spatial_dimension": 2,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x",
+    "y"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        1.0
+      ],
+      "y": [
+        0.0,
+        1.0
+      ],
+      "t": [
+        0.0,
+        1.0
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 1.0,
+    "y_min": 0.0,
+    "y_max": 1.0
+  },
+  "initial_condition": {
+    "displacement": "sin(pi*x)*sin(pi*y)",
+    "velocity": "0"
+  },
+  "boundary_conditions": {
+    "type": "Dirichlet",
+    "values": {
+      "u(x=0,y,t)": "0",
+      "u(x=1,y,t)": "0",
+      "u(x,y=0,t)": "0",
+      "u(x,y=1,t)": "0"
+    }
+  },
+  "parameters": {
+    "c": 1
+  },
+  "analytic_solution": {
+    "expression": "cos(pi*sqrt(2)*t)*sin(pi*x)*sin(pi*y)",
+    "space_variables": [
+      "x",
+      "y"
+    ]
+  },
+  "notes": null,
+  "id": "wave_2d_dirichlet_sin_sin",
+  "family": "wave",
+  "dimension": 2
+}

@@ -1,0 +1,26 @@
+{
+  "best_plan_id": "plan_spectral_explicit_rk4",
+  "reasoning": "An analytic solution is available, so the primary criterion is the smallest relative L2 error. 'plan_spectral_explicit_rk4' achieves an extremely low L2 error (1.67e-10), orders of magnitude better than all other plans. Its runtime (18.53s) is also the lowest among all plans, making it both the most accurate and most efficient. The next best plan in accuracy, 'plan_spectral_explicit_rk3_lowres', has a much higher L2 error (6.67e-07) and a longer runtime. All other plans have significantly higher errors and/or runtimes. Therefore, 'plan_spectral_explicit_rk4' is clearly the best choice.",
+  "ranking": [
+    {
+      "plan_id": "plan_spectral_explicit_rk4",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_spectral_explicit_rk3_lowres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_fd_implicit_cranknicolson",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fv_imex",
+      "rank": 4
+    },
+    {
+      "plan_id": "plan_fd_explicit_highres",
+      "rank": 5
+    }
+  ]
+}

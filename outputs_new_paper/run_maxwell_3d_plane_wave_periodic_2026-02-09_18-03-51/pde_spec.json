@@ -1,0 +1,54 @@
+{
+  "equation_type": "Maxwell",
+  "governing_equation": "E_t = curl B, B_t = -curl E, div E = 0, div B = 0",
+  "spatial_dimension": 3,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x",
+    "y",
+    "z"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        6.283185307179586
+      ],
+      "y": [
+        0.0,
+        6.283185307179586
+      ],
+      "z": [
+        0.0,
+        6.283185307179586
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 6.283185307179586,
+    "y_min": 0.0,
+    "y_max": 6.283185307179586,
+    "z_min": 0.0,
+    "z_max": 6.283185307179586
+  },
+  "initial_condition": "E(x,y,z,0) = (0, sin(x), 0), B(x,y,z,0) = (0, 0, sin(x))",
+  "boundary_conditions": {
+    "type": "periodic",
+    "values": {}
+  },
+  "parameters": {
+    "c": 1
+  },
+  "analytic_solution": {
+    "expression": "E(x,y,z,t) = (0, sin(x - c t), 0), B(x,y,z,t) = (0, 0, sin(x - c t))",
+    "space_variables": [
+      "x",
+      "y",
+      "z"
+    ]
+  },
+  "notes": "The solution is a plane wave depending only on x. The divergence-free constraints are satisfied by the given analytic solution.",
+  "id": "maxwell_3d_plane_wave_periodic",
+  "family": "maxwell",
+  "dimension": 3
+}

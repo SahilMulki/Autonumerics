@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 35,
+    "rationale": "Low spatial and temporal order with coarse grid leads to poor resolution of the sharp shock layer. Explicit method is stable only for very small dt, making it inefficient for this stiff, diffusion-dominated Burgers problem."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 60,
+    "rationale": "Implicit Crank–Nicolson is stable for stiff/diffusive problems and medium resolution is adequate, but central differencing for convection can introduce nonphysical oscillations near shocks. Efficiency is reasonable."
+  },
+  {
+    "plan_id": "plan_fd_imex_highres",
+    "score": 78,
+    "rationale": "IMEX with high spatial resolution and high-order time stepping is well-suited for stiff, nonlinear Burgers equation. Explicit RK4 for convection and implicit for diffusion balances stability and accuracy, though central convection may still show some oscillations."
+  },
+  {
+    "plan_id": "plan_fv_explicit_mediumres",
+    "score": 70,
+    "rationale": "MUSCL with van Leer limiter and Roe flux is robust for shocks, and RK3 is accurate, but explicit time stepping is inefficient for stiff diffusion. Medium resolution may not fully resolve the shock."
+  },
+  {
+    "plan_id": "plan_fv_implicit_highres",
+    "score": 83,
+    "rationale": "WENO5 with implicit time stepping is highly robust and accurate for shocks and stiff diffusion. High spatial resolution and large dt yield efficiency, though backward Euler is only first-order in time."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "score": 65,
+    "rationale": "Spectral methods are highly accurate for smooth solutions, but explicit time stepping is inefficient for stiff diffusion and may struggle with the sharp shock layer due to Gibbs phenomena."
+  },
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "score": 88,
+    "rationale": "High-resolution spectral IMEX is excellent for stiff, smooth problems, and the analytic solution is smooth except at the shock. IMEX-BDF2 is stable and efficient, and spectral accuracy is unmatched for this type of solution."
+  },
+  {
+    "plan_id": "plan_fem_implicit_mediumres",
+    "score": 55,
+    "rationale": "Implicit FEM is stable for stiff problems, but linear elements and first-order time stepping limit accuracy, and medium resolution may not resolve the shock well."
+  },
+  {
+    "plan_id": "plan_fem_imex_highres",
+    "score": 75,
+    "rationale": "High-resolution quadratic FEM with IMEX RK is accurate and robust for stiff, nonlinear PDEs. Efficiency is moderate, and accuracy is good, though not as high as spectral or WENO approaches."
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres_weno",
+    "score": 72,
+    "rationale": "WENO5 is excellent for shocks, and high spatial resolution helps, but explicit time stepping is inefficient for stiff diffusion, requiring many small steps."
+  }
+]

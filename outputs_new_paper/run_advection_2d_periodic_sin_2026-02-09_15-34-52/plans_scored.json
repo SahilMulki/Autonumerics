@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 55,
+    "rationale": "Low spatial resolution and central differences are not ideal for advection; explicit RK4 is stable at this CFL but accuracy is limited by grid and scheme. Efficiency is good, but overall suitability is moderate."
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres",
+    "score": 80,
+    "rationale": "High spatial and temporal resolution with 4th order upwind FD and SSPRK(3,3) is well-suited for advection, providing good accuracy and stability. Computational cost is high but justified for accuracy."
+  },
+  {
+    "plan_id": "plan_fv_explicit_mediumres",
+    "score": 70,
+    "rationale": "Medium resolution FV with upwind flux and RK2 is robust and efficient for advection, though accuracy is limited to second order. Good balance of cost and reliability."
+  },
+  {
+    "plan_id": "plan_fem_implicit_mediumres",
+    "score": 60,
+    "rationale": "Implicit Crank-Nicolson is unnecessary for non-stiff advection and can introduce numerical diffusion; FEM is flexible but less efficient and accurate than upwind or spectral methods for this periodic, smooth problem."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "score": 95,
+    "rationale": "Spectral Fourier with periodic BCs and explicit RK4 is nearly optimal for smooth advection, offering spectral accuracy and excellent stability at low CFL. High computational cost is justified by accuracy."
+  },
+  {
+    "plan_id": "plan_fv_implicit_mediumres",
+    "score": 50,
+    "rationale": "Implicit backward Euler is overly diffusive and low order for pure advection, leading to significant accuracy loss. Stability is high but not needed here; efficiency is moderate."
+  },
+  {
+    "plan_id": "plan_fem_imex_mediumres",
+    "score": 62,
+    "rationale": "IMEX is unnecessary for non-stiff advection; FEM is flexible but less efficient and accurate than upwind or spectral for this problem. Moderate resolution and order."
+  },
+  {
+    "plan_id": "plan_fd_weno_explicit_highres",
+    "score": 88,
+    "rationale": "High-res FD with WENO5 and SSPRK(3,3) is highly robust and accurate for advection, especially with non-smooth solutions, though here the solution is smooth. Slightly less efficient than spectral but very suitable."
+  },
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "score": 93,
+    "rationale": "Spectral Fourier with IMEX is highly accurate and robust, but IMEX is not needed for pure advection. Slightly less efficient than explicit RK, but still excellent for this problem."
+  },
+  {
+    "plan_id": "plan_fd_laxfriedrichs_explicit_mediumres",
+    "score": 45,
+    "rationale": "Lax-Friedrichs is highly diffusive and only first order, leading to poor accuracy for smooth advection. Stability is good but at the cost of significant numerical dissipation."
+  }
+]

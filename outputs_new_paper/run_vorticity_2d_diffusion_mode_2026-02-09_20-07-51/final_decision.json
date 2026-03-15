@@ -1,0 +1,26 @@
+{
+  "best_plan_id": "plan_fd_cranknicolson_highres",
+  "reasoning": "An analytic solution is available, so the primary criterion is minimizing the relative L2 error. 'plan_fd_cranknicolson_highres' achieves an L2 error of 0.000332, which is over 100 times smaller than the next best plans (all others have L2 errors above 0.038). Although its runtime (54.1s) is higher than the others (31–48s), the accuracy gain is overwhelming and justifies the extra computational cost. The FEM plan has catastrophic error and is not competitive. Among the remaining plans, the spectral and finite difference/volume backward Euler methods have similar, much larger errors and slightly better runtimes, but are not close in accuracy to the Crank-Nicolson plan.",
+  "ranking": [
+    {
+      "plan_id": "plan_fd_cranknicolson_highres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_spectral_implicit_mediumres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fv_implicit_mediumres",
+      "rank": 4
+    },
+    {
+      "plan_id": "plan_fem_imex_mediumres",
+      "rank": 5
+    }
+  ]
+}

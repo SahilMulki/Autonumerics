@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 60,
+    "rationale": "Explicit second-order FD with low resolution is stable under CFL and efficient, but accuracy and resolution are limited for a 2D wave problem. Suitable for quick tests but not for high-fidelity results."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 80,
+    "rationale": "Implicit Newmark-beta with medium resolution offers robust stability and reasonable accuracy for the wave equation, with moderate computational cost. Well-suited for this problem."
+  },
+  {
+    "plan_id": "plan_fem_cranknicolson_highres",
+    "score": 92,
+    "rationale": "High-res FEM with Crank–Nicolson is highly accurate, robust, and stable for the 2D wave equation with Dirichlet BCs. The cost is high but justified for high-fidelity solutions."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "score": 85,
+    "rationale": "Spectral spatial discretization with explicit RK4 is very accurate for smooth problems and stable under CFL. Medium resolution is sufficient due to spectral convergence, and cost is moderate."
+  },
+  {
+    "plan_id": "plan_fvm_explicit_lowres",
+    "score": 58,
+    "rationale": "Low-res FVM with explicit RK2 is stable and efficient, but accuracy and resolution are limited for a smooth wave problem. More suitable for conservation-dominated or coarse simulations."
+  },
+  {
+    "plan_id": "plan_fem_explicit_mediumres",
+    "score": 65,
+    "rationale": "Medium-res linear FEM with explicit central difference is stable and robust, but first-order spatial accuracy limits solution quality for this smooth wave problem. Cost is moderate."
+  },
+  {
+    "plan_id": "plan_fd_imex_mediumres",
+    "score": 78,
+    "rationale": "IMEX FD is robust and stable, with moderate accuracy and cost. For the non-stiff 2D wave equation, IMEX is slightly more complex than needed but still a solid, reliable choice."
+  },
+  {
+    "plan_id": "plan_spectral_implicit_highres",
+    "score": 90,
+    "rationale": "High-res Chebyshev spectral with implicit BDF2 is extremely accurate and stable for smooth solutions with Dirichlet BCs. Time accuracy is limited by BDF2, but overall this is an excellent, efficient high-fidelity plan."
+  },
+  {
+    "plan_id": "plan_fvm_implicit_lowres",
+    "score": 55,
+    "rationale": "Low-res FVM with implicit backward Euler is robust but only first-order accurate in both space and time, making it unsuitable for a smooth wave problem where higher accuracy is expected."
+  },
+  {
+    "plan_id": "plan_fem_explicit_highres",
+    "score": 75,
+    "rationale": "High-res quadratic FEM with explicit RK4 is very accurate and stable, but the extremely high computational cost is not justified compared to implicit or spectral alternatives for this problem."
+  }
+]

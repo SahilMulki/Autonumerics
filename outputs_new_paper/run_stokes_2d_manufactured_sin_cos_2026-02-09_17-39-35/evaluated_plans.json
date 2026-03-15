@@ -1,0 +1,195 @@
+[
+  {
+    "plan_id": "plan_spectral_32x32",
+    "metrics": {
+      "runtime_s": 139.99423694610596,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": null,
+      "relative_residual": 0.2271607968792576,
+      "num_attempts": 5,
+      "restarts_used": 1
+    },
+    "plan": {
+      "plan_id": "plan_spectral_32x32",
+      "description": "Spectral method with Fourier basis on 32x32 grid",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 32,
+        "Ny": 32,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic_domain": false,
+          "deal_with_dirichlet": "tau_method"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {}
+      },
+      "_llm_score": 95,
+      "_llm_score_rationale": "Spectral methods are ideal for smooth, manufactured solutions and offer very high accuracy and efficiency for this problem. The tau method handles Dirichlet BCs well, making this plan highly suitable."
+    }
+  },
+  {
+    "plan_id": "plan_fem_p3p2_64x64",
+    "metrics": {
+      "runtime_s": 21.68185806274414,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 3.5170463679610857,
+      "relative_residual": 4.895540630087734,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_p3p2_64x64",
+      "description": "High-order finite element method with P3 velocity and P2 pressure on 64x64 mesh",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": 3,
+        "extra_parameters": {
+          "velocity_element": "P3",
+          "pressure_element": "P2",
+          "mesh_type": "triangular"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {}
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "High-order FEM (P3-P2) on a fine mesh is highly accurate and stable for Stokes, especially with smooth solutions. The computational cost is justified by the accuracy gain for this manufactured solution."
+    }
+  },
+  {
+    "plan_id": "plan_fd_64x64_mediumorder",
+    "metrics": {
+      "runtime_s": 115.65084290504456,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": null,
+      "relative_residual": 1.7989041374648422,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_64x64_mediumorder",
+      "description": "Finite difference with 4th order scheme on 64x64 grid",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": 4,
+        "extra_parameters": {
+          "staggered_grid": true,
+          "pressure_velocity_coupling": "marker_and_cell"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {}
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "A fourth-order accurate MAC finite difference scheme on a moderate grid offers a strong balance of accuracy, stability, and efficiency for the Stokes problem with smooth analytic solution and Dirichlet BCs."
+    }
+  },
+  {
+    "plan_id": "plan_fd_staggered_128x128",
+    "metrics": {
+      "runtime_s": 489.85674691200256,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 5,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_staggered_128x128",
+      "description": "High resolution finite difference on staggered grid 128x128 with 2nd order accuracy",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 128,
+        "Ny": 128,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "staggered_grid": true,
+          "pressure_velocity_coupling": "marker_and_cell"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {}
+      },
+      "_llm_score": 78,
+      "_llm_score_rationale": "A high-resolution MAC finite difference scheme is robust and accurate, but the second-order accuracy limits efficiency gains compared to higher-order methods. Computational cost is high for the accuracy achieved."
+    }
+  },
+  {
+    "plan_id": "plan_fem_p2p1_32x32",
+    "metrics": {
+      "runtime_s": 61.72621703147888,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 2.7661272488148043,
+      "relative_residual": 3.7894919549865342,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_p2p1_32x32",
+      "description": "Finite element method with P2 elements for velocity and P1 for pressure on 32x32 mesh",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 32,
+        "Ny": 32,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "velocity_element": "P2",
+          "pressure_element": "P1",
+          "mesh_type": "triangular"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {}
+      },
+      "_llm_score": 75,
+      "_llm_score_rationale": "The P2-P1 mixed FEM is a classical, stable, and accurate choice for Stokes, but the 32x32 mesh limits spatial resolution. Efficiency is good, but accuracy is not as high as higher-order or finer-mesh plans."
+    }
+  }
+]

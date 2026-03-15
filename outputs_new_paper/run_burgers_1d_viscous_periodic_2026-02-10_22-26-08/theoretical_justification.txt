@@ -1,0 +1,7 @@
+The selected solver plan—spectral spatial discretization with an IMEX Runge-Kutta time integrator at high resolution (Nx = 512)—is particularly well-suited for the 1D viscous Burgers’ equation with periodic boundaries. The Burgers’ equation is nonlinear and features both advective (u uₓ) and diffusive (ν uₓₓ) terms, which can lead to steep gradients and potential stiffness, especially for small viscosity ν.
+
+The spectral method leverages the periodic boundary conditions and the expected smoothness of the solution (away from shock formation), providing exponential convergence for sufficiently resolved solutions. This high spatial accuracy is essential for capturing the nonlinear interactions and fine-scale structures typical in Burgers’ flows.
+
+The IMEX (implicit-explicit) Runge-Kutta integrator efficiently handles the stiffness introduced by the viscous term: it treats the linear diffusion implicitly (allowing larger time steps without stability loss) and the nonlinear advection explicitly (avoiding costly nonlinear solves). This balances stability and computational efficiency.
+
+The extremely small relative residual (≈ 4×10⁻¹⁷) demonstrates that the computed solution satisfies the PDE operator to near machine precision, indicating both the spatial and temporal discretizations are highly accurate and well-resolved for this problem. The runtime reflects the high resolution and implicit solves, but is justified by the achieved accuracy and stability.

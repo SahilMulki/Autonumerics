@@ -1,0 +1,22 @@
+{
+  "best_plan_id": "plan_spectral_imex_mediumres",
+  "reasoning": "An analytic solution is available, so the primary criterion is the smallest relative L2 error. 'plan_spectral_imex_mediumres' achieves an L2 error of 9.88e-6, which is orders of magnitude lower than all other successful plans. Although its runtime (199.52s) is higher than 'plan_fd_cranknicolson_highres' (98.47s), the accuracy improvement is dramatic and justifies the extra computational cost. Other plans have much higher errors and/or longer runtimes. The failed plan is excluded from consideration.",
+  "ranking": [
+    {
+      "plan_id": "plan_spectral_imex_mediumres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_fvm_implicit_mediumres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_fd_cranknicolson_highres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "rank": 4
+    }
+  ]
+}

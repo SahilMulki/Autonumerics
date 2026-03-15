@@ -1,0 +1,206 @@
+[
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "metrics": {
+      "runtime_s": 69.34471821784973,
+      "l2_error": 1.5280975633634573,
+      "max_error": 0.6810532013975668,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_imex_highres",
+      "description": "High resolution Fourier spectral with IMEX RK time stepping (implicit diffusion, explicit convection)",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": 256,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "boundary_conditions": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "IMEX RK",
+        "dt": 0.002,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "implicit_part": "diffusion",
+          "explicit_part": "convection"
+        }
+      },
+      "_llm_score": 95,
+      "_llm_score_rationale": "High-resolution Fourier spectral with IMEX time stepping is nearly optimal for this periodic, convection-diffusion problem: it combines high accuracy, excellent stability, and reasonable efficiency for the accuracy achieved."
+    }
+  },
+  {
+    "plan_id": "plan_fem_imex_highres",
+    "metrics": {
+      "runtime_s": 85.57488298416138,
+      "l2_error": 0.06552412705474518,
+      "max_error": 0.029011905638277824,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_imex_highres",
+      "description": "High resolution finite element with IMEX BDF2 time stepping",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "triangular",
+          "boundary_conditions": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "IMEX BDF2",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 2,
+        "extra_parameters": {
+          "implicit_part": "diffusion",
+          "explicit_part": "convection",
+          "linear_solver": "GMRES"
+        }
+      },
+      "_llm_score": 75,
+      "_llm_score_rationale": "IMEX BDF2 and higher-order FEM improve stability and accuracy, but FEM is less efficient for periodic, smooth solutions compared to spectral methods."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "metrics": {
+      "runtime_s": 26.652060985565186,
+      "l2_error": Infinity,
+      "max_error": 3.761652759404201e+265,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_mediumres",
+      "description": "Medium resolution Fourier spectral method with explicit RK4 time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 128,
+        "Ny": 128,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "boundary_conditions": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "RK4",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "_llm_score": 70,
+      "_llm_score_rationale": "Spectral accuracy and periodic BCs are a strong match, but explicit time stepping is limited by stability for high Peclet numbers; efficiency is moderate."
+    }
+  },
+  {
+    "plan_id": "plan_fd_semiimplicit_mediumres",
+    "metrics": {
+      "runtime_s": 34.55160593986511,
+      "l2_error": 0.020507345615823704,
+      "max_error": 0.008560771586037075,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_semiimplicit_mediumres",
+      "description": "Medium resolution finite difference with semi-implicit time stepping (implicit diffusion, explicit convection)",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "boundary_conditions": "periodic",
+          "stencil": "central"
+        }
+      },
+      "time_stepping": {
+        "method": "Semi-implicit Euler",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 1,
+        "extra_parameters": {
+          "implicit_part": "diffusion",
+          "explicit_part": "convection",
+          "linear_solver": "CG"
+        }
+      },
+      "_llm_score": 68,
+      "_llm_score_rationale": "Semi-implicit (IMEX) approach is well-suited for convection-diffusion, providing good stability and moderate accuracy at reasonable cost, though not as accurate as spectral IMEX."
+    }
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 80.7488648891449,
+      "l2_error": 1.4756253431044082e+56,
+      "max_error": 1.0871631611926342e+56,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "description": "Medium resolution 2D finite difference with implicit Crank-Nicolson time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "boundary_conditions": "periodic",
+          "stencil": "central"
+        }
+      },
+      "time_stepping": {
+        "method": "Crank-Nicolson",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "linear_solver": "GMRES",
+          "preconditioner": "ILU"
+        }
+      },
+      "_llm_score": 65,
+      "_llm_score_rationale": "Implicit Crank-Nicolson provides good stability for the stiff diffusion term and moderate accuracy, but central differencing is not ideal for high-Peclet advection; efficiency is reasonable."
+    }
+  }
+]

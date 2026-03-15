@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 40,
+    "rationale": "Explicit FD with low resolution and first-order time stepping is stable only for very small dt, requiring 10,000 steps. Accuracy is limited by low order and coarse grid, and efficiency is poor due to excessive time steps."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 65,
+    "rationale": "Crank-Nicolson is unconditionally stable for diffusion and second-order accurate, and medium resolution is reasonable. However, central differencing for convection can be oscillatory for advection-dominated regimes, and nonlinear solves are needed."
+  },
+  {
+    "plan_id": "plan_fd_imex_highres",
+    "score": 78,
+    "rationale": "High spatial and temporal order with IMEX efficiently handles stiff diffusion and nonlinear convection. High resolution improves accuracy, though cost is higher, it is justified by accuracy and robustness."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "score": 75,
+    "rationale": "Spectral methods are highly accurate for smooth, periodic problems, but explicit RK4 requires small dt for stability due to the nonlinear term. Efficiency is moderate, but accuracy is excellent for this problem class."
+  },
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "score": 90,
+    "rationale": "Spectral IMEX combines high-order, high-resolution spatial discretization with robust time integration for stiff diffusion and nonlinear convection. This is nearly optimal for smooth, periodic Burgers with moderate viscosity."
+  },
+  {
+    "plan_id": "plan_fem_implicit_mediumres",
+    "score": 55,
+    "rationale": "FEM with linear elements and backward Euler is robust but only first-order accurate in time and space. Medium resolution is adequate, but accuracy is limited compared to higher-order or spectral approaches."
+  },
+  {
+    "plan_id": "plan_fem_imex_highres",
+    "score": 72,
+    "rationale": "Quadratic FEM with IMEX and high resolution offers good accuracy and stability for nonlinear, stiff problems. Efficiency is lower than spectral, but this is a strong choice for generality and robustness."
+  },
+  {
+    "plan_id": "plan_fv_explicit_lowres",
+    "score": 45,
+    "rationale": "Low-order FV with explicit Euler is robust for shocks but inefficient and inaccurate for smooth, periodic Burgers. Requires many time steps and has low spatial accuracy."
+  },
+  {
+    "plan_id": "plan_fv_implicit_mediumres",
+    "score": 60,
+    "rationale": "FV with MUSCL and implicit time stepping is stable and more accurate than low-order FV, but only first-order in time. Suitable for advection-dominated flows, but less efficient than IMEX or spectral for this problem."
+  },
+  {
+    "plan_id": "plan_fv_imex_highres",
+    "score": 80,
+    "rationale": "High-res FV with WENO3 and IMEX is robust and accurate for nonlinear advection-diffusion. Well-suited for Burgers, balancing stability, accuracy, and efficiency, especially if shocks develop."
+  }
+]

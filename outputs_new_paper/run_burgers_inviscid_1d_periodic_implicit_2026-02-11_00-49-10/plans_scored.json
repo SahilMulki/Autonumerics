@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_upwind_lowres",
+    "score": 45,
+    "rationale": "While upwind finite difference is robust for advection-dominated problems, the low spatial order and low resolution will result in excessive numerical diffusion and poor shock resolution. Efficiency is good, but accuracy and suitability are limited."
+  },
+  {
+    "plan_id": "plan_fd_explicit_weno_mediumres",
+    "score": 85,
+    "rationale": "WENO5 is highly suitable for nonlinear hyperbolic conservation laws like inviscid Burgers, providing high-order accuracy and good shock-capturing. The medium resolution and moderate cost make this plan both accurate and efficient."
+  },
+  {
+    "plan_id": "plan_fd_explicit_lax_friedrichs_highres",
+    "score": 60,
+    "rationale": "Lax-Friedrichs is robust but overly diffusive for inviscid Burgers, even at high resolution. The very high cost is not justified by the modest accuracy improvement over lower-order schemes."
+  },
+  {
+    "plan_id": "plan_fv_explicit_godunov_mediumres",
+    "score": 65,
+    "rationale": "Godunov's method is robust and conservative, but first-order spatial accuracy leads to significant numerical diffusion. Medium resolution and moderate cost are reasonable, but accuracy is limited."
+  },
+  {
+    "plan_id": "plan_fv_explicit_muscl_highres",
+    "score": 80,
+    "rationale": "MUSCL with a limiter and high resolution provides good shock-capturing and second-order accuracy, making it well-suited for inviscid Burgers. The cost is high but justified by improved accuracy and robustness."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_rk4_mediumres",
+    "score": 90,
+    "rationale": "Spectral Fourier methods are ideal for smooth, periodic problems and provide very high accuracy and efficiency for the given IC and BC. Dealiasing helps with nonlinear stability, though spectral methods may struggle after shock formation."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_rk3_highres",
+    "score": 92,
+    "rationale": "High-resolution spectral method with dealiasing offers near-optimal accuracy and efficiency for smooth, periodic Burgers. The cost is high but justified for applications prioritizing accuracy before shock formation."
+  },
+  {
+    "plan_id": "plan_fem_implicit_crank_nicolson_mediumres",
+    "score": 55,
+    "rationale": "Implicit Crank-Nicolson is unnecessary for non-stiff, advection-dominated Burgers and introduces extra cost and complexity. FEM is less common for this PDE, and second-order accuracy is modest."
+  },
+  {
+    "plan_id": "plan_fem_implicit_backward_euler_lowres",
+    "score": 40,
+    "rationale": "Backward Euler is overly diffusive and low-order for this hyperbolic PDE, and the low spatial resolution further limits accuracy. The method is robust but not well-suited for inviscid Burgers."
+  },
+  {
+    "plan_id": "plan_fv_imex_roe_mediumres",
+    "score": 78,
+    "rationale": "IMEX with Roe and MUSCL is robust and accurate for hyperbolic conservation laws, though full implicitness is not needed for inviscid Burgers. The plan balances accuracy, stability, and cost well."
+  }
+]

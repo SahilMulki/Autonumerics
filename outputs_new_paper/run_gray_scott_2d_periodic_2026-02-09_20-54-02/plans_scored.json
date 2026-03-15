@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 30,
+    "rationale": "Explicit Euler is unstable for stiff reaction-diffusion problems at dt=0.1, which exceeds the estimated stability limit (0.05). Low spatial resolution further limits accuracy, making this plan unsuitable."
+  },
+  {
+    "plan_id": "plan_fd_implicit_midres",
+    "score": 75,
+    "rationale": "Crank-Nicolson is stable and second-order accurate in time and space, with a reasonable resolution and cost. This is a robust, efficient choice for reaction-diffusion systems with periodic BCs."
+  },
+  {
+    "plan_id": "plan_fv_implicit_highres",
+    "score": 65,
+    "rationale": "Fully implicit backward Euler is robust but only first-order accurate in time and space. The very high resolution increases cost substantially without a proportional gain in accuracy due to low order."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_midres",
+    "score": 55,
+    "rationale": "Spectral methods are highly accurate for periodic BCs, but explicit RK4 with dt=0.005 is only marginally stable (stability limit 0.0031). Risk of instability and high cost reduce suitability."
+  },
+  {
+    "plan_id": "plan_fem_implicit_midres",
+    "score": 70,
+    "rationale": "Implicit theta (Crank-Nicolson) FEM is stable and second-order accurate, with moderate resolution and cost. Good for generality and robustness, though not as efficient as FD for this regular domain."
+  },
+  {
+    "plan_id": "plan_fd_imex_midres",
+    "score": 80,
+    "rationale": "IMEX schemes are well-suited for stiff reaction-diffusion systems, treating diffusion implicitly and reaction explicitly. This plan balances stability, accuracy, and efficiency at moderate cost."
+  },
+  {
+    "plan_id": "plan_fv_explicit_lowres",
+    "score": 25,
+    "rationale": "Low-order FV and explicit RK2 at dt=0.1 is unstable (stability limit 0.0125) and low resolution further reduces accuracy, making this plan unsuitable for the problem."
+  },
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "score": 90,
+    "rationale": "Spectral IMEX is ideal for periodic, stiff reaction-diffusion problems, offering high accuracy and stability. The very high resolution and cost are justified by the accuracy gain for demanding simulations."
+  },
+  {
+    "plan_id": "plan_fem_explicit_lowres",
+    "score": 20,
+    "rationale": "Explicit Euler with low-order FEM and coarse grid is inaccurate and likely unstable for this stiff problem. Not suitable for reliable simulation."
+  },
+  {
+    "plan_id": "plan_fd_implicit_highres",
+    "score": 68,
+    "rationale": "Fully implicit FD is robust and stable, but only first-order accurate in time. Very high resolution increases cost significantly, with diminishing returns compared to higher-order or IMEX schemes."
+  }
+]

@@ -1,0 +1,190 @@
+[
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "metrics": {
+      "runtime_s": 32.17811727523804,
+      "l2_error": 5.40930877374415e-14,
+      "max_error": 5.4580787227239566e-14,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_highres",
+      "description": "High-res Fourier spectral spatial discretization with explicit RK4",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "boundary_condition": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "RK4",
+        "dt": 0.0005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "_llm_score": 92,
+      "_llm_score_rationale": "Fourier spectral is ideal for periodic, smooth solutions, and high resolution ensures high accuracy. Explicit RK4 is stable for this dt and linear problem; cost is high but justified by accuracy."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "metrics": {
+      "runtime_s": 24.979687929153442,
+      "l2_error": 4.281851809839633e-14,
+      "max_error": 4.320608031858085e-14,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_mediumres",
+      "description": "Medium-res Fourier spectral with exponential time differencing RK4",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 128,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "boundary_condition": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "ETDRK4",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "_llm_score": 88,
+      "_llm_score_rationale": "Spectral with ETDRK4 is highly accurate and stable for linear Schrödinger with periodic BCs. Medium resolution is sufficient for the initial condition, and efficiency is good."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 18.652201175689697,
+      "l2_error": 0.9588501630628232,
+      "max_error": 0.9588501630632061,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_implicit_mediumres",
+      "description": "Medium-res Fourier spectral with implicit midpoint time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 128,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "boundary_condition": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "Implicit Midpoint",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "Spectral with implicit midpoint is stable and accurate for this linear, periodic PDE. Medium resolution is sufficient for the single-mode IC; slightly less accurate than high-res, but more efficient."
+    }
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres",
+    "metrics": {
+      "runtime_s": 21.00623321533203,
+      "l2_error": 2.01587552786094e-09,
+      "max_error": 2.015879074379643e-09,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_explicit_highres",
+      "description": "High-res finite difference with explicit RK4 time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 256,
+        "Ny": null,
+        "Nz": null,
+        "order": 4,
+        "extra_parameters": {
+          "boundary_condition": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "RK4",
+        "dt": 0.00025,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "_llm_score": 65,
+      "_llm_score_rationale": "High resolution and fourth-order FD improve accuracy, but explicit RK4 is less efficient and less accurate than spectral for this problem. Computational cost is high for the accuracy gained."
+    }
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 28.807592153549194,
+      "l2_error": 0.9587620612138973,
+      "max_error": 0.9587620612142864,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "description": "Medium-res finite difference Crank-Nicolson implicit scheme",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 128,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "boundary_condition": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "Crank-Nicolson",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "_llm_score": 60,
+      "_llm_score_rationale": "Crank-Nicolson is unconditionally stable and preserves unitarity for linear Schrödinger, and medium resolution improves accuracy. However, FD is less accurate than spectral for periodic, smooth problems."
+    }
+  }
+]

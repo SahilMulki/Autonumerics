@@ -1,0 +1,198 @@
+[
+  {
+    "plan_id": "plan_fem_cranknicolson_highres",
+    "metrics": {
+      "runtime_s": 106.99269986152649,
+      "l2_error": 0.028026147798211738,
+      "max_error": 0.007461282265868452,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 5,
+      "restarts_used": 1
+    },
+    "plan": {
+      "plan_id": "plan_fem_cranknicolson_highres",
+      "description": "High-res 2D wave eq. using finite element spatial discretization and Crank-Nicolson time stepping",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 150,
+        "Ny": 150,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "quadrilateral",
+          "mesh_type": "structured"
+        }
+      },
+      "time_stepping": {
+        "method": "Crank-Nicolson",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "_llm_score": 92,
+      "_llm_score_rationale": "High-res FEM with Crank–Nicolson is highly accurate, robust, and stable for the 2D wave equation with Dirichlet BCs. The cost is high but justified for high-fidelity solutions."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_implicit_highres",
+    "metrics": {
+      "runtime_s": 161.86497116088867,
+      "l2_error": Infinity,
+      "max_error": 3.855143333647476e+184,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 5,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_implicit_highres",
+      "description": "High-res spectral spatial discretization with implicit backward differentiation formula (BDF2)",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 128,
+        "Ny": 128,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Chebyshev",
+          "boundary_conditions": "Dirichlet"
+        }
+      },
+      "time_stepping": {
+        "method": "BDF2",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "High-res Chebyshev spectral with implicit BDF2 is extremely accurate and stable for smooth solutions with Dirichlet BCs. Time accuracy is limited by BDF2, but overall this is an excellent, efficient high-fidelity plan."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "metrics": {
+      "runtime_s": 73.10315775871277,
+      "l2_error": 8.338670144818305e-10,
+      "max_error": 2.2190582704695316e-10,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_mediumres",
+      "description": "Medium-res spectral method in space with explicit RK4 time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic_extension": false
+        }
+      },
+      "time_stepping": {
+        "method": "RK4",
+        "dt": 0.002,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {
+          "cfl_condition": "enforced"
+        }
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "Spectral spatial discretization with explicit RK4 is very accurate for smooth problems and stable under CFL. Medium resolution is sufficient due to spectral convergence, and cost is moderate."
+    }
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 218.76570224761963,
+      "l2_error": 0.0949922530617097,
+      "max_error": 0.025285828056353543,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "description": "2D wave eq. with medium-res finite difference and implicit Newmark-beta time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "stencil": "5-point Laplacian"
+        }
+      },
+      "time_stepping": {
+        "method": "Newmark-beta",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "beta": 0.25,
+          "gamma": 0.5
+        }
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "Implicit Newmark-beta with medium resolution offers robust stability and reasonable accuracy for the wave equation, with moderate computational cost. Well-suited for this problem."
+    }
+  },
+  {
+    "plan_id": "plan_fd_imex_mediumres",
+    "metrics": {
+      "runtime_s": 66.91493129730225,
+      "l2_error": 3.582232450180153e+57,
+      "max_error": 1.3903837721389577e+57,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_imex_mediumres",
+      "description": "Medium-res finite difference with IMEX time stepping (implicit for stiff terms)",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "stencil": "5-point Laplacian"
+        }
+      },
+      "time_stepping": {
+        "method": "IMEX RK",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "implicit_part": "Laplacian",
+          "explicit_part": "wave propagation"
+        }
+      },
+      "_llm_score": 78,
+      "_llm_score_rationale": "IMEX FD is robust and stable, with moderate accuracy and cost. For the non-stiff 2D wave equation, IMEX is slightly more complex than needed but still a solid, reliable choice."
+    }
+  }
+]

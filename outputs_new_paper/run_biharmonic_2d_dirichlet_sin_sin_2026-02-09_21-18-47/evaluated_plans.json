@@ -1,0 +1,213 @@
+[
+  {
+    "plan_id": "plan_spectral_chebyshev_64x64",
+    "metrics": {
+      "runtime_s": 31.60238003730774,
+      "l2_error": 2.999999999630341,
+      "max_error": 2.9999999996188826,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_chebyshev_64x64",
+      "description": "Spectral method with Chebyshev collocation, 64x64 points",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Chebyshev",
+          "collocation_points": "Gauss-Lobatto"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "dense_direct"
+        }
+      },
+      "_llm_score": 95,
+      "_llm_score_rationale": "Spectral Chebyshev methods are nearly optimal for smooth solutions on simple domains with clamped BCs, offering extremely high accuracy and stability at moderate cost."
+    }
+  },
+  {
+    "plan_id": "plan_fem_hp_adaptive",
+    "metrics": {
+      "runtime_s": 43.1779408454895,
+      "l2_error": 0.7449425512876321,
+      "max_error": 0.7462730937434432,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_hp_adaptive",
+      "description": "hp-adaptive finite element method with mixed polynomial orders, adaptive mesh refinement",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 50,
+        "Ny": 50,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "element_type": "quadrilateral",
+          "hp_adaptivity": true,
+          "initial_mesh_type": "structured",
+          "polynomial_orders": [
+            1,
+            2,
+            3
+          ],
+          "refinement_strategy": "error_estimator_based"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "multigrid_with_adaptive_preconditioning"
+        }
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "hp-adaptive FEM is highly suitable for biharmonic problems, offering excellent accuracy and efficiency via adaptivity, though at high implementation and computational cost."
+    }
+  },
+  {
+    "plan_id": "plan_fd_4thorder_100x100",
+    "metrics": {
+      "runtime_s": 55.812548875808716,
+      "l2_error": 0.7713276136805353,
+      "max_error": 0.7661791670105519,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_4thorder_100x100",
+      "description": "Finite difference 4th order, fine grid 100x100, iterative solver",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 4,
+        "extra_parameters": {
+          "stencil": "compact_13_point_biharmonic"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "multigrid_preconditioned_conjugate_gradient"
+        }
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "High-order finite difference on a fine grid with an efficient iterative solver provides high accuracy and good stability for the biharmonic problem, though at increased computational cost."
+    }
+  },
+  {
+    "plan_id": "plan_fem_quad_50x50_p2",
+    "metrics": {
+      "runtime_s": 74.50419497489929,
+      "l2_error": 0.9999997911368675,
+      "max_error": 0.999999791119223,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_quad_50x50_p2",
+      "description": "Finite element method with quadratic elements (P2), mesh ~50x50 elements",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 50,
+        "Ny": 50,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "quadrilateral",
+          "basis": "Lagrange_P2",
+          "mesh_type": "structured"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "direct_sparse"
+        }
+      },
+      "_llm_score": 75,
+      "_llm_score_rationale": "Quadratic FEM is well-suited for biharmonic problems and clamped BCs, offering good stability and flexibility. Accuracy is moderate due to P2 elements, and cost is reasonable."
+    }
+  },
+  {
+    "plan_id": "plan_mixed_fem_50x50_p1p0",
+    "metrics": {
+      "runtime_s": 89.31946802139282,
+      "l2_error": 0.6144428760825522,
+      "max_error": 0.5021978616725457,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 5,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_mixed_fem_50x50_p1p0",
+      "description": "Mixed finite element method with P1 for u and P0 for auxiliary variable, 50x50 mesh",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 50,
+        "Ny": 50,
+        "Nz": null,
+        "order": 1,
+        "extra_parameters": {
+          "element_type": "triangular",
+          "mixed_formulation": true,
+          "spaces": {
+            "u": "P1",
+            "auxiliary": "P0"
+          }
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "direct_sparse"
+        }
+      },
+      "_llm_score": 70,
+      "_llm_score_rationale": "Mixed FEM can handle biharmonic equations and clamped BCs well, but P1/P0 elements limit accuracy. Stability is good and cost is moderate."
+    }
+  }
+]

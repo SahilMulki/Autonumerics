@@ -1,0 +1,33 @@
+{
+  "equation_type": "Burgers",
+  "governing_equation": "u_t + u*u_x = nu*u_xx",
+  "spatial_dimension": 1,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        1.0
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 1.0
+  },
+  "initial_condition": "u(x,0) = np.sin(2*np.pi*x)",
+  "boundary_conditions": {
+    "type": "periodic",
+    "values": {}
+  },
+  "parameters": {
+    "nu": 0.01
+  },
+  "analytic_solution": null,
+  "notes": null,
+  "id": "burgers_1d_viscous_periodic",
+  "family": "burgers",
+  "dimension": 1
+}

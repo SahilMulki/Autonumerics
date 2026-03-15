@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 55,
+    "rationale": "Explicit FD is stable here (stability margin 0.5), but low spatial resolution and first-order time accuracy limit accuracy. Computational cost is moderate, but explicit schemes are not ideal for diffusion-dominated problems."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 80,
+    "rationale": "Implicit FD (Backward Euler) is robust for diffusion problems, allows larger time steps, and the medium grid gives reasonable accuracy. First-order time accuracy is a minor drawback, but overall efficiency and stability are good."
+  },
+  {
+    "plan_id": "plan_fd_cranknicolson_highres",
+    "score": 90,
+    "rationale": "Crank-Nicolson is unconditionally stable and second-order accurate in time, and the high spatial resolution ensures excellent accuracy. The computational cost is high, but justified for high-fidelity results."
+  },
+  {
+    "plan_id": "plan_fem_implicit_mediumres",
+    "score": 75,
+    "rationale": "Linear FEM with implicit time stepping is robust and flexible for Dirichlet BCs, but first-order time and space accuracy is limiting. Efficiency is good, but accuracy is lower than higher-order or finer-grid methods."
+  },
+  {
+    "plan_id": "plan_fem_cranknicolson_highres",
+    "score": 92,
+    "rationale": "Quadratic FEM with Crank-Nicolson is highly accurate and stable, well-suited for smooth solutions and Dirichlet BCs. Computational cost is significant but justified by the high accuracy."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "score": 70,
+    "rationale": "Spectral methods are highly accurate for smooth problems, but explicit RK4 is not ideal for diffusion-dominated PDEs due to small stable time steps. Efficiency is good, but stability and suitability are not optimal."
+  },
+  {
+    "plan_id": "plan_spectral_imex_mediumres",
+    "score": 88,
+    "rationale": "Spectral spatial discretization with IMEX time stepping efficiently handles stiffness and maintains high accuracy. Stability is excellent, and computational cost is very low for the achieved accuracy."
+  },
+  {
+    "plan_id": "plan_fvm_implicit_mediumres",
+    "score": 78,
+    "rationale": "Implicit FVM is robust and accurate for diffusion problems, with good efficiency and stability. Second-order space and first-order time are acceptable, though not as accurate as higher-order or spectral/FEM approaches."
+  },
+  {
+    "plan_id": "plan_fvm_explicit_lowres",
+    "score": 50,
+    "rationale": "Explicit FVM is stable here but limited by low spatial and temporal accuracy. Computational cost is moderate, but explicit schemes are not preferred for diffusion-dominated problems."
+  },
+  {
+    "plan_id": "plan_fem_imex_lowres",
+    "score": 73,
+    "rationale": "IMEX FEM is stable and efficient for this problem, but low spatial resolution and first-order elements limit accuracy. Still, the method is robust and well-suited for stiff reaction-diffusion equations."
+  }
+]

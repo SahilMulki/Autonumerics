@@ -1,0 +1,200 @@
+[
+  {
+    "plan_id": "plan_fem_cranknicolson_highres",
+    "metrics": {
+      "runtime_s": 527.9453740119934,
+      "l2_error": 6.194901879195557,
+      "max_error": 0.8605859357522196,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 5,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_cranknicolson_highres",
+      "description": "2D heat eq. with quadratic FEM and Crank-Nicolson time stepping",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 60,
+        "Ny": 60,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "triangular"
+        }
+      },
+      "time_stepping": {
+        "method": "crank_nicolson",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "linear_solver": "iterative",
+          "tolerance": 1e-08
+        }
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "Quadratic FEM with Crank-Nicolson provides high accuracy and stability, with a reasonable computational cost for the achieved accuracy. Well-suited for the problem and boundary conditions."
+    }
+  },
+  {
+    "plan_id": "plan_fd_cranknicolson_highres",
+    "metrics": {
+      "runtime_s": 228.0580449104309,
+      "l2_error": 0.00015056099476524841,
+      "max_error": 2.090933358331326e-05,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 5,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_cranknicolson_highres",
+      "description": "2D heat eq. with Crank-Nicolson finite difference, high resolution grid",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "time_stepping": {
+        "method": "crank_nicolson",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "linear_solver": "iterative",
+          "tolerance": 1e-08
+        }
+      },
+      "_llm_score": 87,
+      "_llm_score_rationale": "Crank-Nicolson is unconditionally stable and second-order accurate in time, and the high-resolution grid ensures spatial accuracy. The cost is high but justified by the accuracy and robustness for this problem."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 78.20797896385193,
+      "l2_error": 0.019415255718316714,
+      "max_error": 0.002692861209340619,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_implicit_mediumres",
+      "description": "2D heat eq. with spectral spatial discretization and implicit backward Euler time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Chebyshev",
+          "periodic_extension": false
+        }
+      },
+      "time_stepping": {
+        "method": "backward_euler",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 1,
+        "extra_parameters": {
+          "linear_solver": "direct"
+        }
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "Spectral Chebyshev with implicit time stepping is highly accurate for smooth solutions and robust for diffusion. First-order time stepping limits temporal accuracy, but overall suitability is high."
+    }
+  },
+  {
+    "plan_id": "plan_fvm_imex_mediumres",
+    "metrics": {
+      "runtime_s": 39.73911809921265,
+      "l2_error": 0.0831566705804703,
+      "max_error": 0.008207236173002536,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fvm_imex_mediumres",
+      "description": "2D heat eq. with finite volume spatial discretization and IMEX time stepping (implicit diffusion)",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 50,
+        "Ny": 50,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "flux_type": "central"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_bdf2",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 2,
+        "extra_parameters": {
+          "implicit_part": "diffusion",
+          "linear_solver": "iterative",
+          "tolerance": 1e-08
+        }
+      },
+      "_llm_score": 78,
+      "_llm_score_rationale": "IMEX BDF2 provides second-order accuracy in time and space, with robust stability for the diffusion term. Efficiency and suitability are both strong for this problem."
+    }
+  },
+  {
+    "plan_id": "plan_fvm_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 59.103374004364014,
+      "l2_error": 0.06548999403224645,
+      "max_error": 0.005464688295292869,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fvm_implicit_mediumres",
+      "description": "2D heat eq. with finite volume spatial discretization and implicit backward Euler time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 50,
+        "Ny": 50,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "flux_type": "central"
+        }
+      },
+      "time_stepping": {
+        "method": "backward_euler",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 1,
+        "extra_parameters": {
+          "linear_solver": "direct"
+        }
+      },
+      "_llm_score": 72,
+      "_llm_score_rationale": "Implicit FVM is robust and second-order accurate in space, with good efficiency and stability. First-order time stepping limits accuracy, but the method is reliable for this problem."
+    }
+  }
+]

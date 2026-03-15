@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 45,
+    "rationale": "Explicit RK4 is stable only for small dt, and low spatial resolution (64x64, 2nd order) limits accuracy for this nonlinear, moderately stiff PDE. Efficiency is moderate, but overall suitability is low due to accuracy and stability concerns."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 67,
+    "rationale": "Crank-Nicolson is unconditionally stable for linear terms and handles moderate stiffness well. Medium resolution (128x128) is reasonable, but 2nd order spatial accuracy is limiting. Efficiency is good due to larger dt and moderate cost."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "score": 80,
+    "rationale": "Spectral Fourier methods are ideal for periodic, smooth problems like Taylor-Green vortex, offering high accuracy. Explicit ETDRK4 is accurate but requires a small dt for stability, making it computationally expensive, though justified for high-accuracy needs."
+  },
+  {
+    "plan_id": "plan_fem_implicit_mediumres",
+    "score": 55,
+    "rationale": "Implicit backward Euler is robust but only first-order accurate in time, and the spatial resolution (64x64, 2nd order) is modest. Efficiency is high, but accuracy is not competitive for this problem."
+  },
+  {
+    "plan_id": "plan_fv_explicit_lowres",
+    "score": 48,
+    "rationale": "Finite volume with MUSCL and SSPRK3 is robust for advection, but low resolution and explicit time stepping limit accuracy and stability for this moderately stiff, nonlinear PDE."
+  },
+  {
+    "plan_id": "plan_fem_imex_mediumres",
+    "score": 68,
+    "rationale": "IMEX RK is well-suited for Navier-Stokes, treating stiffness efficiently. Medium FEM resolution (128x128, 2nd order) is reasonable, but spatial accuracy is not as high as spectral. Good balance of stability, accuracy, and efficiency."
+  },
+  {
+    "plan_id": "plan_spectral_implicit_mediumres",
+    "score": 75,
+    "rationale": "Spectral method with BDF2 is highly stable and accurate for periodic, smooth flows. Medium resolution (128x128) is sufficient for many cases, and implicit time stepping allows larger dt, making it efficient and robust."
+  },
+  {
+    "plan_id": "plan_fv_imex_highres",
+    "score": 77,
+    "rationale": "High-resolution FV with WENO and IMEX RK is robust and accurate for nonlinear convection-diffusion. The high cost is justified by improved accuracy and stability, making it suitable for challenging flows."
+  },
+  {
+    "plan_id": "plan_fd_explicit_mediumres",
+    "score": 52,
+    "rationale": "Medium resolution and 4th order FD improve accuracy, but explicit Adams-Bashforth 3 is limited by stability constraints, requiring many time steps and making it less efficient for this problem."
+  },
+  {
+    "plan_id": "plan_fem_implicit_highres",
+    "score": 73,
+    "rationale": "High-resolution FEM with BDF2 is robust and accurate, with multigrid aiding efficiency. While not as accurate as spectral for this periodic, smooth problem, it is a strong, stable choice for generality."
+  }
+]

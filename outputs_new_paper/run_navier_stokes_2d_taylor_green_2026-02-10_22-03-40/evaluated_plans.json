@@ -1,0 +1,165 @@
+[
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "metrics": {
+      "runtime_s": 108.30587220191956,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 165.67781401562507,
+      "relative_residual": 34.99086625261907,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_highres",
+      "description": "High-resolution spectral method with explicit exponential time differencing",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": 256,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true
+        }
+      },
+      "time_stepping": {
+        "method": "ETDRK4",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "Spectral Fourier methods are ideal for periodic, smooth problems like Taylor-Green vortex, offering high accuracy. Explicit ETDRK4 is accurate but requires a small dt for stability, making it computationally expensive, though justified for high-accuracy needs."
+    }
+  },
+  {
+    "plan_id": "plan_fv_imex_highres",
+    "metrics": {
+      "runtime_s": 70.5885181427002,
+      "l2_error": 0.02736043829542986,
+      "max_error": 0.030431440501720225,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fv_imex_highres",
+      "description": "High-resolution finite volume with IMEX RK time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 256,
+        "Ny": 256,
+        "Nz": null,
+        "order": 3,
+        "extra_parameters": {
+          "flux_reconstruction": "WENO",
+          "limiter": "none"
+        }
+      },
+      "time_stepping": {
+        "method": "IMEX RK",
+        "dt": 0.002,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "implicit_solver": "GMRES"
+        }
+      },
+      "_llm_score": 77,
+      "_llm_score_rationale": "High-resolution FV with WENO and IMEX RK is robust and accurate for nonlinear convection-diffusion. The high cost is justified by improved accuracy and stability, making it suitable for challenging flows."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 87.30544686317444,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 3.9104985688174565e-122,
+      "relative_residual": 3.9104985688174564e-110,
+      "num_attempts": 3,
+      "restarts_used": 1
+    },
+    "plan": {
+      "plan_id": "plan_spectral_implicit_mediumres",
+      "description": "Medium-resolution spectral method with implicit backward differentiation formula (BDF2)",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 128,
+        "Ny": 128,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true
+        }
+      },
+      "time_stepping": {
+        "method": "BDF2",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "linear_solver": "direct"
+        }
+      },
+      "_llm_score": 75,
+      "_llm_score_rationale": "Spectral method with BDF2 is highly stable and accurate for periodic, smooth flows. Medium resolution (128x128) is sufficient for many cases, and implicit time stepping allows larger dt, making it efficient and robust."
+    }
+  },
+  {
+    "plan_id": "plan_fem_implicit_highres",
+    "error": "too many indices for array: array is 0-dimensional, but 1 were indexed"
+  },
+  {
+    "plan_id": "plan_fem_imex_mediumres",
+    "metrics": {
+      "runtime_s": 64.4788498878479,
+      "l2_error": 8.081814239239793e-06,
+      "max_error": 7.904054610485822e-06,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_imex_mediumres",
+      "description": "Medium-resolution FEM with IMEX time stepping (explicit convective, implicit viscous)",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 128,
+        "Ny": 128,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "triangular",
+          "basis_functions": "Lagrange"
+        }
+      },
+      "time_stepping": {
+        "method": "IMEX RK",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "implicit_solver": "GMRES",
+          "preconditioner": "Jacobi"
+        }
+      },
+      "_llm_score": 68,
+      "_llm_score_rationale": "IMEX RK is well-suited for Navier-Stokes, treating stiffness efficiently. Medium FEM resolution (128x128, 2nd order) is reasonable, but spatial accuracy is not as high as spectral. Good balance of stability, accuracy, and efficiency."
+    }
+  }
+]

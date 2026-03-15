@@ -1,0 +1,39 @@
+{
+  "equation_type": "KdV",
+  "governing_equation": "u_t + 6 * u * u_x + u_xxx = 0",
+  "spatial_dimension": 1,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        -20.0,
+        20.0
+      ]
+    },
+    "x_min": -20.0,
+    "x_max": 20.0
+  },
+  "initial_condition": "0.5 * (1 / np.cosh(0.5 * x))**2",
+  "boundary_conditions": {
+    "type": "periodic",
+    "values": {}
+  },
+  "parameters": {
+    "c": 1,
+    "x0": 0
+  },
+  "analytic_solution": {
+    "expression": "0.5 * (1 / np.cosh(0.5 * (x - 1 * t)))**2",
+    "space_variables": [
+      "x"
+    ]
+  },
+  "notes": null,
+  "id": "kdv_1d_soliton",
+  "family": "kdv",
+  "dimension": 1
+}

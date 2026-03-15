@@ -1,0 +1,7 @@
+The selected solver plan employs a spectral spatial discretization with an IMEX Runge-Kutta time integrator at moderate resolution (64×64 grid) for a nonlinear, time-dependent 2D reaction-diffusion equation with Dirichlet boundaries. This PDE is characterized by the interplay of stiff diffusion (second derivatives) and potentially rapid, nonlinear reaction terms.
+
+The spectral method is well-suited for problems with smooth solutions and regular domains, as it provides exponential convergence for sufficiently smooth solutions—typical in reaction-diffusion systems away from singularities or discontinuities. Dirichlet conditions are efficiently enforced in spectral frameworks, ensuring boundary accuracy.
+
+The IMEX (implicit-explicit) Runge-Kutta integrator is particularly effective for reaction-diffusion equations where the diffusion term is stiff but the reaction term may be nonlinear and less stiff. By treating the stiff linear diffusion implicitly, the method allows for larger stable time steps without violating stability constraints (e.g., parabolic CFL condition), while the explicit treatment of the nonlinear reaction avoids costly nonlinear solves.
+
+Although the analytic solution is unavailable (hence no relative L2 error), the solver’s structure directly addresses the PDE’s stiffness and nonlinearity. The observed runtime reflects the cost of implicit solves at this moderate resolution, consistent with the stability and accuracy requirements for such stiff, nonlinear parabolic problems.

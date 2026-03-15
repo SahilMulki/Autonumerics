@@ -1,0 +1,26 @@
+{
+  "best_plan_id": "plan_fd_semiimplicit_mediumres",
+  "reasoning": "Both plan_fd_semiimplicit_mediumres and plan_fd_implicit_mediumres achieve nearly identical and extremely small L2 errors (~2.24e-4), which are much lower than all other plans. However, plan_fd_semiimplicit_mediumres is about twice as fast (19.77s vs 37.92s). The slightly lower order of time integration (first order vs second order) does not impact the result here, as the error is essentially the same. Therefore, plan_fd_semiimplicit_mediumres provides the best balance of accuracy and efficiency.",
+  "ranking": [
+    {
+      "plan_id": "plan_fd_semiimplicit_mediumres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_fd_imex_highres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_spectral_implicit_highres",
+      "rank": 4
+    },
+    {
+      "plan_id": "plan_fem_imex_highres",
+      "rank": 5
+    }
+  ]
+}

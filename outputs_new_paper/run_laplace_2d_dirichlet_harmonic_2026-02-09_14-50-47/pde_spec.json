@@ -1,0 +1,49 @@
+{
+  "equation_type": "Laplace",
+  "governing_equation": "u_xx + u_yy = 0",
+  "spatial_dimension": 2,
+  "time_dependent": false,
+  "spatial_variables": [
+    "x",
+    "y"
+  ],
+  "time_variable": null,
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        1.0
+      ],
+      "y": [
+        0.0,
+        1.0
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 1.0,
+    "y_min": 0.0,
+    "y_max": 1.0
+  },
+  "initial_condition": null,
+  "boundary_conditions": {
+    "type": "Dirichlet",
+    "values": {
+      "u(x,0)": "0",
+      "u(x,1)": "sin(pi*x)",
+      "u(0,y)": "0",
+      "u(1,y)": "0"
+    }
+  },
+  "parameters": {},
+  "analytic_solution": {
+    "expression": "sinh(pi*y)*sin(pi*x)/sinh(pi)",
+    "space_variables": [
+      "x",
+      "y"
+    ]
+  },
+  "notes": null,
+  "id": "laplace_2d_dirichlet_harmonic",
+  "family": "laplace",
+  "dimension": 2
+}

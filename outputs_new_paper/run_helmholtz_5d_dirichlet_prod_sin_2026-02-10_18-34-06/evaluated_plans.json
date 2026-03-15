@@ -1,0 +1,160 @@
+[
+  {
+    "plan_id": "plan_spectral_medres",
+    "metrics": {
+      "runtime_s": 650.1333103179932,
+      "l2_error": 138807.1113431817,
+      "max_error": 48296.33395908863,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 8,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_medres",
+      "description": "Medium-resolution spectral method using tensor product Legendre polynomials",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 24,
+        "Ny": 24,
+        "Nz": 24,
+        "order": null,
+        "extra_parameters": {
+          "dimensions": 5,
+          "basis": "Legendre"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {}
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "Medium-resolution spectral method offers extremely high accuracy for smooth solutions, with cost justified by the accuracy gain; this is among the most suitable approaches for this problem."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_lowres",
+    "metrics": {
+      "runtime_s": 61.034055948257446,
+      "l2_error": 1.693743923862822,
+      "max_error": 1.493285810589005,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_lowres",
+      "description": "Low-resolution spectral method using tensor product Chebyshev polynomials",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 12,
+        "Ny": 12,
+        "Nz": 12,
+        "order": null,
+        "extra_parameters": {
+          "dimensions": 5,
+          "basis": "Chebyshev"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {}
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "Spectral methods are ideal for smooth solutions and Dirichlet BCs; even at low resolution, the expected accuracy is very high and the cost is moderate for 5D, making this a strong choice."
+    }
+  },
+  {
+    "plan_id": "plan_fem_hp_adaptive",
+    "metrics": {
+      "runtime_s": 75.72070479393005,
+      "l2_error": 1.0268725351594623,
+      "max_error": 0.9796310475532484,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 1
+    },
+    "plan": {
+      "plan_id": "plan_fem_hp_adaptive",
+      "description": "High-order hp-adaptive finite element method with cubic basis functions",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 12,
+        "Ny": 12,
+        "Nz": 12,
+        "order": 3,
+        "extra_parameters": {
+          "dimensions": 5,
+          "element_type": "simplex",
+          "hp_adaptivity": true
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {}
+      },
+      "_llm_score": 78,
+      "_llm_score_rationale": "hp-adaptive FEM with cubic basis functions balances high accuracy and efficiency, adapting to solution features; well-suited for smooth, high-dimensional Helmholtz problems, though not as efficient as spectral methods for this analytic solution."
+    }
+  },
+  {
+    "plan_id": "plan_sparse_grid",
+    "error": "Solver failed after 4 attempts in Coarse_R1.\nFailure: Traceback (most recent call last):\n  File \"/Users/dujianda/Desktop/OptimAI/LLM_solving_PDE/LLM_MetaPDE_updated_code_v2/runner_single_prob.py\", line 272, in run_with_critic\n    result = run_generated_solver(code, pde_spec, plan)\n  File \"/Users/dujianda/Desktop/OptimAI/LLM_solving_PDE/LLM_MetaPDE_updated_code_v2/runner_single_prob.py\", line 230, in run_generated_solver\n    raise ValueError(\n    ...<2 lines>...\n    )\nValueError: Solver returned 'u' with shape (352,), fewer dimensions than the 3 spatial coordinates provided.\n"
+  },
+  {
+    "plan_id": "plan_fdm_multigrid",
+    "metrics": {
+      "runtime_s": 65.76895809173584,
+      "l2_error": 0.9831364997146698,
+      "max_error": 0.9664573401288805,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fdm_multigrid",
+      "description": "Medium-resolution finite difference with multigrid solver for efficient Helmholtz solution",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 20,
+        "Ny": 20,
+        "Nz": 20,
+        "order": 2,
+        "extra_parameters": {
+          "dimensions": 5
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "multigrid"
+        }
+      },
+      "_llm_score": 65,
+      "_llm_score_rationale": "Multigrid accelerates solution of the FD system, making this plan efficient and robust, but the underlying second-order FD limits accuracy for this smooth, high-dimensional problem."
+    }
+  }
+]

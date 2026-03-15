@@ -1,0 +1,49 @@
+{
+  "equation_type": "reaction-diffusion",
+  "governing_equation": "u_t = D * (u_xx + u_yy) + r * u",
+  "spatial_dimension": 2,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x",
+    "y"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        1.0
+      ],
+      "y": [
+        0.0,
+        1.0
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 1.0,
+    "y_min": 0.0,
+    "y_max": 1.0
+  },
+  "initial_condition": "sin(pi*x)*sin(pi*y)",
+  "boundary_conditions": {
+    "type": "Dirichlet",
+    "values": {
+      "u": 0
+    }
+  },
+  "parameters": {
+    "D": 0.05,
+    "r": 1.0
+  },
+  "analytic_solution": {
+    "expression": "exp((r-2*D*pi^2)*t)*sin(pi*x)*sin(pi*y)",
+    "space_variables": [
+      "x",
+      "y"
+    ]
+  },
+  "notes": null,
+  "id": "reaction_diffusion_2d_linear_dirichlet",
+  "family": "reaction_diffusion",
+  "dimension": 2
+}

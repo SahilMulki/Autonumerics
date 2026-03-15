@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 35,
+    "rationale": "Explicit Euler is unstable for stiff, diffusion-dominated Allen-Cahn unless dt is extremely small; low spatial resolution further limits accuracy. Efficiency is high, but stability and accuracy are poor."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 75,
+    "rationale": "Crank-Nicolson is stable and second-order accurate for stiff diffusion; medium spatial resolution is reasonable. Computational cost is moderate and overall suitability is good."
+  },
+  {
+    "plan_id": "plan_fd_imex_highres",
+    "score": 85,
+    "rationale": "IMEX BDF2 is well-suited for stiff diffusion and nonlinear reaction; high spatial resolution and second-order accuracy provide robust, accurate results. Cost is higher but justified by accuracy."
+  },
+  {
+    "plan_id": "plan_fem_implicit_mediumres",
+    "score": 70,
+    "rationale": "Implicit backward Euler is robust for stiff problems, but only first-order accurate in time and space (linear FEM). Medium resolution is adequate, but accuracy is lower than higher-order schemes."
+  },
+  {
+    "plan_id": "plan_fem_imex_highres",
+    "score": 90,
+    "rationale": "Quadratic FEM with high resolution and IMEX Runge-Kutta (third order) offers excellent stability and accuracy for stiff, nonlinear Allen-Cahn. Computational cost is high but justified."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "score": 50,
+    "rationale": "Spectral methods are highly accurate spatially, but explicit RK4 is unstable for stiff diffusion unless dt is extremely small, making this plan inefficient for Allen-Cahn."
+  },
+  {
+    "plan_id": "plan_spectral_implicit_highres",
+    "score": 95,
+    "rationale": "High-resolution Chebyshev spectral method with IMEX BDF3 provides excellent stability and accuracy for stiff, nonlinear problems. Computational cost is high but optimal for accuracy."
+  },
+  {
+    "plan_id": "plan_fvm_implicit_mediumres",
+    "score": 65,
+    "rationale": "Implicit backward Euler is stable, but first-order FVM with piecewise constant reconstruction is low-accuracy. Medium resolution is reasonable, but accuracy is limited."
+  },
+  {
+    "plan_id": "plan_fvm_imex_lowres",
+    "score": 45,
+    "rationale": "IMEX RK2 is stable, but low spatial resolution and first-order FVM limit accuracy. Efficiency is high, but overall suitability is low for resolving sharp interfaces in Allen-Cahn."
+  },
+  {
+    "plan_id": "plan_fd_semiimplicit_mediumres",
+    "score": 72,
+    "rationale": "Semi-implicit Euler is robust for stiff diffusion, but only first-order accurate in time. Medium spatial resolution and second-order FD are reasonable; accuracy is moderate."
+  }
+]

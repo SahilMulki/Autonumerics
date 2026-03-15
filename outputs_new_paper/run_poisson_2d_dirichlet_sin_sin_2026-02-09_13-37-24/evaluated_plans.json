@@ -1,0 +1,158 @@
+[
+  {
+    "plan_id": "plan_spectral_chebyshev_50x50",
+    "error": "index -1 is out of bounds for axis 0 with size 0"
+  },
+  {
+    "plan_id": "plan_spectral_64x64",
+    "metrics": {
+      "runtime_s": 68.89584469795227,
+      "l2_error": 5.413138605378665e-16,
+      "max_error": 7.771561172376096e-16,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_64x64",
+      "description": "Spectral method with 64x64 modes",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic_extension": false
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {}
+      },
+      "_llm_score": 98,
+      "_llm_score_rationale": "Spectral Fourier method achieves extremely high accuracy (log10 error -10) and is highly efficient for smooth solutions on a rectangular domain with Dirichlet BCs."
+    }
+  },
+  {
+    "plan_id": "plan_fd_100x100",
+    "metrics": {
+      "runtime_s": 80.58141899108887,
+      "l2_error": 1.9562664314718874,
+      "max_error": 1.97197464251677,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_100x100",
+      "description": "Finite difference 4th order with 100x100 grid",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {}
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "4th order finite difference with a fine grid provides high accuracy (log10 error -6), good robustness, and reasonable efficiency for a linear elliptic PDE."
+    }
+  },
+  {
+    "plan_id": "plan_fem_hp_20x20",
+    "metrics": {
+      "runtime_s": 96.51260375976562,
+      "l2_error": 0.2984091107644075,
+      "max_error": 0.2663441310089282,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 5,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_hp_20x20",
+      "description": "hp-FEM with adaptive polynomial order (2 to 5) on 20x20 mesh",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 20,
+        "Ny": 20,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "element_type": "triangular",
+          "hp_adaptivity": true,
+          "polynomial_order_range": [
+            2,
+            5
+          ]
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {}
+      },
+      "_llm_score": 77,
+      "_llm_score_rationale": "hp-FEM with adaptivity achieves high accuracy (log10 error -4.5) with very low memory, making it efficient and robust, though not as accurate as spectral methods for this smooth problem."
+    }
+  },
+  {
+    "plan_id": "plan_fd_multigrid_128x128",
+    "metrics": {
+      "runtime_s": 130.6035339832306,
+      "l2_error": 1.000612321694676,
+      "max_error": 1.0004619036342761,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 5,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_multigrid_128x128",
+      "description": "Finite difference 2nd order with multigrid solver on 128x128 grid",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 128,
+        "Ny": 128,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "multigrid"
+        }
+      },
+      "_llm_score": 75,
+      "_llm_score_rationale": "Multigrid accelerates convergence for large FD systems, but the method is still only 2nd order and the accuracy (log10 error -3.5) is lower than high-order or spectral approaches."
+    }
+  }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 55,
+    "rationale": "Explicit RK4 with low spatial resolution (Nx=50) and second-order FD is stable for this linear wave problem, but accuracy is limited by coarse grid and low spatial order. Efficiency is good, but overall suitability is moderate due to low resolution."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 68,
+    "rationale": "Crank-Nicolson is unconditionally stable and second-order accurate, and Nx=100 gives moderate resolution. However, for pure wave problems, implicit schemes can introduce numerical dissipation, so accuracy is not optimal, but robustness and efficiency are good."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "score": 97,
+    "rationale": "Fourier spectral with explicit RK4 is nearly ideal for linear periodic wave problems, offering spectral accuracy and high temporal order. The high resolution (Nx=256) ensures excellent accuracy, though at high computational cost, which is justified here."
+  },
+  {
+    "plan_id": "plan_fem_implicit_mediumres",
+    "score": 58,
+    "rationale": "Linear FEM with backward Euler is robust but only first-order accurate in time and space, leading to excessive numerical dissipation for wave propagation. Resolution is moderate, but accuracy and suitability are limited for this problem."
+  },
+  {
+    "plan_id": "plan_fv_explicit_mediumres",
+    "score": 70,
+    "rationale": "Second-order MUSCL FV with RK3 is stable and accurate for advection-dominated problems, and works well for linear waves. Resolution is moderate, and efficiency is good, making this a solid, though not optimal, choice."
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres",
+    "score": 85,
+    "rationale": "Fourth-order FD with RK4 and high resolution (Nx=200) provides high accuracy and stability for linear periodic waves. Computational cost is moderate and justified by the accuracy gain."
+  },
+  {
+    "plan_id": "plan_spectral_implicit_mediumres",
+    "score": 90,
+    "rationale": "Fourier spectral with implicit midpoint is highly accurate and stable for linear periodic waves, with moderate resolution (Nx=128). Slightly less accurate than explicit RK4 for pure waves, but offers excellent robustness and efficiency."
+  },
+  {
+    "plan_id": "plan_fem_explicit_lowres",
+    "score": 48,
+    "rationale": "Low-order FEM (linear) with explicit RK2 and low resolution (Nx=50) is stable but suffers from low accuracy and significant dispersion/dissipation for wave propagation."
+  },
+  {
+    "plan_id": "plan_fv_implicit_lowres",
+    "score": 45,
+    "rationale": "First-order upwind FV with backward Euler is robust but highly dissipative and low accuracy for wave problems, especially at low resolution (Nx=50). Efficiency is good, but suitability is poor."
+  },
+  {
+    "plan_id": "plan_fd_imex_mediumres",
+    "score": 72,
+    "rationale": "IMEX RK3 with second-order FD at moderate resolution is stable and efficient, though for this linear, non-stiff wave problem, IMEX is not strictly necessary. Accuracy and robustness are good."
+  }
+]

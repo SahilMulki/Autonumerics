@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 40,
+    "rationale": "Explicit Euler is conditionally stable for diffusion and the estimated stability ratio is near the limit; low spatial resolution (32x32) will under-resolve the solution and accuracy is limited. Efficiency is good, but overall suitability is low due to stability and accuracy concerns."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 70,
+    "rationale": "Backward Euler is unconditionally stable for diffusion and the medium grid (64x64) gives reasonable resolution. However, first-order time accuracy and moderate spatial resolution limit accuracy, but the plan is robust and efficient for this PDE."
+  },
+  {
+    "plan_id": "plan_fd_cranknicolson_highres",
+    "score": 85,
+    "rationale": "Crank-Nicolson is unconditionally stable and second-order accurate in time, and the high-resolution grid (128x128) ensures excellent spatial accuracy. Computational cost is high but justified by the accuracy and robustness for this diffusion problem."
+  },
+  {
+    "plan_id": "plan_fv_explicit_mediumres",
+    "score": 50,
+    "rationale": "Finite volume with explicit RK4 is high-order in time, but the stability ratio is above the safe limit for explicit diffusion, risking instability. Medium resolution is adequate, but explicit methods are not ideal for diffusion-dominated problems."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "score": 65,
+    "rationale": "Spectral methods are highly accurate for periodic problems, but explicit RK3 is limited by stability for diffusion (stability ratio is marginal). High spatial resolution helps, but implicit time stepping would be preferable for efficiency and robustness."
+  },
+  {
+    "plan_id": "plan_spectral_implicit_mediumres",
+    "score": 80,
+    "rationale": "Spectral spatial discretization is optimal for periodic diffusion, and implicit backward Euler is robust and efficient. Medium resolution (64x64) is sufficient for smooth solutions, though only first-order accurate in time."
+  },
+  {
+    "plan_id": "plan_fem_implicit_mediumres",
+    "score": 68,
+    "rationale": "FEM with implicit Crank-Nicolson is stable and second-order accurate in time, but linear elements and moderate grid (50x50) limit spatial accuracy compared to spectral or high-res FD. Still, this is a robust and flexible choice."
+  },
+  {
+    "plan_id": "plan_fem_imex_mediumres",
+    "score": 72,
+    "rationale": "IMEX RK is stable and third-order accurate in time, and quadratic elements improve spatial accuracy over linear FEM. The plan is robust and efficient for diffusion, though not as optimal as spectral for this periodic, smooth problem."
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres_small_dt",
+    "score": 55,
+    "rationale": "Explicit Euler with high resolution and small dt is stable and accurate, but requires 5000 time steps, making it inefficient for this problem. Suitable for demonstration, but not practical for production runs."
+  },
+  {
+    "plan_id": "plan_fv_implicit_mediumres",
+    "score": 70,
+    "rationale": "Finite volume with implicit backward Euler is robust and efficient for diffusion, and medium resolution is reasonable. First-order time accuracy limits precision, but the plan is stable and suitable for this PDE."
+  }
+]

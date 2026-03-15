@@ -1,0 +1,26 @@
+{
+  "best_plan_id": "plan_fd_semiimplicit_mediumres",
+  "reasoning": "An analytic solution is available, so relative L2 error is the primary metric. Among all plans, plan_fd_semiimplicit_mediumres achieves the lowest L2 error (0.0205) and max error (0.00856) with a moderate runtime (34.55s). While plan_fem_imex_highres also has low errors (L2 error 0.0655) and plan_spectral_imex_highres is much less accurate (L2 error 1.53). Plan_fd_semiimplicit_mediumres is both the most accurate and more efficient than plan_fem_imex_highres (which is slower and less accurate). The other plans either failed (infinite or enormous errors) or are much less accurate. Thus, plan_fd_semiimplicit_mediumres is the best choice, followed by plan_fem_imex_highres.",
+  "ranking": [
+    {
+      "plan_id": "plan_fd_semiimplicit_mediumres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_fem_imex_highres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_spectral_imex_highres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "rank": 4
+    },
+    {
+      "plan_id": "plan_spectral_explicit_mediumres",
+      "rank": 5
+    }
+  ]
+}

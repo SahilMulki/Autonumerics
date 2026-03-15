@@ -1,0 +1,26 @@
+{
+  "best_plan_id": "plan_fd_cranknicolson_highres",
+  "reasoning": "An analytic solution is available, so the primary criterion is the smallest relative L2 error. 'plan_fd_cranknicolson_highres' achieves an L2 error of 0.00015056, which is orders of magnitude smaller than all other plans. Its runtime (228.06 s) is much lower than the next most accurate plan ('plan_fem_cranknicolson_highres', L2 error 6.19, runtime 527.95 s). The other plans are faster but have L2 errors two or more orders of magnitude larger. Thus, 'plan_fd_cranknicolson_highres' provides the best balance of accuracy and efficiency.",
+  "ranking": [
+    {
+      "plan_id": "plan_fd_cranknicolson_highres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_spectral_implicit_mediumres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_fvm_implicit_mediumres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fvm_imex_mediumres",
+      "rank": 4
+    },
+    {
+      "plan_id": "plan_fem_cranknicolson_highres",
+      "rank": 5
+    }
+  ]
+}

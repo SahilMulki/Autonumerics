@@ -1,0 +1,51 @@
+{
+  "equation_type": "Fokker-Planck (Ornstein-Uhlenbeck)",
+  "governing_equation": "rho_t = D * (rho_xx + rho_yy) + div(lambda * [x, y] * rho)",
+  "spatial_dimension": 2,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x",
+    "y"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        -6.0,
+        6.0
+      ],
+      "y": [
+        -6.0,
+        6.0
+      ]
+    },
+    "x_min": -6.0,
+    "x_max": 6.0,
+    "y_min": -6.0,
+    "y_max": 6.0
+  },
+  "initial_condition": "(1/(2*np.pi))*np.exp(-(x**2 + y**2)/2)",
+  "boundary_conditions": {
+    "type": "Dirichlet",
+    "values": {
+      "expression": "(1/(2*np.pi*sigma2_t))*np.exp(-(x**2 + y**2)/(2*sigma2_t))",
+      "sigma2_t": "D/lambda + (1-D/lambda)*np.exp(-2*lambda*t)"
+    }
+  },
+  "parameters": {
+    "D": 0.5,
+    "lambda": 1.0,
+    "L": 6.0
+  },
+  "analytic_solution": {
+    "expression": "(1/(2*np.pi*sigma2_t))*np.exp(-(x**2 + y**2)/(2*sigma2_t))",
+    "space_variables": [
+      "x",
+      "y"
+    ]
+  },
+  "notes": "sigma2_t = D/lambda + (1-D/lambda)*np.exp(-2*lambda*t); Dirichlet BCs are set to the analytic solution on the boundary.",
+  "id": "fokker_planck_2d_ou_gaussian",
+  "family": "fokker_planck",
+  "dimension": 2
+}

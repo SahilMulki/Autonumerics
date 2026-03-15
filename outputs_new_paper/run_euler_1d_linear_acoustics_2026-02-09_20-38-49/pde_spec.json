@@ -1,0 +1,45 @@
+{
+  "equation_type": "Linearized Compressible Euler (Acoustics)",
+  "governing_equation": "p_t + c**2 * rho0 * u_x = 0; u_t + (1/rho0) * p_x = 0",
+  "spatial_dimension": 1,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        6.283185307179586
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 6.283185307179586
+  },
+  "initial_condition": {
+    "p": "np.sin(x)",
+    "u": "0"
+  },
+  "boundary_conditions": {
+    "type": "periodic",
+    "values": {}
+  },
+  "parameters": {
+    "rho0": 1,
+    "c": 1
+  },
+  "analytic_solution": {
+    "expression": {
+      "p": "np.sin(x)*np.cos(t)",
+      "u": "-np.cos(x)*np.sin(t)"
+    },
+    "space_variables": [
+      "x"
+    ]
+  },
+  "notes": null,
+  "id": "euler_1d_linear_acoustics",
+  "family": "euler",
+  "dimension": 1
+}

@@ -1,0 +1,14 @@
+{
+  "best_plan_id": "plan_fem_p2p1_32x32",
+  "reasoning": "Among the evaluated plans, only plan_fem_p2p1_32x32 and plan_fem_p3p2_64x64 report both residual_l2 and relative_residual, which are the most relevant accuracy metrics since l2_error is not available for any plan. plan_fem_p2p1_32x32 achieves the lowest residual_l2 (2.77) and relative_residual (3.79), outperforming plan_fem_p3p2_64x64 (residual_l2 3.52, relative_residual 4.90) and all other plans. Its runtime (61.73s) is moderate and acceptable given its superior accuracy. While plan_fem_p3p2_64x64 is faster (21.68s), its accuracy is significantly worse. The spectral and finite difference plans do not report residual errors and thus cannot be directly compared for accuracy. Therefore, plan_fem_p2p1_32x32 is the best choice, balancing the lowest reported residual errors with reasonable efficiency.",
+  "ranking": [
+    {
+      "plan_id": "plan_fem_p2p1_32x32",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_fem_p3p2_64x64",
+      "rank": 2
+    }
+  ]
+}

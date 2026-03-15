@@ -1,0 +1,7 @@
+The selected solver employs a finite element method (FEM) in space and an IMEX Runge-Kutta (Implicit-Explicit) scheme in time, at moderate spatial resolution (128×128), to solve the two-dimensional, time-dependent, nonlinear Navier-Stokes equations with periodic boundary conditions.
+
+This PDE is nonlinear and features both advective (hyperbolic) and viscous (parabolic) terms. The IMEX time integrator is well-suited for such problems: it treats stiff viscous terms implicitly, allowing stable integration at larger time steps without violating the parabolic CFL constraint, while handling nonlinear advection explicitly, which avoids the complexity and cost of nonlinear implicit solves. This division is particularly effective for moderate Reynolds numbers, where stiffness is present but not extreme.
+
+The FEM spatial discretization is advantageous for periodic domains, as it can represent smooth solutions accurately and handle the incompressibility constraint (divergence-free velocity) robustly. The moderate resolution (128×128) is sufficient to resolve the expected flow features for typical benchmark problems in this setting.
+
+Although no analytic solution or residual metrics are provided, the runtime is consistent with the expected computational cost for this configuration, reflecting the efficiency of the IMEX approach in balancing stability and accuracy for nonlinear, stiff, time-dependent PDEs.

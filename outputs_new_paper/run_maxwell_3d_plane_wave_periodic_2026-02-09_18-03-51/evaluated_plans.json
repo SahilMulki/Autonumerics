@@ -1,0 +1,172 @@
+[
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "metrics": {
+      "runtime_s": 120.28279900550842,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": null,
+      "relative_residual": 0.0010206200141496676,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_mediumres",
+      "description": "3D Fourier spectral method with explicit RK4 time stepping and periodic BCs",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": 64,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true,
+          "dealiasing": "2/3 rule"
+        }
+      },
+      "time_stepping": {
+        "method": "RK4",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {
+          "CFL_condition": true
+        }
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "Fourier spectral method is ideal for periodic, smooth plane wave solutions, offering spectral accuracy and efficiency. Explicit RK4 is stable at this resolution, and dealiasing is included."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "metrics": {
+      "runtime_s": 126.11437582969666,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.01574961344067967,
+      "relative_residual": 0.0010000002222408466,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_imex_highres",
+      "description": "3D Fourier spectral method with IMEX Runge-Kutta time stepping for stiff terms",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 96,
+        "Ny": 96,
+        "Nz": 96,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true,
+          "dealiasing": "2/3 rule"
+        }
+      },
+      "time_stepping": {
+        "method": "IMEX RK",
+        "dt": 0.002,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "implicit_part": "linear terms",
+          "explicit_part": "nonlinear terms"
+        }
+      },
+      "_llm_score": 88,
+      "_llm_score_rationale": "High-resolution Fourier spectral with IMEX RK is highly accurate and robust, especially for stiff or mixed problems. Computational cost is very high, but justified for maximal accuracy."
+    }
+  },
+  {
+    "plan_id": "plan_fem_implicit_highres",
+    "metrics": {
+      "runtime_s": 33.21537709236145,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.16258227156815347,
+      "relative_residual": 0.010322939560309578,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_implicit_highres",
+      "description": "3D finite element method with high order Nedelec elements and implicit BDF2 time stepping",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 50,
+        "Ny": 50,
+        "Nz": 50,
+        "order": 3,
+        "extra_parameters": {
+          "element_type": "Nedelec",
+          "mesh_type": "structured hexahedral",
+          "enforce_divergence_free": true
+        }
+      },
+      "time_stepping": {
+        "method": "BDF2",
+        "dt": 0.02,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "linear_solver": "direct",
+          "preconditioner": null
+        }
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "High-order Nedelec FEM with implicit BDF2 and enforced divergence-free constraint is highly accurate and robust for Maxwell's equations, though computational cost is significant. Excellent for accuracy and stability."
+    }
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres_divfree",
+    "error": "Solver failed after 4 attempts in Coarse_R1.\nFailure: Traceback (most recent call last):\n  File \"/Users/dujianda/Desktop/OptimAI/LLM_solving_PDE/LLM_MetaPDE_updated_code_v2/runner_single_prob.py\", line 210, in run_generated_solver\n    result = env[\"solve_pde\"](pde_spec, plan)\n  File \"<string>\", line 109, in solve_pde\nValueError: operands could not be broadcast together with shapes (32,31,32) (32,31,31) \n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/Users/dujianda/Desktop/OptimAI/LLM_solving_PDE/LLM_MetaPDE_updated_code_v2/runner_single_prob.py\", line 273, in run_with_critic\n    result = run_generated_solver(code, pde_spec, plan)\n  File \"/Users/dujianda/Desktop/OptimAI/LLM_solving_PDE/LLM_MetaPDE_updated_code_v2/runner_single_prob.py\", line 212, in run_generated_solver\n    raise RuntimeError(f\"Solver execution failed with runtime error: {e}\") from e\nRuntimeError: Solver execution failed with runtime error: operands could not be broadcast together with shapes (32,31,32) (32,31,31) \n"
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 81.3988082408905,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 3.9868841983815626,
+      "relative_residual": 0.2500081931952442,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "description": "3D finite difference implicit Crank-Nicolson medium resolution with divergence cleaning",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": 64,
+        "order": 2,
+        "extra_parameters": {
+          "staggered_grid": true,
+          "divergence_cleaning": "projection_method"
+        }
+      },
+      "time_stepping": {
+        "method": "Crank-Nicolson",
+        "dt": 0.05,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "linear_solver": "GMRES",
+          "preconditioner": "ILU"
+        }
+      },
+      "_llm_score": 72,
+      "_llm_score_rationale": "Medium resolution with staggered grid and divergence cleaning improves stability and accuracy. Crank-Nicolson is robust, but memory usage is high and spatial order is only moderate."
+    }
+  }
+]

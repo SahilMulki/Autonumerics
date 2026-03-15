@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 45,
+    "rationale": "Explicit FD with low resolution is stable only for small dt (which is used), but accuracy is limited by coarse grid and first-order time stepping. Efficiency is high, but overall suitability is low for a diffusion-dominated/stiff PDE."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 80,
+    "rationale": "Crank-Nicolson FD at medium resolution is stable, second-order accurate in time and space, and efficient for this moderately stiff PDE. Memory and cost are reasonable for the expected accuracy."
+  },
+  {
+    "plan_id": "plan_fem_implicit_highres",
+    "score": 77,
+    "rationale": "High-res FEM with backward Euler is robust and accurate in space, but only first-order in time. The high memory/cost is not fully justified given the lower time accuracy, though stability is excellent."
+  },
+  {
+    "plan_id": "plan_fv_implicit_mediumres",
+    "score": 78,
+    "rationale": "Implicit FV with Crank-Nicolson at medium resolution is stable and second-order accurate, with good conservation properties. Slightly less accurate than FD for smooth solutions but robust and efficient."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "score": 60,
+    "rationale": "Spectral method is highly accurate for smooth solutions, but explicit RK4 is inefficient and potentially unstable for stiff diffusion unless dt is very small (as here), making it computationally expensive for marginal gain."
+  },
+  {
+    "plan_id": "plan_fem_imex_mediumres",
+    "score": 82,
+    "rationale": "IMEX FEM is well-suited for mixed diffusion/drift problems, offering stability and second-order accuracy in time and space. Medium resolution balances cost and accuracy, making this plan robust and efficient."
+  },
+  {
+    "plan_id": "plan_fv_explicit_lowres",
+    "score": 40,
+    "rationale": "Explicit FV with low resolution and first-order accuracy is stable for small dt, but accuracy is poor and not suitable for resolving the solution structure of this PDE."
+  },
+  {
+    "plan_id": "plan_fd_implicit_highres",
+    "score": 75,
+    "rationale": "High-res implicit FD is stable and accurate in space, but only first-order in time. The high computational cost is not fully justified given the time accuracy, though results will be robust."
+  },
+  {
+    "plan_id": "plan_spectral_imex_mediumres",
+    "score": 85,
+    "rationale": "Spectral IMEX at medium resolution is highly accurate for smooth solutions, efficiently handles stiffness, and is well-suited for this problem with Dirichlet BCs. Memory and cost are low for the accuracy achieved."
+  },
+  {
+    "plan_id": "plan_fem_explicit_lowres",
+    "score": 43,
+    "rationale": "Explicit FEM with low resolution is stable for small dt, but first-order spatial accuracy and low grid resolution limit solution quality. Not recommended for this diffusion-dominated PDE."
+  }
+]

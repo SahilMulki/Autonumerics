@@ -1,0 +1,48 @@
+{
+  "equation_type": "convection-diffusion",
+  "governing_equation": "u_t + c_x u_x + c_y u_y = nu (u_xx + u_yy)",
+  "spatial_dimension": 2,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x",
+    "y"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        1.0
+      ],
+      "y": [
+        0.0,
+        1.0
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 1.0,
+    "y_min": 0.0,
+    "y_max": 1.0
+  },
+  "initial_condition": "sin(2*pi*x)*cos(2*pi*y)",
+  "boundary_conditions": {
+    "type": "periodic",
+    "values": {}
+  },
+  "parameters": {
+    "c_x": 0.4,
+    "c_y": 0.1,
+    "nu": 0.01
+  },
+  "analytic_solution": {
+    "expression": "exp(-nu*(2*pi)^2*2*t) * sin(2*pi*(x-c_x*t)) * cos(2*pi*(y-c_y*t))",
+    "space_variables": [
+      "x",
+      "y"
+    ]
+  },
+  "notes": null,
+  "id": "convection_diffusion_2d_periodic_mode",
+  "family": "convection_diffusion",
+  "dimension": 2
+}

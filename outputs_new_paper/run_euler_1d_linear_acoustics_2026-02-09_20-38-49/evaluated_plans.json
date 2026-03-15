@@ -1,0 +1,190 @@
+[
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "metrics": {
+      "runtime_s": 25.99089527130127,
+      "l2_error": 5.2125727841884576e-14,
+      "max_error": 5.448044104208234e-14,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_highres",
+      "description": "1D Fourier spectral method with explicit RK4 time stepping high resolution",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "boundary_condition": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "RK4",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 6.283185307179586,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "_llm_score": 97,
+      "_llm_score_rationale": "Fourier spectral with explicit RK4 is nearly ideal for linear periodic wave problems, offering spectral accuracy and high temporal order. The high resolution (Nx=256) ensures excellent accuracy, though at high computational cost, which is justified here."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 26.597804069519043,
+      "l2_error": 5.2415880425863906e-05,
+      "max_error": 5.2414672676073457e-05,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 1
+    },
+    "plan": {
+      "plan_id": "plan_spectral_implicit_mediumres",
+      "description": "1D Fourier spectral method with implicit midpoint time stepping medium resolution",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 128,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "boundary_condition": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "Implicit Midpoint",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 6.283185307179586,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "Fourier spectral with implicit midpoint is highly accurate and stable for linear periodic waves, with moderate resolution (Nx=128). Slightly less accurate than explicit RK4 for pure waves, but offers excellent robustness and efficiency."
+    }
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres",
+    "metrics": {
+      "runtime_s": 30.58016276359558,
+      "l2_error": 0.0036291795990514536,
+      "max_error": 0.003629179599053888,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_explicit_highres",
+      "description": "1D finite difference explicit RK4 with high resolution",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 200,
+        "Ny": null,
+        "Nz": null,
+        "order": 4,
+        "extra_parameters": {
+          "boundary_condition": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "RK4",
+        "dt": 0.0025,
+        "Nt": null,
+        "t_final": 6.283185307179586,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "Fourth-order FD with RK4 and high resolution (Nx=200) provides high accuracy and stability for linear periodic waves. Computational cost is moderate and justified by the accuracy gain."
+    }
+  },
+  {
+    "plan_id": "plan_fd_imex_mediumres",
+    "metrics": {
+      "runtime_s": 38.24750304222107,
+      "l2_error": 0.004133348697759377,
+      "max_error": 0.004133339324634364,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_imex_mediumres",
+      "description": "1D finite difference IMEX scheme with explicit RK3 for advection and implicit Euler for stiff terms",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "boundary_condition": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "IMEX RK3",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 6.283185307179586,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {}
+      },
+      "_llm_score": 72,
+      "_llm_score_rationale": "IMEX RK3 with second-order FD at moderate resolution is stable and efficient, though for this linear, non-stiff wave problem, IMEX is not strictly necessary. Accuracy and robustness are good."
+    }
+  },
+  {
+    "plan_id": "plan_fv_explicit_mediumres",
+    "metrics": {
+      "runtime_s": 36.81201887130737,
+      "l2_error": 2.205176136516335e+82,
+      "max_error": 2.7142184134948706e+82,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fv_explicit_mediumres",
+      "description": "1D finite volume method with second order MUSCL reconstruction and explicit RK3",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 100,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "reconstruction": "MUSCL",
+          "boundary_condition": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "RK3",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 6.283185307179586,
+        "explicit_or_implicit": "explicit",
+        "order": 3,
+        "extra_parameters": {}
+      },
+      "_llm_score": 70,
+      "_llm_score_rationale": "Second-order MUSCL FV with RK3 is stable and accurate for advection-dominated problems, and works well for linear waves. Resolution is moderate, and efficiency is good, making this a solid, though not optimal, choice."
+    }
+  }
+]

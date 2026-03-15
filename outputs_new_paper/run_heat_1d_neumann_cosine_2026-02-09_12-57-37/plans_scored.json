@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 55,
+    "rationale": "Explicit FD for the heat equation is stable only for very small dt, making this plan inefficient (high cost for low accuracy). While stable here, the low resolution and first-order time accuracy limit its suitability."
+  },
+  {
+    "plan_id": "plan_fd_implicit_midres",
+    "score": 72,
+    "rationale": "Implicit FD (Backward Euler) is robust and unconditionally stable for diffusion, and the resolution is reasonable. However, first-order time accuracy and moderate spatial resolution limit accuracy compared to higher-order or higher-resolution plans."
+  },
+  {
+    "plan_id": "plan_fd_crank_nicolson_highres",
+    "score": 92,
+    "rationale": "Crank-Nicolson is unconditionally stable and second-order accurate in both space and time. High spatial resolution and moderate computational cost make this plan highly accurate and efficient for this problem."
+  },
+  {
+    "plan_id": "plan_fem_implicit_midres",
+    "score": 75,
+    "rationale": "FEM with implicit Euler is robust and handles Neumann BCs naturally. However, first-order time accuracy and linear elements limit accuracy compared to higher-order or Crank-Nicolson plans."
+  },
+  {
+    "plan_id": "plan_fem_crank_nicolson_highres",
+    "score": 95,
+    "rationale": "Quadratic FEM with Crank-Nicolson provides high accuracy (second-order in space and time), robust stability, and good handling of Neumann BCs. The cost is justified by the accuracy gain."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_midres",
+    "score": 70,
+    "rationale": "Spectral methods are highly accurate for smooth solutions, but explicit time stepping for diffusion is inefficient due to severe stability constraints, resulting in high computational cost for the accuracy achieved."
+  },
+  {
+    "plan_id": "plan_spectral_implicit_highres",
+    "score": 88,
+    "rationale": "Spectral spatial discretization with implicit time stepping is very efficient and accurate for smooth problems like this. First-order time accuracy is a minor drawback, but overall this is a robust and efficient plan."
+  },
+  {
+    "plan_id": "plan_fvm_implicit_midres",
+    "score": 72,
+    "rationale": "FVM with implicit Euler is robust and conservative, with reasonable accuracy and efficiency. However, first-order time accuracy and moderate resolution limit its performance compared to higher-order plans."
+  },
+  {
+    "plan_id": "plan_fvm_crank_nicolson_highres",
+    "score": 90,
+    "rationale": "FVM with Crank-Nicolson at high resolution is accurate, robust, and efficient for diffusion problems, especially with Neumann BCs. The computational cost is reasonable for the accuracy provided."
+  },
+  {
+    "plan_id": "plan_fd_imex_midres",
+    "score": 80,
+    "rationale": "IMEX is more useful for mixed stiff/non-stiff problems, but here it is robust and second-order accurate. Moderate resolution and efficiency make this a solid, though not optimal, choice for pure diffusion."
+  }
+]

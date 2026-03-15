@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 40,
+    "rationale": "Low spatial resolution and explicit time stepping limit both accuracy and stability, especially for this high-Peclet number problem; the plan is efficient but not robust or accurate enough for convection-dominated regimes."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 65,
+    "rationale": "Implicit Crank-Nicolson provides good stability for the stiff diffusion term and moderate accuracy, but central differencing is not ideal for high-Peclet advection; efficiency is reasonable."
+  },
+  {
+    "plan_id": "plan_fv_explicit_highres",
+    "score": 60,
+    "rationale": "High resolution and MUSCL with van Leer limiter are good for advection, but explicit time stepping is very restrictive for stability and computationally expensive for this problem."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "score": 70,
+    "rationale": "Spectral accuracy and periodic BCs are a strong match, but explicit time stepping is limited by stability for high Peclet numbers; efficiency is moderate."
+  },
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "score": 95,
+    "rationale": "High-resolution Fourier spectral with IMEX time stepping is nearly optimal for this periodic, convection-diffusion problem: it combines high accuracy, excellent stability, and reasonable efficiency for the accuracy achieved."
+  },
+  {
+    "plan_id": "plan_fem_implicit_mediumres",
+    "score": 50,
+    "rationale": "Implicit time stepping is robust, but low-order FEM and moderate resolution limit accuracy; efficiency is good, but not ideal for periodic, smooth problems."
+  },
+  {
+    "plan_id": "plan_fem_imex_highres",
+    "score": 75,
+    "rationale": "IMEX BDF2 and higher-order FEM improve stability and accuracy, but FEM is less efficient for periodic, smooth solutions compared to spectral methods."
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres_upwind",
+    "score": 65,
+    "rationale": "Upwind scheme is appropriate for advection, and high resolution helps accuracy, but explicit time stepping is very costly and restrictive for stability in this regime."
+  },
+  {
+    "plan_id": "plan_fv_implicit_mediumres",
+    "score": 55,
+    "rationale": "Implicit time stepping is robust, but low-order FV limits accuracy; Godunov flux is stable but not as accurate for smooth, periodic solutions."
+  },
+  {
+    "plan_id": "plan_fd_semiimplicit_mediumres",
+    "score": 68,
+    "rationale": "Semi-implicit (IMEX) approach is well-suited for convection-diffusion, providing good stability and moderate accuracy at reasonable cost, though not as accurate as spectral IMEX."
+  }
+]

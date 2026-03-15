@@ -1,0 +1,43 @@
+{
+  "equation_type": "Burgers",
+  "governing_equation": "u_t + u u_x = nu u_xx",
+  "spatial_dimension": 1,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        -1.0,
+        1.0
+      ]
+    },
+    "x_min": -1.0,
+    "x_max": 1.0
+  },
+  "initial_condition": "u(x,0) = tanh(x / (2 * nu))",
+  "boundary_conditions": {
+    "type": "Dirichlet",
+    "values": {
+      "x=-1": "u(-1, t) = tanh((-1) / (2 * nu))",
+      "x=1": "u(1, t) = tanh(1 / (2 * nu))"
+    }
+  },
+  "parameters": {
+    "nu": 0.01,
+    "a": 0.0,
+    "b": 1.0
+  },
+  "analytic_solution": {
+    "expression": "u(x, t) = tanh((x - a * t) / (2 * nu))",
+    "space_variables": [
+      "x"
+    ]
+  },
+  "notes": "The analytic solution is a stationary shock-layer profile with a=0.0, b=1.0. Boundary conditions are set from the analytic solution at x=±1.",
+  "id": "burgers_viscous_1d_tanh_traveling",
+  "family": "burgers",
+  "dimension": 1
+}

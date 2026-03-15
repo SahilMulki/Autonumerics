@@ -1,0 +1,22 @@
+{
+  "best_plan_id": "plan_spectral_imex_highres",
+  "reasoning": "No analytic solution is available, so we prioritize smaller residual errors. 'plan_spectral_imex_highres' achieves the smallest residual_l2 (8.35e-18) and relative_residual (3.95e-17), which are several orders of magnitude lower than all other successful plans. Its runtime (22.98s) is also the fastest among the accurate plans. 'plan_fd_imex_highres' has higher residuals (1.01e-14, 4.77e-14) and is slower (42.05s). 'plan_fv_imex_highres' has much larger residuals (0.85, 3.99) and is the slowest (58.87s). 'plan_spectral_explicit_mediumres' is less accurate by many orders of magnitude (residual_l2 40.15, relative_residual 56.79). Therefore, 'plan_spectral_imex_highres' is clearly the best choice, balancing both accuracy and efficiency.",
+  "ranking": [
+    {
+      "plan_id": "plan_spectral_imex_highres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_fd_imex_highres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_fv_imex_highres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_spectral_explicit_mediumres",
+      "rank": 4
+    }
+  ]
+}

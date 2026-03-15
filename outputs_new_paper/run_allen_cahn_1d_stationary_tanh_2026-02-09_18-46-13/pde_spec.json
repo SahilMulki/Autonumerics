@@ -1,0 +1,41 @@
+{
+  "equation_type": "Allen-Cahn",
+  "governing_equation": "u_t = eps^2 * u_xx + u - u^3",
+  "spatial_dimension": 1,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        -1.0,
+        1.0
+      ]
+    },
+    "x_min": -1.0,
+    "x_max": 1.0
+  },
+  "initial_condition": "tanh(x / (sqrt(2) * eps))",
+  "boundary_conditions": {
+    "type": "Dirichlet",
+    "values": {
+      "x=-1": "tanh(-1 / (sqrt(2) * eps))",
+      "x=1": "tanh(1 / (sqrt(2) * eps))"
+    }
+  },
+  "parameters": {
+    "eps": 0.05
+  },
+  "analytic_solution": {
+    "expression": "tanh(x / (sqrt(2) * eps))",
+    "space_variables": [
+      "x"
+    ]
+  },
+  "notes": null,
+  "id": "allen_cahn_1d_stationary_tanh",
+  "family": "allen_cahn",
+  "dimension": 1
+}

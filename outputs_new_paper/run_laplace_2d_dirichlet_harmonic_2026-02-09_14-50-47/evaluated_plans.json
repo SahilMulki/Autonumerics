@@ -1,0 +1,174 @@
+[
+  {
+    "plan_id": "plan_spectral_fourier",
+    "metrics": {
+      "runtime_s": 113.38186001777649,
+      "l2_error": 4735481143462.607,
+      "max_error": 4015005715547.1743,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 5,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_fourier",
+      "description": "Spectral method using Fourier basis in x and Chebyshev in y with direct solver",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis_x": "Fourier",
+          "basis_y": "Chebyshev",
+          "collocation_type_y": "Gauss-Lobatto"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "direct"
+        }
+      },
+      "_llm_score": 97,
+      "_llm_score_rationale": "The analytic solution is separable and matches the Fourier-Chebyshev basis, so this spectral plan is nearly optimal for accuracy and efficiency."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_chebyshev",
+    "error": "index -1 is out of bounds for axis 0 with size 0"
+  },
+  {
+    "plan_id": "plan_fem_highorder_iterative",
+    "metrics": {
+      "runtime_s": 150.43943572044373,
+      "l2_error": 0.980167417002371,
+      "max_error": 0.9804830799168156,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_highorder_iterative",
+      "description": "High-order finite element method with quadratic triangular elements and iterative solver (CG with AMG preconditioner)",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 80,
+        "Ny": 80,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "triangular",
+          "mesh_type": "structured"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "conjugate_gradient",
+          "preconditioner": "algebraic_multigrid",
+          "tolerance": 1e-08,
+          "max_iterations": 5000
+        }
+      },
+      "_llm_score": 88,
+      "_llm_score_rationale": "High-order FEM (quadratic elements) with AMG-preconditioned CG offers high accuracy and efficiency for smooth solutions, making it excellent for this problem."
+    }
+  },
+  {
+    "plan_id": "plan_fd_highres_multigrid",
+    "metrics": {
+      "runtime_s": 85.94087386131287,
+      "l2_error": 1.2410378500901868e-05,
+      "max_error": 7.194273978994303e-06,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 1
+    },
+    "plan": {
+      "plan_id": "plan_fd_highres_multigrid",
+      "description": "High-resolution 2D finite difference with 2nd order central differences and multigrid solver",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 200,
+        "Ny": 200,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "stencil": "5-point Laplacian"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "multigrid",
+          "cycles": "V-cycle",
+          "pre_smoothing": 3,
+          "post_smoothing": 3
+        }
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "High resolution (200x200) with multigrid provides robust, efficient, and accurate solutions for elliptic PDEs like Laplace, making this plan highly suitable."
+    }
+  },
+  {
+    "plan_id": "plan_fvm_highres_multigrid",
+    "metrics": {
+      "runtime_s": 50.075026988983154,
+      "l2_error": 0.9373893948102784,
+      "max_error": 0.8569015834854831,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fvm_highres_multigrid",
+      "description": "High-resolution finite volume method with 2nd order fluxes and multigrid solver",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 150,
+        "Ny": 150,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "flux_scheme": "central_difference"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "multigrid",
+          "cycles": "W-cycle",
+          "pre_smoothing": 2,
+          "post_smoothing": 2
+        }
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "High-resolution FVM with multigrid is efficient and accurate for Laplace problems, though not as high-order as spectral or high-order FEM approaches."
+    }
+  }
+]

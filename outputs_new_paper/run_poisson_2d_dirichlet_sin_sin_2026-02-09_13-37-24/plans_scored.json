@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_50x50",
+    "score": 60,
+    "rationale": "Standard 2nd order finite difference on a moderate grid yields reasonable accuracy and efficiency, but is outperformed by higher-order or spectral methods for this smooth Poisson problem."
+  },
+  {
+    "plan_id": "plan_fd_100x100",
+    "score": 80,
+    "rationale": "4th order finite difference with a fine grid provides high accuracy (log10 error -6), good robustness, and reasonable efficiency for a linear elliptic PDE."
+  },
+  {
+    "plan_id": "plan_fem_linear_40x40",
+    "score": 55,
+    "rationale": "Linear FEM on a 40x40 mesh is robust and flexible but offers only first-order accuracy, making it less suitable for this smooth problem compared to higher-order or spectral approaches."
+  },
+  {
+    "plan_id": "plan_fem_quadratic_30x30",
+    "score": 65,
+    "rationale": "Quadratic FEM improves accuracy over linear elements and is efficient for the given degrees of freedom, but still lags behind spectral or high-order FD for this analytic solution."
+  },
+  {
+    "plan_id": "plan_spectral_64x64",
+    "score": 98,
+    "rationale": "Spectral Fourier method achieves extremely high accuracy (log10 error -10) and is highly efficient for smooth solutions on a rectangular domain with Dirichlet BCs."
+  },
+  {
+    "plan_id": "plan_fvm_80x80",
+    "score": 68,
+    "rationale": "Second-order finite volume with central differences is robust and accurate for elliptic problems, but less efficient and accurate than high-order FD or spectral methods for smooth solutions."
+  },
+  {
+    "plan_id": "plan_fd_multigrid_128x128",
+    "score": 75,
+    "rationale": "Multigrid accelerates convergence for large FD systems, but the method is still only 2nd order and the accuracy (log10 error -3.5) is lower than high-order or spectral approaches."
+  },
+  {
+    "plan_id": "plan_fem_hp_20x20",
+    "score": 77,
+    "rationale": "hp-FEM with adaptivity achieves high accuracy (log10 error -4.5) with very low memory, making it efficient and robust, though not as accurate as spectral methods for this smooth problem."
+  },
+  {
+    "plan_id": "plan_spectral_chebyshev_50x50",
+    "score": 99,
+    "rationale": "Chebyshev spectral method is nearly optimal for smooth solutions with Dirichlet BCs, achieving spectral accuracy (log10 error -10) with moderate computational cost."
+  },
+  {
+    "plan_id": "plan_fvm_upwind_60x60",
+    "score": 45,
+    "rationale": "Upwind FVM is unnecessary for elliptic (diffusion) problems and results in low accuracy (log10 error -2); it is inefficient and not well-suited for this PDE."
+  }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 40,
+    "rationale": "Explicit FD is stable only for small dt; this plan is near the stability limit and uses a coarse grid, so accuracy and stability are both limited. Efficiency is reasonable, but overall suitability is low for a diffusion-dominated problem."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 70,
+    "rationale": "Implicit FD (backward Euler) is unconditionally stable for the heat equation and the medium grid gives decent resolution. Accuracy is limited by first-order time stepping, but efficiency and robustness are good."
+  },
+  {
+    "plan_id": "plan_fd_cranknicolson_highres",
+    "score": 87,
+    "rationale": "Crank-Nicolson is unconditionally stable and second-order accurate in time, and the high-resolution grid ensures spatial accuracy. The cost is high but justified by the accuracy and robustness for this problem."
+  },
+  {
+    "plan_id": "plan_fem_implicit_mediumres",
+    "score": 68,
+    "rationale": "Linear FEM with backward Euler is robust and flexible for Dirichlet BCs, but only first-order accurate in time and space. Efficiency is good, but accuracy is limited compared to higher-order or finer-grid methods."
+  },
+  {
+    "plan_id": "plan_fem_cranknicolson_highres",
+    "score": 90,
+    "rationale": "Quadratic FEM with Crank-Nicolson provides high accuracy and stability, with a reasonable computational cost for the achieved accuracy. Well-suited for the problem and boundary conditions."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "score": 60,
+    "rationale": "Spectral methods are highly accurate for smooth problems, but explicit RK4 requires a very small dt for stability, making this plan extremely expensive. Not optimal for a diffusion-dominated PDE with Dirichlet BCs."
+  },
+  {
+    "plan_id": "plan_fvm_implicit_mediumres",
+    "score": 72,
+    "rationale": "Implicit FVM is robust and second-order accurate in space, with good efficiency and stability. First-order time stepping limits accuracy, but the method is reliable for this problem."
+  },
+  {
+    "plan_id": "plan_fvm_imex_mediumres",
+    "score": 78,
+    "rationale": "IMEX BDF2 provides second-order accuracy in time and space, with robust stability for the diffusion term. Efficiency and suitability are both strong for this problem."
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres",
+    "score": 45,
+    "rationale": "Explicit FD at high resolution is stable only with a very small dt, leading to extremely high computational cost for limited accuracy gain. Not efficient or robust for this diffusion problem."
+  },
+  {
+    "plan_id": "plan_spectral_implicit_mediumres",
+    "score": 80,
+    "rationale": "Spectral Chebyshev with implicit time stepping is highly accurate for smooth solutions and robust for diffusion. First-order time stepping limits temporal accuracy, but overall suitability is high."
+  }
+]

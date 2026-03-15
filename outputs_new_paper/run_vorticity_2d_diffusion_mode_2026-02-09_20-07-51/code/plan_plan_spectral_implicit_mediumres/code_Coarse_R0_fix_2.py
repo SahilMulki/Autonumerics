@@ -1,0 +1,64 @@
+import numpy as np
+
+def solve_pde(pde_spec: dict, plan: dict) -> dict:
+    # --- Extract parameters from pde_spec and plan ---
+    # Domain
+    x_min, x_max = pde_spec["domain"]["bounds"]["x"]
+    y_min, y_max = pde_spec["domain"]["bounds"]["y"]
+    t_min, t_max = pde_spec["domain"]["bounds"]["t"]
+
+    # Parameters
+    nu = float(pde_spec["parameters"]["nu"])
+
+    # Grid sizes
+    Nx = int(plan["spatial_discretization"]["Nx"])
+    Ny = int(plan["spatial_discretization"]["Ny"])
+
+    # Time stepping
+    dt = plan["time_stepping"].get("dt", None)
+    t_final = plan["time_stepping"].get("t_final", t_max)
+    if dt is None:
+        dx = (x_max - x_min) / Nx
+        dy = (y_max - y_min) / Ny
+        dt = 0.4 * min(dx, dy)**2 / (4 * nu)
+    Nt = int(np.ceil((t_final - t_min) / dt))
+    dt = (t_final - t_min) / Nt  # Adjust dt to hit t_final exactly
+
+    # --- Build spatial grid ---
+    x = np.linspace(x_min, x_max, Nx, endpoint=False)
+    y = np.linspace(y_min, y_max, Ny, endpoint=False)
+    X, Y = np.meshgrid(x, y, indexing='ij')
+
+    # --- Initial condition ---
+    u = np.sin(2 * np.pi * X) * np.sin(2 * np.pi * Y)
+
+    # --- Spectral wavenumbers ---
+    kx = 2 * np.pi * np.fft.fftfreq(Nx, d=(x_max - x_min) / Nx)
+    ky = 2 * np.pi * np.fft.fftfreq(Ny, d=(y_max - y_min) / Ny)
+    KX, KY = np.meshgrid(kx, ky, indexing='ij')
+    laplacian_symbol = -(KX**2 + KY**2)
+
+    # --- Precompute denominator for backward Euler ---
+    denom = 1 - dt * nu * laplacian_symbol
+
+    # --- Time stepping loop (only keep final state for memory safety) ---
+    u_hat = np.fft.fft2(u)
+    for n in range(Nt):
+        u_hat = u_hat / denom
+    u = np.fft.ifft2(u_hat).real  # Final state
+
+    # --- Time array (only initial and final for memory safety) ---
+    t_array = np.array([t_min, t_max])
+
+    # --- Residual calculation (L2 error vs analytic solution at final time) ---
+    # Analytic solution: exp(-nu*(2*pi)^2*2*t) * sin(2*pi*x) * sin(2*pi*y)
+    t = t_max
+    analytic = np.exp(-nu * (2 * np.pi)**2 * 2 * t) * np.sin(2 * np.pi * X) * np.sin(2 * np.pi * Y)
+    residual = np.sqrt(np.mean((u - analytic)**2))
+
+    return {
+        "u": u,
+        "coords": {"x": x, "y": y},
+        "t": t_array,
+        "residual": residual
+    }

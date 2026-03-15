@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 40,
+    "rationale": "Low spatial resolution and lack of divergence control make this plan inaccurate and potentially unstable for Maxwell's equations, despite the efficiency and high-order RK4 time stepping. Not suitable for robust, accurate results."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 72,
+    "rationale": "Medium resolution with staggered grid and divergence cleaning improves stability and accuracy. Crank-Nicolson is robust, but memory usage is high and spatial order is only moderate."
+  },
+  {
+    "plan_id": "plan_fem_implicit_highres",
+    "score": 85,
+    "rationale": "High-order Nedelec FEM with implicit BDF2 and enforced divergence-free constraint is highly accurate and robust for Maxwell's equations, though computational cost is significant. Excellent for accuracy and stability."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "score": 90,
+    "rationale": "Fourier spectral method is ideal for periodic, smooth plane wave solutions, offering spectral accuracy and efficiency. Explicit RK4 is stable at this resolution, and dealiasing is included."
+  },
+  {
+    "plan_id": "plan_fv_implicit_lowres",
+    "score": 50,
+    "rationale": "Low spatial order and resolution limit accuracy, though implicit midpoint and divergence cleaning improve stability. Suitable for robust but not highly accurate solutions."
+  },
+  {
+    "plan_id": "plan_fem_explicit_mediumres",
+    "score": 55,
+    "rationale": "Medium resolution and explicit leapfrog with Nedelec elements provide reasonable accuracy, but lack of divergence control and low spatial order reduce robustness for Maxwell's equations."
+  },
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "score": 88,
+    "rationale": "High-resolution Fourier spectral with IMEX RK is highly accurate and robust, especially for stiff or mixed problems. Computational cost is very high, but justified for maximal accuracy."
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres_divfree",
+    "score": 80,
+    "rationale": "High-resolution staggered Yee grid with explicit leapfrog and divergence-free enforcement is classic and robust for Maxwell's equations, but extremely high memory usage and cost may be excessive for this smooth problem."
+  },
+  {
+    "plan_id": "plan_fv_explicit_mediumres",
+    "score": 70,
+    "rationale": "MUSCL reconstruction and divergence cleaning provide good accuracy and stability for a finite volume scheme, but not as efficient or accurate as spectral or high-order FEM for this smooth, periodic problem."
+  },
+  {
+    "plan_id": "plan_fem_implicit_lowres_divfree",
+    "score": 60,
+    "rationale": "Implicit FEM with divergence-free Nedelec elements is robust, but low resolution and first-order time stepping limit accuracy. Efficient for stability but not optimal for accuracy."
+  }
+]

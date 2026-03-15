@@ -1,0 +1,201 @@
+[
+  {
+    "plan_id": "plan_spectral_implicit_highres",
+    "metrics": {
+      "runtime_s": 63.37682580947876,
+      "l2_error": 0.1824621108234758,
+      "max_error": 1.9999999999979186,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 1
+    },
+    "plan": {
+      "plan_id": "plan_spectral_implicit_highres",
+      "description": "High-resolution spectral method with implicit-explicit backward differentiation formula",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Chebyshev",
+          "boundary_condition_type": "Dirichlet"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_bdf3",
+        "dt": 0.0005,
+        "Nt": null,
+        "t_final": 0.1,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "implicit_part": "diffusion",
+          "explicit_part": "reaction"
+        }
+      },
+      "_llm_score": 95,
+      "_llm_score_rationale": "High-resolution Chebyshev spectral method with IMEX BDF3 provides excellent stability and accuracy for stiff, nonlinear problems. Computational cost is high but optimal for accuracy."
+    }
+  },
+  {
+    "plan_id": "plan_fem_imex_highres",
+    "metrics": {
+      "runtime_s": 111.06685280799866,
+      "l2_error": 19.27833424080517,
+      "max_error": 21.71128575397306,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_imex_highres",
+      "description": "High-resolution finite element method with IMEX Runge-Kutta time stepping",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 150,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "quadratic",
+          "boundary_condition_type": "Dirichlet"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_runge_kutta",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 0.1,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "implicit_part": "diffusion",
+          "explicit_part": "reaction"
+        }
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "Quadratic FEM with high resolution and IMEX Runge-Kutta (third order) offers excellent stability and accuracy for stiff, nonlinear Allen-Cahn. Computational cost is high but justified."
+    }
+  },
+  {
+    "plan_id": "plan_fd_imex_highres",
+    "metrics": {
+      "runtime_s": 37.100598096847534,
+      "l2_error": 0.10062238205529245,
+      "max_error": 0.10416235592346546,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_imex_highres",
+      "description": "High-resolution IMEX scheme with implicit linear diffusion and explicit nonlinear reaction",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 200,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "boundary_condition_type": "Dirichlet"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_bdf2",
+        "dt": 0.0005,
+        "Nt": null,
+        "t_final": 0.1,
+        "explicit_or_implicit": "imex",
+        "order": 2,
+        "extra_parameters": {
+          "implicit_part": "diffusion",
+          "explicit_part": "reaction"
+        }
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "IMEX BDF2 is well-suited for stiff diffusion and nonlinear reaction; high spatial resolution and second-order accuracy provide robust, accurate results. Cost is higher but justified by accuracy."
+    }
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 37.917673110961914,
+      "l2_error": 0.00022429782854445774,
+      "max_error": 0.001099623511392922,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "description": "Medium-resolution implicit finite difference with Crank-Nicolson time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "boundary_condition_type": "Dirichlet"
+        }
+      },
+      "time_stepping": {
+        "method": "crank_nicolson",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 0.1,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "_llm_score": 75,
+      "_llm_score_rationale": "Crank-Nicolson is stable and second-order accurate for stiff diffusion; medium spatial resolution is reasonable. Computational cost is moderate and overall suitability is good."
+    }
+  },
+  {
+    "plan_id": "plan_fd_semiimplicit_mediumres",
+    "metrics": {
+      "runtime_s": 19.76797914505005,
+      "l2_error": 0.00022397419493007137,
+      "max_error": 0.0010977396459923017,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_semiimplicit_mediumres",
+      "description": "Medium-resolution finite difference with semi-implicit time stepping (implicit diffusion, explicit reaction)",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "boundary_condition_type": "Dirichlet"
+        }
+      },
+      "time_stepping": {
+        "method": "semi_implicit_euler",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 0.1,
+        "explicit_or_implicit": "imex",
+        "order": 1,
+        "extra_parameters": {
+          "implicit_part": "diffusion",
+          "explicit_part": "reaction"
+        }
+      },
+      "_llm_score": 72,
+      "_llm_score_rationale": "Semi-implicit Euler is robust for stiff diffusion, but only first-order accurate in time. Medium spatial resolution and second-order FD are reasonable; accuracy is moderate."
+    }
+  }
+]

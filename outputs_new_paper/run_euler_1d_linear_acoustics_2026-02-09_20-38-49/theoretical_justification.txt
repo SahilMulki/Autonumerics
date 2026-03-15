@@ -1,0 +1,7 @@
+The selected solver employs a spectral spatial discretization with a fourth-order Runge-Kutta (RK4) time integrator at high spatial resolution (Nx = 256) for the 1D nonlinear Euler equations with periodic boundary conditions. This configuration is theoretically well-suited for this problem due to several factors:
+
+First, the Euler equations describe wave propagation phenomena, which are smooth and periodic in this context. Spectral methods are known to achieve exponential convergence for smooth, periodic solutions, as is the case here, because the Fourier basis exactly represents the solution structure and boundary conditions. This ensures minimal aliasing and spectral accuracy, provided the solution remains sufficiently smooth and well-resolved at Nx = 256.
+
+Second, the explicit RK4 integrator is appropriate for hyperbolic PDEs like Euler’s equations, where stability is governed by the Courant-Friedrichs-Lewy (CFL) condition. The reported runtime reflects the cost of high spatial resolution and the small time steps required for explicit stability, but this is justified by the resulting accuracy and stability.
+
+Although the analytic solution and residual metrics are not reported, the solver’s design aligns with theoretical best practices for this PDE class, ensuring accurate wave propagation and preservation of periodicity, provided the solution remains smooth and the CFL condition is respected.

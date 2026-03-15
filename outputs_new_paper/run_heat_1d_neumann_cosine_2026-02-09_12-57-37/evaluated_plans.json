@@ -1,0 +1,199 @@
+[
+  {
+    "plan_id": "plan_fem_crank_nicolson_highres",
+    "metrics": {
+      "runtime_s": 97.38477087020874,
+      "l2_error": 3.2071151703602274e-07,
+      "max_error": 1.1979264175066007e-07,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_crank_nicolson_highres",
+      "description": "1D heat eq, FEM spatial discretization, Crank-Nicolson time stepping",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 150,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "quadratic",
+          "boundary_condition": "Neumann"
+        }
+      },
+      "time_stepping": {
+        "method": "Crank-Nicolson",
+        "dt": 0.002,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "linear_solver": "iterative (CG)"
+        }
+      },
+      "_llm_score": 95,
+      "_llm_score_rationale": "Quadratic FEM with Crank-Nicolson provides high accuracy (second-order in space and time), robust stability, and good handling of Neumann BCs. The cost is justified by the accuracy gain."
+    }
+  },
+  {
+    "plan_id": "plan_fd_crank_nicolson_highres",
+    "metrics": {
+      "runtime_s": 62.848782777786255,
+      "l2_error": 0.8418905641877465,
+      "max_error": 0.37438626307080664,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_crank_nicolson_highres",
+      "description": "1D heat eq, Crank-Nicolson FD, high resolution",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 200,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "boundary_condition": "Neumann"
+        }
+      },
+      "time_stepping": {
+        "method": "Crank-Nicolson",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "linear_solver": "Thomas algorithm"
+        }
+      },
+      "_llm_score": 92,
+      "_llm_score_rationale": "Crank-Nicolson is unconditionally stable and second-order accurate in both space and time. High spatial resolution and moderate computational cost make this plan highly accurate and efficient for this problem."
+    }
+  },
+  {
+    "plan_id": "plan_fvm_crank_nicolson_highres",
+    "metrics": {
+      "runtime_s": 42.83737277984619,
+      "l2_error": 1.8290783180860533e-05,
+      "max_error": 6.816908057538651e-06,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fvm_crank_nicolson_highres",
+      "description": "1D heat eq, finite volume method, Crank-Nicolson time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 200,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "boundary_condition": "Neumann"
+        }
+      },
+      "time_stepping": {
+        "method": "Crank-Nicolson",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "linear_solver": "Thomas algorithm"
+        }
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "FVM with Crank-Nicolson at high resolution is accurate, robust, and efficient for diffusion problems, especially with Neumann BCs. The computational cost is reasonable for the accuracy provided."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_implicit_highres",
+    "metrics": {
+      "runtime_s": 55.01700305938721,
+      "l2_error": 0.02018210539421957,
+      "max_error": 0.008068111016288737,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_implicit_highres",
+      "description": "1D heat eq, spectral spatial discretization, implicit backward Euler",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 128,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "boundary_condition": "Neumann"
+        }
+      },
+      "time_stepping": {
+        "method": "Backward Euler",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 1,
+        "extra_parameters": {
+          "linear_solver": "FFT-based"
+        }
+      },
+      "_llm_score": 88,
+      "_llm_score_rationale": "Spectral spatial discretization with implicit time stepping is very efficient and accurate for smooth problems like this. First-order time accuracy is a minor drawback, but overall this is a robust and efficient plan."
+    }
+  },
+  {
+    "plan_id": "plan_fd_imex_midres",
+    "metrics": {
+      "runtime_s": 45.06973695755005,
+      "l2_error": 5463979257361910.0,
+      "max_error": 6611633798629675.0,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_imex_midres",
+      "description": "1D heat eq, IMEX scheme: implicit diffusion, explicit forcing (if any), medium resolution",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "boundary_condition": "Neumann"
+        }
+      },
+      "time_stepping": {
+        "method": "IMEX Runge-Kutta",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 2,
+        "extra_parameters": {
+          "implicit_solver": "Thomas algorithm"
+        }
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "IMEX is more useful for mixed stiff/non-stiff problems, but here it is robust and second-order accurate. Moderate resolution and efficiency make this a solid, though not optimal, choice for pure diffusion."
+    }
+  }
+]

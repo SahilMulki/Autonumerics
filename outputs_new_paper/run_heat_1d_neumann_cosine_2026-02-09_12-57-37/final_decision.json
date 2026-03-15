@@ -1,0 +1,26 @@
+{
+  "best_plan_id": "plan_fem_crank_nicolson_highres",
+  "reasoning": "An analytic solution is available, so the primary criterion is the smallest relative L2 error. 'plan_fem_crank_nicolson_highres' achieves an L2 error of 3.21e-07, which is orders of magnitude smaller than all other plans. Although its runtime (97.38 s) is higher than the others, the accuracy gain is extremely significant and justifies the extra cost. The next best plan, 'plan_fvm_crank_nicolson_highres', has an L2 error of 1.83e-05, which is still two orders of magnitude larger. All other plans have much larger errors, including 'plan_fd_crank_nicolson_highres' (0.84), 'plan_spectral_implicit_highres' (0.02), and 'plan_fd_imex_midres' (5.46e15). Therefore, 'plan_fem_crank_nicolson_highres' is the clear best choice, with 'plan_fvm_crank_nicolson_highres' as the runner-up due to its much better accuracy than the rest and reasonable runtime.",
+  "ranking": [
+    {
+      "plan_id": "plan_fem_crank_nicolson_highres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_fvm_crank_nicolson_highres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_spectral_implicit_highres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fd_crank_nicolson_highres",
+      "rank": 4
+    },
+    {
+      "plan_id": "plan_fd_imex_midres",
+      "rank": 5
+    }
+  ]
+}

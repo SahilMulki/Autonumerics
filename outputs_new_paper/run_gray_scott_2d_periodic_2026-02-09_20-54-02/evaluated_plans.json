@@ -1,0 +1,206 @@
+[
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "metrics": {
+      "runtime_s": 172.81644010543823,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.00231734723302898,
+      "relative_residual": 0.0023269414592758456,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_imex_highres",
+      "description": "High-res 2D spectral IMEX RK scheme with implicit diffusion and explicit reaction",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": 256,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "boundary_conditions": "periodic"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_runge_kutta",
+        "dt": 0.0025,
+        "Nt": null,
+        "t_final": 10.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "implicit_part": "diffusion",
+          "explicit_part": "reaction"
+        }
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "Spectral IMEX is ideal for periodic, stiff reaction-diffusion problems, offering high accuracy and stability. The very high resolution and cost are justified by the accuracy gain for demanding simulations."
+    }
+  },
+  {
+    "plan_id": "plan_fd_imex_midres",
+    "metrics": {
+      "runtime_s": 23.73474621772766,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.0011029887573404736,
+      "relative_residual": 0.0011080186241460516,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_imex_midres",
+      "description": "Medium-res 2D finite difference IMEX scheme: implicit diffusion, explicit reaction",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "stencil": "centered_3pt"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_euler",
+        "dt": 0.02,
+        "Nt": null,
+        "t_final": 10.0,
+        "explicit_or_implicit": "imex",
+        "order": 1,
+        "extra_parameters": {
+          "implicit_part": "diffusion",
+          "explicit_part": "reaction",
+          "linear_solver": "bicgstab"
+        }
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "IMEX schemes are well-suited for stiff reaction-diffusion systems, treating diffusion implicitly and reaction explicitly. This plan balances stability, accuracy, and efficiency at moderate cost."
+    }
+  },
+  {
+    "plan_id": "plan_fd_implicit_midres",
+    "metrics": {
+      "runtime_s": 57.90310716629028,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": null,
+      "relative_residual": 1.007762534899286e-15,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_implicit_midres",
+      "description": "Medium-res 2D finite difference Crank-Nicolson implicit time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "stencil": "centered_3pt"
+        }
+      },
+      "time_stepping": {
+        "method": "crank_nicolson",
+        "dt": 0.05,
+        "Nt": null,
+        "t_final": 10.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "linear_solver": "bicgstab",
+          "tolerance": 1e-06
+        }
+      },
+      "_llm_score": 75,
+      "_llm_score_rationale": "Crank-Nicolson is stable and second-order accurate in time and space, with a reasonable resolution and cost. This is a robust, efficient choice for reaction-diffusion systems with periodic BCs."
+    }
+  },
+  {
+    "plan_id": "plan_fem_implicit_midres",
+    "metrics": {
+      "runtime_s": 33.093849182128906,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.0016207723247023257,
+      "relative_residual": 0.0016294709660472277,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_implicit_midres",
+      "description": "Medium-res 2D finite element method with implicit theta method (theta=0.5)",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 80,
+        "Ny": 80,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "quadrilateral",
+          "mesh_type": "structured"
+        }
+      },
+      "time_stepping": {
+        "method": "theta_method",
+        "dt": 0.02,
+        "Nt": null,
+        "t_final": 10.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "theta": 0.5,
+          "linear_solver": "cg",
+          "preconditioner": "jacobi"
+        }
+      },
+      "_llm_score": 70,
+      "_llm_score_rationale": "Implicit theta (Crank-Nicolson) FEM is stable and second-order accurate, with moderate resolution and cost. Good for generality and robustness, though not as efficient as FD for this regular domain."
+    }
+  },
+  {
+    "plan_id": "plan_fd_implicit_highres",
+    "metrics": {
+      "runtime_s": 177.60828590393066,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.003999863588523133,
+      "relative_residual": 0.0040148361356763355,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_implicit_highres",
+      "description": "High-res 2D finite difference fully implicit backward Euler time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 200,
+        "Ny": 200,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "stencil": "centered_3pt"
+        }
+      },
+      "time_stepping": {
+        "method": "backward_euler",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 10.0,
+        "explicit_or_implicit": "implicit",
+        "order": 1,
+        "extra_parameters": {
+          "linear_solver": "gmres",
+          "preconditioner": "ilu"
+        }
+      },
+      "_llm_score": 68,
+      "_llm_score_rationale": "Fully implicit FD is robust and stable, but only first-order accurate in time. Very high resolution increases cost significantly, with diminishing returns compared to higher-order or IMEX schemes."
+    }
+  }
+]

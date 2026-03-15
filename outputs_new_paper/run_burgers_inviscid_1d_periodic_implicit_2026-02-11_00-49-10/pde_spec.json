@@ -1,0 +1,37 @@
+{
+  "equation_type": "Burgers (inviscid)",
+  "governing_equation": "u_t + u*u_x = 0",
+  "spatial_dimension": 1,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        6.283185307179586
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 6.283185307179586
+  },
+  "initial_condition": "u(x,0) = np.sin(x)",
+  "boundary_conditions": {
+    "type": "periodic",
+    "values": {}
+  },
+  "parameters": {},
+  "analytic_solution": {
+    "type": "implicit",
+    "expression": "u - np.sin(x - u*t)",
+    "space_variables": [
+      "x"
+    ]
+  },
+  "notes": "The analytic solution is implicit: for each (x, t), solve u - sin(x - u t) = 0 for u.",
+  "id": "burgers_inviscid_1d_periodic_implicit",
+  "family": "burgers_inviscid",
+  "dimension": 1
+}

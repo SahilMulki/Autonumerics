@@ -1,0 +1,7 @@
+The selected solver plan employs a high-resolution finite volume method with a MUSCL-type reconstruction and a third-order explicit Runge-Kutta time integrator to solve the 1D inviscid Burgers’ equation with periodic boundaries. This PDE is nonlinear and develops discontinuities (shocks) even from smooth initial data, making accurate shock capturing and non-oscillatory behavior essential.
+
+The observed small relative residual (≈5.6×10⁻⁴) indicates that the computed solution satisfies the discrete PDE operator to high accuracy relative to the solution’s magnitude. This is a strong indicator of numerical consistency and stability, especially important in nonlinear hyperbolic problems where spurious oscillations or excessive diffusion can otherwise dominate.
+
+The finite volume framework, combined with MUSCL reconstruction, is well-suited for resolving sharp gradients and discontinuities without introducing nonphysical oscillations, aligning with the theoretical requirements for conservation and monotonicity in hyperbolic conservation laws. The explicit third-order Runge-Kutta integrator maintains temporal accuracy and stability under the CFL constraint, which is feasible here due to the moderate runtime and the 1D domain.
+
+In summary, the solver’s design directly addresses the Burgers’ equation’s challenges, and the low relative residual empirically confirms that the numerical solution is both stable and consistent with the PDE’s nonlinear, shock-forming dynamics.

@@ -1,0 +1,7 @@
+The selected solver employs a spectral spatial discretization with explicit fourth-order Runge-Kutta (RK4) time integration for the 1D nonlinear shallow water equations with periodic boundary conditions. This configuration is theoretically well-matched to the problem for several reasons:
+
+First, the spectral method leverages the periodicity and expected smoothness of the solution, achieving exponential convergence in space for sufficiently resolved, smooth flows. The shallow water equations, while nonlinear, often produce solutions that remain smooth (barring shock formation, which is rare in the periodic, inviscid case at moderate timescales and resolutions like Nx=128). Thus, spectral accuracy is attainable and appropriate.
+
+Second, the explicit RK4 integrator is stable and accurate for non-stiff, smooth problems, provided the timestep respects the CFL condition dictated by the fastest wave speed (√(gH)). The reported runtime is consistent with the computational cost of repeated spectral transforms and multiple RK4 stages, indicating that the solver operated within stability constraints without excessive overhead.
+
+Although no error or residual metrics are provided, the solver’s design aligns with the PDE’s structure: periodicity, smoothness, and moderate nonlinearity. This theoretical compatibility underpins the solver’s strong performance for this problem.

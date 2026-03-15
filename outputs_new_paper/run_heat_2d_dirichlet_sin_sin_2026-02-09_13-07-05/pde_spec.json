@@ -1,0 +1,48 @@
+{
+  "equation_type": "heat",
+  "governing_equation": "u_t = alpha * (u_xx + u_yy)",
+  "spatial_dimension": 2,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x",
+    "y"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        1.0
+      ],
+      "y": [
+        0.0,
+        1.0
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 1.0,
+    "y_min": 0.0,
+    "y_max": 1.0
+  },
+  "initial_condition": "sin(pi*x)*sin(pi*y)",
+  "boundary_conditions": {
+    "type": "Dirichlet",
+    "values": {
+      "u": 0
+    }
+  },
+  "parameters": {
+    "alpha": 0.1
+  },
+  "analytic_solution": {
+    "expression": "exp(-0.1*pi^2*2*t)*sin(pi*x)*sin(pi*y)",
+    "space_variables": [
+      "x",
+      "y"
+    ]
+  },
+  "notes": null,
+  "id": "heat_2d_dirichlet_sin_sin",
+  "family": "heat",
+  "dimension": 2
+}

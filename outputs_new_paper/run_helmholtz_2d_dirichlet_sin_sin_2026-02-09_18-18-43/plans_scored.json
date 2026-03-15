@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_lowres_direct",
+    "score": 60,
+    "rationale": "While stable and efficient, the low resolution and 2nd order accuracy limit its suitability for the moderately oscillatory Helmholtz problem (k=5), resulting in relatively poor accuracy."
+  },
+  {
+    "plan_id": "plan_fd_medres_iterative",
+    "score": 70,
+    "rationale": "Improved resolution and iterative solver enhance accuracy and scalability, but 2nd order accuracy is still limiting for Helmholtz with k=5; overall a solid, robust choice for moderate accuracy needs."
+  },
+  {
+    "plan_id": "plan_fd_highres_multigrid",
+    "score": 85,
+    "rationale": "High resolution, 4th order accuracy, and multigrid solver provide excellent accuracy and efficiency for the 2D Helmholtz equation, making this plan highly suitable despite higher computational cost."
+  },
+  {
+    "plan_id": "plan_fem_loworder_direct",
+    "score": 55,
+    "rationale": "Low-order FEM (P1) on a coarse mesh is robust but insufficiently accurate for the oscillatory Helmholtz problem; direct solver is efficient for small problems but not scalable."
+  },
+  {
+    "plan_id": "plan_fem_higherorder_iterative",
+    "score": 82,
+    "rationale": "Higher-order FEM (P3) with iterative AMG-preconditioned solver offers high accuracy and robustness for Helmholtz, balancing computational cost and suitability well."
+  },
+  {
+    "plan_id": "plan_spectral_chebyshev",
+    "score": 92,
+    "rationale": "Spectral Chebyshev methods are highly accurate and stable for smooth problems with Dirichlet BCs, and the cost is moderate for this problem size; this is nearly optimal for the given analytic solution."
+  },
+  {
+    "plan_id": "plan_spectral_fourier_dirichlet",
+    "score": 98,
+    "rationale": "Fourier sine spectral method is ideal for this problem (sinusoidal analytic solution, Dirichlet BCs), providing spectral accuracy and excellent efficiency; this is the most suitable plan."
+  },
+  {
+    "plan_id": "plan_fvm_coarse",
+    "score": 60,
+    "rationale": "Coarse FVM with 2nd order fluxes is robust but lacks sufficient resolution for the oscillatory solution; direct solver is efficient for small problems but not scalable."
+  },
+  {
+    "plan_id": "plan_fvm_fine_multigrid",
+    "score": 80,
+    "rationale": "Fine FVM grid and multigrid solver yield good accuracy and efficiency, though still limited to 2nd order; suitable for general Helmholtz problems but not as accurate as spectral or higher-order FEM."
+  },
+  {
+    "plan_id": "plan_fem_adaptive_p2",
+    "score": 83,
+    "rationale": "Adaptive quadratic FEM balances accuracy and efficiency, especially if solution features are localized; AMG-preconditioned iterative solver ensures robustness for Helmholtz."
+  }
+]

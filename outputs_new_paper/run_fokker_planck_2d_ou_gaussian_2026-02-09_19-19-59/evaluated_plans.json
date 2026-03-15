@@ -1,0 +1,190 @@
+[
+  {
+    "plan_id": "plan_spectral_imex_mediumres",
+    "metrics": {
+      "runtime_s": 492.4834609031677,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": null,
+      "relative_residual": 0.05591206690377852,
+      "num_attempts": 8,
+      "restarts_used": 1
+    },
+    "plan": {
+      "plan_id": "plan_spectral_imex_mediumres",
+      "description": "2D spectral method with IMEX time stepping combining implicit diffusion and explicit advection",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Chebyshev",
+          "domain": "[-6,6]x[-6,6]"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_runge_kutta",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {}
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "Spectral IMEX at medium resolution is highly accurate for smooth solutions, efficiently handles stiffness, and is well-suited for this problem with Dirichlet BCs. Memory and cost are low for the accuracy achieved."
+    }
+  },
+  {
+    "plan_id": "plan_fem_imex_mediumres",
+    "metrics": {
+      "runtime_s": 44.33550691604614,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.0008442762084781782,
+      "relative_residual": 0.002242830008171694,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_imex_mediumres",
+      "description": "2D finite element method with IMEX time stepping for stiff diffusion and explicit advection",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "triangular",
+          "mesh_type": "unstructured"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_bdf2",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "_llm_score": 82,
+      "_llm_score_rationale": "IMEX FEM is well-suited for mixed diffusion/drift problems, offering stability and second-order accuracy in time and space. Medium resolution balances cost and accuracy, making this plan robust and efficient."
+    }
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 285.99639225006104,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": null,
+      "relative_residual": 0.005920146945875887,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "description": "2D implicit finite difference with medium resolution and Crank-Nicolson time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "stencil": "central"
+        }
+      },
+      "time_stepping": {
+        "method": "crank_nicolson",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "Crank-Nicolson FD at medium resolution is stable, second-order accurate in time and space, and efficient for this moderately stiff PDE. Memory and cost are reasonable for the expected accuracy."
+    }
+  },
+  {
+    "plan_id": "plan_fv_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 406.90183305740356,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": null,
+      "relative_residual": 0.3744104817190319,
+      "num_attempts": 5,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fv_implicit_mediumres",
+      "description": "2D finite volume method with medium resolution and implicit second order time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "reconstruction": "central"
+        }
+      },
+      "time_stepping": {
+        "method": "crank_nicolson",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "_llm_score": 78,
+      "_llm_score_rationale": "Implicit FV with Crank-Nicolson at medium resolution is stable and second-order accurate, with good conservation properties. Slightly less accurate than FD for smooth solutions but robust and efficient."
+    }
+  },
+  {
+    "plan_id": "plan_fem_implicit_highres",
+    "metrics": {
+      "runtime_s": 500.8819751739502,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": null,
+      "relative_residual": 0.37441048171903196,
+      "num_attempts": 7,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_implicit_highres",
+      "description": "2D finite element method with high resolution mesh and implicit backward Euler time stepping",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 150,
+        "Ny": 150,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "quadrilateral",
+          "mesh_type": "structured"
+        }
+      },
+      "time_stepping": {
+        "method": "backward_euler",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 1,
+        "extra_parameters": {}
+      },
+      "_llm_score": 77,
+      "_llm_score_rationale": "High-res FEM with backward Euler is robust and accurate in space, but only first-order in time. The high memory/cost is not fully justified given the lower time accuracy, though stability is excellent."
+    }
+  }
+]

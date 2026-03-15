@@ -1,0 +1,33 @@
+{
+  "equation_type": "Cahn-Hilliard",
+  "governing_equation": "u_t = -(eps**2 * u_xxxx + (u**3 - u)_xx)",
+  "spatial_dimension": 1,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        1.0
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 1.0
+  },
+  "initial_condition": "0.1 * np.cos(2 * np.pi * x)",
+  "boundary_conditions": {
+    "type": "periodic",
+    "values": {}
+  },
+  "parameters": {
+    "eps": 0.01
+  },
+  "analytic_solution": null,
+  "notes": "No analytic solution is provided. Solutions should be evaluated via discrete residual and/or mass conservation.",
+  "id": "cahn_hilliard_1d_periodic",
+  "family": "cahn_hilliard",
+  "dimension": 1
+}

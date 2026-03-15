@@ -1,0 +1,164 @@
+[
+  {
+    "plan_id": "plan_fem_cranknicolson_highres",
+    "error": "Solver failed after 4 attempts in Coarse_R1.\nFailure: Stability Error: Numerical Instability Detected: Solution contains NaNs or Infinities.\nHint: Reduce time step (dt) or check CFL."
+  },
+  {
+    "plan_id": "plan_fd_cranknicolson_highres",
+    "metrics": {
+      "runtime_s": 98.47035694122314,
+      "l2_error": 0.6311889847981043,
+      "max_error": 0.6394334633998181,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_cranknicolson_highres",
+      "description": "2D reaction-diffusion with Crank-Nicolson finite difference, high resolution grid",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 200,
+        "Ny": 200,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "stencil": "5-point Laplacian"
+        }
+      },
+      "time_stepping": {
+        "method": "Crank-Nicolson",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "linear_solver": "iterative (e.g., GMRES with preconditioning)"
+        }
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "Crank-Nicolson is unconditionally stable and second-order accurate in time, and the high spatial resolution ensures excellent accuracy. The computational cost is high, but justified for high-fidelity results."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_imex_mediumres",
+    "metrics": {
+      "runtime_s": 199.52122688293457,
+      "l2_error": 9.880771785932303e-06,
+      "max_error": 9.995112315364096e-06,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_imex_mediumres",
+      "description": "2D reaction-diffusion with spectral spatial discretization and IMEX time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Chebyshev",
+          "deal_with_dirichlet": "tau method"
+        }
+      },
+      "time_stepping": {
+        "method": "IMEX Runge-Kutta",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "implicit_part": "diffusion",
+          "explicit_part": "reaction"
+        }
+      },
+      "_llm_score": 88,
+      "_llm_score_rationale": "Spectral spatial discretization with IMEX time stepping efficiently handles stiffness and maintains high accuracy. Stability is excellent, and computational cost is very low for the achieved accuracy."
+    }
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 425.3246428966522,
+      "l2_error": 1.6984611151498603,
+      "max_error": 1.720320161844338,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 7,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "description": "2D reaction-diffusion with implicit finite difference, medium resolution grid",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "stencil": "5-point Laplacian"
+        }
+      },
+      "time_stepping": {
+        "method": "Backward Euler",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 1,
+        "extra_parameters": {
+          "linear_solver": "sparse direct or iterative"
+        }
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "Implicit FD (Backward Euler) is robust for diffusion problems, allows larger time steps, and the medium grid gives reasonable accuracy. First-order time accuracy is a minor drawback, but overall efficiency and stability are good."
+    }
+  },
+  {
+    "plan_id": "plan_fvm_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 231.9381880760193,
+      "l2_error": 0.024652092837818308,
+      "max_error": 0.015911511792390996,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 6,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fvm_implicit_mediumres",
+      "description": "2D reaction-diffusion with finite volume method and implicit backward Euler time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "flux_scheme": "central difference"
+        }
+      },
+      "time_stepping": {
+        "method": "Backward Euler",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 1,
+        "extra_parameters": {
+          "linear_solver": "iterative"
+        }
+      },
+      "_llm_score": 78,
+      "_llm_score_rationale": "Implicit FVM is robust and accurate for diffusion problems, with good efficiency and stability. Second-order space and first-order time are acceptable, though not as accurate as higher-order or spectral/FEM approaches."
+    }
+  }
+]

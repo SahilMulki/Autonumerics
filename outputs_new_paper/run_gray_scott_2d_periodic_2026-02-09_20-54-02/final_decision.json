@@ -1,0 +1,26 @@
+{
+  "best_plan_id": "plan_fd_imex_midres",
+  "reasoning": "No analytic solution is available, so residual errors are the primary metric. 'plan_fd_imex_midres' achieves the lowest residual_l2 (0.00110) and relative_residual (0.00111) among all plans, and does so with the fastest runtime (23.73s). While 'plan_spectral_imex_highres' and 'plan_fd_implicit_highres' use higher spatial resolution, their residuals are significantly higher and runtimes much longer. 'plan_fem_implicit_midres' has higher residuals and is slower than 'plan_fd_imex_midres'. 'plan_fd_implicit_midres' has an extremely low relative_residual, but lacks residual_l2 for direct comparison and is much slower. Thus, 'plan_fd_imex_midres' offers the best balance of accuracy and efficiency.",
+  "ranking": [
+    {
+      "plan_id": "plan_fd_imex_midres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_fem_implicit_midres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_spectral_imex_highres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fd_implicit_midres",
+      "rank": 4
+    },
+    {
+      "plan_id": "plan_fd_implicit_highres",
+      "rank": 5
+    }
+  ]
+}

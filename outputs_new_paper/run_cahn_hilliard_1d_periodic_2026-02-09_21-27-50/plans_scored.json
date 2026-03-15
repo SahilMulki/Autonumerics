@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 25,
+    "rationale": "Explicit Euler is unstable for stiff, high-order PDEs like Cahn-Hilliard, and low spatial resolution further reduces accuracy. Computational cost is low, but the plan is not robust or suitable."
+  },
+  {
+    "plan_id": "plan_fd_implicit_midres",
+    "score": 60,
+    "rationale": "Implicit backward Euler provides stability for stiff problems, but low spatial and temporal order limit accuracy. Medium resolution is reasonable, and cost is moderate."
+  },
+  {
+    "plan_id": "plan_fd_imex_highres",
+    "score": 75,
+    "rationale": "IMEX with high spatial resolution and higher-order spatial discretization improves both stability and accuracy for stiff, nonlinear PDEs. Cost is higher but justified by improved results."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_midres",
+    "score": 45,
+    "rationale": "Spectral methods are highly accurate for periodic problems, but explicit RK4 is not robust for stiff, high-order PDEs, so stability is a major concern despite moderate cost."
+  },
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "score": 90,
+    "rationale": "Spectral IMEX (CN-AB2) is well-suited for stiff, periodic, high-order PDEs, offering high accuracy, stability, and efficiency at high resolution. Computational cost is justified."
+  },
+  {
+    "plan_id": "plan_fem_implicit_midres",
+    "score": 65,
+    "rationale": "FEM with implicit time stepping is stable and flexible, but quadratic elements and first-order time integration limit accuracy. Suitable for generality, but not optimal for this periodic, smooth problem."
+  },
+  {
+    "plan_id": "plan_fem_imex_highres",
+    "score": 80,
+    "rationale": "High-order FEM with IMEX RK4 provides good stability and accuracy for stiff, nonlinear PDEs. Cost is high but justified for challenging problems, though spectral methods are more natural for periodic domains."
+  },
+  {
+    "plan_id": "plan_fvm_implicit_midres",
+    "score": 60,
+    "rationale": "FVM with implicit time stepping is stable, but second-order accuracy and moderate resolution limit its effectiveness for smooth, periodic, high-order problems like Cahn-Hilliard."
+  },
+  {
+    "plan_id": "plan_fvm_imex_lowres",
+    "score": 40,
+    "rationale": "IMEX improves stability, but low spatial resolution and only second-order accuracy make this plan less suitable for capturing fine features of the Cahn-Hilliard equation."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "score": 85,
+    "rationale": "ETDRK4 is a state-of-the-art explicit method for stiff, linear-dominated PDEs and, combined with spectral accuracy and high resolution, is highly effective for periodic Cahn-Hilliard. High cost is justified."
+  }
+]

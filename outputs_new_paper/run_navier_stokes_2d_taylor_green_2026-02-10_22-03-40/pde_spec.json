@@ -1,0 +1,50 @@
+{
+  "equation_type": "incompressible Navier-Stokes",
+  "governing_equation": "u_t + u*u_x + v*u_y = -p_x + nu*(u_xx + u_yy); v_t + u*v_x + v*v_y = -p_y + nu*(v_xx + v_yy); u_x + v_y = 0",
+  "spatial_dimension": 2,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x",
+    "y"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        6.283185307179586
+      ],
+      "y": [
+        0.0,
+        6.283185307179586
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 6.283185307179586,
+    "y_min": 0.0,
+    "y_max": 6.283185307179586
+  },
+  "initial_condition": "u(x, y, 0) = np.sin(x)*np.cos(y); v(x, y, 0) = -np.cos(x)*np.sin(y); p(x, y, 0) = -0.25*(np.cos(2*x) + np.cos(2*y))",
+  "boundary_conditions": {
+    "type": "periodic",
+    "values": {}
+  },
+  "parameters": {
+    "nu": 0.01
+  },
+  "analytic_solution": {
+    "expression": {
+      "u": "np.sin(x)*np.cos(y)*np.exp(-2*nu*t)",
+      "v": "-np.cos(x)*np.sin(y)*np.exp(-2*nu*t)",
+      "p": "-0.25*(np.cos(2*x)+np.cos(2*y))*np.exp(-4*nu*t)"
+    },
+    "space_variables": [
+      "x",
+      "y"
+    ]
+  },
+  "notes": null,
+  "id": "navier_stokes_2d_taylor_green",
+  "family": "navier_stokes",
+  "dimension": 2
+}

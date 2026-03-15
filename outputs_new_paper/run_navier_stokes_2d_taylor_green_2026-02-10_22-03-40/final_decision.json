@@ -1,0 +1,14 @@
+{
+  "best_plan_id": "plan_fem_imex_mediumres",
+  "reasoning": "An analytic solution is available, so relative L2 error is the primary criterion. Among the plans with L2 error reported, plan_fem_imex_mediumres achieves an extremely low L2 error (8.08e-6), which is orders of magnitude better than plan_fv_imex_highres (2.74e-2). Its runtime (64.48s) is also lower than all other plans with reported L2 error. Although spectral plans are generally highly accurate, neither spectral plan here reports L2 error, so they cannot be considered for the primary metric. Therefore, plan_fem_imex_mediumres is the best choice, offering both the highest accuracy and the fastest runtime among eligible plans.",
+  "ranking": [
+    {
+      "plan_id": "plan_fem_imex_mediumres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_fv_imex_highres",
+      "rank": 2
+    }
+  ]
+}

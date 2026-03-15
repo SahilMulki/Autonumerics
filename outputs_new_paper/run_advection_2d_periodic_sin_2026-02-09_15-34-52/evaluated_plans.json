@@ -1,0 +1,192 @@
+[
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "metrics": {
+      "runtime_s": 29.81839084625244,
+      "l2_error": 1.1252154668133862e-13,
+      "max_error": 8.326672684688674e-14,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_highres",
+      "description": "High-resolution spectral method with explicit RK4 time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": 256,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true
+        }
+      },
+      "time_stepping": {
+        "method": "RK4",
+        "dt": 0.0005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "_llm_score": 95,
+      "_llm_score_rationale": "Spectral Fourier with periodic BCs and explicit RK4 is nearly optimal for smooth advection, offering spectral accuracy and excellent stability at low CFL. High computational cost is justified by accuracy."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "metrics": {
+      "runtime_s": 59.32046699523926,
+      "l2_error": 2.8699907161611584e-09,
+      "max_error": 2.032659041084628e-09,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_imex_highres",
+      "description": "High-resolution spectral method with IMEX RK time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": 256,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true
+        }
+      },
+      "time_stepping": {
+        "method": "IMEX RK",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "implicit_part": "linear terms",
+          "explicit_part": "advection"
+        }
+      },
+      "_llm_score": 93,
+      "_llm_score_rationale": "Spectral Fourier with IMEX is highly accurate and robust, but IMEX is not needed for pure advection. Slightly less efficient than explicit RK, but still excellent for this problem."
+    }
+  },
+  {
+    "plan_id": "plan_fd_weno_explicit_highres",
+    "metrics": {
+      "runtime_s": 43.94258499145508,
+      "l2_error": 4.878774335986026e-08,
+      "max_error": 5.708713901597662e-08,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_weno_explicit_highres",
+      "description": "High-resolution finite difference with 5th order WENO and explicit SSPRK(3,3)",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 150,
+        "Ny": 150,
+        "Nz": null,
+        "order": 5,
+        "extra_parameters": {
+          "reconstruction": "WENO5"
+        }
+      },
+      "time_stepping": {
+        "method": "SSPRK33",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 3,
+        "extra_parameters": {}
+      },
+      "_llm_score": 88,
+      "_llm_score_rationale": "High-res FD with WENO5 and SSPRK(3,3) is highly robust and accurate for advection, especially with non-smooth solutions, though here the solution is smooth. Slightly less efficient than spectral but very suitable."
+    }
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres",
+    "metrics": {
+      "runtime_s": 89.73228883743286,
+      "l2_error": 536977773138.7454,
+      "max_error": 933801873784.3514,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 6,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_explicit_highres",
+      "description": "High-resolution 2D finite difference with explicit SSPRK(3,3) time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 200,
+        "Ny": 200,
+        "Nz": null,
+        "order": 4,
+        "extra_parameters": {
+          "stencil": "upwind"
+        }
+      },
+      "time_stepping": {
+        "method": "SSPRK33",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 3,
+        "extra_parameters": {}
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "High spatial and temporal resolution with 4th order upwind FD and SSPRK(3,3) is well-suited for advection, providing good accuracy and stability. Computational cost is high but justified for accuracy."
+    }
+  },
+  {
+    "plan_id": "plan_fv_explicit_mediumres",
+    "metrics": {
+      "runtime_s": 26.22965407371521,
+      "l2_error": 0.0939639056497782,
+      "max_error": 0.09395438839150494,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fv_explicit_mediumres",
+      "description": "Medium-resolution finite volume with explicit RK2 time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 100,
+        "Ny": 100,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "flux": "upwind"
+        }
+      },
+      "time_stepping": {
+        "method": "RK2",
+        "dt": 0.002,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "_llm_score": 70,
+      "_llm_score_rationale": "Medium resolution FV with upwind flux and RK2 is robust and efficient for advection, though accuracy is limited to second order. Good balance of cost and reliability."
+    }
+  }
+]

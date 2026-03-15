@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_explicit_lowres",
+    "score": 40,
+    "rationale": "Low spatial resolution and explicit time stepping are not well-suited for the stiff dispersive KdV equation, leading to limited stability and moderate accuracy. Efficiency is good, but overall suitability is low."
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "score": 70,
+    "rationale": "Implicit Crank-Nicolson with higher-order finite differences and medium resolution improves stability and accuracy for the stiff KdV equation. Computational cost is moderate and justified by the gain in robustness."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "score": 90,
+    "rationale": "High-resolution Fourier spectral method with ETDRK4 is highly accurate and well-suited for periodic, dispersive problems like KdV. Stability is good for this method and cost is justified by the accuracy."
+  },
+  {
+    "plan_id": "plan_fem_implicit_mediumres",
+    "score": 60,
+    "rationale": "Implicit FEM offers good stability, but moderate spatial resolution and low-order time stepping limit accuracy. Computational cost is reasonable, but spectral methods are preferable for this problem."
+  },
+  {
+    "plan_id": "plan_fv_explicit_lowres",
+    "score": 35,
+    "rationale": "Low resolution and explicit time stepping are not ideal for the dispersive KdV equation, resulting in poor stability and only moderate accuracy. Efficiency is high, but overall suitability is low."
+  },
+  {
+    "plan_id": "plan_spectral_implicit_mediumres",
+    "score": 85,
+    "rationale": "IMEX spectral method with medium resolution balances stability and accuracy very well for the stiff, periodic KdV equation. Computational cost is moderate and justified by the method's robustness."
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres",
+    "score": 65,
+    "rationale": "High spatial resolution and fourth-order accuracy improve results, but explicit time stepping still limits stability for the stiff KdV equation. High computational cost is not fully justified."
+  },
+  {
+    "plan_id": "plan_fem_imex_lowres",
+    "score": 45,
+    "rationale": "IMEX FEM improves stability, but low spatial resolution and low-order basis limit accuracy. Efficiency is good, but overall suitability is moderate for this dispersive PDE."
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "score": 75,
+    "rationale": "Medium-resolution Fourier spectral method with explicit RK4 provides high accuracy and reasonable stability for KdV, though not as robust as IMEX or ETDRK4. Computational cost is moderate."
+  },
+  {
+    "plan_id": "plan_fv_implicit_highres",
+    "score": 60,
+    "rationale": "High-resolution implicit FV with WENO is stable and accurate, but computational cost is very high and spectral methods are more natural for periodic, smooth KdV solutions."
+  }
+]

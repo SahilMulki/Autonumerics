@@ -1,0 +1,22 @@
+{
+  "best_plan_id": "plan_spectral_64x64",
+  "reasoning": "An analytic solution is available, so the primary criterion is the smallest relative L2 error. 'plan_spectral_64x64' achieves an L2 error of 5.41e-16, which is orders of magnitude smaller than all other plans. Its runtime (68.90s) is also faster than the next most accurate plan ('plan_fd_100x100', 80.58s), which has a much larger L2 error (1.96). The hp-FEM and multigrid FD plans are both less accurate and slower. Therefore, 'plan_spectral_64x64' is the clear best choice, balancing both accuracy and efficiency.",
+  "ranking": [
+    {
+      "plan_id": "plan_spectral_64x64",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_fd_100x100",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_fem_hp_20x20",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fd_multigrid_128x128",
+      "rank": 4
+    }
+  ]
+}

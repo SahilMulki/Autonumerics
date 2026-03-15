@@ -1,0 +1,197 @@
+[
+  {
+    "plan_id": "plan_spectral_imex_highres",
+    "metrics": {
+      "runtime_s": 53.61604714393616,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": null,
+      "relative_residual": 0.017825840664112767,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_imex_highres",
+      "description": "High-resolution spectral method with implicit-explicit time stepping (IMEX-BDF2)",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "dealising": "2/3_rule"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_bdf2",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 2,
+        "extra_parameters": {}
+      },
+      "_llm_score": 88,
+      "_llm_score_rationale": "High-resolution spectral IMEX is excellent for stiff, smooth problems, and the analytic solution is smooth except at the shock. IMEX-BDF2 is stable and efficient, and spectral accuracy is unmatched for this type of solution."
+    }
+  },
+  {
+    "plan_id": "plan_fv_implicit_highres",
+    "metrics": {
+      "runtime_s": 48.967705965042114,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 1.6124022535558804,
+      "relative_residual": 2.0625258975241265,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fv_implicit_highres",
+      "description": "High-resolution finite volume with WENO5 reconstruction and implicit backward Euler time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 200,
+        "Ny": null,
+        "Nz": null,
+        "order": 5,
+        "extra_parameters": {
+          "reconstruction": "WENO5",
+          "flux": "roe",
+          "limiter": "none"
+        }
+      },
+      "time_stepping": {
+        "method": "backward_euler",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 1,
+        "extra_parameters": {}
+      },
+      "_llm_score": 83,
+      "_llm_score_rationale": "WENO5 with implicit time stepping is highly robust and accurate for shocks and stiff diffusion. High spatial resolution and large dt yield efficiency, though backward Euler is only first-order in time."
+    }
+  },
+  {
+    "plan_id": "plan_fd_imex_highres",
+    "metrics": {
+      "runtime_s": 63.111692667007446,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 6.840325236556314e-14,
+      "relative_residual": 8.945876423646934e-14,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_imex_highres",
+      "description": "High-resolution IMEX scheme: explicit RK4 for convection and implicit for diffusion with second-order finite differences",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 200,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "convection_scheme": "fourth_order_central",
+          "diffusion_scheme": "second_order_central"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_runge_kutta",
+        "dt": 0.0005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 4,
+        "extra_parameters": {
+          "imex_scheme": "ARK4"
+        }
+      },
+      "_llm_score": 78,
+      "_llm_score_rationale": "IMEX with high spatial resolution and high-order time stepping is well-suited for stiff, nonlinear Burgers equation. Explicit RK4 for convection and implicit for diffusion balances stability and accuracy, though central convection may still show some oscillations."
+    }
+  },
+  {
+    "plan_id": "plan_fem_imex_highres",
+    "metrics": {
+      "runtime_s": 132.03685116767883,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 753.9143740647336,
+      "relative_residual": 3128.7381261426517,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_imex_highres",
+      "description": "High-resolution finite element method with quadratic elements and IMEX RK time stepping",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 200,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "quadratic",
+          "mesh_type": "uniform"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_runge_kutta",
+        "dt": 0.0005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "imex_scheme": "ARK3"
+        }
+      },
+      "_llm_score": 75,
+      "_llm_score_rationale": "High-resolution quadratic FEM with IMEX RK is accurate and robust for stiff, nonlinear PDEs. Efficiency is moderate, and accuracy is good, though not as high as spectral or WENO approaches."
+    }
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres_weno",
+    "metrics": {
+      "runtime_s": 109.80561518669128,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 1.6974166518436333,
+      "relative_residual": 2.2213117460893534,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_explicit_highres_weno",
+      "description": "High-resolution finite difference with WENO5 for convection and second-order central for diffusion, explicit SSPRK3 time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 200,
+        "Ny": null,
+        "Nz": null,
+        "order": 5,
+        "extra_parameters": {
+          "convection_scheme": "WENO5",
+          "diffusion_scheme": "second_order_central"
+        }
+      },
+      "time_stepping": {
+        "method": "ssp_runge_kutta_3",
+        "dt": 0.0001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 3,
+        "extra_parameters": {}
+      },
+      "_llm_score": 72,
+      "_llm_score_rationale": "WENO5 is excellent for shocks, and high spatial resolution helps, but explicit time stepping is inefficient for stiff diffusion, requiring many small steps."
+    }
+  }
+]

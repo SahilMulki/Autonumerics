@@ -1,0 +1,42 @@
+{
+  "equation_type": "linearized shallow-water equations",
+  "governing_equation": "eta_t + H * u_x = 0, u_t + g * eta_x = 0",
+  "spatial_dimension": 1,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        6.283185307179586
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 6.283185307179586
+  },
+  "initial_condition": "eta(x,0) = np.sin(x), u(x,0) = 0",
+  "boundary_conditions": {
+    "type": "periodic",
+    "values": {}
+  },
+  "parameters": {
+    "H": 1,
+    "g": 1
+  },
+  "analytic_solution": {
+    "expression": {
+      "eta": "np.sin(x)*np.cos(t)",
+      "u": "-np.cos(x)*np.sin(t)"
+    },
+    "space_variables": [
+      "x"
+    ]
+  },
+  "notes": null,
+  "id": "shallow_water_1d_linearized",
+  "family": "shallow_water",
+  "dimension": 1
+}

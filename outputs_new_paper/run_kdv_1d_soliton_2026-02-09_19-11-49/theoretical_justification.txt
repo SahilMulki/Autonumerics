@@ -1,0 +1,9 @@
+The Korteweg–de Vries (KdV) equation is a nonlinear, dispersive, time-dependent PDE with periodic boundary conditions. The selected solver employs a spectral spatial discretization and the ETDRK4 (Exponential Time Differencing Runge-Kutta 4) time integrator at high spatial resolution (Nx = 512).
+
+Spectral methods are theoretically optimal for smooth, periodic problems like the KdV equation, as they provide exponential convergence in space when the solution is sufficiently regular. The periodic boundary conditions ensure that the Fourier basis used in the spectral method is both natural and efficient, minimizing aliasing and boundary artifacts.
+
+The ETDRK4 integrator is specifically designed for stiff, dispersive PDEs where the linear term (here, the third derivative) dominates the stiffness. By treating the linear part exactly and the nonlinear part explicitly, ETDRK4 allows for larger stable time steps than standard explicit schemes, which is crucial for efficiency given the high spatial resolution.
+
+The reported runtime (52.16 s) is consistent with the computational demands of high-resolution spectral transforms and the cost of evaluating nonlinear terms at each time step. This runtime reflects the stability and efficiency advantages of the chosen scheme, which avoids the severe time step restrictions of fully explicit methods for stiff dispersive equations.
+
+In summary, the solver’s success is grounded in the synergy between spectral accuracy for smooth, periodic solutions and ETDRK4’s stability for stiff, nonlinear evolution.

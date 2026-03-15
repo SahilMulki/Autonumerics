@@ -1,0 +1,26 @@
+{
+  "best_plan_id": "plan_fd_imex_highres",
+  "reasoning": "Although no analytic L2 error is provided, the best available metric is the residual error. 'plan_fd_imex_highres' achieves an extremely low residual_l2 (6.84e-14) and relative_residual (8.95e-14), orders of magnitude better than all other plans. While its runtime (63.1s) is higher than some alternatives, the accuracy gain is overwhelming and justifies the moderate increase in runtime. The next best plan, 'plan_spectral_imex_highres', has a much higher relative_residual (0.0178) and similar runtime. All other plans have much larger residuals and/or longer runtimes.",
+  "ranking": [
+    {
+      "plan_id": "plan_fd_imex_highres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_spectral_imex_highres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_fv_implicit_highres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fd_explicit_highres_weno",
+      "rank": 4
+    },
+    {
+      "plan_id": "plan_fem_imex_highres",
+      "rank": 5
+    }
+  ]
+}

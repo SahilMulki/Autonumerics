@@ -1,0 +1,26 @@
+{
+  "best_plan_id": "plan_mixed_fem_50x50_p1p0",
+  "reasoning": "An analytic solution is available, so the primary criterion is the smallest L2 error. Among all plans, 'plan_mixed_fem_50x50_p1p0' achieves the lowest L2 error (0.6144), outperforming all others. Although its runtime (89.32s) is the highest, the significant gain in accuracy justifies the extra computational cost according to the evaluation principles. The next best plan in terms of L2 error is 'plan_fem_hp_adaptive' (0.7449, 43.18s), which is faster but less accurate. The remaining plans have higher L2 errors and/or longer runtimes. Therefore, 'plan_mixed_fem_50x50_p1p0' is the best choice.",
+  "ranking": [
+    {
+      "plan_id": "plan_mixed_fem_50x50_p1p0",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_fem_hp_adaptive",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_fd_4thorder_100x100",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fem_quad_50x50_p2",
+      "rank": 4
+    },
+    {
+      "plan_id": "plan_spectral_chebyshev_64x64",
+      "rank": 5
+    }
+  ]
+}

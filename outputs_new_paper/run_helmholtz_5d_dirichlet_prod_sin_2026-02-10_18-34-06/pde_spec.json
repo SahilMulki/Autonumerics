@@ -1,0 +1,62 @@
+{
+  "equation_type": "Helmholtz",
+  "governing_equation": "-u_x1x1 - u_x2x2 - u_x3x3 - u_x4x4 - u_x5x5 + k**2 * u = f",
+  "spatial_dimension": 5,
+  "time_dependent": false,
+  "spatial_variables": [
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x5"
+  ],
+  "time_variable": null,
+  "domain": {
+    "bounds": {
+      "x1": [
+        0.0,
+        1.0
+      ],
+      "x2": [
+        0.0,
+        1.0
+      ],
+      "x3": [
+        0.0,
+        1.0
+      ],
+      "x4": [
+        0.0,
+        1.0
+      ],
+      "x5": [
+        0.0,
+        1.0
+      ]
+    }
+  },
+  "initial_condition": null,
+  "boundary_conditions": {
+    "type": "Dirichlet",
+    "values": {
+      "u": 0.0
+    }
+  },
+  "parameters": {
+    "k": 3
+  },
+  "analytic_solution": {
+    "expression": "np.sin(np.pi*x1) * np.sin(np.pi*x2) * np.sin(np.pi*x3) * np.sin(np.pi*x4) * np.sin(np.pi*x5)",
+    "space_variables": [
+      "x1",
+      "x2",
+      "x3",
+      "x4",
+      "x5"
+    ]
+  },
+  "notes": null,
+  "id": "helmholtz_5d_dirichlet_prod_sin",
+  "family": "helmholtz",
+  "dimension": 5
+}

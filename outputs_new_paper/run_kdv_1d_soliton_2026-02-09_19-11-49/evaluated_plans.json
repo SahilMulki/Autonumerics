@@ -1,0 +1,206 @@
+[
+  {
+    "plan_id": "plan_spectral_explicit_highres",
+    "metrics": {
+      "runtime_s": 52.16099214553833,
+      "l2_error": 2.3618768892246658e-07,
+      "max_error": 1.3100202911342507e-07,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_highres",
+      "description": "High-resolution Fourier spectral method with explicit ETDRK4 time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 512,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true
+        }
+      },
+      "time_stepping": {
+        "method": "ETDRK4",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {
+          "linear_operator": "u_xxx",
+          "nonlinear_operator": "6 * u * u_x"
+        }
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "High-resolution Fourier spectral method with ETDRK4 is highly accurate and well-suited for periodic, dispersive problems like KdV. Stability is good for this method and cost is justified by the accuracy."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 102.95239520072937,
+      "l2_error": 0.5980633013737888,
+      "max_error": 0.30371024654587275,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_implicit_mediumres",
+      "description": "Medium-resolution Fourier spectral method with implicit-explicit (IMEX) time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true
+        }
+      },
+      "time_stepping": {
+        "method": "IMEX RK",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "implicit_part": "linear u_xxx",
+          "explicit_part": "nonlinear 6*u*u_x"
+        }
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "IMEX spectral method with medium resolution balances stability and accuracy very well for the stiff, periodic KdV equation. Computational cost is moderate and justified by the method's robustness."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_explicit_mediumres",
+    "metrics": {
+      "runtime_s": 40.183736085891724,
+      "l2_error": 0.5296570217370749,
+      "max_error": 0.22486788527426832,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_mediumres",
+      "description": "Medium-resolution Fourier spectral method with explicit RK4 time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true
+        }
+      },
+      "time_stepping": {
+        "method": "RK4",
+        "dt": 0.002,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "_llm_score": 75,
+      "_llm_score_rationale": "Medium-resolution Fourier spectral method with explicit RK4 provides high accuracy and reasonable stability for KdV, though not as robust as IMEX or ETDRK4. Computational cost is moderate."
+    }
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 70.401132106781,
+      "l2_error": 172283502773.058,
+      "max_error": 251887028563.97147,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "description": "Medium-resolution finite difference with implicit Crank-Nicolson time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 256,
+        "Ny": null,
+        "Nz": null,
+        "order": 4,
+        "extra_parameters": {
+          "stencil": "centered",
+          "derivatives": [
+            "first",
+            "third"
+          ]
+        }
+      },
+      "time_stepping": {
+        "method": "Crank-Nicolson",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "nonlinear_solver": "Newton"
+        }
+      },
+      "_llm_score": 70,
+      "_llm_score_rationale": "Implicit Crank-Nicolson with higher-order finite differences and medium resolution improves stability and accuracy for the stiff KdV equation. Computational cost is moderate and justified by the gain in robustness."
+    }
+  },
+  {
+    "plan_id": "plan_fd_explicit_highres",
+    "metrics": {
+      "runtime_s": 22.222862005233765,
+      "l2_error": 0.8004016303969423,
+      "max_error": 0.33006760067625174,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_explicit_highres",
+      "description": "High-resolution finite difference with explicit RK4 time stepping",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 512,
+        "Ny": null,
+        "Nz": null,
+        "order": 4,
+        "extra_parameters": {
+          "stencil": "centered",
+          "derivatives": [
+            "first",
+            "third"
+          ]
+        }
+      },
+      "time_stepping": {
+        "method": "RK4",
+        "dt": 0.0005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "_llm_score": 65,
+      "_llm_score_rationale": "High spatial resolution and fourth-order accuracy improve results, but explicit time stepping still limits stability for the stiff KdV equation. High computational cost is not fully justified."
+    }
+  }
+]

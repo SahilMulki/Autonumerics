@@ -1,0 +1,51 @@
+{
+  "equation_type": "Stokes",
+  "governing_equation": "-Δu + ∂p/∂x = f1,  -Δv + ∂p/∂y = f2,  ∂u/∂x + ∂v/∂y = 0",
+  "spatial_dimension": 2,
+  "time_dependent": false,
+  "spatial_variables": [
+    "x",
+    "y"
+  ],
+  "time_variable": null,
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        1.0
+      ],
+      "y": [
+        0.0,
+        1.0
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 1.0,
+    "y_min": 0.0,
+    "y_max": 1.0
+  },
+  "initial_condition": null,
+  "boundary_conditions": {
+    "type": "Dirichlet",
+    "values": {
+      "u": "sin(πx)sin(πy)",
+      "v": "cos(πx)cos(πy)"
+    }
+  },
+  "parameters": {},
+  "analytic_solution": {
+    "expression": {
+      "u": "sin(πx)sin(πy)",
+      "v": "cos(πx)cos(πy)",
+      "p": "sin(πx)cos(πy)"
+    },
+    "space_variables": [
+      "x",
+      "y"
+    ]
+  },
+  "notes": "The source terms f1 and f2 are determined so that the analytic solution (u,v,p) exactly satisfies the Stokes equations.",
+  "id": "stokes_2d_manufactured_sin_cos",
+  "family": "stokes",
+  "dimension": 2
+}

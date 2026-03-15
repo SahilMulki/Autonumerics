@@ -1,0 +1,26 @@
+{
+  "best_plan_id": "plan_fem_imex_mediumres",
+  "reasoning": "Among all plans, only 'plan_fem_imex_mediumres' provides both residual_l2 and relative_residual metrics. It achieves a much lower relative_residual (0.00224) and residual_l2 (0.00084) than any other plan, with a runtime (44.34s) that is also the fastest. The next best plan, 'plan_fd_implicit_mediumres', has a higher relative_residual (0.00592) and is over 6 times slower. 'plan_spectral_imex_mediumres' is much slower (492.48s) and has a higher relative_residual (0.0559). The other plans have significantly worse residuals and/or runtimes. Therefore, 'plan_fem_imex_mediumres' is the clear best choice, balancing both accuracy and efficiency.",
+  "ranking": [
+    {
+      "plan_id": "plan_fem_imex_mediumres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_spectral_imex_mediumres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fv_implicit_mediumres",
+      "rank": 4
+    },
+    {
+      "plan_id": "plan_fem_implicit_highres",
+      "rank": 5
+    }
+  ]
+}

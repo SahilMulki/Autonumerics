@@ -1,0 +1,204 @@
+[
+  {
+    "plan_id": "plan_spectral_fourier_dirichlet",
+    "metrics": {
+      "runtime_s": 66.26145625114441,
+      "l2_error": 3.5070412694009207e-16,
+      "max_error": 5.551115123125783e-16,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_fourier_dirichlet",
+      "description": "Fourier spectral method with sine basis (Dirichlet BC) and iterative solver",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier sine",
+          "boundary_conditions": "Dirichlet"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "conjugate_gradient"
+        }
+      },
+      "_llm_score": 98,
+      "_llm_score_rationale": "Fourier sine spectral method is ideal for this problem (sinusoidal analytic solution, Dirichlet BCs), providing spectral accuracy and excellent efficiency; this is the most suitable plan."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_chebyshev",
+    "metrics": {
+      "runtime_s": 19.996535062789917,
+      "l2_error": 5.886996511008019e-15,
+      "max_error": 8.881784197001252e-15,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_chebyshev",
+      "description": "Spectral method with Chebyshev collocation points and direct solver",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 32,
+        "Ny": 32,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Chebyshev",
+          "collocation_type": "Gauss-Lobatto"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "direct"
+        }
+      },
+      "_llm_score": 92,
+      "_llm_score_rationale": "Spectral Chebyshev methods are highly accurate and stable for smooth problems with Dirichlet BCs, and the cost is moderate for this problem size; this is nearly optimal for the given analytic solution."
+    }
+  },
+  {
+    "plan_id": "plan_fd_highres_multigrid",
+    "metrics": {
+      "runtime_s": 95.25720429420471,
+      "l2_error": 0.03484751275387615,
+      "max_error": 0.030557627652637073,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 5,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_highres_multigrid",
+      "description": "High-resolution finite difference 4th order with geometric multigrid solver",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 128,
+        "Ny": 128,
+        "Nz": null,
+        "order": 4,
+        "extra_parameters": {
+          "stencil": "9-point Laplacian"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "geometric_multigrid",
+          "cycles": "V-cycle"
+        }
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "High resolution, 4th order accuracy, and multigrid solver provide excellent accuracy and efficiency for the 2D Helmholtz equation, making this plan highly suitable despite higher computational cost."
+    }
+  },
+  {
+    "plan_id": "plan_fem_adaptive_p2",
+    "metrics": {
+      "runtime_s": 123.88986277580261,
+      "l2_error": 0.11156124271206666,
+      "max_error": 0.1097952693233466,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 5,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_adaptive_p2",
+      "description": "Adaptive mesh refinement with quadratic FEM (P2 elements) and iterative solver",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 40,
+        "Ny": 40,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "triangular",
+          "mesh_type": "adaptive"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "bicgstab",
+          "preconditioner": "algebraic_multigrid"
+        }
+      },
+      "_llm_score": 83,
+      "_llm_score_rationale": "Adaptive quadratic FEM balances accuracy and efficiency, especially if solution features are localized; AMG-preconditioned iterative solver ensures robustness for Helmholtz."
+    }
+  },
+  {
+    "plan_id": "plan_fem_higherorder_iterative",
+    "metrics": {
+      "runtime_s": 81.20009994506836,
+      "l2_error": 0.9930366990171301,
+      "max_error": 0.9930366990191162,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_higherorder_iterative",
+      "description": "Higher-order finite element method (P3 elements) with iterative solver (GMRES + AMG)",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 40,
+        "Ny": 40,
+        "Nz": null,
+        "order": 3,
+        "extra_parameters": {
+          "element_type": "triangular",
+          "mesh_type": "uniform"
+        }
+      },
+      "time_stepping": {
+        "method": null,
+        "dt": null,
+        "Nt": null,
+        "t_final": null,
+        "explicit_or_implicit": null,
+        "order": null,
+        "extra_parameters": {
+          "linear_solver": "gmres",
+          "preconditioner": "algebraic_multigrid"
+        }
+      },
+      "_llm_score": 82,
+      "_llm_score_rationale": "Higher-order FEM (P3) with iterative AMG-preconditioned solver offers high accuracy and robustness for Helmholtz, balancing computational cost and suitability well."
+    }
+  }
+]

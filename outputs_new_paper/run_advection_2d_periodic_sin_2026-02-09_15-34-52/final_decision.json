@@ -1,0 +1,26 @@
+{
+  "best_plan_id": "plan_spectral_explicit_highres",
+  "reasoning": "An analytic solution is available, so relative L2 error is the primary metric. 'plan_spectral_explicit_highres' achieves an extremely small L2 error (1.13e-13), orders of magnitude better than all other plans. Its runtime (29.8s) is reasonable and much less than some less accurate plans. The next best, 'plan_spectral_imex_highres', has a much larger L2 error (2.87e-9) and double the runtime. All other plans are both less accurate and not significantly faster. Therefore, 'plan_spectral_explicit_highres' is the clear choice for best accuracy and efficiency balance.",
+  "ranking": [
+    {
+      "plan_id": "plan_spectral_explicit_highres",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_spectral_imex_highres",
+      "rank": 2
+    },
+    {
+      "plan_id": "plan_fd_weno_explicit_highres",
+      "rank": 3
+    },
+    {
+      "plan_id": "plan_fv_explicit_mediumres",
+      "rank": 4
+    },
+    {
+      "plan_id": "plan_fd_explicit_highres",
+      "rank": 5
+    }
+  ]
+}

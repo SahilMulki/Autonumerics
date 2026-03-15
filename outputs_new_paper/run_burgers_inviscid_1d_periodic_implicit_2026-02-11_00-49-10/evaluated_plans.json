@@ -1,0 +1,164 @@
+[
+  {
+    "plan_id": "plan_spectral_explicit_rk3_highres",
+    "metrics": {
+      "runtime_s": 29.86486005783081,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.010072067847866666,
+      "relative_residual": 0.005682605423953,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_rk3_highres",
+      "description": "1D inviscid Burgers with spectral Fourier method and explicit RK3 time stepping, high resolution",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 512,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic_boundary": true,
+          "dealiasing": "2/3_rule"
+        }
+      },
+      "time_stepping": {
+        "method": "explicit_runge_kutta_3",
+        "dt": 0.0005,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 3,
+        "extra_parameters": {}
+      },
+      "_llm_score": 92,
+      "_llm_score_rationale": "High-resolution spectral method with dealiasing offers near-optimal accuracy and efficiency for smooth, periodic Burgers. The cost is high but justified for applications prioritizing accuracy before shock formation."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_explicit_rk4_mediumres",
+    "metrics": {
+      "runtime_s": 41.17689085006714,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.6982690428427939,
+      "relative_residual": 0.39395612048554407,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_explicit_rk4_mediumres",
+      "description": "1D inviscid Burgers with spectral Fourier method and explicit RK4 time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 256,
+        "Ny": null,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic_boundary": true,
+          "dealiasing": "2/3_rule"
+        }
+      },
+      "time_stepping": {
+        "method": "explicit_runge_kutta_4",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 4,
+        "extra_parameters": {}
+      },
+      "_llm_score": 90,
+      "_llm_score_rationale": "Spectral Fourier methods are ideal for smooth, periodic problems and provide very high accuracy and efficiency for the given IC and BC. Dealiasing helps with nonlinear stability, though spectral methods may struggle after shock formation."
+    }
+  },
+  {
+    "plan_id": "plan_fd_explicit_weno_mediumres",
+    "error": "Solver failed after 4 attempts in Coarse_R1.\nFailure: Stability Error: Numerical Instability Detected: Solution contains NaNs or Infinities.\nHint: Reduce time step (dt) or check CFL."
+  },
+  {
+    "plan_id": "plan_fv_explicit_muscl_highres",
+    "metrics": {
+      "runtime_s": 23.48894214630127,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.001000680021129173,
+      "relative_residual": 0.0005648267983311662,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fv_explicit_muscl_highres",
+      "description": "1D inviscid Burgers with explicit MUSCL finite volume, high resolution",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 400,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "reconstruction": "MUSCL",
+          "slope_limiter": "minmod",
+          "riemann_solver": "hllc",
+          "periodic_boundary": true
+        }
+      },
+      "time_stepping": {
+        "method": "explicit_runge_kutta_3",
+        "dt": 0.001,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "explicit",
+        "order": 3,
+        "extra_parameters": {}
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "MUSCL with a limiter and high resolution provides good shock-capturing and second-order accuracy, making it well-suited for inviscid Burgers. The cost is high but justified by improved accuracy and robustness."
+    }
+  },
+  {
+    "plan_id": "plan_fv_imex_roe_mediumres",
+    "metrics": {
+      "runtime_s": 36.55244708061218,
+      "l2_error": null,
+      "max_error": null,
+      "residual_l2": 0.026495021099740352,
+      "relative_residual": 0.01484968048523671,
+      "num_attempts": 3,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fv_imex_roe_mediumres",
+      "description": "1D inviscid Burgers with finite volume Roe solver and IMEX RK time stepping, medium resolution",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 200,
+        "Ny": null,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "reconstruction": "MUSCL",
+          "slope_limiter": "van_leer",
+          "riemann_solver": "Roe",
+          "periodic_boundary": true
+        }
+      },
+      "time_stepping": {
+        "method": "imex_runge_kutta_3",
+        "dt": 0.002,
+        "Nt": null,
+        "t_final": 1.0,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {}
+      },
+      "_llm_score": 78,
+      "_llm_score_rationale": "IMEX with Roe and MUSCL is robust and accurate for hyperbolic conservation laws, though full implicitness is not needed for inviscid Burgers. The plan balances accuracy, stability, and cost well."
+    }
+  }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "plan_id": "plan_fd_32x32_loworder",
+    "score": 60,
+    "rationale": "This plan uses a robust MAC staggered finite difference scheme, but the low grid resolution and second-order accuracy limit its accuracy for the manufactured solution. Efficiency is good, but accuracy is suboptimal."
+  },
+  {
+    "plan_id": "plan_fd_64x64_mediumorder",
+    "score": 85,
+    "rationale": "A fourth-order accurate MAC finite difference scheme on a moderate grid offers a strong balance of accuracy, stability, and efficiency for the Stokes problem with smooth analytic solution and Dirichlet BCs."
+  },
+  {
+    "plan_id": "plan_fem_p2p1_32x32",
+    "score": 75,
+    "rationale": "The P2-P1 mixed FEM is a classical, stable, and accurate choice for Stokes, but the 32x32 mesh limits spatial resolution. Efficiency is good, but accuracy is not as high as higher-order or finer-mesh plans."
+  },
+  {
+    "plan_id": "plan_fem_p3p2_64x64",
+    "score": 90,
+    "rationale": "High-order FEM (P3-P2) on a fine mesh is highly accurate and stable for Stokes, especially with smooth solutions. The computational cost is justified by the accuracy gain for this manufactured solution."
+  },
+  {
+    "plan_id": "plan_fv_50x50_central",
+    "score": 70,
+    "rationale": "Second-order central finite volume with SIMPLE coupling is stable and reasonable for Stokes, but accuracy and resolution are limited compared to higher-order or finer-mesh alternatives."
+  },
+  {
+    "plan_id": "plan_spectral_32x32",
+    "score": 95,
+    "rationale": "Spectral methods are ideal for smooth, manufactured solutions and offer very high accuracy and efficiency for this problem. The tau method handles Dirichlet BCs well, making this plan highly suitable."
+  },
+  {
+    "plan_id": "plan_fem_stabilized_p1p1_64x64",
+    "score": 65,
+    "rationale": "Stabilized P1-P1 FEM is stable but only first-order accurate, making it less suitable for a smooth manufactured solution where higher accuracy is desired. Cost is moderate, but accuracy is lacking."
+  },
+  {
+    "plan_id": "plan_fd_staggered_128x128",
+    "score": 78,
+    "rationale": "A high-resolution MAC finite difference scheme is robust and accurate, but the second-order accuracy limits efficiency gains compared to higher-order methods. Computational cost is high for the accuracy achieved."
+  },
+  {
+    "plan_id": "plan_fem_mixed_32x32",
+    "score": 68,
+    "rationale": "Mixed FEM with Raviart-Thomas elements is stable and conservative, but first-order accuracy and modest mesh resolution limit its suitability for this smooth, analytic solution."
+  },
+  {
+    "plan_id": "plan_fv_upwind_100x100",
+    "score": 60,
+    "rationale": "Upwind finite volume is stable but only first-order accurate, which is not ideal for the smooth Stokes problem. The high grid resolution partially compensates, but efficiency is poor for the accuracy obtained."
+  }
+]

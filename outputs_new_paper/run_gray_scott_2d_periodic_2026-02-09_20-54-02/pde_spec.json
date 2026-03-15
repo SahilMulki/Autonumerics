@@ -1,0 +1,43 @@
+{
+  "equation_type": "Reaction-Diffusion",
+  "governing_equation": "u_t = D_u * (u_xx + u_yy) - u * v**2 + F * (1 - u); v_t = D_v * (v_xx + v_yy) + u * v**2 - (F + k) * v",
+  "spatial_dimension": 2,
+  "time_dependent": true,
+  "spatial_variables": [
+    "x",
+    "y"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        1.0
+      ],
+      "y": [
+        0.0,
+        1.0
+      ]
+    },
+    "x_min": 0.0,
+    "x_max": 1.0,
+    "y_min": 0.0,
+    "y_max": 1.0
+  },
+  "initial_condition": "{'u': 1.0, 'v': 0.0} everywhere except on a small square patch centered at (0.5,0.5) where {'u': 0.5, 'v': 0.25}",
+  "boundary_conditions": {
+    "type": "periodic",
+    "values": {}
+  },
+  "parameters": {
+    "D_u": 2e-05,
+    "D_v": 1e-05,
+    "F": 0.04,
+    "k": 0.06
+  },
+  "analytic_solution": null,
+  "notes": "No analytic solution is provided. Evaluate solutions via discrete residual and/or conserved/diagnostic quantities.",
+  "id": "gray_scott_2d_periodic",
+  "family": "reaction_diffusion_system",
+  "dimension": 2
+}

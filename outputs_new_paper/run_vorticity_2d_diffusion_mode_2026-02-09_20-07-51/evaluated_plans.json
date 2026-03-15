@@ -1,0 +1,200 @@
+[
+  {
+    "plan_id": "plan_fd_cranknicolson_highres",
+    "metrics": {
+      "runtime_s": 54.10623502731323,
+      "l2_error": 0.0003323272012057265,
+      "max_error": 4.6163948094368745e-05,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_cranknicolson_highres",
+      "description": "2D finite difference Crank-Nicolson with high resolution grid",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 128,
+        "Ny": 128,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "stencil": "centered_3pt"
+        }
+      },
+      "time_stepping": {
+        "method": "crank_nicolson",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 0.5,
+        "explicit_or_implicit": "implicit",
+        "order": 2,
+        "extra_parameters": {
+          "linear_solver": "iterative",
+          "preconditioner": "ilu"
+        }
+      },
+      "_llm_score": 85,
+      "_llm_score_rationale": "Crank-Nicolson is unconditionally stable and second-order accurate in time, and the high-resolution grid (128x128) ensures excellent spatial accuracy. Computational cost is high but justified by the accuracy and robustness for this diffusion problem."
+    }
+  },
+  {
+    "plan_id": "plan_spectral_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 31.48461604118347,
+      "l2_error": 0.03869756759041804,
+      "max_error": 0.005375522963932455,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 4,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_spectral_implicit_mediumres",
+      "description": "2D Fourier spectral method with implicit backward Euler time stepping",
+      "spatial_discretization": {
+        "scheme": "spectral",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": null,
+        "extra_parameters": {
+          "basis": "Fourier",
+          "periodic": true
+        }
+      },
+      "time_stepping": {
+        "method": "backward_euler",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 0.5,
+        "explicit_or_implicit": "implicit",
+        "order": 1,
+        "extra_parameters": {}
+      },
+      "_llm_score": 80,
+      "_llm_score_rationale": "Spectral spatial discretization is optimal for periodic diffusion, and implicit backward Euler is robust and efficient. Medium resolution (64x64) is sufficient for smooth solutions, though only first-order accurate in time."
+    }
+  },
+  {
+    "plan_id": "plan_fem_imex_mediumres",
+    "metrics": {
+      "runtime_s": 48.06371474266052,
+      "l2_error": 2.794673974223872e+36,
+      "max_error": 3.866807473904419e+35,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fem_imex_mediumres",
+      "description": "2D finite element method with IMEX RK time stepping (implicit diffusion, explicit nonlinear terms)",
+      "spatial_discretization": {
+        "scheme": "fem",
+        "Nx": 50,
+        "Ny": 50,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "element_type": "Lagrange",
+          "mesh_type": "structured_quad"
+        }
+      },
+      "time_stepping": {
+        "method": "imex_rk",
+        "dt": 0.005,
+        "Nt": null,
+        "t_final": 0.5,
+        "explicit_or_implicit": "imex",
+        "order": 3,
+        "extra_parameters": {
+          "implicit_part": "diffusion",
+          "explicit_part": "none"
+        }
+      },
+      "_llm_score": 72,
+      "_llm_score_rationale": "IMEX RK is stable and third-order accurate in time, and quadratic elements improve spatial accuracy over linear FEM. The plan is robust and efficient for diffusion, though not as optimal as spectral for this periodic, smooth problem."
+    }
+  },
+  {
+    "plan_id": "plan_fd_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 36.333958864212036,
+      "l2_error": 0.03869756759042664,
+      "max_error": 0.005375522963933593,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fd_implicit_mediumres",
+      "description": "2D finite difference implicit backward Euler with medium resolution grid",
+      "spatial_discretization": {
+        "scheme": "finite_difference",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "stencil": "centered_3pt"
+        }
+      },
+      "time_stepping": {
+        "method": "backward_euler",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 0.5,
+        "explicit_or_implicit": "implicit",
+        "order": 1,
+        "extra_parameters": {
+          "linear_solver": "direct"
+        }
+      },
+      "_llm_score": 70,
+      "_llm_score_rationale": "Backward Euler is unconditionally stable for diffusion and the medium grid (64x64) gives reasonable resolution. However, first-order time accuracy and moderate spatial resolution limit accuracy, but the plan is robust and efficient for this PDE."
+    }
+  },
+  {
+    "plan_id": "plan_fv_implicit_mediumres",
+    "metrics": {
+      "runtime_s": 33.080668926239014,
+      "l2_error": 0.04028253433742356,
+      "max_error": 0.005582220096355089,
+      "residual_l2": null,
+      "relative_residual": null,
+      "num_attempts": 2,
+      "restarts_used": 0
+    },
+    "plan": {
+      "plan_id": "plan_fv_implicit_mediumres",
+      "description": "2D finite volume implicit backward Euler with medium resolution grid",
+      "spatial_discretization": {
+        "scheme": "finite_volume",
+        "Nx": 64,
+        "Ny": 64,
+        "Nz": null,
+        "order": 2,
+        "extra_parameters": {
+          "flux_type": "central"
+        }
+      },
+      "time_stepping": {
+        "method": "backward_euler",
+        "dt": 0.01,
+        "Nt": null,
+        "t_final": 0.5,
+        "explicit_or_implicit": "implicit",
+        "order": 1,
+        "extra_parameters": {
+          "linear_solver": "gmres",
+          "preconditioner": "ilu"
+        }
+      },
+      "_llm_score": 70,
+      "_llm_score_rationale": "Finite volume with implicit backward Euler is robust and efficient for diffusion, and medium resolution is reasonable. First-order time accuracy limits precision, but the plan is stable and suitable for this PDE."
+    }
+  }
+]

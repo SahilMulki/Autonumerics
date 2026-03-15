@@ -1,0 +1,14 @@
+{
+  "best_plan_id": "plan_fd_highres_multigrid",
+  "reasoning": "An analytic solution is available, so the primary metric is the relative L2 error. 'plan_fd_highres_multigrid' achieves an extremely low L2 error (1.24e-5), which is orders of magnitude better than all other plans except 'plan_spectral_fourier'. However, 'plan_spectral_fourier' has catastrophic errors (L2 error ~4.7e12), indicating a likely implementation failure. The next best plans, 'plan_fem_highorder_iterative' and 'plan_fvm_highres_multigrid', have L2 errors near 1, which is much worse than 'plan_fd_highres_multigrid'. Although 'plan_fd_highres_multigrid' is not the fastest, its accuracy is vastly superior and the runtime is reasonable. Therefore, it is the best choice.",
+  "ranking": [
+    {
+      "plan_id": "plan_fd_highres_multigrid",
+      "rank": 1
+    },
+    {
+      "plan_id": "plan_fvm_highres_multigrid",
+      "rank": 2
+    }
+  ]
+}
