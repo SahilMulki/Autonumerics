@@ -19,8 +19,8 @@ source .venv/bin/activate
 # install the git hooks once for local development
 pre-commit install
 
-# set your OpenAI API key before running any LLM-driven step
-export OPENAI_API_KEY="your_api_key_here"
+# set your Anthropic API key before running any LLM-driven step
+export ANTHROPIC_API_KEY="your_api_key_here"
 
 # run the main pipeline on one benchmark problem
 python app/run_single_problem.py --problem-id wave_2d_dirichlet_sin_sin

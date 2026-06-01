@@ -177,7 +177,7 @@ def _sanitize_feature_payload(payload: dict) -> dict:
 
 
 def llm_extract_features(
-    pde_spec: dict, plans: list[dict], *, model: str = "gpt-4.1", max_tries: int = 3
+    pde_spec: dict, plans: list[dict], *, model: str = "claude-sonnet-4-6", max_tries: int = 3
 ) -> dict:
     """
     Calls the LLM to generate problem_features + plan_features and returns a dict.
@@ -189,7 +189,7 @@ def llm_extract_features(
         ensure_ascii=False,
     )
 
-    resp = call_llm(FEATURE_SYSTEM, user_prompt, model=model)
+    resp = call_llm(FEATURE_SYSTEM, user_prompt, model=model, max_tokens=16000)
 
     for attempt in range(1, max_tries + 1):
         try:
@@ -213,6 +213,6 @@ def llm_extract_features(
                 "Here is your invalid output:\n"
                 f"{resp}"
             )
-            resp = call_llm(FEATURE_SYSTEM, repair_prompt, model=model)
+            resp = call_llm(FEATURE_SYSTEM, repair_prompt, model=model, max_tokens=16000)
 
     raise RuntimeError("Unexpected control flow in llm_extract_features.")

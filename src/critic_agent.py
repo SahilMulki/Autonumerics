@@ -30,7 +30,7 @@ Hard requirements:
 
 
 def debug_code(
-    code: str, error_message: str, pde_spec: dict, plan: dict, model: str = "gpt-4.1"
+    code: str, error_message: str, pde_spec: dict, plan: dict, model: str = "claude-sonnet-4-6"
 ) -> str:
     payload = {
         "error_message": error_message,

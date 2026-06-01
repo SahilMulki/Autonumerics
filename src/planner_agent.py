@@ -1,8 +1,45 @@
 # planner_agent.py
 
 import json
+import re
 
 from .llm_utils import call_llm
+
+
+def _extract_json(text: str) -> str:
+    """Strip code fences then find the first balanced JSON object or array."""
+    text = text.strip()
+    text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    text = text.strip()
+
+    start = None
+    for i, ch in enumerate(text):
+        if ch in "{[":
+            start = i
+            opener, closer = ch, ("}" if ch == "{" else "]")
+            break
+    if start is None:
+        raise ValueError(f"No JSON found in LLM response: {text[:200]!r}")
+
+    depth, in_str, escape = 0, False, False
+    for j in range(start, len(text)):
+        c = text[j]
+        if in_str:
+            escape = (not escape and c == "\\")
+            if not escape and c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == opener:
+                depth += 1
+            elif c == closer:
+                depth -= 1
+                if depth == 0:
+                    return text[start : j + 1]
+
+    raise ValueError("Could not extract balanced JSON from LLM response.")
 
 PLANNER_SYSTEM = r"""
 You are an expert in numerical PDEs.
@@ -49,7 +86,7 @@ Guidelines:
 """
 
 
-def generate_plans(pde_spec: dict, num_plans: int = 25, model: str = "gpt-4.1-mini") -> list[dict]:
+def generate_plans(pde_spec: dict, num_plans: int = 25, model: str = "claude-haiku-4-5-20251001") -> list[dict]:
     user_prompt = json.dumps({"pde_spec": pde_spec, "num_plans": num_plans}, indent=2)
     resp = call_llm(PLANNER_SYSTEM, user_prompt, model=model)
-    return json.loads(resp)
+    return json.loads(_extract_json(resp))

@@ -1,9 +1,46 @@
 # plan_selector.py
 
 import json
+import re
 from typing import Any, Dict, List
 
 from .llm_utils import call_llm
+
+
+def _extract_json(text: str) -> str:
+    """Strip code fences then find the first balanced JSON object or array."""
+    text = text.strip()
+    text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    text = text.strip()
+
+    start = None
+    for i, ch in enumerate(text):
+        if ch in "{[":
+            start = i
+            opener, closer = ch, ("}" if ch == "{" else "]")
+            break
+    if start is None:
+        raise ValueError(f"No JSON found in LLM response: {text[:200]!r}")
+
+    depth, in_str, escape = 0, False, False
+    for j in range(start, len(text)):
+        c = text[j]
+        if in_str:
+            escape = (not escape and c == "\\")
+            if not escape and c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == opener:
+                depth += 1
+            elif c == closer:
+                depth -= 1
+                if depth == 0:
+                    return text[start : j + 1]
+
+    raise ValueError("Could not extract balanced JSON from LLM response.")
 
 PLAN_SCORER_SYSTEM = r"""
 You are an expert in numerical PDEs and scientific computing.
@@ -79,7 +116,7 @@ def score_plans_with_llm(
     pde_spec: Dict[str, Any],
     plans: List[Dict[str, Any]],
     feature_info: Dict[str, Any] | None = None,
-    model: str = "gpt-4.1",
+    model: str = "claude-sonnet-4-6",
 ) -> List[Dict[str, Any]]:
     payload = {
         "pde_spec": pde_spec,
@@ -92,13 +129,13 @@ def score_plans_with_llm(
         + "\n\nPlease score every plan."
     )
     resp_str = call_llm(PLAN_SCORER_SYSTEM, user_prompt, model=model)
-    return json.loads(resp_str)
+    return json.loads(_extract_json(resp_str))
 
 
 def choose_best_plan_with_llm(
     pde_spec: Dict[str, Any],
     evaluated_plans: List[Dict[str, Any]],
-    model: str = "gpt-4.1",
+    model: str = "claude-sonnet-4-6",
 ) -> Dict[str, Any]:
     payload = {
         "pde_spec": pde_spec,
@@ -112,4 +149,4 @@ def choose_best_plan_with_llm(
     )
 
     resp_str = call_llm(PLAN_SELECTOR_SYSTEM, user_prompt, model=model)
-    return json.loads(resp_str)
+    return json.loads(_extract_json(resp_str))

@@ -97,7 +97,7 @@ def validate_problem(problem: Dict[str, Any]) -> None:
 
 def generate_problem_from_description(
     description: str,
-    model: str = "gpt-4.1",
+    model: str = "claude-sonnet-4-6",
 ) -> Dict[str, Any]:
     raw = call_llm(
         system_prompt=SYSTEM_PROMPT,
@@ -122,7 +122,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--description-file", help="Path to a text file containing the PDE description."
     )
-    parser.add_argument("--model", default="gpt-4.1", help="LLM model to use.")
+    parser.add_argument("--model", default="claude-sonnet-4-6", help="LLM model to use.")
     return parser.parse_args(argv)
 
 

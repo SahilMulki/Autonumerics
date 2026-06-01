@@ -166,7 +166,7 @@ def formulate_problem(problem_description: str, seed: Optional[int] = None) -> d
 
     for _attempt in range(max_retries):
         try:
-            resp = call_llm(FORMULATOR_SYSTEM, user_prompt, model="gpt-4.1")
+            resp = call_llm(FORMULATOR_SYSTEM, user_prompt, model="claude-sonnet-4-6")
             clean_resp = _clean_json_response(resp)
             spec = json.loads(clean_resp)
             spec = _post_process_pde_spec(spec)

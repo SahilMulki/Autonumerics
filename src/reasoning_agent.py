@@ -42,7 +42,7 @@ def analyze_theoretical_fit(
     pde_spec: dict,
     plan: dict,
     metrics: dict,
-    model: str = "gpt-4.1",
+    model: str = "claude-sonnet-4-6",
 ) -> str:
     """
     Generates a PDE-specific theoretical explanation for the solver's performance
@@ -69,9 +69,9 @@ def analyze_theoretical_fit(
             },
         },
         "empirical_metrics": {
-            "relative_l2_error": metrics.get("relative_l2"),
+            "relative_l2_error": metrics.get("l2_error"),
             "relative_residual": metrics.get("relative_residual"),
-            "absolute_residual": metrics.get("absolute_residual"),
+            "absolute_residual": metrics.get("residual_l2"),
             "runtime_seconds": metrics.get("runtime_s"),
         },
     }

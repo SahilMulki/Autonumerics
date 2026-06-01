@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+
+# uv / pip
+*.egg-info/
+
+# Run outputs (generated artifacts, not source)
+outputs_new_paper/run_*/
+
+# macOS
+.DS_Store

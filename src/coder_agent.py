@@ -39,7 +39,7 @@ CRITICAL RULES:
 """
 
 
-def generate_solver_code(pde_spec: dict, plan: dict, model: str = "gpt-4.1") -> str:
+def generate_solver_code(pde_spec: dict, plan: dict, model: str = "claude-sonnet-4-6") -> str:
     user_prompt = (
         "Here is the PDE spec:\n"
         f"{json.dumps(pde_spec, indent=2)}\n\n"
