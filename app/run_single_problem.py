@@ -422,6 +422,9 @@ def _run_sde_pipeline(
     print("\n=== [SDE] Step 3: Feature Extraction ===")
     try:
         feature_info = llm_extract_features(sde_spec, plans, max_tries=3)
+        n_pf  = len(feature_info.get("problem_features", []))
+        n_plf = len(feature_info.get("plan_features", []))
+        print(f"Extracted {n_pf} problem features, {n_plf} plan feature vectors.")
     except Exception:
         print("[runner] Feature extraction failed; continuing without features.")
         feature_info = {"problem_features": [], "plan_features": []}

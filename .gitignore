@@ -10,5 +10,9 @@ __pycache__/
 # Run outputs (generated artifacts, not source)
 outputs_new_paper/run_*/
 
+# Secrets — never commit API keys
+.env
+.env.local
+
 # macOS
 .DS_Store

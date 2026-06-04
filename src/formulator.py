@@ -383,8 +383,12 @@ def _post_process_sde_spec(spec: dict) -> dict:
     if not anal or anal == {}:
         spec["analytic_solution"] = None
     elif isinstance(anal, dict):
-        # Infer type from whichever fields are present if the LLM omitted it.
-        if "type" not in anal:
+        # Normalize the type field. The LLM sometimes returns "distribution"
+        # or other non-standard strings instead of the canonical "moments".
+        # If mean/variance expressions are present, the type must be "moments"
+        # so sde_analytic_utils.evaluate_sde_moments() can find them.
+        current_type = anal.get("type")
+        if current_type not in ("moments", "explicit"):
             if "mean" in anal or "variance" in anal:
                 anal["type"] = "moments"
             elif "expression" in anal:
