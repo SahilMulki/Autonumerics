@@ -104,14 +104,17 @@ Each plan object MUST follow this schema (all keys required):
 
 SCHEME SELECTION RULES (STRICT — violating these produces incorrect code):
 1. Euler-Maruyama (EM):
-   - Always allowed for any SDE.
+   - Always allowed for any SDE (scalar or multi-dimensional).
    - Strong order: 0.5, Weak order: 1.0.
    - Set strong_order=0.5 and weak_order=1.0.
 
 2. Milstein:
-   - ONLY propose Milstein when BOTH conditions hold:
-       (a) sde_spec["noise_structure"] == "multiplicative"
-       (b) sde_spec["diffusion_derivative"] is non-null
+   - ONLY propose Milstein when ALL THREE conditions hold:
+       (a) sde_spec["state_dimension"] == 1  (scalar SDEs only)
+       (b) sde_spec["noise_structure"] == "multiplicative"
+       (c) sde_spec["diffusion_derivative"] is non-null
+   - For state_dimension > 1: Milstein requires the Lévy area correction term
+     which is not implemented — always use Euler-Maruyama for multi-D SDEs.
    - When noise_structure == "additive", dg/dX = 0, so the Milstein correction
      term vanishes — Milstein reduces to EM. Do NOT propose it in this case.
    - When diffusion_derivative is null, the correction cannot be computed.
@@ -187,10 +190,13 @@ def _post_process_sde_plans(plans: list[dict], sde_spec: dict) -> list[dict]:
         sde_spec.get("time_interval", {}).get("t_final", 1.0)
     )
 
-    # Milstein eligibility: both conditions must hold
+    # Milstein eligibility: all three conditions must hold.
+    # The Lévy area correction required for multi-D Milstein is not implemented,
+    # so multi-D problems are restricted to Euler-Maruyama.
+    state_dim = sde_spec.get("state_dimension", 1)
     noise_is_multiplicative = sde_spec.get("noise_structure", "additive") == "multiplicative"
     has_diffusion_derivative = sde_spec.get("diffusion_derivative") not in (None, "null", "")
-    milstein_allowed = noise_is_multiplicative and has_diffusion_derivative
+    milstein_allowed = (state_dim == 1) and noise_is_multiplicative and has_diffusion_derivative
 
     seen_ids: dict[str, int] = {}  # track plan_id occurrences to deduplicate
     cleaned: list[dict] = []

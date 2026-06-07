@@ -36,9 +36,26 @@ VERBOSE = bool(int(os.getenv("RUNNER_VERBOSE", "0")))
 DEFAULT_PROBLEM_ID = "reaction_diffusion_2d_linear_dirichlet"
 
 
+class _NumpyEncoder(json.JSONEncoder):
+    """JSON encoder that converts numpy scalars and arrays to Python natives.
+
+    Without this, numpy int64 / float64 / ndarray values raise TypeError when
+    passed to json.dump. This encoder is used for all _save_json calls so that
+    multi-D moment metrics (arrays) and numpy-typed numbers serialize cleanly.
+    """
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        return super().default(obj)
+
+
 def _save_json(obj, path: str):
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2, ensure_ascii=False)
+        json.dump(obj, f, indent=2, ensure_ascii=False, cls=_NumpyEncoder)
 
 
 def _save_text(text: str, path: str):
@@ -311,12 +328,13 @@ def run_generated_sde_solver(code: str, sde_spec: dict, plan: dict) -> dict:
     if missing:
         raise KeyError(f"SDE solver result missing required keys: {missing}")
 
-    # Scalar stability check
+    # Stability check: works for both scalar float and multi-D ndarray values.
+    # float() fails on non-scalar arrays, so use np.asarray + np.all instead.
     for key in ("terminal_mean", "terminal_variance"):
-        val = float(result[key])
-        if not np.isfinite(val):
+        arr = np.asarray(result[key], dtype=float)
+        if not np.all(np.isfinite(arr)):
             raise ValueError(
-                f"Numerical Instability: '{key}' = {val}. "
+                f"Numerical Instability: '{key}' contains non-finite values. "
                 "Reduce dt or check drift/diffusion expressions."
             )
 
@@ -391,6 +409,63 @@ def run_sde_with_critic(
     raise RuntimeError(
         f"SDE solver failed after {max_retries + 1} attempts in {phase_name}.\nFailure: {last_err}"
     )
+
+
+def _print_moment_summary(moment_metrics: dict, sde_spec: dict) -> None:
+    """Print the moment comparison table after a plan is evaluated.
+
+    Handles both scalar SDEs (state_dimension=1) and multi-D SDEs
+    (state_dimension>1) by printing one row per state component.
+    """
+    d = moment_metrics.get("state_dimension", 1)
+    state_vars = sde_spec.get("state_variables", ["X"])
+
+    if d == 1:
+        # Scalar case: single-line mean and variance printout
+        print(
+            f"  E[X(T)]  empirical={moment_metrics['empirical_mean']:.6f}",
+            end="",
+        )
+        if moment_metrics["exact_mean"] is not None:
+            print(
+                f"  exact={moment_metrics['exact_mean']:.6f}"
+                f"  rel_err={moment_metrics['mean_relative_error']:.2e}",
+                end="",
+            )
+        print()
+        print(
+            f"  Var[X(T)] empirical={moment_metrics['empirical_variance']:.6f}",
+            end="",
+        )
+        if moment_metrics["exact_variance"] is not None:
+            print(
+                f"  exact={moment_metrics['exact_variance']:.6f}"
+                f"  rel_err={moment_metrics['variance_relative_error']:.2e}",
+                end="",
+            )
+        print()
+    else:
+        # Multi-D case: one row per component for both mean and variance
+        emp_mean = np.asarray(moment_metrics["empirical_mean"])
+        emp_var  = np.asarray(moment_metrics["empirical_variance"])
+        exact_mean = moment_metrics.get("exact_mean")
+        exact_var  = moment_metrics.get("exact_variance")
+        mean_rel_comp = moment_metrics.get("mean_relative_error_components")
+        var_rel_comp  = moment_metrics.get("variance_relative_error_components")
+
+        for i, var in enumerate(state_vars):
+            print(f"  E[{var}(T)]   empirical={emp_mean[i]:.6f}", end="")
+            if exact_mean is not None and not np.isnan(exact_mean[i]):
+                rel = f"  rel_err={mean_rel_comp[i]:.2e}" if mean_rel_comp is not None else ""
+                print(f"  exact={exact_mean[i]:.6f}{rel}", end="")
+            print()
+
+        for i, var in enumerate(state_vars):
+            print(f"  Var[{var}(T)] empirical={emp_var[i]:.6f}", end="")
+            if exact_var is not None and not np.isnan(exact_var[i]):
+                rel = f"  rel_err={var_rel_comp[i]:.2e}" if var_rel_comp is not None else ""
+                print(f"  exact={exact_var[i]:.6f}{rel}", end="")
+            print()
 
 
 def _run_sde_pipeline(
@@ -509,29 +584,8 @@ def _run_sde_pipeline(
                 # Compare Monte Carlo moments to exact closed-form expressions
                 moment_metrics = evaluate_sde_moments(sde_spec, result)
 
-                # Print moment comparison summary
-                print(
-                    f"  E[X(T)]  empirical={moment_metrics['empirical_mean']:.6f}",
-                    end="",
-                )
-                if moment_metrics["exact_mean"] is not None:
-                    print(
-                        f"  exact={moment_metrics['exact_mean']:.6f}"
-                        f"  rel_err={moment_metrics['mean_relative_error']:.2e}",
-                        end="",
-                    )
-                print()
-                print(
-                    f"  Var[X(T)] empirical={moment_metrics['empirical_variance']:.6f}",
-                    end="",
-                )
-                if moment_metrics["exact_variance"] is not None:
-                    print(
-                        f"  exact={moment_metrics['exact_variance']:.6f}"
-                        f"  rel_err={moment_metrics['variance_relative_error']:.2e}",
-                        end="",
-                    )
-                print()
+                # Print moment comparison summary — handles both scalar and multi-D
+                _print_moment_summary(moment_metrics, sde_spec)
 
                 run_data = {
                     "plan_id": plan_id,

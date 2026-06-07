@@ -11,14 +11,21 @@ plays in the PDE pipeline: it tells the plan scorer and plan selector how
 accurately each (scheme, dt, num_paths) combination reproduces the true
 distribution of X(T).
 
-The SDE analytic_solution field in the spec is expected to have the form:
+For scalar SDEs (state_dimension=1), analytic_solution is expected to have the form:
     {
         "type": "moments",
         "mean":     "<Python/NumPy expression in t, X_0, param names>",
         "variance": "<Python/NumPy expression in t, X_0, param names>"
     }
 
-All five Phase 1 problems store their moments in this format.
+For multi-dimensional SDEs (state_dimension > 1), the per-component convention is:
+    {
+        "type": "moments",
+        "mean_X":     "<expr>", "variance_X": "<expr>",
+        "mean_Y":     "<expr>", "variance_Y": "<expr>",
+        "covariance_XY": "<expr>"  (optional)
+    }
+where X, Y come from sde_spec["state_variables"].
 """
 
 from __future__ import annotations
@@ -134,87 +141,171 @@ def evaluate_sde_moments(sde_spec: dict, solver_result: dict) -> dict:
     is stored in the plan's "metrics" dict that the plan scorer and selector
     consume.
 
+    Supports both scalar SDEs (state_dimension=1) and multi-dimensional SDEs
+    (state_dimension > 1). For multi-D, per-component moment errors are computed
+    using the mean_X / variance_X / mean_Y / variance_Y keys in analytic_solution.
+    The scalar summary fields mean_relative_error and variance_relative_error
+    are set to the max over components for backward compatibility with the plan scorer.
+
     Args:
         sde_spec:      SDE specification from formulate_problem().
         solver_result: Dict returned by solve_sde() (from the generated code).
-                       Must contain at minimum "terminal_mean", "terminal_variance",
+                       Must contain "terminal_mean", "terminal_variance",
                        "num_paths", "scheme", and "t".
 
-    Returns a dict with the following keys (all always present):
+    Returns a dict. Keys common to both scalar and multi-D:
+        has_analytic_moments        — bool
+        state_dimension             — int (1 or d)
+        t_final                     — float
+        empirical_mean              — float (scalar) or ndarray (d,) (multi-D)
+        empirical_variance          — float (scalar) or ndarray (d,) (multi-D)
+        exact_mean                  — float or ndarray (d,) or None
+        exact_variance              — float or ndarray (d,) or None
+        mean_absolute_error         — float or ndarray (d,) or None
+        variance_absolute_error     — float or ndarray (d,) or None
+        mean_relative_error         — float or None  (scalar for scalar SDEs;
+                                      max over components for multi-D)
+        variance_relative_error     — float or None  (same convention)
+        num_paths                   — int
+        scheme                      — str
 
-        has_analytic_moments  — bool: True if exact mean and/or variance
-                                are available for comparison
-        t_final               — float: terminal time T used for evaluation
-        empirical_mean        — float: E[X(T)] from Monte Carlo
-        empirical_variance    — float: Var[X(T)] from Monte Carlo
-        exact_mean            — float or None: closed-form E[X(T)]
-        exact_variance        — float or None: closed-form Var[X(T)]
-        mean_absolute_error   — float or None: |empirical - exact| for mean
-        variance_absolute_error — float or None: |empirical - exact| for variance
-        mean_relative_error   — float or None: relative error for mean;
-                                computed as |emp - exact| / (|exact| + 1e-10)
-                                so BM (exact mean = 0) gets a meaningful value
-        variance_relative_error — float or None: relative error for variance
-        num_paths             — int: number of Monte Carlo paths
-        scheme                — str: "euler_maruyama" or "milstein"
+    Additional keys for multi-D (state_dimension > 1):
+        state_variables                   — list[str]
+        mean_relative_error_components    — ndarray (d,) or None
+        variance_relative_error_components — ndarray (d,) or None
     """
-    # --- Pull empirical values from solver result ---
-    emp_mean = float(solver_result.get("terminal_mean", float("nan")))
-    emp_var  = float(solver_result.get("terminal_variance", float("nan")))
+    d = int(sde_spec.get("state_dimension", 1))
     num_paths = int(solver_result.get("num_paths", 0))
     scheme    = str(solver_result.get("scheme", "unknown"))
+    _eps = 1e-10
 
-    # Terminal time: use the last element of the t array returned by the solver.
-    # Fall back to sde_spec if the solver didn't return t.
+    # Terminal time from solver result, with fallback to spec
     t_arr = solver_result.get("t", None)
     if t_arr is not None and hasattr(t_arr, "__len__") and len(t_arr) > 0:
         t_final = float(np.asarray(t_arr)[-1])
     else:
         t_final = float(sde_spec.get("time_interval", {}).get("t_final", 1.0))
 
-    # --- Try to get exact moment expressions from analytic_solution ---
+    # ===========================================================================
+    # Scalar path (state_dimension == 1) — original behavior, unchanged
+    # ===========================================================================
+    if d == 1:
+        emp_mean = float(solver_result.get("terminal_mean", float("nan")))
+        emp_var  = float(solver_result.get("terminal_variance", float("nan")))
+
+        exact_mean: Optional[float] = None
+        exact_var:  Optional[float] = None
+
+        anal = sde_spec.get("analytic_solution", None)
+        if isinstance(anal, dict) and anal.get("type") == "moments":
+            ns = _build_moment_namespace(sde_spec, t_final)
+            exact_mean = _eval_moment_expr(anal.get("mean"),     ns)
+            exact_var  = _eval_moment_expr(anal.get("variance"), ns)
+
+        has_analytic = (exact_mean is not None) or (exact_var is not None)
+
+        mean_abs_err: Optional[float] = None
+        mean_rel_err: Optional[float] = None
+        var_abs_err:  Optional[float] = None
+        var_rel_err:  Optional[float] = None
+
+        if exact_mean is not None and np.isfinite(emp_mean):
+            mean_abs_err = abs(emp_mean - exact_mean)
+            mean_rel_err = mean_abs_err / (abs(exact_mean) + _eps)
+
+        if exact_var is not None and np.isfinite(emp_var):
+            var_abs_err = abs(emp_var - exact_var)
+            var_rel_err = var_abs_err / (abs(exact_var) + _eps)
+
+        return {
+            "has_analytic_moments":   has_analytic,
+            "state_dimension":        1,
+            "t_final":                t_final,
+            "empirical_mean":         emp_mean,
+            "empirical_variance":     emp_var,
+            "exact_mean":             exact_mean,
+            "exact_variance":         exact_var,
+            "mean_absolute_error":    mean_abs_err,
+            "variance_absolute_error": var_abs_err,
+            "mean_relative_error":    mean_rel_err,
+            "variance_relative_error": var_rel_err,
+            "num_paths":              num_paths,
+            "scheme":                 scheme,
+        }
+
+    # ===========================================================================
+    # Multi-D path (state_dimension > 1) — per-component moment evaluation
+    # ===========================================================================
+    state_vars = sde_spec.get("state_variables", ["X", "Y", "Z"][:d])
+
+    # Terminal moments from solver: expected shape (d,)
+    raw_mean = solver_result.get("terminal_mean", [float("nan")] * d)
+    raw_var  = solver_result.get("terminal_variance", [float("nan")] * d)
+    emp_mean_arr = np.asarray(raw_mean, dtype=float).ravel()[:d]
+    emp_var_arr  = np.asarray(raw_var,  dtype=float).ravel()[:d]
+
+    # Evaluate per-component exact moments from analytic_solution.
+    # The problem spec stores them as "mean_X", "variance_X", "mean_Y", etc.
+    exact_mean_arr = np.full(d, np.nan)
+    exact_var_arr  = np.full(d, np.nan)
+
     anal = sde_spec.get("analytic_solution", None)
-    exact_mean: Optional[float] = None
-    exact_var:  Optional[float] = None
-
     if isinstance(anal, dict) and anal.get("type") == "moments":
+        # Build namespace with all IC keys (X_0, Y_0, ...) and parameters injected
         ns = _build_moment_namespace(sde_spec, t_final)
-        exact_mean = _eval_moment_expr(anal.get("mean"),     ns)
-        exact_var  = _eval_moment_expr(anal.get("variance"), ns)
+        for i, var in enumerate(state_vars):
+            m = _eval_moment_expr(anal.get(f"mean_{var}"), ns)
+            v = _eval_moment_expr(anal.get(f"variance_{var}"), ns)
+            if m is not None:
+                exact_mean_arr[i] = m
+            if v is not None:
+                exact_var_arr[i] = v
 
-    has_analytic = (exact_mean is not None) or (exact_var is not None)
+    has_mean = not np.all(np.isnan(exact_mean_arr))
+    has_var  = not np.all(np.isnan(exact_var_arr))
+    has_analytic = has_mean or has_var
 
-    # --- Compute absolute and relative errors ---
-    # Relative error denominator: |exact| + eps avoids division by zero.
-    # eps = 1e-10 is small enough that it doesn't distort non-zero exact values.
-    _eps = 1e-10
+    # Per-component absolute and relative errors
+    mean_abs_arr: Optional[np.ndarray] = None
+    mean_rel_arr: Optional[np.ndarray] = None
+    var_abs_arr:  Optional[np.ndarray] = None
+    var_rel_arr:  Optional[np.ndarray] = None
+    max_mean_rel: Optional[float] = None
+    max_var_rel:  Optional[float] = None
 
-    mean_abs_err: Optional[float] = None
-    mean_rel_err: Optional[float] = None
-    var_abs_err:  Optional[float] = None
-    var_rel_err:  Optional[float] = None
+    if has_mean and np.all(np.isfinite(emp_mean_arr)):
+        valid = ~np.isnan(exact_mean_arr)
+        mean_abs_arr = np.where(valid, np.abs(emp_mean_arr - exact_mean_arr), np.nan)
+        mean_rel_arr = np.where(valid, mean_abs_arr / (np.abs(exact_mean_arr) + _eps), np.nan)
+        finite_vals = mean_rel_arr[np.isfinite(mean_rel_arr)]
+        max_mean_rel = float(finite_vals.max()) if finite_vals.size > 0 else None
 
-    if exact_mean is not None and np.isfinite(emp_mean):
-        mean_abs_err = abs(emp_mean - exact_mean)
-        mean_rel_err = mean_abs_err / (abs(exact_mean) + _eps)
-
-    if exact_var is not None and np.isfinite(emp_var):
-        var_abs_err = abs(emp_var - exact_var)
-        var_rel_err = var_abs_err / (abs(exact_var) + _eps)
+    if has_var and np.all(np.isfinite(emp_var_arr)):
+        valid = ~np.isnan(exact_var_arr)
+        var_abs_arr = np.where(valid, np.abs(emp_var_arr - exact_var_arr), np.nan)
+        var_rel_arr = np.where(valid, var_abs_arr / (np.abs(exact_var_arr) + _eps), np.nan)
+        finite_vals = var_rel_arr[np.isfinite(var_rel_arr)]
+        max_var_rel = float(finite_vals.max()) if finite_vals.size > 0 else None
 
     return {
-        "has_analytic_moments":   has_analytic,
-        "t_final":                t_final,
-        "empirical_mean":         emp_mean,
-        "empirical_variance":     emp_var,
-        "exact_mean":             exact_mean,
-        "exact_variance":         exact_var,
-        "mean_absolute_error":    mean_abs_err,
-        "variance_absolute_error": var_abs_err,
-        "mean_relative_error":    mean_rel_err,
-        "variance_relative_error": var_rel_err,
-        "num_paths":              num_paths,
-        "scheme":                 scheme,
+        "has_analytic_moments":             has_analytic,
+        "state_dimension":                  d,
+        "state_variables":                  state_vars,
+        "t_final":                          t_final,
+        "empirical_mean":                   emp_mean_arr,
+        "empirical_variance":               emp_var_arr,
+        "exact_mean":                       exact_mean_arr if has_mean else None,
+        "exact_variance":                   exact_var_arr if has_var else None,
+        "mean_absolute_error":              mean_abs_arr,
+        "variance_absolute_error":          var_abs_arr,
+        # Scalar summaries (max over components) — backward compat with plan scorer
+        "mean_relative_error":              max_mean_rel,
+        "variance_relative_error":          max_var_rel,
+        # Per-component details for human-readable output
+        "mean_relative_error_components":   mean_rel_arr,
+        "variance_relative_error_components": var_rel_arr,
+        "num_paths":                        num_paths,
+        "scheme":                           scheme,
     }
 
 

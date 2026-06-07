@@ -7,6 +7,26 @@ from typing import Any, Dict, List
 from .llm_utils import call_llm
 
 
+class _NumpyEncoder(json.JSONEncoder):
+    """Serialize numpy scalars and arrays so evaluated_plans can be passed to the LLM.
+
+    Multi-D SDE plans store terminal_mean / terminal_variance as ndarrays.
+    Without this encoder, json.dumps raises TypeError on those values.
+    """
+    def default(self, obj):
+        try:
+            import numpy as np
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            if isinstance(obj, np.integer):
+                return int(obj)
+            if isinstance(obj, np.floating):
+                return float(obj)
+        except ImportError:
+            pass
+        return super().default(obj)
+
+
 def _extract_json(text: str) -> str:
     """Strip code fences then find the first balanced JSON object or array."""
     text = text.strip()
@@ -125,7 +145,7 @@ def score_plans_with_llm(
     }
     user_prompt = (
         "Here is the PDE specification, candidate plans, and optional features.\n\n"
-        + json.dumps(payload, indent=2)
+        + json.dumps(payload, indent=2, cls=_NumpyEncoder)
         + "\n\nPlease score every plan."
     )
     resp_str = call_llm(PLAN_SCORER_SYSTEM, user_prompt, model=model)
@@ -144,7 +164,7 @@ def choose_best_plan_with_llm(
 
     user_prompt = (
         "Here is the PDE specification and the list of evaluated solver plans.\n\n"
-        + json.dumps(payload, indent=2)
+        + json.dumps(payload, indent=2, cls=_NumpyEncoder)
         + "\n\nPlease choose the best plan according to the instructions."
     )
 

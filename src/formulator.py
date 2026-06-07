@@ -224,58 +224,88 @@ You are a mathematical modeler specializing in stochastic differential equations
 Goal:
 Convert a natural-language SDE problem description into a STRICT JSON object.
 
-Standard Itô SDE Form (scalar, 1D):
+===========================================================================
+SCALAR SDE (state_dimension = 1) — standard form:
     dX(t) = f(X, t) dt + g(X, t) dW(t)
-where:
-    f(X, t)  — drift coefficient
-    g(X, t)  — diffusion coefficient
-    W(t)     — standard scalar Wiener process (Brownian motion)
 
-Multi-dimensional extension (state_dimension > 1):
-    dX_i = f_i(X, t) dt + sum_j G_ij(X, t) dW_j(t)
-In this case, drift is a list of expressions and diffusion is a list-of-lists matrix.
-For Phase 1 (scalar SDEs), always use the scalar form.
+  drift:               string expression in Python/NumPy using X, t, and parameter names
+  diffusion:           string expression in Python/NumPy using X, t, and parameter names
+  diffusion_derivative: dg/dX as a string (for Milstein scheme), or null
+  initial_condition:   {"X_0": float}
+  analytic_solution:   {"type": "moments", "mean": "expr", "variance": "expr"}
 
-CRITICAL RULES (Anti-Hallucination):
+===========================================================================
+MULTI-DIMENSIONAL SDE (state_dimension > 1):
+    dX_i(t) = f_i(X, t) dt + sum_j G_ij(X, t) dW_j(t)
+where X = [X_0-component, X_1-component, ...], W = [W_1, ..., W_noise_dim] are
+independent Wiener processes, and G is the d_state × d_noise diffusion matrix.
+
+  state_variables:     list of Python variable names for each state component,
+                       e.g. ["X", "Y"] for a 2D system.
+  drift:               list of strings, one per state component.
+                       Use the names from state_variables in expressions.
+                       Example: ["Y", "-X"]  for the stochastic oscillator
+  diffusion:           list-of-lists G[i][j] — d_state rows × d_noise cols.
+                       G[i][j] is the Python/NumPy expression for the coefficient
+                       multiplying the j-th noise source in the i-th component.
+                       Examples:
+                         Single noise source (noise_dim=1), 2D state:
+                           [["0.0"], ["sigma"]]   ← only Y component is driven
+                         Independent diagonal noise (noise_dim=2), 2D state:
+                           [["sigma1 * X", "0.0"], ["0.0", "sigma2 * Y"]]
+                         Cholesky-correlated noise (noise_dim=2), 2D state:
+                           [["sigma1 * X", "0.0"],
+                            ["rho * sigma2 * Y", "np.sqrt(1 - rho**2) * sigma2 * Y"]]
+  diffusion_derivative: null for multi-dimensional SDEs (Milstein is not used)
+  initial_condition:   dict with one key per component: {"X_0": float, "Y_0": float}
+  analytic_solution:   use per-component keys:
+                         "mean_X": "expr",  "variance_X": "expr",
+                         "mean_Y": "expr",  "variance_Y": "expr",
+                         "covariance_XY": "expr"  (optional)
+
+CHOLESKY FACTORIZATION RULE:
+When two Brownian motions W1, W2 have correlation ρ, express Y-component noise as:
+  sigma_Y * (rho * dW1 + sqrt(1-rho^2) * dW2)
+which gives G[1][0] = "rho * sigma_Y * Y" and G[1][1] = "np.sqrt(1-rho**2) * sigma_Y * Y".
+Treat dW1, dW2 as INDEPENDENT standard Brownian increments Z1, Z2 in the Cholesky form.
+
+===========================================================================
+CRITICAL RULES:
 1. **Parameters**: Extract ONLY values explicitly stated in the description.
    Do NOT invent numerical values (e.g., do not default mu=0.05 if mu is unspecified).
 2. **Analytic solution**: Include ONLY if the description explicitly provides one
    (exact path formula, exact moments, or named distribution).
-3. **Drift / Diffusion expressions**: Write in Python/NumPy syntax.
-   Use `X` for the scalar state variable, `t` for time, and the exact parameter
-   names from the `parameters` dict (e.g., `mu`, `sigma`, `theta`).
+3. **Drift / Diffusion expressions**: Python/NumPy syntax only.
+   For scalar SDEs use X for the state variable.
+   For multi-D SDEs use the names from state_variables (e.g., X, Y).
    Examples: drift="mu * X", diffusion="sigma", drift="theta * (mu - X)".
-4. **diffusion_derivative**: This is dg/dX — the partial derivative of the diffusion
-   coefficient with respect to the state X.  It is required by the Milstein scheme.
-   - Provide it ONLY when g(X,t) has a simple closed-form derivative w.r.t. X.
-   - Examples: g=sigma*X → "sigma";  g=sigma → "0.0";  g=sigma*np.sqrt(X) → "sigma / (2.0 * np.sqrt(X))"
-   - If the derivative is complex or unknown, set to null.
-5. **noise_structure**: Set to "additive" if g does not depend on X (constant diffusion),
-   "multiplicative" if g depends on X, or "mixed" for systems with both types of noise.
+4. **diffusion_derivative**: dg/dX for scalar SDEs only.
+   - Provide when g(X,t) has a closed-form derivative: g=sigma*X → "sigma";
+     g=sigma → "0.0"; g=sigma*np.sqrt(X) → "sigma / (2.0 * np.sqrt(X))"
+   - Set null for multi-dimensional SDEs and when derivative is unknown.
+5. **noise_structure**: "additive" if g does not depend on state (all G[i][j] are
+   constants), "multiplicative" if any G[i][j] depends on the state.
 6. **Format**: Output STRICT JSON ONLY.  No comments.  No trailing commas.
-7. **Analytic solution expressions**: Use Python/NumPy syntax.  Available variables in
-   the evaluation namespace are: `t` (time), `X_0` (scalar initial condition),
-   and all keys from the `parameters` dict.  Use `np.` prefix for NumPy functions.
+7. **Analytic solution expressions**: Python/NumPy syntax. Available namespace:
+   t (time), all initial_condition keys (e.g. X_0, Y_0), all parameter keys.
+   Use np. prefix for NumPy functions (e.g. np.exp, np.cos, np.sqrt).
 
-JSON Output Schema:
+===========================================================================
+JSON Output Schema (scalar SDE, state_dimension=1):
 {
   "equation_type": "SDE",
   "sde_type": "ito",
   "governing_equation": "string",
+  "state_dimension": 1,
+  "noise_dimension": 1,
+  "state_variables": ["X"],
+  "noise_type": "wiener",
+  "noise_structure": "string",
   "drift": "string",
   "diffusion": "string",
   "diffusion_derivative": "string or null",
-  "state_dimension": 1,
-  "noise_dimension": 1,
-  "noise_type": "wiener",
-  "noise_structure": "string",
-  "time_interval": {
-    "t_0": 0.0,
-    "t_final": 1.0
-  },
-  "initial_condition": {
-    "X_0": 1.0
-  },
+  "time_interval": {"t_0": 0.0, "t_final": 1.0},
+  "initial_condition": {"X_0": 1.0},
   "parameters": {},
   "analytic_solution": {
     "type": "moments",
@@ -286,22 +316,50 @@ JSON Output Schema:
   "notes": "string or null"
 }
 
+JSON Output Schema (multi-D SDE, state_dimension=2 example):
+{
+  "equation_type": "SDE",
+  "sde_type": "ito",
+  "governing_equation": "string",
+  "state_dimension": 2,
+  "noise_dimension": 1,
+  "state_variables": ["X", "Y"],
+  "noise_type": "wiener",
+  "noise_structure": "additive",
+  "drift": ["Y", "-X"],
+  "diffusion": [["0.0"], ["sigma"]],
+  "diffusion_derivative": null,
+  "time_interval": {"t_0": 0.0, "t_final": 6.28},
+  "initial_condition": {"X_0": 1.0, "Y_0": 0.0},
+  "parameters": {"sigma": 0.3},
+  "analytic_solution": {
+    "type": "moments",
+    "mean_X": "X_0 * np.cos(t) + Y_0 * np.sin(t)",
+    "mean_Y": "-X_0 * np.sin(t) + Y_0 * np.cos(t)",
+    "variance_X": "sigma**2 / 2 * (t - np.sin(t) * np.cos(t))",
+    "variance_Y": "sigma**2 / 2 * (t + np.sin(t) * np.cos(t))"
+  },
+  "notes": "string or null"
+}
+
 Analytic solution type guidance:
 - "moments"      : provide exact mean(t) and/or variance(t) as Python expressions.
-- "explicit"     : provide the exact sample-path formula X(t) = ... (only when the
-                   Wiener path W(t) does not appear, i.e., the formula is deterministic).
-- "distribution" : name the terminal distribution family (e.g., "lognormal", "gaussian")
-                   and optionally provide moment expressions.
+                   For multi-D: use mean_X/Y, variance_X/Y keys.
+- "explicit"     : exact sample-path formula X(t) = ... (only deterministic formulas).
+- "distribution" : name the terminal distribution family (e.g., "lognormal", "gaussian").
 Set analytic_solution to null if no closed-form information is given.
 """
 
 
 def _post_process_sde_spec(spec: dict) -> dict:
-    """
-    Normalize SDE spec defaults and fix common LLM output inconsistencies.
+    """Normalize SDE spec defaults and fix common LLM output inconsistencies.
 
     Mirrors _post_process_pde_spec() in structure: make every field safe to
     read downstream without guard clauses scattered across the pipeline.
+
+    Phase 2 additions: handles state_dimension > 1 by normalizing
+    state_variables, multi-component IC, list-of-lists diffusion matrix,
+    and per-component analytic solution keys (mean_X, variance_X, etc.).
     """
 
     # ── Top-level discriminator ───────────────────────────────────────────────
@@ -310,18 +368,17 @@ def _post_process_sde_spec(spec: dict) -> dict:
     spec["equation_type"] = "SDE"
 
     # ── SDE type ─────────────────────────────────────────────────────────────
-    # Default to Itô (by far the most common in physics/finance literature).
     if spec.get("sde_type") not in ("ito", "stratonovich"):
         spec["sde_type"] = "ito"
 
     # ── Dimensions ───────────────────────────────────────────────────────────
-    # state_dimension: the dimension of the state vector X(t).
-    # noise_dimension: the dimension of the Wiener process W(t).
-    # For most Phase 1 problems both are 1; for correlated multi-D SDEs they may differ.
+    # state_dimension: dimension of the state vector X(t); 1 for scalar problems.
+    # noise_dimension: dimension of the Wiener process W(t); defaults to state_dimension.
     if not isinstance(spec.get("state_dimension"), int) or spec["state_dimension"] < 1:
         spec["state_dimension"] = 1
+    d = spec["state_dimension"]
     if not isinstance(spec.get("noise_dimension"), int) or spec["noise_dimension"] < 1:
-        spec["noise_dimension"] = spec["state_dimension"]
+        spec["noise_dimension"] = d
 
     # ── Time interval ─────────────────────────────────────────────────────────
     # Normalise to {"t_0": float, "t_final": float}.
@@ -337,17 +394,31 @@ def _post_process_sde_spec(spec: dict) -> dict:
     spec["time_interval"] = ti
 
     # ── Initial condition ─────────────────────────────────────────────────────
-    # Normalise to {"X_0": scalar_or_list}.
-    # LLMs sometimes output a bare float instead of a dict.
+    # Scalar: {"X_0": float}.
+    # Multi-D: {"X_0": float, "Y_0": float, ...} — one key per component.
+    # LLMs sometimes output a bare float or a list; normalise both cases.
     ic = spec.get("initial_condition")
     if ic is None:
         ic = {"X_0": 1.0}
     elif isinstance(ic, (int, float)):
         ic = {"X_0": float(ic)}
     elif isinstance(ic, list):
-        # Multi-dimensional IC supplied as a list — wrap it.
-        ic = {"X_0": ic}
+        # List IC: [1.0, 0.0] → map to {"X_0": 1.0, "Y_0": 0.0} using default names.
+        # Default names: X, Y, Z for d<=3, else X0, X1, ...
+        default_names = (["X", "Y", "Z"][:d] if d <= 3 else [f"X{i}" for i in range(d)])
+        ic = {f"{v}_0": float(val) for v, val in zip(default_names, ic)}
     spec["initial_condition"] = ic
+
+    # ── State variables ───────────────────────────────────────────────────────
+    # Derive from IC keys when possible: {"X_0": ..., "Y_0": ...} → ["X", "Y"].
+    # The regex strips trailing underscores and digits from IC keys.
+    if not spec.get("state_variables"):
+        ic_keys = list(spec["initial_condition"].keys())
+        if len(ic_keys) == d:
+            state_vars = [re.sub(r"[_\d]+$", "", k) or k for k in ic_keys]
+        else:
+            state_vars = (["X", "Y", "Z"][:d] if d <= 3 else [f"X{i}" for i in range(d)])
+        spec["state_variables"] = state_vars
 
     # ── Parameters ───────────────────────────────────────────────────────────
     if not isinstance(spec.get("parameters"), dict):
@@ -356,24 +427,59 @@ def _post_process_sde_spec(spec: dict) -> dict:
     # ── Noise type ───────────────────────────────────────────────────────────
     spec.setdefault("noise_type", "wiener")
 
+    # ── Multi-D diffusion normalisation ───────────────────────────────────────
+    # For state_dimension > 1, diffusion must be a list-of-lists G[i][j].
+    # The formulator sometimes outputs a flat list of strings; promote it here.
+    if d > 1:
+        noise_dim = spec["noise_dimension"]
+        diff = spec.get("diffusion")
+        if isinstance(diff, list) and len(diff) == d and diff:
+            if isinstance(diff[0], str):
+                # Flat list of d strings. Interpret based on noise_dimension:
+                # noise_dim == 1  → each element is G[i][0] (single noise source)
+                # noise_dim == d  → diagonal matrix (each component its own noise)
+                if noise_dim == 1:
+                    spec["diffusion"] = [[expr] for expr in diff]
+                else:
+                    # Diagonal: G[i][i] = diff[i], all off-diagonal = "0.0"
+                    mat = []
+                    for i in range(d):
+                        row = ["0.0"] * noise_dim
+                        if i < noise_dim:
+                            row[i] = diff[i]
+                        mat.append(row)
+                    spec["diffusion"] = mat
+
     # ── Noise structure (additive vs multiplicative) ───────────────────────────
-    # If the LLM did not set this (or set an invalid value), infer it from the
-    # diffusion expression.  The rule: if the diffusion coefficient g(X,t) contains
-    # the state variable X, the noise is multiplicative (Milstein is then beneficial).
-    # A simple regex word-boundary check handles the common 1D case correctly.
+    # Infer from diffusion expressions if not set or invalid.
     if spec.get("noise_structure") not in ("additive", "multiplicative", "mixed"):
-        diffusion_expr = spec.get("diffusion", "")
-        if isinstance(diffusion_expr, str):
-            has_state_var = bool(re.search(r"\bX\b", diffusion_expr))
-            spec["noise_structure"] = "multiplicative" if has_state_var else "additive"
+        state_vars = spec.get("state_variables", ["X"])
+        diff = spec.get("diffusion", "")
+
+        if isinstance(diff, str):
+            # Scalar: check if g(X) references the state variable
+            has_state_dep = bool(re.search(r"\bX\b", diff))
+        elif isinstance(diff, list):
+            # Multi-D: collect all expression strings and check for any state var reference
+            all_exprs = []
+            for row in diff:
+                if isinstance(row, list):
+                    all_exprs.extend(row)
+                elif isinstance(row, str):
+                    all_exprs.append(row)
+            has_state_dep = any(
+                bool(re.search(rf"\b{v}\b", expr))
+                for v in state_vars
+                for expr in all_exprs
+                if isinstance(expr, str)
+            )
         else:
-            # Multi-dimensional diffusion: default conservative (multiplicative)
-            # so the planner doesn't prematurely skip Milstein consideration.
-            spec["noise_structure"] = "multiplicative"
+            has_state_dep = False
+
+        spec["noise_structure"] = "multiplicative" if has_state_dep else "additive"
 
     # ── Diffusion derivative ──────────────────────────────────────────────────
-    # Default to None.  The planner will only propose Milstein plans when this
-    # is a non-null string, because Milstein requires dg/dX.
+    # Only relevant for scalar Milstein; null for multi-D (Lévy area not implemented).
     spec.setdefault("diffusion_derivative", None)
 
     # ── Analytic solution ─────────────────────────────────────────────────────
@@ -385,19 +491,24 @@ def _post_process_sde_spec(spec: dict) -> dict:
     elif isinstance(anal, dict):
         # Normalize the type field. The LLM sometimes returns "distribution"
         # or other non-standard strings instead of the canonical "moments".
-        # If mean/variance expressions are present, the type must be "moments"
-        # so sde_analytic_utils.evaluate_sde_moments() can find them.
         current_type = anal.get("type")
+        # Multi-D analytic solutions use mean_X/Y, variance_X/Y keys.
+        has_multid_keys = any(
+            k.startswith("mean_") or k.startswith("variance_")
+            for k in anal.keys()
+        )
         if current_type not in ("moments", "explicit"):
-            if "mean" in anal or "variance" in anal:
+            if "mean" in anal or "variance" in anal or has_multid_keys:
                 anal["type"] = "moments"
             elif "expression" in anal:
                 anal["type"] = "explicit"
             else:
                 anal["type"] = "moments"
-        # Ensure all expected keys exist so downstream code can .get() safely.
-        anal.setdefault("mean", None)
-        anal.setdefault("variance", None)
+        # For scalar SDEs, ensure standard keys exist so downstream can .get() safely.
+        # For multi-D, skip these defaults (they would add incorrect null scalar keys).
+        if not has_multid_keys:
+            anal.setdefault("mean", None)
+            anal.setdefault("variance", None)
         anal.setdefault("terminal_distribution", None)
         spec["analytic_solution"] = anal
 
