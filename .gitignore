@@ -8,7 +8,7 @@ __pycache__/
 *.egg-info/
 
 # Run outputs (generated artifacts, not source)
-outputs_new_paper/run_*/
+outputs_new_paper/
 
 # Secrets — never commit API keys
 .env
