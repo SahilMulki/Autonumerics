@@ -10,7 +10,7 @@ plans:
     state: await_solver
   2-crank-nicolson:
     one-sentence: Crank-Nicolson implicit, Nx=100, dt=0.01, unconditionally stable.
-    iter: 0
-    score: 0
-    state: await_evaluator
+    iter: 1
+    score: 10
+    state: await_solver
 ---
