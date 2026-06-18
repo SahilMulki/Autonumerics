@@ -1,0 +1,35 @@
+{
+  "id": "geometric_brownian_motion",
+  "sde_family": "geometric_brownian_motion",
+  "state_dimension": 1,
+  "noise_structure": "multiplicative",
+  "linear": true,
+  "stiff": false,
+  "equation": "dX(t) = mu * X(t) * dt + sigma * X(t) * dW(t)",
+  "parameters": {
+    "X_0": 1.0,
+    "mu": 0.1,
+    "sigma": 0.2
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": true,
+  "diffusion_derivative": "dg/dX = sigma  (scalar 1D: g(X) = sigma*X, so dg/dX = sigma)",
+  "milstein_correction": "0.5 * sigma * X_n * sigma * (dW**2 - dt)  =  0.5 * sigma**2 * X_n * (dW**2 - dt)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "X_0 * np.exp(mu * t)",
+    "variance_expression": "X_0**2 * np.exp(2*mu*t) * (np.exp(sigma**2 * t) - 1)"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "Standard multiplicative scalar GBM. No positivity guard needed (X stays positive given X_0 > 0). Milstein eligible."
+}

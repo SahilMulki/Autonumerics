@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "numpy>=1.26.0",
     "anthropic>=0.25.0",
+    "scipy>=1.17.1",
 ]
 
 [project.optional-dependencies]

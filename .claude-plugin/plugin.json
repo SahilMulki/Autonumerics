@@ -1,0 +1,8 @@
+{
+  "name": "autonumerics",
+  "description": "SDE solver — formulate → plan → parallel solver↔evaluator cycles, verified against exact analytic moments",
+  "version": "0.1.0",
+  "author": {
+    "name": "SahilMulki"
+  }
+}

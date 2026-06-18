@@ -1,0 +1,35 @@
+{
+  "equation_type": "SDE",
+  "sde_family": "geometric_brownian_motion",
+  "state_dimension": 1,
+  "noise_structure": "multiplicative",
+  "linear": true,
+  "stiff": false,
+  "equation": "dX = mu * X * dt + sigma * X * dW",
+  "parameters": {
+    "mu": 0.1,
+    "sigma": 0.2,
+    "X0": 1.0
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": true,
+  "diffusion_derivative": "sigma",
+  "milstein_correction": "0.5 * sigma * X * (dW**2 - dt)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "X0 * np.exp(mu * T)",
+    "variance_expression": "X0**2 * np.exp(2 * mu * T) * (np.exp(sigma**2 * T) - 1)"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "GBM with multiplicative noise. X stays positive analytically — no positivity guard needed. Milstein correction: +0.5 * sigma * X * (dW^2 - dt) where g = sigma * X, dg/dX = sigma."
+}
