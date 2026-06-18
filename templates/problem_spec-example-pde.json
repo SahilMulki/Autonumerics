@@ -1,0 +1,35 @@
+{
+  "equation_type": "heat",
+  "governing_equation": "u_t = alpha * u_xx",
+  "spatial_dimension": 1,
+  "time_dependent": true,
+  "linear": true,
+  "stiff": false,
+  "spatial_variables": ["x"],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [0.0, 1.0]
+    }
+  },
+  "boundary_conditions": {
+    "type": "dirichlet",
+    "values": {
+      "x=0": 0.0,
+      "x=1": 0.0
+    }
+  },
+  "initial_condition": "np.sin(np.pi * x)",
+  "parameters": {
+    "alpha": 0.1
+  },
+  "analytic_solution": {
+    "type": "explicit",
+    "expression": "np.exp(-alpha * np.pi**2 * t) * np.sin(np.pi * x)",
+    "space_variables": ["x"]
+  },
+  "evaluation_thresholds": {
+    "rel_l2_err_max": 0.01
+  },
+  "implementation_notes": "Standard 1D heat equation with homogeneous Dirichlet BCs. Explicit scheme must satisfy CFL: dt <= dx^2 / (2*alpha). Crank-Nicolson is unconditionally stable and preferred for accuracy."
+}

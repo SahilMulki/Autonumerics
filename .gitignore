@@ -16,3 +16,6 @@ outputs_new_paper/
 
 # macOS
 .DS_Store
+
+# Claude Code local settings (personal overrides, not for team)
+.claude/settings.local.json
