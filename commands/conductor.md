@@ -71,7 +71,6 @@ Sort plans by `(score asc, iter asc)`. Skip plans with `score == 10` or `iter >=
 3. Dispatch `evaluator-{sde|pde}` with argument `workspace/{problem_slug}/plans/{id}-{plan_slug}`. Wait for return.
 4. Read score from the `<review score=X>` block at the end of SOLUTION.md.
 5. Write score to STATE.md. Increment `iter`. Set `state: await_solver`.
-6. `git add -v workspace/{problem_slug}/STATE.md workspace/{problem_slug}/plans/{id}-{plan_slug}/SOLUTION.md workspace/{problem_slug}/plans/{id}-{plan_slug}/solver.py workspace/{problem_slug}/plans/{id}-{plan_slug}/evaluate.py` and commit.
 
 **Refill immediately**: whenever a plan finishes its cycle, re-sort, pick the next plan, start its cycle.
 
@@ -89,7 +88,6 @@ When the loop exits:
    - Best plan recommendation and why
    - Any plans that failed score 10 and what errors remained
 4. Update STATE.md: `phase: done`, `best_plan: {id}-{plan_slug}`.
-5. Final git commit: `git add -v workspace/{problem_slug}/REPORT.md workspace/{problem_slug}/STATE.md`.
 
 ## Key Rules
 
@@ -98,5 +96,4 @@ When the loop exits:
 - STATE.md is your sole responsibility — keep it accurate after every dispatch.
 - Always use `run_in_background: true` in the solving loop.
 - When reading the score: search SOLUTION.md for `<review score=` and parse the integer.
-- When committing: always use `-v` with exact file paths.
 - Agent arguments: formulator and plan-creators take `workspace/{problem_slug}`; solvers and evaluators take the plan directory path.

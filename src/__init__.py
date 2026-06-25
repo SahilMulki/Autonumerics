@@ -1,1 +1,0 @@
-"""Core Auto-demo modules."""
