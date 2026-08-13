@@ -34,6 +34,7 @@
     "grid_N": 48,
     "min_spatial_order": 1.5,
     "order_check": true,
+    "refinement_levels": 2,
     "metric": "l2",
     "axes": ["x", "y"],
     "fields": ["u", "v", "p"],
@@ -43,6 +44,38 @@
     "diagnostics": [
       {"name": "divergence_norm", "gate": true},
       {"name": "energy_decay_error", "gate": false}
+    ]
+  },
+  "verification": {
+    "expected_provenance": "analytic",
+    "mms_probe": {
+      "exact": {
+        "u": "np.sin(X)*np.cos(Y)*np.cos(t)",
+        "v": "-np.cos(X)*np.sin(Y)*np.cos(t)",
+        "p": "0.25*(np.cos(2*X)+np.cos(2*Y))*np.cos(t)"
+      },
+      "source": {
+        "u": "-np.sin(X)*np.cos(Y)*np.sin(t) + 2*nu*np.sin(X)*np.cos(Y)*np.cos(t) + np.sin(X)*np.cos(X)*(np.cos(t)**2 - np.cos(t))",
+        "v": "np.cos(X)*np.sin(Y)*np.sin(t) - 2*nu*np.cos(X)*np.sin(Y)*np.cos(t) + np.sin(Y)*np.cos(Y)*(np.cos(t)**2 - np.cos(t))",
+        "p": "0.0"
+      },
+      "operator_check": "u_t + adv_u + grad_p - nu*lap_u",
+      "expected_order": 2.0,
+      "note": "the manufactured velocity is still divergence-free, so the projection step stays well posed"
+    },
+    "degenerate_limit": {
+      "params": {"nu": 0.0},
+      "exact": {"u": "np.sin(X)*np.cos(Y)", "v": "-np.cos(X)*np.sin(Y)"},
+      "tol": 0.02,
+      "note": "at nu=0 the Taylor-Green vortex is a steady Euler solution — the fields must not decay"
+    },
+    "invariants": [
+      {"name": "divergence_free", "gate": true, "tol": 1e-10, "fields": ["u", "v"],
+       "note": "incompressibility is structural, not approximate"},
+      {"name": "energy_decay", "gate": false, "requires_trace": true,
+       "note": "kinetic energy decays as exp(-4 nu t); solver returns invariant_trace['energy']"},
+      {"name": "symmetry", "gate": false, "axis": 0, "parity": "odd", "tol": 1e-8,
+       "note": "u is odd about x=pi"}
     ]
   },
   "requirements": [

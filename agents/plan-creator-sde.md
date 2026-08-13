@@ -34,8 +34,22 @@ For each scheme, propose:
 - `dt`: start with `0.01` for scalar SDEs, `0.001` for stiff problems
 - `num_paths`: use the value from `problem_spec.json` `evaluation_thresholds.num_paths` (default 50000)
 - `seed`: use `evaluation_thresholds.seed` (default 42)
+- `expected_strong_order` / `expected_weak_order`: 0.5 / 1.0 for Euler–Maruyama, 1.0 / 1.0 for Milstein
 
 The solver may refine `dt` if the evaluator reports poor accuracy.
+
+**State the expected orders in every plan.** The evaluator measures the observed strong order by
+running the scheme at three step sizes on a shared Brownian path, and compares it against what the
+plan claimed. That measurement is clean and needs no closed-form solution — on GBM it reads 0.49 for
+Euler–Maruyama and 1.01 for Milstein — so it is the sharpest signal distinguishing your plans, and it
+catches a Milstein plan whose correction term is silently wrong. A plan that does not declare its
+expected order forfeits that check.
+
+**When there are no exact moments** (`analytic_moments.has_analytic_solution == false`), note in each
+plan's Implementation Notes which reference the evaluator will use from
+`problem_spec.json → verification` — a moment ODE, a Kolmogorov solve, a stationary density, or none
+at all. A plan evaluated with no reference cannot score above 9, which is worth knowing when you
+choose how many plans to propose.
 
 ### Step 3: Write SOLUTION.md for each plan
 
@@ -60,6 +74,9 @@ strategy: {one-sentence summary}
 - **num_paths**: {value}
 - **T**: {value from problem_spec.json}
 - **Milstein correction** (if applicable): {formula from problem_spec.json}
+- **Expected strong order**: {0.5 for EM, 1.0 for Milstein}
+- **Expected weak order**: {1.0}
+- **Reference for scoring**: {analytic moments | moment ODE | Kolmogorov solve | stationary density | none — self-convergence only}
 
 ## Implementation Notes
 

@@ -39,11 +39,15 @@ plans:
     one-sentence: Euler-Maruyama with dt=0.01, 50k paths.
     iter: 2
     score: 5
+    provenance: analytic
+    est_err: 1.4e-01
     state: await_solver
   2-milstein:
     one-sentence: Milstein with dt=0.01, 50k paths; eligible because noise is multiplicative scalar.
     iter: 1
     score: 7
+    provenance: analytic
+    est_err: 8.2e-02
     state: await_evaluator
 ```
 
@@ -55,21 +59,31 @@ problem_type: pde
 problem_spec: workspace/{problem_slug}/problem_spec.json
 plans:
   1-fd-explicit:
-    one-sentence: FTCS finite difference, Nx=64, dt satisfying CFL dt<=dx^2/(2*alpha).
+    one-sentence: FTCS finite difference, dt satisfying CFL dt<=dx^2/(2*alpha).
     iter: 1
     score: 8
+    provenance: analytic
+    est_err: 3.1e-02
     state: await_solver
   2-crank-nicolson:
-    one-sentence: Crank-Nicolson implicit, Nx=64, dt=0.005, unconditionally stable.
+    one-sentence: Crank-Nicolson implicit, dt tied to dx, unconditionally stable.
     iter: 0
     score: 0
+    provenance: null
+    est_err: null
     state: await_solver
   3-spectral:
     one-sentence: Spectral method via FFT for periodic extension of sine IC.
     iter: 0
     score: 0
+    provenance: null
+    est_err: null
     state: await_solver
 ```
+
+`provenance` and `est_err` come from the `<metrics>` block the evaluator writes. They are `null`
+until a plan has been evaluated at least once. The conductor uses `est_err` to break score ties in
+Phase 3, and carries `provenance` into REPORT.md.
 
 Plan state values:
 - `await_evaluator` — solver has written and run code, waiting for evaluator review

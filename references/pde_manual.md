@@ -171,18 +171,23 @@ For an L-shape / Fichera domain, return the full rectangular grid; only in-domai
 ## Evaluation: Relative L2 Error
 
 ```python
-# For 1D
-l2_error = np.sqrt(np.mean((u_numerical - u_exact)**2))
-l2_norm  = np.sqrt(np.mean(u_exact**2)) + 1e-14
-rel_l2   = l2_error / l2_norm
-
-# For 2D
+# Same in any dimension — RMS norms are grid-normalized, so they compare across resolutions
 l2_error = np.sqrt(np.mean((u_numerical - u_exact)**2))
 l2_norm  = np.sqrt(np.mean(u_exact**2)) + 1e-14
 rel_l2   = l2_error / l2_norm
 ```
 
 Default pass threshold: `rel_l2 < 0.01` (1%).
+
+**When there is no `u_exact`**, the error is estimated by Richardson extrapolation across a
+three-level nested grid ladder, and the pass test uses the conservative GCI bound instead. See
+`verification_manual.md` §3–§4 — including why the ladder must be `N, 2N−1, 4N−3` rather than
+`N, 2N, 4N` on an endpoint-inclusive grid.
+
+**Quadrature must be periodicity-aware.** `np.trapezoid` on an endpoint-exclusive (periodic) grid
+half-weights the ends and drops the wrap-around cell, which fabricates a ~1e-5 mass drift in a scheme
+that conserves mass to round-off. Use the rectangle rule `u.sum() * dx` on periodic grids; it is
+spectrally accurate there.
 
 ---
 
@@ -264,45 +269,72 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-def solve_pde(N: int) -> dict:
+PARAMS = {"alpha": 0.1}          # from problem_spec.json
+
+
+def solve_pde(N: int, override: dict | None = None) -> dict:
     # N is the number of grid points per spatial dimension, supplied by the harness.
-    # The solver is run at N and 2N and scored on both accuracy AND observed
-    # convergence order, so the mesh must be built from N (never hard-coded) and dt
-    # tied to the grid spacing so the temporal error stays subdominant.
-    # --- Parameters (from problem_spec.json) ---
-    alpha = 0.1
+    # The solver is run up a nested ladder (N, 2N-1, 4N-3 — or N, 2N, 4N when periodic)
+    # and scored on accuracy AND observed convergence order, so the mesh must be built
+    # from N (never hard-coded) and dt tied to the grid spacing so the temporal error
+    # stays subdominant.
+    #
+    # `override` is None for a normal run. The evaluator passes it to run THIS SAME
+    # discretization on a modified problem — manufactured solutions, degenerate limits,
+    # translation invariance, temporal isolation. Route every key through the one solve
+    # path below; never branch into a separate code path for it.
+    ov = override or {}
+
+    # --- Parameters (override-aware) ---
+    params = {**PARAMS, **ov.get("params", {})}
+    alpha = params["alpha"]
     x_min, x_max = 0.0, 1.0
     t_final = 0.1
 
     # --- Grid (from N) ---
     x = np.linspace(x_min, x_max, N)
     dx = x[1] - x[0]
+    coords = (x,)                  # np.meshgrid(*axes, indexing="ij") in 2-D / 3-D
 
     # --- CFL-safe dt as a function of dx (holds at any N) ---
     dt_cfl = 0.4 * dx**2 / alpha   # safety factor 0.4 < 0.5
-    Nt = max(1, int(np.ceil(t_final / dt_cfl)))
+    Nt = max(1, int(np.ceil(t_final / (dt_cfl * ov.get("dt_factor", 1.0)))))
     dt = t_final / Nt
 
-    # --- Initial condition ---
-    u = np.sin(np.pi * x)
+    # --- Initial condition (override-aware) ---
+    u = ov["ic"](coords) if "ic" in ov else np.sin(np.pi * x)
 
     # --- Time loop ---
     r = alpha * dt / dx**2
-    for _ in range(Nt):
+    energy = np.empty(Nt)          # invariant_trace for the energy_decay check
+    for n in range(Nt):
+        t = (n + 1) * dt
         u_new = u.copy()
         u_new[1:-1] = u[1:-1] + r * (u[:-2] - 2*u[1:-1] + u[2:])
-        u_new[0]  = 0.0   # Dirichlet left
-        u_new[-1] = 0.0   # Dirichlet right
+        if "source" in ov:                       # manufactured / forced problem
+            u_new = u_new + dt * ov["source"](coords, t)
+        if "bc" in ov:                           # manufactured boundary data
+            b = ov["bc"](coords, t)
+            u_new[0], u_new[-1] = b[0], b[-1]
+        else:
+            u_new[0]  = 0.0   # Dirichlet left
+            u_new[-1] = 0.0   # Dirichlet right
         u = u_new
+        energy[n] = np.trapezoid(u**2, x)
 
     return {
         "numerical_solution": u,
         "grid": {"x": x},
         "t_final": t_final,
         "dt": dt,
+        "invariant_trace": {"energy": energy},
     }
 
 if __name__ == "__main__":
     result = solve_pde(64)
     print(f"max |u(T)|: {np.max(np.abs(result['numerical_solution'])):.6f}")
+    # confirm the override hook works — the evaluator depends on it
+    chk = solve_pde(64, override={"dt_factor": 0.5})
+    print(f"dt_factor=0.5 shifts the answer by "
+          f"{np.max(np.abs(chk['numerical_solution'] - result['numerical_solution'])):.3e}")
 ```

@@ -32,9 +32,34 @@
     "rel_l2_err_max": 0.01,
     "grid_N": 64,
     "min_spatial_order": 1.0,
-    "order_check": true
+    "order_check": true,
+    "refinement_levels": 2
   },
-  "implementation_notes": "Standard 1D heat equation with homogeneous Dirichlet BCs. The solver contract is solve_pde(N); it is run at N=grid_N and N=2*grid_N and scored on both relative L2 error and observed spatial convergence order. Explicit scheme must satisfy CFL: dt <= dx^2 / (2*alpha) at the given N. Crank-Nicolson is unconditionally stable and preferred for accuracy.",
+  "verification": {
+    "expected_provenance": "analytic",
+    "mms_probe": {
+      "exact": "np.sin(2*np.pi*x)*np.exp(-t)",
+      "source": "(-1 + 4*alpha*np.pi**2)*np.sin(2*np.pi*x)*np.exp(-t)",
+      "operator_check": "u_t - alpha*lap_u",
+      "expected_order": 2.0,
+      "note": "u_mms is unrelated to the real IC/BC; the solver runs it via override={ic,source,bc}"
+    },
+    "degenerate_limit": {
+      "params": {"alpha": 0.0},
+      "exact": "np.sin(np.pi*x)",
+      "tol": 1e-10,
+      "note": "with alpha=0 nothing diffuses and the IC is transported unchanged"
+    },
+    "invariants": [
+      {"name": "maximum_principle", "gate": true, "tol": 1e-10, "bc_values": [0.0],
+       "note": "pure diffusion with homogeneous Dirichlet BCs — u can never leave [0, max(u0)]"},
+      {"name": "symmetry", "gate": false, "axis": 0, "parity": "even", "tol": 1e-10,
+       "note": "sin(pi x) and both BCs are symmetric about x=1/2"},
+      {"name": "energy_decay", "gate": false, "requires_trace": true, "tol": 0.0,
+       "note": "integral of u^2 is non-increasing; solver returns invariant_trace['energy']"}
+    ]
+  },
+  "implementation_notes": "Standard 1D heat equation with homogeneous Dirichlet BCs. The solver contract is solve_pde(N, override=None); it is run up a nested ladder (dx halves each step, so the coarse nodes are a subset of the fine ones) and scored on relative L2 error, observed spatial convergence order, and the declared invariants. This problem has an analytic solution, so refinement_levels is 2 (64, 127) — the order comes straight from the exact errors and a third grid would cost 8x for no new information. The override hook must be implemented: the evaluator uses it for the dt_factor=0.5 temporal-isolation check, and for the MMS probe and degenerate limit on problems that lack a closed form. Explicit scheme must satisfy CFL: dt <= dx^2 / (2*alpha) at the given N. Crank-Nicolson is unconditionally stable and preferred for accuracy.",
   "requirements": [
     {"id": "R1", "kind": "equation", "quote": "u_t = 0.1 * u_xx",
      "status": "mapped", "spec_path": "governing_equation, parameters.alpha"},

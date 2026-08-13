@@ -61,7 +61,7 @@ If `STATE.phase == init`:
 
 After Phase 1 (or on resume), before entering the loop:
 
-If any plan has `state: await_evaluator`, note each such plan's current `score` (its previous score), then dispatch the appropriate evaluator for those plans in parallel (`run_in_background: true`). After each returns, read the score from `<review score=X>` in that plan's SOLUTION.md, write it to STATE.md, and increment `iter` (this completes the interrupted cycle). Then set the plan's state by the same early-stop rules used in the loop: `== 10` → winner; else `iter >= 2` and no improvement over the previous score → `state: stopped`; else `state: await_solver`.
+If any plan has `state: await_evaluator`, note each such plan's current `score` (its previous score), then dispatch the appropriate evaluator for those plans in parallel (`run_in_background: true`). After each returns, read the score from `<review score=X>` and the `provenance` / `estimated_rel_error` from the `<metrics>` block in that plan's SOLUTION.md, write them to STATE.md, and increment `iter` (this completes the interrupted cycle). Then set the plan's state by the same early-stop rules used in the loop: `== 10` → winner; else `iter >= 2` and no improvement over the previous score → `state: stopped`; else `state: await_solver`.
 
 This handles: (a) crash recovery mid-cycle; (b) fresh plans left needing evaluation.
 
@@ -89,8 +89,8 @@ First check for a winner: if any plan already has `score == 10`, launch no cycle
 1. Dispatch `solver-{sde|pde}` with argument `workspace/{problem_slug}/plans/{id}-{plan_slug}`. Wait for return.
 2. Set plan `state: await_evaluator` in STATE.md.
 3. Dispatch `evaluator-{sde|pde}` with argument `workspace/{problem_slug}/plans/{id}-{plan_slug}`. Wait for return.
-4. Read the new score from the `<review score=X>` block at the end of SOLUTION.md.
-5. Write the new score to STATE.md and increment `iter`. Then set the plan's state by the early-stop rules:
+4. Read the new score from the `<review score=X>` block at the end of SOLUTION.md, and `provenance` + `estimated_rel_error` from the `<metrics>` block just above it.
+5. Write the new score, `provenance` and `est_err` to STATE.md and increment `iter`. Then set the plan's state by the early-stop rules:
    - new score `== 10` → winner (leave it; the refill/exit check below finalizes on it).
    - else if `iter >= 2` **and** new score `<=` the previous score from step 0 (no improvement) → `state: stopped` (plateaued, terminal).
    - else → `state: await_solver` (still eligible).
@@ -103,15 +103,24 @@ First check for a winner: if any plan already has `score == 10`, launch no cycle
 
 When the loop exits:
 
-1. Read all `SOLUTION.md` files.
-2. Identify the best plan: highest score, then fewest iterations.
+1. Read all `SOLUTION.md` files — both the `<metrics>` and `<review>` blocks.
+2. Identify the best plan. Score alone will often tie, so rank **lexicographically**:
+   1. `score` descending
+   2. `estimated_rel_error` ascending (from `<metrics>`)
+   3. observed order margin (`observed_order − order_floor`) descending
+   4. `wall_time_s` ascending
+   5. fewest iterations
+
+   Iteration count says nothing about which solution is better — use it only as the final tiebreak.
 3. Write `workspace/{problem_slug}/REPORT.md` summarizing:
    - The problem type (SDE or PDE) and which family
    - Any `ambiguities` recorded in Phase 1 — quote each and say what the formulator chose. Put this near the top: it tells the reader where the solved problem may differ from the one they described.
-   - Each plan: scheme, final score, iter count, key metrics from the last Results section
-   - Best plan recommendation and why
+   - **The provenance of the scoring**, also near the top — whether the winner was measured against a closed form (`analytic`), a derived deterministic surrogate (`surrogate`), a manufactured solution (`manufactured`), or only its own convergence behaviour (`self_convergence`). A 10 earned by self-convergence is a materially weaker claim than a 10 earned against an exact solution, and the reader must not have to dig to tell them apart.
+   - Each plan: scheme, final score, provenance, estimated error (flagging whether it was measured or estimated), observed order, iter count, and key metrics from the last Results section
+   - Best plan recommendation and why, citing the ranking criterion that decided it
    - Any plans that did not reach score 10 — their last score and remaining errors, and whether they hit max_iter, were `stopped` (plateaued — score stopped improving), or were left unfinished because another plan already reached 10
-4. Update STATE.md: `phase: done`, `best_plan: {id}-{plan_slug}`.
+   - **Verification gaps** — any check that could not be run: a missing verification plan, a faulty MMS probe, an untrustworthy surrogate, an MC-inconclusive result, an invariant with no trace reported. These bound what the run actually established, so they belong in the report rather than being quietly dropped.
+4. Update STATE.md: `phase: done`, `best_plan: {id}-{plan_slug}`, `best_provenance: {provenance}`.
 
 ## Key Rules
 
@@ -120,5 +129,6 @@ When the loop exits:
 - Read only `equation_type` and `requirements` from `problem_spec.json` — do not analyze the problem yourself. You check the ledger's *structure* (statuses and `spec_path`s), never whether the mathematics in it is right; that is the formulator's job and not yours to second-guess.
 - STATE.md is your sole responsibility — keep it accurate after every dispatch.
 - Always use `run_in_background: true` in the solving loop.
-- When reading the score: search SOLUTION.md for `<review score=` and parse the integer.
+- When reading the score: search SOLUTION.md for `<review score=` and parse the integer. Also parse the `<metrics>` block immediately above it for `provenance`, `estimated_rel_error` and `observed_order` — you need them for Phase 3 ranking, and carrying `provenance` through to REPORT.md is not optional.
+- Do not second-guess a `provenance` tag or re-derive an error yourself. Record what the evaluator reported.
 - Agent arguments: formulator and plan-creators take `workspace/{problem_slug}`; solvers and evaluators take the plan directory path.

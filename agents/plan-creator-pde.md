@@ -26,10 +26,20 @@ From `problem_spec.json`, extract:
 - **Boundary conditions** (Dirichlet, Neumann, periodic)
 - **Domain bounds** and **parameters**
 - Whether an **analytic solution** is available (the evaluator will use it)
+- The **verification plan** (`verification`) — the manufactured-solution probe, degenerate limit and
+  invariants the evaluator will hold every plan to
+
+**When `analytic_solution` is `null`**, accuracy is measured by Richardson extrapolation across a
+three-level grid ladder, and a score of 10 additionally requires the manufactured-solution or
+degenerate-limit probe to pass. Both run the plan's own discretization through `solve_pde`'s
+`override` hook, so **every plan must implement that hook** — note it in each plan's Implementation
+Notes. Convergence *behaviour* is the measurement in that case, which makes the choice of scheme
+order matter more than usual: a plan whose observed order is unstable across the ladder cannot score
+above 4 no matter how small its error looks on one grid.
 
 ### Step 2: Propose 2–4 differentiated plans
 
-Each plan must differ meaningfully — vary the spatial **scheme**, its **order of accuracy**, the **mesh strategy** (uniform vs graded/adaptive near a singularity or layer), or the time-stepping method. Note: the solver contract is `solve_pde(N)` — the harness fixes the grid resolution and scores the *observed convergence order* across two resolutions, so **resolution itself is not a differentiator** and a plan cannot hard-code a grid; differentiate by scheme/order/mesh instead. Typical plan families:
+Each plan must differ meaningfully — vary the spatial **scheme**, its **order of accuracy**, the **mesh strategy** (uniform vs graded/adaptive near a singularity or layer), or the time-stepping method. Note: the solver contract is `solve_pde(N, override=None)` — the harness fixes the grid resolution and scores the *observed convergence order* across a nested ladder, so **resolution itself is not a differentiator** and a plan cannot hard-code a grid; differentiate by scheme/order/mesh instead. Typical plan families:
 
 **For time-dependent PDEs (1D)**:
 - FD explicit (FTCS for heat, upwind for advection) — low-to-medium Nx, moderate dt satisfying CFL
@@ -91,6 +101,9 @@ strategy: {one-sentence summary}
 
 (Anything tricky: handling corner BCs, reshaping for 2D, sparse matrix assembly, etc.)
 
+(Also: the `override` hook — how the overridden IC / source / BC / params / dt_factor route through
+this scheme's single solve path — and which declared invariants need an `invariant_trace`.)
+
 ## Results
 
 (Filled by solver after running)
@@ -114,7 +127,8 @@ Use `id` = 1, 2, 3, 4 (sequential). Use `plan_slug` = e.g. `fd-explicit`, `crank
 - Each plan is self-contained — copy the PDE equation and parameters into each SOLUTION.md.
 - Only propose plans that are numerically stable at the harness resolution (tie `dt` to the grid spacing so CFL holds at any `N`).
 - For 1D problems: always include at least one explicit and one implicit plan.
-- The harness runs each solver at `N` and `2N`, so keep the scheme tractable at the finer grid (in 2D the fine grid has 4× the unknowns) — prefer sparse/implicit or spectral solvers over dense ones.
+- The harness runs each solver up a nested ladder — `N`, `2N−1`, `4N−3` (or `N, 2N, 4N` for periodic grids). It uses two levels when the problem has an analytic solution and three when it does not, so on a no-closed-form problem keep the scheme tractable at `4N−3`: that grid has ~16× the unknowns of the base grid in 2-D and ~64× in 3-D. Prefer sparse/implicit or spectral solvers over dense ones, and weigh this when you pick a scheme.
+- Tie `dt` tightly enough to the grid spacing that the **temporal error stays subdominant**. The evaluator now checks this directly by re-running with `dt_factor=0.5`; if the answer moves, the plan is penalised even when its spatial stencil is correct.
 
 ## File Permissions
 

@@ -24,13 +24,40 @@
     "mean_expression": "X_0 * np.exp(mu * t)",
     "variance_expression": "X_0**2 * np.exp(2*mu*t) * (np.exp(sigma**2 * t) - 1)"
   },
+  "drift_expression": "mu * X",
+  "diffusion_expression": "sigma * X",
+  "diffusion_derivative_expression": "sigma",
   "evaluation_thresholds": {
     "variance_rel_err_max": 0.10,
     "mean_rel_err_max": 0.05,
     "near_zero_mean_threshold": 0.01,
     "num_paths": 50000,
     "seed": 42,
-    "stability_check": null
+    "stability_check": null,
+    "ci_mult": 2.0,
+    "dt0": 0.02,
+    "conv_levels": 3
+  },
+  "verification": {
+    "expected_provenance": "analytic",
+    "moment_ode": {
+      "state": ["m1", "m2"],
+      "rhs": ["mu*m1", "(2*mu + sigma**2)*m2"],
+      "initial": ["X_0", "X_0**2"],
+      "closes_exactly": true,
+      "mean_from": "m1",
+      "variance_from": "m2 - m1**2",
+      "note": "GBM has affine drift and quadratic g^2, so the moment equations close exactly; this reproduces the closed form to 1e-9 and is the reference to use when no closed form exists"
+    },
+    "stationary_density": {"ergodic": false, "note": "GBM is divergent — no invariant density"},
+    "kolmogorov": null,
+    "expected_weak_order": 1.0,
+    "expected_strong_order": 0.5,
+    "dynkin_test_functions": ["X", "X**2", "np.tanh(X)"],
+    "constraints": [
+      {"name": "positivity", "expr": "X >= 0", "gate": true,
+       "note": "X_0 > 0 and the noise is multiplicative, so paths cannot cross zero"}
+    ]
   },
   "implementation_notes": "Standard multiplicative scalar GBM. No positivity guard needed (X stays positive given X_0 > 0). Milstein eligible.",
   "requirements": [

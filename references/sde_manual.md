@@ -178,23 +178,39 @@ exact_variance_Y = sigma**2 / 2 * (t + np.sin(t) * np.cos(t))
 ```python
 import numpy as np
 
-def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:
-    rng = np.random.default_rng(seed)
-    Nt = max(1, round(T / dt))
-    dt = T / Nt
+def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42,
+              dW: np.ndarray | None = None,
+              observables: dict | None = None) -> dict:
+    # `dW`: pre-generated Brownian INCREMENTS (already scaled by sqrt(dt)), shape
+    #       (num_paths, Nt). The evaluator supplies these so that dt, dt/2 and dt/4 are
+    #       all driven by ONE Brownian path — without that, MC noise swamps the
+    #       discretization bias and no convergence order is measurable. When given, use
+    #       them exactly and take Nt from their shape; draw no randomness of your own.
+    # `observables`: {name: phi(X)} — accumulate the path integral of phi for the
+    #       Dynkin identity check, which is available for every SDE with no closed form.
+    if dW is None:
+        Nt = max(1, round(T / dt))
+        dt = T / Nt
+        rng = np.random.default_rng(seed)
+        dW = np.sqrt(dt) * rng.standard_normal((num_paths, Nt))   # one block, path-major
+    else:
+        Nt = dW.shape[1]
+        dt = T / Nt
 
     # Initialize: shape (num_paths,) for scalar, (num_paths, d) for vector
     X = np.full(num_paths, X_0, dtype=float)
+    acc = {k: np.zeros(num_paths) for k in (observables or {})}
 
-    for _ in range(Nt):
-        Z  = rng.standard_normal(num_paths)
-        dW = np.sqrt(dt) * Z
+    for n in range(Nt):
+        X_prev = X
         # --- EM step ---
-        X = X + f(X) * dt + g(X) * dW
-        # --- Milstein correction (if applicable) ---
-        # X = X + 0.5 * g(X) * dg_dX(X) * (dW**2 - dt)
+        X = X + f(X) * dt + g(X) * dW[:, n]
+        # --- Milstein correction (if applicable) — note it uses X_prev, not X ---
+        # X = X + 0.5 * g(X_prev) * dg_dX(X_prev) * (dW[:, n]**2 - dt)
+        for k, phi in (observables or {}).items():
+            acc[k] += 0.5 * (phi(X_prev) + phi(X)) * dt      # trapezoid path integral
 
-    return {
+    out = {
         "terminal_paths": X,           # shape (num_paths,) or (num_paths, d)
         "empirical_mean": float(np.mean(X)),
         "empirical_variance": float(np.var(X, ddof=1)),
@@ -202,11 +218,38 @@ def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:
         "dt": dt,
         "T": T,
     }
+    if observables:
+        out["path_integrals"] = acc
+    return out
 
 if __name__ == "__main__":
     result = solve_sde(num_paths=50000, dt=0.01, T=1.0)
     print(f"Empirical mean:     {result['empirical_mean']:.6f}")
     print(f"Empirical variance: {result['empirical_variance']:.6f}")
+    # confirm both hooks work — the evaluator depends on them
+    dW = np.sqrt(0.01) * np.random.default_rng(0).standard_normal((1000, 100))
+    print("dW hook:", solve_sde(1000, 0.01, 1.0, dW=dW)["dt"])
+    print("obs hook:", solve_sde(1000, 0.01, 1.0,
+                                 observables={"x": lambda a: a})["path_integrals"]["x"].shape)
 ```
 
 The evaluator will import `solve_sde` from `solver.py` and call it directly.
+
+## Measured Convergence Orders
+
+The evaluator measures these directly, with common random numbers, and compares them against what the
+plan claimed. Reference values measured on GBM at 20 000 paths:
+
+| Scheme | Strong order | Weak order |
+|---|---|---|
+| Euler–Maruyama | 0.5 (measured 0.488) | 1.0 |
+| Milstein | 1.0 (measured 1.006) | 1.0 |
+
+**The strong order is the reliable discriminator** — it is a pathwise difference, so CRN removes
+almost all its variance. The weak order is a difference *of means*, so MC error does not cancel, and
+for some `(scheme, φ)` pairs the leading term vanishes and the estimate returns nonsense (GBM with
+Euler–Maruyama and `φ = tanh(x)` yields a spurious 4.18). See `verification_manual.md` §19 for the
+noise-floor filter that removes those.
+
+A Milstein plan measuring strong order ≈ 0.5 has a broken correction term — most often a sign error,
+or applying it with `X_{n+1}` instead of `X_n`.
