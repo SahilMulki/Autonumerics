@@ -1,0 +1,49 @@
+{
+  "equation_type": "SDE",
+  "id": "log_heston_feller_violated",
+  "sde_family": "log_heston",
+  "state_dimension": 2,
+  "noise_structure": "multiplicative",
+  "linear": false,
+  "stiff": false,
+  "equation": "dX = (r - Y/2) dt + sqrt(Y) * (rho dW1 + sqrt(1 - rho**2) dW2);  dY = (a - b*Y) dt + sigma*sqrt(Y) dW1",
+  "parameters": {
+    "X_0": 0.0,
+    "Y_0": 0.1,
+    "r": 0.05,
+    "a": 0.1,
+    "b": 1.0,
+    "sigma": 1.0,
+    "rho": -0.9
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": false,
+  "diffusion_derivative": "N/A (state_dimension == 2; multi-D Milstein requires Levy areas and is not used)",
+  "milstein_correction": null,
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 2,
+    "note": "The log-Heston system is affine: the terminal moments solve a closed linear ODE system (generator L = (r - Y/2) d_X + (a - b Y) d_Y + 0.5 Y d_XX + 0.5 sigma^2 Y d_YY + rho sigma Y d_XY). Expressions below are the exact closed-form solutions, validated against direct ODE integration (max diff ~1e-13 across parameter sets) and a 400k-path full-truncation Euler Monte Carlo. For the given parameters Y_0 = a/b, so E[Y] is constant (0.1) and E[X] is exactly 0.",
+    "mean_X_expression": "X_0 + (r - 0.5*(a/b))*t - 0.5*((Y_0 - a/b)/b)*(1 - np.exp(-b*t))",
+    "variance_X_expression": "( X_0**2 + 2*r*((X_0-0.5*(Y_0-a/b)/b)*t + 0.5*(r-0.5*(a/b))*t**2 + (0.5*(Y_0-a/b)/b/b)*(1-np.exp(-b*t))) + ((a/b)*t + ((Y_0-a/b)/b)*(1-np.exp(-b*t))) - ( ((r*(a/b) - 0.5*((2*a+sigma**2)*(a/b)/(2*b)) + a*(X_0-0.5*(Y_0-a/b)/b) + rho*sigma*(a/b))/b - (a*(r-0.5*(a/b)))/b**2)*t + 0.5*((a*(r-0.5*(a/b)))/b)*t**2 + ((X_0*Y_0 - (r*(a/b) - 0.5*((2*a+sigma**2)*(a/b)/(2*b)) + a*(X_0-0.5*(Y_0-a/b)/b) + rho*sigma*(a/b))/b + (a*(r-0.5*(a/b)))/b**2 + (-0.5*(Y_0**2 - (2*a+sigma**2)*(a/b)/(2*b) - (2*a+sigma**2)*(Y_0-a/b)/b))/b)/b)*(1-np.exp(-b*t)) + (r*(Y_0-a/b) - 0.5*((2*a+sigma**2)*(Y_0-a/b)/b) + a*(0.5*(Y_0-a/b)/b) + rho*sigma*(Y_0-a/b))*(1-(1+b*t)*np.exp(-b*t))/b**2 - ((-0.5*(Y_0**2 - (2*a+sigma**2)*(a/b)/(2*b) - (2*a+sigma**2)*(Y_0-a/b)/b))/(2*b**2))*(1-np.exp(-2*b*t)) ) ) - (X_0 + (r - 0.5*(a/b))*t - 0.5*((Y_0 - a/b)/b)*(1 - np.exp(-b*t)))**2",
+    "mean_Y_expression": "a/b + (Y_0 - a/b)*np.exp(-b*t)",
+    "variance_Y_expression": "(sigma**2/b)*(Y_0*(np.exp(-b*t) - np.exp(-2*b*t)) + 0.5*(a/b)*(1 - np.exp(-b*t))**2)",
+    "exact_values_at_T": {
+      "mean_X": 0.0,
+      "variance_X": 0.13731143072354426,
+      "mean_Y": 0.1,
+      "variance_Y": 0.04323323583816936
+    }
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "2D log-Heston (Ito), state (X=log-price, Y=variance). Y is a CIR process with 2a = 0.2 < sigma^2 = 1.0 so the FELLER CONDITION IS VIOLATED: Y hits 0 frequently. A positivity-preserving treatment is MANDATORY. Options: (1) full-truncation / reflection Euler with a guard Y_pos = np.maximum(Y, 0.0) before every sqrt, or (2) exact noncentral chi-square CIR sampling for Y (bias-free). A naive Euler on sqrt(Y) drives Y negative and yields NaNs; Ninomiya-Victoir splitting is invalid here since sigma^2 = 1.0 > 4a = 0.4. Correlate the two Brownian factors of X with Y via the SAME dW1 that drives Y: dX gets sqrt(Y)*(rho*dW1 + sqrt(1-rho**2)*dW2), dY gets sigma*sqrt(Y)*dW1. Small dt (e.g. dt <= 0.001) helps the biased-Euler variance converge because of the frequent Y=0 excursions. Return terminal_paths shape (num_paths, 2): column 0 = X, column 1 = Y. milstein_eligible is false (2D). Note E[X](T)=0 exactly (near-zero mean -> mean check on X is skipped); E[Y](T)=0.1."
+}

@@ -1,0 +1,36 @@
+{
+  "equation_type": "SDE",
+  "id": "bm_with_drift",
+  "sde_family": "bm_with_drift",
+  "state_dimension": 1,
+  "noise_structure": "additive",
+  "linear": true,
+  "stiff": false,
+  "equation": "dX(t) = mu * dt + sigma * dW(t)",
+  "parameters": {
+    "X_0": 1.0,
+    "mu": 0.5,
+    "sigma": 0.3
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": false,
+  "diffusion_derivative": "dg/dX = 0  (g(X) = sigma is constant)",
+  "milstein_correction": "0  (additive noise: Milstein reduces to Euler-Maruyama)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "X_0 + mu * t",
+    "variance_expression": "sigma**2 * t"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "Scalar Brownian motion with constant drift and additive noise. Drift f(X) = mu = 0.5, diffusion g(X) = sigma = 0.3 (state-independent). Additive noise so Milstein correction is zero and equals Euler-Maruyama; use EM only. X(T) is exactly Gaussian, so EM is exact in distribution at any dt. Analytic moments at t=1: mean = 1.5, variance = 0.09."
+}

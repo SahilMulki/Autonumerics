@@ -1,0 +1,37 @@
+{
+  "equation_type": "SDE",
+  "id": "cir_feller_violated",
+  "sde_family": "cox_ingersoll_ross",
+  "state_dimension": 1,
+  "noise_structure": "multiplicative",
+  "linear": false,
+  "stiff": false,
+  "equation": "dX(t) = kappa * (theta - X(t)) * dt + sigma * sqrt(X(t)) * dW(t)",
+  "parameters": {
+    "X_0": 0.5,
+    "kappa": 1.0,
+    "theta": 0.5,
+    "sigma": 2.0
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": true,
+  "diffusion_derivative": "dg/dX = sigma / (2*sqrt(X))  (scalar 1D: g(X) = sigma*sqrt(X))",
+  "milstein_correction": "0.5 * (sigma*sqrt(X_n)) * (sigma/(2*sqrt(X_n))) * (dW**2 - dt)  =  (sigma**2 / 4) * (dW**2 - dt)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "theta + (X_0 - theta) * np.exp(-kappa * t)",
+    "variance_expression": "(sigma**2 / kappa) * (X_0 * (np.exp(-kappa*t) - np.exp(-2*kappa*t)) + 0.5 * theta * (1 - np.exp(-kappa*t))**2)"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "CIR process with the Feller condition VIOLATED: 2*kappa*theta = 1.0 < sigma^2 = 4.0, so X hits zero frequently. A positivity guard is MANDATORY before computing sqrt(X): use X_pos = np.maximum(X_n, 0.0) (full truncation scheme). Diffusion g(X) = sigma*sqrt(X) is undefined for X < 0. Analytic moment formulas remain valid regardless of the Feller condition. Milstein correction (sigma**2/4)*(dW**2 - dt) is constant and independent of X, so it can be applied even at the zero boundary. Note the mean E[X(T)] = 0.5 is well above the near-zero threshold, so the mean check applies."
+}

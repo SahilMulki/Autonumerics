@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./benchmark/**)",
+      "Edit(./benchmark/**)",
+      "Bash(uv run python -c:*)",
+      "Bash(uv run python3 -c:*)",
+      "Bash(python -c:*)",
+      "Bash(python3 -c:*)"
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "equation_type": "SDE",
+  "id": "gbm_2d_high_corr",
+  "sde_family": "gbm_2d_correlated",
+  "state_dimension": 2,
+  "noise_structure": "multiplicative",
+  "linear": true,
+  "stiff": false,
+  "equation": "dX = mu1 * X * dt + sigma1 * X * dW1;  dY = mu2 * Y * dt + sigma2 * Y * dW2;  corr(dW1, dW2) = rho",
+  "parameters": {
+    "X_0": 1.0,
+    "Y_0": 1.0,
+    "mu1": 0.10,
+    "sigma1": 0.30,
+    "mu2": 0.10,
+    "sigma2": 0.30,
+    "rho": 0.95
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": false,
+  "diffusion_derivative": "N/A for multi-D (Milstein requires Levy area for cross terms)",
+  "milstein_correction": null,
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 2,
+    "mean_X": "X_0 * np.exp(mu1 * t)",
+    "variance_X": "X_0**2 * np.exp(2*mu1*t) * (np.exp(sigma1**2 * t) - 1)",
+    "mean_Y": "Y_0 * np.exp(mu2 * t)",
+    "variance_Y": "Y_0**2 * np.exp(2*mu2*t) * (np.exp(sigma2**2 * t) - 1)"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "2D correlated GBM with near-singular correlation rho=0.95 and elevated volatility sigma=0.30. Introduce correlation via Cholesky on the increments: dW1 = sqrt(dt)*Z1, dW_corr = rho*Z1 + sqrt(1-rho**2)*Z2 (times sqrt(dt)). X and Y are stepped independently after generating the correlated increments. Use EM only (multi-D Milstein needs Levy areas). Per-component marginals are exact GBM, so the analytic moments are the standard GBM moments per component and are unaffected by rho. High rho makes the Cholesky factor ill-conditioned but does not change the marginal moments; the elevated volatility widens the terminal lognormal distribution, so 50000 paths are needed to hit the 10% variance tolerance."
+}

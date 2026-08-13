@@ -37,6 +37,13 @@ Phases:
 - **init**:     problem.md exists, waiting for formulator
 - **running**:  solver ↔ evaluator iterating toward score 10
 - **done**:     best plan identified, REPORT.md written
+- **blocked**:  terminal — the formulator's requirements ledger did not carry every constraint in problem.md across into problem_spec.json, so the conductor stopped before creating plans (see *Requirements Ledger*)
+
+## Never read `benchmark/`
+
+Nothing in this pipeline may read anything under `benchmark/` — not `problems.py`, not `verify.py`, not `manifest.json`, not `results/`. That directory holds the independently-authored ground truth this pipeline is graded against, and the whole value of that grade is that it was produced without seeing the answer. An agent that reads the reference it is about to be scored on turns an independent check into a self-check, silently and irreversibly.
+
+This is enforced by permission deny rules during benchmark runs, but treat it as a rule you follow rather than a fence you test. If you find yourself lacking information — a scoring criterion, a reference value — the answer is in `problem.md` or `problem_spec.json`, or it is genuinely missing and you should say so. It is never in `benchmark/`.
 
 ## File Handoff Protocol
 
@@ -85,8 +92,24 @@ mean_relative_error      < 0.05   (5%)   — skipped when |exact_mean| < 0.01
 rel_l2_err_max = 0.01  (1%)
 ```
 
+**SDE stability problems** (no closed-form moments — blow-up / domain tests). The moment tolerances do not apply; the criterion is `evaluation_thresholds.stability_check`:
+```
+{"type": "finite"}                      every terminal state finite (no Inf/NaN)
+{"type": "domain", "abs_bound": 1.0}    additionally |X(T)| < abs_bound for every path
+null                                    not a stability problem
+```
+A spec with `has_analytic_solution: false` and `stability_check: null` has no scoreable criterion at all and is a formulator error.
+
+## Requirements Ledger
+
+`problem_spec.json` carries a top-level `requirements` array: one entry per constraint in `problem.md`, each with a verbatim `quote`, a `status` (`mapped` / `ambiguous` / `dropped`) and the `spec_path` that carries it.
+
+It exists because nothing downstream of the formulator ever reads `problem.md`. A parameter, boundary condition or scoring rule that fails to cross into the spec does not become an unrecorded detail — it stops existing, and the pipeline solves an easier problem than the one it was given, scoring itself 10/10 for doing so. The ledger turns that from a silent omission into a visible one.
+
+The conductor **halts the run at `phase: blocked`** if `requirements` is missing or empty, if any entry is `dropped`, or if a `mapped` entry has no `spec_path`. `ambiguous` entries do not halt: they record where `problem.md` was underspecified and the formulator made a documented standard choice, and they are surfaced in REPORT.md so the reader can see where the solved problem may differ from the one they described.
+
 ## Python Environment
 
-Use `uv` with the project's `.venv` (Python 3.12). Installed packages: `numpy`, `scipy`.
+Use `uv` with the project's `.venv` (Python 3.13 or newer). Installed packages: `numpy`, `scipy`.
 
 To run code: `uv run python workspace/{problem_slug}/plans/{id}-{plan_slug}/solver.py`

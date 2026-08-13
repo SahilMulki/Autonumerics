@@ -1,0 +1,38 @@
+{
+  "equation_type": "SDE",
+  "id": "stochastic_oscillator_long_horizon",
+  "sde_family": "stochastic_oscillator",
+  "state_dimension": 2,
+  "noise_structure": "additive",
+  "linear": true,
+  "stiff": false,
+  "equation": "dX = Y dt;  dY = -X dt + sigma dW(t)",
+  "parameters": {
+    "X_0": 1.0,
+    "Y_0": 0.0,
+    "sigma": 0.3
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 31.41592653589793
+  },
+  "milstein_eligible": false,
+  "diffusion_derivative": "G = [[0], [sigma]] is constant (additive noise); dG/dstate = 0",
+  "milstein_correction": "0 (additive noise, Milstein == EM). Also multi-D, so Milstein not applicable.",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 2,
+    "mean_X": "X_0 * np.cos(t) + Y_0 * np.sin(t)",
+    "variance_X": "sigma**2 / 2 * (t - np.sin(t) * np.cos(t))",
+    "mean_Y": "-X_0 * np.sin(t) + Y_0 * np.cos(t)",
+    "variance_Y": "sigma**2 / 2 * (t + np.sin(t) * np.cos(t))"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "2D linear stochastic harmonic oscillator with additive noise entering only the Y component: G = [[0], [sigma]]. State X has shape (num_paths, 2). Update: X_{n+1} = X_n + Y_n*dt (no noise); Y_{n+1} = Y_n - X_n*dt + sigma*dW_n. Use Euler-Maruyama (additive noise + multi-D, so Milstein is neither needed nor well-defined). Long horizon T = 10*pi (five full periods) accumulates phase error in the mean and variance growth, so a small dt is required for stability and accuracy (e.g. dt <= 0.001 or an order-preserving scheme). At T = 10*pi: mean_X = cos(10*pi) = 1.0, mean_Y = -sin(10*pi) = 0.0 (near zero -> skip mean check for Y). Analytic per-component moment formulas from sde_manual.md hold for any t and are evaluated at t = T."
+}

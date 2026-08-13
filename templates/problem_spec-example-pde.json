@@ -29,7 +29,24 @@
     "space_variables": ["x"]
   },
   "evaluation_thresholds": {
-    "rel_l2_err_max": 0.01
+    "rel_l2_err_max": 0.01,
+    "grid_N": 64,
+    "min_spatial_order": 1.0,
+    "order_check": true
   },
-  "implementation_notes": "Standard 1D heat equation with homogeneous Dirichlet BCs. Explicit scheme must satisfy CFL: dt <= dx^2 / (2*alpha). Crank-Nicolson is unconditionally stable and preferred for accuracy."
+  "implementation_notes": "Standard 1D heat equation with homogeneous Dirichlet BCs. The solver contract is solve_pde(N); it is run at N=grid_N and N=2*grid_N and scored on both relative L2 error and observed spatial convergence order. Explicit scheme must satisfy CFL: dt <= dx^2 / (2*alpha) at the given N. Crank-Nicolson is unconditionally stable and preferred for accuracy.",
+  "requirements": [
+    {"id": "R1", "kind": "equation", "quote": "u_t = 0.1 * u_xx",
+     "status": "mapped", "spec_path": "governing_equation, parameters.alpha"},
+    {"id": "R2", "kind": "domain", "quote": "x in [0, 1],   t in [0, 0.5]",
+     "status": "mapped", "spec_path": "domain.bounds.x, parameters.t_final"},
+    {"id": "R3", "kind": "initial_condition", "quote": "u(x, 0) = sin(pi x)",
+     "status": "mapped", "spec_path": "initial_condition"},
+    {"id": "R4", "kind": "boundary_condition", "quote": "u(0, t) = 0  and  u(1, t) = 0",
+     "status": "mapped", "spec_path": "boundary_conditions"},
+    {"id": "R5", "kind": "evaluation", "quote": "relative L2 error < 1% at the finer grid (N = 128)",
+     "status": "mapped", "spec_path": "evaluation_thresholds.rel_l2_err_max, evaluation_thresholds.grid_N"},
+    {"id": "R6", "kind": "evaluation", "quote": "the observed order p = log2(err_N / err_2N) ... must be at least 1",
+     "status": "mapped", "spec_path": "evaluation_thresholds.min_spatial_order, evaluation_thresholds.order_check"}
+  ]
 }

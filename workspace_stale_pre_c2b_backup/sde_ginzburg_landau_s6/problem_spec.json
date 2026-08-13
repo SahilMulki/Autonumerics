@@ -1,0 +1,36 @@
+{
+  "equation_type": "SDE",
+  "id": "stochastic_ginzburg_landau_s6",
+  "sde_family": "stochastic_ginzburg_landau",
+  "state_dimension": 1,
+  "noise_structure": "multiplicative",
+  "linear": false,
+  "stiff": false,
+  "equation": "dX(t) = ((sigma**2/2) * X(t) - X(t)**3) * dt + sigma * X(t) * dW(t)",
+  "parameters": {
+    "X_0": 1.0,
+    "sigma": 6.0
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": true,
+  "diffusion_derivative": "dg/dX = sigma  (scalar 1D: g(X) = sigma*X, so dg/dX = sigma)",
+  "milstein_correction": "0.5 * sigma * X_n * sigma * (dW**2 - dt)  =  0.5 * sigma**2 * X_n * (dW**2 - dt)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "0.676",
+    "variance_expression": "1.88",
+    "reference_method": "No elementary closed-form moment formula. Reference moments computed by discretization-free Monte-Carlo of the exact pathwise solution X_t = X_0*exp(sigma*W_t) / sqrt(1 + 2*X_0**2 * integral_0^t exp(2*sigma*W_u) du). With X_0=1, sigma=6, T=1: E[X(T)] ~= 0.676, Var[X(T)] ~= 1.88 (stable across seeds and grid refinement, n_steps 2000-16000, to well within the eval tolerances)."
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "Stochastic Ginzburg-Landau (Ito) with superlinear (cubic -X^3) drift and multiplicative linear diffusion sigma*X. At sigma=6 plain Euler-Maruyama is UNUSABLE: the cubic drift causes explosive intermediate values that produce partial Inf/NaN and a severely biased (underestimated) variance. A TAMED or TRUNCATED Euler scheme is required, e.g. tamed drift f_tamed = f(X)*dt / (1 + |f(X)|*dt) with the diffusion term unmodified, or clip/truncate X per step. A small time step (the verifier re-runs at dt <= 0.04/T) plus taming is required for stability. The Milstein correction 0.5*sigma**2*X_n*(dW**2 - dt) may be added on top of the tamed drift to improve diffusion accuracy but does not by itself fix the drift explosion. The exact solution stays positive for X_0>0. Reference mean 0.676 and variance 1.88 are Monte-Carlo estimates of the exact solution, not closed-form values; mean is not near zero so the mean check applies."
+}

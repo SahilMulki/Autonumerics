@@ -9,6 +9,12 @@ __pycache__/
 
 # Run outputs (generated artifacts, not source)
 outputs_new_paper/
+workspace_oneshot/
+
+# Benchmark results are generated, but the headline report is committed so the
+# numbers quoted in README.md are checkable in the repo.
+benchmark/results/*
+!benchmark/results/REPORT.md
 
 # Secrets — never commit API keys
 .env
@@ -19,3 +25,5 @@ outputs_new_paper/
 
 # Claude Code local settings (personal overrides, not for team)
 .claude/settings.local.json
+workspace/*
+!workspace/.gitkeep

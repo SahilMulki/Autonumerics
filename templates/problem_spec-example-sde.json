@@ -29,7 +29,20 @@
     "mean_rel_err_max": 0.05,
     "near_zero_mean_threshold": 0.01,
     "num_paths": 50000,
-    "seed": 42
+    "seed": 42,
+    "stability_check": null
   },
-  "implementation_notes": "Standard multiplicative scalar GBM. No positivity guard needed (X stays positive given X_0 > 0). Milstein eligible."
+  "implementation_notes": "Standard multiplicative scalar GBM. No positivity guard needed (X stays positive given X_0 > 0). Milstein eligible.",
+  "requirements": [
+    {"id": "R1", "kind": "equation", "quote": "dX = 0.1 X dt + 0.2 X dW",
+     "status": "mapped", "spec_path": "equation, parameters.mu, parameters.sigma"},
+    {"id": "R2", "kind": "parameter", "quote": "X(0) = 1.0",
+     "status": "mapped", "spec_path": "parameters.X_0"},
+    {"id": "R3", "kind": "domain", "quote": "over the time interval [0, 1]",
+     "status": "mapped", "spec_path": "time_interval"},
+    {"id": "R4", "kind": "evaluation", "quote": "compare to the known analytic moments",
+     "status": "mapped", "spec_path": "analytic_moments"},
+    {"id": "R5", "kind": "evaluation", "quote": "solve_sde(num_paths=50000, dt=0.01, T=1, seed=42)",
+     "status": "mapped", "spec_path": "evaluation_thresholds.num_paths, evaluation_thresholds.seed"}
+  ]
 }

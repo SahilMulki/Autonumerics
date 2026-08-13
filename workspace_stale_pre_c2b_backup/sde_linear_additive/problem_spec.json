@@ -1,0 +1,37 @@
+{
+  "equation_type": "SDE",
+  "id": "linear_sde_additive",
+  "sde_family": "linear_sde_additive",
+  "state_dimension": 1,
+  "noise_structure": "additive",
+  "linear": true,
+  "stiff": false,
+  "equation": "dX(t) = (a + b * X(t)) * dt + c * dW(t)",
+  "parameters": {
+    "X_0": 0.0,
+    "a": 2.0,
+    "b": -1.0,
+    "c": 0.5
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": false,
+  "diffusion_derivative": "dg/dX = 0  (g(X) = c is constant, additive noise)",
+  "milstein_correction": "0  (additive noise: Milstein correction vanishes, Milstein == Euler-Maruyama)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "np.exp(b*t) * (X_0 + a/b) - a/b",
+    "variance_expression": "c**2 / (2*b) * (np.exp(2*b*t) - 1)"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "Linear SDE with additive noise: drift f(X) = a + b*X (linear in X), diffusion g = c constant. Additive noise so Milstein reduces to Euler-Maruyama; use EM. With b=-1 the process is mean-reverting toward a/b=2 and the analytic variance c^2/(2b)*(exp(2bt)-1) = 0.125*(1-exp(-2t)) > 0. At T=1: mean = exp(-1)*(0 - 2) + 2 = 2*(1-exp(-1)) approx 1.264, variance = 0.125*(1-exp(-2)) approx 0.1081. Mean is well above near-zero threshold, so mean check applies."
+}

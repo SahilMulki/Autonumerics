@@ -1,0 +1,1465 @@
+{
+  "n_total": 50,
+  "n_pde": 28,
+  "n_sde": 22,
+  "pass_thresholds": {
+    "pde": {
+      "rel_l2_err_max": 0.01
+    },
+    "sde": {
+      "variance_rel_err_max": 0.1,
+      "mean_rel_err_max": 0.05,
+      "near_zero_mean_threshold": 0.01
+    }
+  },
+  "problems": [
+    {
+      "id": "P01",
+      "slug": "pde_heat_1d",
+      "type": "pde",
+      "tier": 1,
+      "family": "heat",
+      "title": "1D Heat Equation",
+      "challenge": "Textbook parabolic IVBP; explicit FTCS and implicit Crank-Nicolson both apply.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 1,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": 0.5,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P02",
+      "slug": "pde_heat_2d",
+      "type": "pde",
+      "tier": 1,
+      "family": "heat",
+      "title": "2D Heat Equation",
+      "challenge": "Separable 2D diffusion; tests 2D grid assembly and CFL in two dimensions.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": 0.1,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P03",
+      "slug": "pde_wave_1d",
+      "type": "pde",
+      "tier": 1,
+      "family": "wave",
+      "title": "1D Wave Equation",
+      "challenge": "Second-order-in-time hyperbolic PDE; needs a stable leap-frog / Newmark step.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 1,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": 1.0,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P04",
+      "slug": "pde_advection_1d",
+      "type": "pde",
+      "tier": 1,
+      "family": "advection",
+      "title": "1D Linear Advection (periodic)",
+      "challenge": "Transports a narrow Gaussian; first-order upwind smears it, so it stresses numerical diffusion.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 1,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": 0.5,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P05",
+      "slug": "pde_poisson_2d",
+      "type": "pde",
+      "tier": 1,
+      "family": "poisson",
+      "title": "2D Poisson Equation (manufactured)",
+      "challenge": "Steady elliptic solve; 2D sparse assembly and a direct/iterative linear solve.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": null,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P06",
+      "slug": "pde_laplace_2d",
+      "type": "pde",
+      "tier": 2,
+      "family": "laplace",
+      "title": "2D Laplace Equation (mixed Dirichlet)",
+      "challenge": "Non-separable-looking BC data; solution grows like sinh in y, so it is not symmetric in x/y.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": null,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P07",
+      "slug": "pde_convection_diffusion_bl",
+      "type": "pde",
+      "tier": 2,
+      "family": "convection-diffusion",
+      "title": "Singularly Perturbed Convection-Diffusion",
+      "challenge": "eps=1e-3 boundary layer near x=1; centered differences oscillate, so it needs upwinding or a fine/graded mesh.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 1,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": null,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P08",
+      "slug": "pde_helmholtz_2d",
+      "type": "pde",
+      "tier": 2,
+      "family": "helmholtz",
+      "title": "2D Helmholtz Equation (indefinite)",
+      "challenge": "k=10 makes the discrete operator indefinite; naive iterative solvers stall.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": null,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P09",
+      "slug": "pde_anisotropic_diffusion",
+      "type": "pde",
+      "tier": 2,
+      "family": "anisotropic-diffusion",
+      "title": "Anisotropic Diffusion (manufactured)",
+      "challenge": "100:1 diffusion-tensor anisotropy stresses conditioning and mesh aspect ratio.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": null,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P10",
+      "slug": "pde_wave_2d",
+      "type": "pde",
+      "tier": 2,
+      "family": "wave",
+      "title": "2D Wave Equation",
+      "challenge": "2D hyperbolic with a sqrt(2) modal frequency; CFL couples both spatial directions.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": 0.5,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P11",
+      "slug": "pde_burgers_inviscid",
+      "type": "pde",
+      "tier": 3,
+      "family": "burgers-inviscid",
+      "title": "Inviscid Burgers (Riemann shock)",
+      "challenge": "Entropy shock; a conservative/Godunov scheme captures the speed but smears the front, so <1% L2 is very hard.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 1,
+      "domain": {
+        "x": [
+          -1.0,
+          1.0
+        ]
+      },
+      "t_eval": 1.0,
+      "grid_N": 64,
+      "order_check": false,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P12",
+      "slug": "pde_fokker_planck_ou",
+      "type": "pde",
+      "tier": 3,
+      "family": "fokker-planck",
+      "title": "Fokker-Planck (Ornstein-Uhlenbeck)",
+      "challenge": "Drift-diffusion in conservation form; must conserve mass and track a moving, narrowing Gaussian.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 1,
+      "domain": {
+        "x": [
+          -8.0,
+          8.0
+        ]
+      },
+      "t_eval": 1.0,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P13",
+      "slug": "pde_fractional_diffusion",
+      "type": "pde",
+      "tier": 3,
+      "family": "fractional-diffusion",
+      "title": "Time-Fractional Subdiffusion",
+      "challenge": "Caputo derivative of order 1/2 needs a history-aware (L1) scheme and the Mittag-Leffler solution; far outside the manual.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 1,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": 0.5,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P14",
+      "slug": "pde_black_scholes_call",
+      "type": "pde",
+      "tier": 3,
+      "family": "black-scholes",
+      "title": "Black-Scholes European Call",
+      "challenge": "Backward-in-time terminal-value problem with a non-smooth payoff kink; convection-dominated near S=Smax.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 1,
+      "domain": {
+        "S": [
+          0.0,
+          4.0
+        ]
+      },
+      "t_eval": 0.0,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P15",
+      "slug": "pde_kuramoto_sivashinsky",
+      "type": "pde",
+      "tier": 3,
+      "family": "kuramoto-sivashinsky",
+      "title": "Kuramoto-Sivashinsky (chaotic)",
+      "challenge": "Fourth-order, chaotic, no closed form; stiff and requires an ETDRK/IMEX spectral integrator. No analytic ground truth.",
+      "has_ground_truth": false,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "dims": 1,
+      "domain": {
+        "x": [
+          0.0,
+          100.53096491487338
+        ]
+      },
+      "t_eval": 50.0,
+      "grid_N": 64,
+      "order_check": false,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P16",
+      "slug": "pde_stefan_1d_similarity",
+      "type": "pde",
+      "tier": 3,
+      "family": "stefan-free-boundary",
+      "title": "One-Phase Stefan Problem (moving front)",
+      "challenge": "Moving free boundary (phase change); the front's kink limits the L2 rate and a naive fixed-grid scheme mislocates it.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 1,
+      "domain": {
+        "x": [
+          0.0,
+          2.0
+        ]
+      },
+      "t_eval": 1.0,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 0.75,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P17",
+      "slug": "pde_monge_ampere_2d",
+      "type": "pde",
+      "tier": 3,
+      "family": "monge-ampere",
+      "title": "Monge-Ampere (fully nonlinear, convex)",
+      "challenge": "Fully nonlinear elliptic det(D^2 u)=f; needs a convexity-preserving (monotone wide-stencil) scheme, not a linear solve.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": null,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 0.75,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false,
+      "diagnostics": [
+        {
+          "name": "min_hessian_eig",
+          "gate": false
+        }
+      ]
+    },
+    {
+      "id": "P18",
+      "slug": "pde_porous_medium_2d",
+      "type": "pde",
+      "tier": 3,
+      "family": "porous-medium",
+      "title": "Porous-Medium (degenerate, compact support)",
+      "challenge": "Degenerate diffusion u_t=Delta(u^2) with a compact-support free boundary; scored in the L1 norm because the moving edge pollutes the L2 rate.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 2,
+      "domain": {
+        "x": [
+          -4.0,
+          4.0
+        ],
+        "y": [
+          -4.0,
+          4.0
+        ]
+      },
+      "t_eval": 1.0,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 0.6,
+      "metric": "l1",
+      "l2_tol": 0.02,
+      "masked_domain": false,
+      "diagnostics": [
+        {
+          "name": "min_value",
+          "gate": false
+        }
+      ]
+    },
+    {
+      "id": "P19",
+      "slug": "pde_poisson_lshape",
+      "type": "pde",
+      "tier": 3,
+      "family": "poisson-reentrant-corner",
+      "title": "Poisson on an L-shaped domain (corner singularity)",
+      "challenge": "Re-entrant corner: u ~ r^{2/3} is not in H^2, so uniform low-order methods lose their rate; the order gate is the whole point.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 2,
+      "domain": {
+        "x": [
+          -1.0,
+          1.0
+        ],
+        "y": [
+          -1.0,
+          1.0
+        ]
+      },
+      "t_eval": null,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.25,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": true
+    },
+    {
+      "id": "P20",
+      "slug": "pde_cahn_hilliard_2d",
+      "type": "pde",
+      "tier": 3,
+      "family": "cahn-hilliard",
+      "title": "Cahn-Hilliard (4th-order, stiff, MMS)",
+      "challenge": "Fourth-order stiff phase-field operator; explicit stepping needs dt~h^4, so an energy-stable / IMEX scheme is required.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": 0.5,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.4,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P21",
+      "slug": "pde_heston_2d",
+      "type": "pde",
+      "tier": 3,
+      "family": "heston",
+      "title": "Heston European Call (2D, degenerate)",
+      "challenge": "2D convection-diffusion with a cross-derivative and a non-smooth payoff kink; degenerate as v->0. Reference is a semi-closed characteristic-function integral.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 2,
+      "domain": {
+        "S": [
+          0.0,
+          4.0
+        ],
+        "v": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": 0.0,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false,
+      "diagnostics": [
+        {
+          "name": "min_price",
+          "gate": false
+        }
+      ]
+    },
+    {
+      "id": "P22",
+      "slug": "pde_fichera_3d",
+      "type": "pde",
+      "tier": 3,
+      "family": "fichera-corner",
+      "title": "Fichera 3D Corner Singularity (MMS)",
+      "challenge": "3-D re-entrant vertex (cube minus an octant); the regularized singular solution has a sharp near-corner layer, and only in-domain nodes are scored.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 3,
+      "domain": {
+        "x": [
+          -1.0,
+          1.0
+        ],
+        "y": [
+          -1.0,
+          1.0
+        ],
+        "z": [
+          -1.0,
+          1.0
+        ]
+      },
+      "t_eval": null,
+      "grid_N": 24,
+      "order_check": true,
+      "min_order": 1.2,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": true
+    },
+    {
+      "id": "P23",
+      "slug": "pde_acoustic_3d_layered",
+      "type": "pde",
+      "tier": 3,
+      "family": "acoustic-layered",
+      "title": "3D Acoustic Wave in a Layered Medium (MMS)",
+      "challenge": "3-D wave with a discontinuous (layered) wave speed and high spatial frequency; numerical dispersion/phase pollution unless enough points per wavelength are used.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 3,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ],
+        "z": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": 0.5,
+      "grid_N": 32,
+      "order_check": true,
+      "min_order": 1.5,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P24",
+      "slug": "pde_navier_stokes_2d",
+      "type": "pde",
+      "tier": 3,
+      "family": "navier-stokes",
+      "title": "2D Navier-Stokes (Taylor-Green vortex)",
+      "challenge": "Incompressible NS system (u, v, p); a scheme that fails to enforce div u = 0 pollutes the solution -- the divergence constraint is a hard gate, separate from field accuracy.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          6.283185307179586
+        ],
+        "y": [
+          0.0,
+          6.283185307179586
+        ]
+      },
+      "t_eval": 0.5,
+      "grid_N": 48,
+      "order_check": true,
+      "min_order": 1.5,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false,
+      "fields": [
+        "u",
+        "v",
+        "p"
+      ],
+      "primary_field": "u",
+      "required_fields": [
+        "u",
+        "v"
+      ],
+      "gauge_fields": [
+        "p"
+      ],
+      "diagnostics": [
+        {
+          "name": "divergence_norm",
+          "gate": true
+        },
+        {
+          "name": "energy_decay_error",
+          "gate": false
+        }
+      ]
+    },
+    {
+      "id": "P25",
+      "slug": "pde_mhd_2d",
+      "type": "pde",
+      "tier": 3,
+      "family": "mhd",
+      "title": "2D Resistive MHD (divergence-free, MMS)",
+      "challenge": "Coupled velocity + magnetic field; the solenoidal constraint div B = 0 is a distinct hard gate from div u = 0, and the Lorentz/induction coupling is stiff.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": 0.5,
+      "grid_N": 48,
+      "order_check": true,
+      "min_order": 1.4,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false,
+      "fields": [
+        "u",
+        "v",
+        "Bx",
+        "By",
+        "p"
+      ],
+      "primary_field": "u",
+      "required_fields": [
+        "u",
+        "v",
+        "Bx",
+        "By"
+      ],
+      "gauge_fields": [
+        "p"
+      ],
+      "diagnostics": [
+        {
+          "name": "div_B_norm",
+          "gate": true
+        },
+        {
+          "name": "div_u_norm",
+          "gate": false
+        },
+        {
+          "name": "magnetic_energy_error",
+          "gate": false
+        }
+      ]
+    },
+    {
+      "id": "P26",
+      "slug": "pde_keller_segel_2d",
+      "type": "pde",
+      "tier": 3,
+      "family": "keller-segel",
+      "title": "2D Keller-Segel Chemotaxis (positivity, MMS)",
+      "challenge": "Chemotaxis system (density rho, chemoattractant c); an aggregating drift makes naive schemes produce negative density -- positivity is a hard gate.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": 0.5,
+      "grid_N": 48,
+      "order_check": true,
+      "min_order": 1.4,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false,
+      "fields": [
+        "rho",
+        "c"
+      ],
+      "primary_field": "rho",
+      "required_fields": [
+        "rho",
+        "c"
+      ],
+      "diagnostics": [
+        {
+          "name": "min_density",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "P27",
+      "slug": "pde_elasticity_2d",
+      "type": "pde",
+      "tier": 3,
+      "family": "elasticity-locking",
+      "title": "2D Nearly-Incompressible Elasticity (locking, MMS)",
+      "challenge": "lambda/mu = 1e4: a standard displacement scheme locks (volumetric over-stiffening), so the displacement error plateaus under refinement instead of converging.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": null,
+      "grid_N": 48,
+      "order_check": true,
+      "min_order": 1.3,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false,
+      "fields": [
+        "u",
+        "v"
+      ],
+      "primary_field": "u",
+      "required_fields": [
+        "u",
+        "v"
+      ],
+      "diagnostics": [
+        {
+          "name": "div_u_norm",
+          "gate": false
+        }
+      ]
+    },
+    {
+      "id": "P28",
+      "slug": "pde_maxwell_3d",
+      "type": "pde",
+      "tier": 3,
+      "family": "maxwell",
+      "title": "3D Maxwell Plane Wave (divergence-free, exact)",
+      "challenge": "Full 3-D Maxwell system (E, H each 3-vectors); a scheme that does not preserve div E = div H = 0 accumulates spurious charge -- two hard 3-D structural gates plus phase accuracy.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "dims": 3,
+      "domain": {
+        "x": [
+          0.0,
+          6.283185307179586
+        ],
+        "y": [
+          0.0,
+          6.283185307179586
+        ],
+        "z": [
+          0.0,
+          6.283185307179586
+        ]
+      },
+      "t_eval": 0.5,
+      "grid_N": 24,
+      "order_check": true,
+      "min_order": 1.6,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false,
+      "fields": [
+        "Ex",
+        "Ey",
+        "Ez",
+        "Hx",
+        "Hy",
+        "Hz"
+      ],
+      "primary_field": "Ex",
+      "required_fields": [
+        "Ex",
+        "Ey",
+        "Ez",
+        "Hx",
+        "Hy",
+        "Hz"
+      ],
+      "diagnostics": [
+        {
+          "name": "divE_norm",
+          "gate": true
+        },
+        {
+          "name": "divH_norm",
+          "gate": true
+        },
+        {
+          "name": "field_energy_error",
+          "gate": false
+        }
+      ]
+    },
+    {
+      "id": "S01",
+      "slug": "sde_gbm",
+      "type": "sde",
+      "tier": 1,
+      "family": "geometric_brownian_motion",
+      "title": "Geometric Brownian Motion",
+      "challenge": "Canonical multiplicative-noise SDE; Euler-Maruyama and Milstein both apply.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.01,
+      "eval_dt": 0.01,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 1.1051709180756477,
+        "variance": 0.04984639216123484
+      }
+    },
+    {
+      "id": "S02",
+      "slug": "sde_ornstein_uhlenbeck",
+      "type": "sde",
+      "tier": 1,
+      "family": "ornstein_uhlenbeck",
+      "title": "Ornstein-Uhlenbeck Process",
+      "challenge": "Additive noise, linear mean-reverting drift; EM suffices at a modest step.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.01,
+      "eval_dt": 0.01,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 0.44626032029685964,
+        "variance": 0.07918441096934467
+      }
+    },
+    {
+      "id": "S03",
+      "slug": "sde_bm_with_drift",
+      "type": "sde",
+      "tier": 1,
+      "family": "bm_with_drift",
+      "title": "Brownian Motion with Drift",
+      "challenge": "Constant drift and additive noise; exactly integrable, so EM should be essentially exact in the mean.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.01,
+      "eval_dt": 0.01,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 1.5,
+        "variance": 0.09
+      }
+    },
+    {
+      "id": "S04",
+      "slug": "sde_linear_additive",
+      "type": "sde",
+      "tier": 1,
+      "family": "linear_sde_additive",
+      "title": "Linear SDE with Additive Noise",
+      "challenge": "Affine drift with additive noise; closed-form moments from the linear moment ODEs.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.01,
+      "eval_dt": 0.01,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 1.2642411176571153,
+        "variance": 0.10808308959542341
+      }
+    },
+    {
+      "id": "S05",
+      "slug": "sde_bm_standard",
+      "type": "sde",
+      "tier": 1,
+      "family": "bm_standard",
+      "title": "Standard Brownian Motion",
+      "challenge": "Zero mean by symmetry; exercises the near-zero-mean skip in the scoring rubric.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.01,
+      "eval_dt": 0.01,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 0.0,
+        "variance": 1.0
+      }
+    },
+    {
+      "id": "S06",
+      "slug": "sde_cir",
+      "type": "sde",
+      "tier": 2,
+      "family": "cox_ingersoll_ross",
+      "title": "Cox-Ingersoll-Ross (Feller satisfied)",
+      "challenge": "Square-root diffusion needs a positivity guard before sqrt; Feller condition holds here.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.01,
+      "eval_dt": 0.01,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 0.9323323583816936,
+        "variance": 0.054041544797711706
+      }
+    },
+    {
+      "id": "S07",
+      "slug": "sde_exponential_ou",
+      "type": "sde",
+      "tier": 2,
+      "family": "exponential_ornstein_uhlenbeck",
+      "title": "Exponential Ornstein-Uhlenbeck",
+      "challenge": "Drift contains log(X); needs a guard to keep X strictly positive.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.01,
+      "eval_dt": 0.01,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 1.0351916603651214,
+        "variance": 0.07675145215592635
+      }
+    },
+    {
+      "id": "S08",
+      "slug": "sde_black_scholes",
+      "type": "sde",
+      "tier": 2,
+      "family": "black_scholes",
+      "title": "Black-Scholes Asset Price",
+      "challenge": "GBM at financial scale (X0=100); large magnitudes stress relative-error bookkeeping.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.01,
+      "eval_dt": 0.01,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 105.12710963760242,
+        "variance": 451.0288078157963
+      }
+    },
+    {
+      "id": "S09",
+      "slug": "sde_gbm_2d_correlated",
+      "type": "sde",
+      "tier": 2,
+      "family": "gbm_2d_correlated",
+      "title": "2D Correlated Geometric Brownian Motion",
+      "challenge": "Vector state with correlated noise; requires a Cholesky factor and per-component scoring.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 2,
+      "T": 1.0,
+      "dt": 0.01,
+      "eval_dt": 0.01,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean_X": 1.1051709180756477,
+        "variance_X": 0.04984639216123484,
+        "mean_Y": 1.161834242728283,
+        "variance_Y": 0.0870584134101211
+      }
+    },
+    {
+      "id": "S10",
+      "slug": "sde_stochastic_oscillator",
+      "type": "sde",
+      "tier": 2,
+      "family": "stochastic_oscillator",
+      "title": "Stochastic Harmonic Oscillator",
+      "challenge": "Vector state, noise only in the velocity component; the X-mean returns near zero at T=2pi.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 2,
+      "T": 6.283185307179586,
+      "dt": 0.01,
+      "eval_dt": 0.006366197723675814,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean_X": 1.0,
+        "variance_X": 0.2827433388230814,
+        "mean_Y": 2.4492935982947064e-16,
+        "variance_Y": 0.2827433388230814
+      }
+    },
+    {
+      "id": "S11",
+      "slug": "sde_cir_feller_violated",
+      "type": "sde",
+      "tier": 3,
+      "family": "cox_ingersoll_ross",
+      "title": "CIR with Feller Condition Violated",
+      "challenge": "2 kappa theta = 1 < sigma^2 = 4, so paths hit zero frequently; naive Euler biases the variance badly.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.005,
+      "eval_dt": 0.005,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 0.5,
+        "variance": 0.8646647167633873
+      }
+    },
+    {
+      "id": "S12",
+      "slug": "sde_gbm_high_vol",
+      "type": "sde",
+      "tier": 3,
+      "family": "geometric_brownian_motion",
+      "title": "High-Volatility GBM",
+      "challenge": "sigma=1.0 gives a heavy-tailed lognormal; the Monte Carlo variance estimator itself is high-variance.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.005,
+      "eval_dt": 0.005,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 1.0512710963760241,
+        "variance": 1.8989951058707855
+      }
+    },
+    {
+      "id": "S13",
+      "slug": "sde_ou_stiff",
+      "type": "sde",
+      "tier": 3,
+      "family": "ornstein_uhlenbeck",
+      "title": "Stiff Ornstein-Uhlenbeck (fast mean reversion)",
+      "challenge": "theta=50 makes explicit EM unstable unless dt < 2/theta = 0.04; tests time-step selection / stability.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.002,
+      "eval_dt": 0.002,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 3.8574996959278356e-22,
+        "variance": 0.04
+      }
+    },
+    {
+      "id": "S14",
+      "slug": "sde_gbm_2d_high_corr",
+      "type": "sde",
+      "tier": 3,
+      "family": "gbm_2d_correlated",
+      "title": "2D GBM with Near-Singular Correlation",
+      "challenge": "rho=0.95 makes the correlation matrix nearly singular; the Cholesky factor is ill-conditioned and volatility is higher.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 2,
+      "T": 1.0,
+      "dt": 0.005,
+      "eval_dt": 0.005,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean_X": 1.1051709180756477,
+        "variance_X": 0.11502472986530234,
+        "mean_Y": 1.1051709180756477,
+        "variance_Y": 0.11502472986530234
+      }
+    },
+    {
+      "id": "S15",
+      "slug": "sde_oscillator_long_horizon",
+      "type": "sde",
+      "tier": 3,
+      "family": "stochastic_oscillator",
+      "title": "Long-Horizon Stochastic Oscillator",
+      "challenge": "Integrated over five periods (T=10pi); phase error and variance accumulate over ~15000 steps.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "state_dimension": 2,
+      "T": 31.41592653589793,
+      "dt": 0.005,
+      "eval_dt": 0.0012732395447351628,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean_X": 1.0,
+        "variance_X": 1.413716694115407,
+        "mean_Y": 1.2246467991473533e-15,
+        "variance_Y": 1.413716694115407
+      }
+    },
+    {
+      "id": "S16",
+      "slug": "sde_log_heston_feller_violated",
+      "type": "sde",
+      "tier": 3,
+      "family": "log_heston",
+      "title": "Log-Heston with Feller Condition Violated",
+      "challenge": "Coupled 2-D affine (log-price + CIR variance); 2a=0.2 < sigma^2=1.0 so the variance hits zero and naive sqrt(Y) Euler goes negative -- needs positivity-preserving/exact CIR sampling.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "state_dimension": 2,
+      "T": 1.0,
+      "dt": 0.005,
+      "eval_dt": 0.005,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean_X": 6.938893903907228e-18,
+        "variance_X": 0.13731143072354426,
+        "mean_Y": 0.1,
+        "variance_Y": 0.04323323583816935
+      }
+    },
+    {
+      "id": "S17",
+      "slug": "sde_multichannel_stiff_m13",
+      "type": "sde",
+      "tier": 3,
+      "family": "multichannel_stiff_linear",
+      "title": "Multi-Channel Stiff Linear SDE (13 noise channels)",
+      "challenge": "13 non-commuting multiplicative noise channels on a spiral drift; a correct solver must assemble all 13 channels and resolve the step-size-sensitive terminal variance, well beyond the 1-2 channel baseline.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "state_dimension": 2,
+      "T": 1.0,
+      "dt": 0.0005,
+      "eval_dt": 0.0005,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean_X": -0.11488239866840012,
+        "variance_X": 0.17159885522230536,
+        "mean_Y": -0.15307943119069078,
+        "variance_Y": 0.16271628304120997
+      }
+    },
+    {
+      "id": "S18",
+      "slug": "sde_quintic_random_ic",
+      "type": "sde",
+      "tier": 3,
+      "family": "quintic_random_ic",
+      "title": "Noise-Free Quintic with Random Initial Condition",
+      "challenge": "Superlinear drift dX=-X^5 dt with a Gaussian initial condition; plain Euler-Maruyama overshoots and diverges on the large-|X0| tail, so it needs a tamed/adaptive step.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.005,
+      "eval_dt": 0.005,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 0.0,
+        "variance": 0.0924827589117122
+      }
+    },
+    {
+      "id": "S19",
+      "slug": "sde_ginzburg_landau_s4",
+      "type": "sde",
+      "tier": 3,
+      "family": "ginzburg_landau",
+      "title": "Stochastic Ginzburg-Landau (sigma=4)",
+      "challenge": "Superlinear cubic drift with multiplicative noise; untamed Euler biases E[X^2] low. Scored against a discretization-free Monte-Carlo of the exact solution.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "reference",
+      "discriminator": true,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.0002,
+      "eval_dt": 0.0002,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 0.6588077174240557,
+        "variance": 1.1098772012944307
+      },
+      "ground_truth_se": {
+        "mean": 0.0016657409772338784,
+        "variance": 0.005589052125219314
+      }
+    },
+    {
+      "id": "S20",
+      "slug": "sde_ginzburg_landau_s6",
+      "type": "sde",
+      "tier": 3,
+      "family": "ginzburg_landau",
+      "title": "Stochastic Ginzburg-Landau (sigma=6)",
+      "challenge": "Same superlinear family at higher volatility; naive Euler produces partial NaNs and a badly biased variance. Scored against a discretization-free reference.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "reference",
+      "discriminator": true,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.0002,
+      "eval_dt": 0.0002,
+      "num_paths": 50000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 0.6740243912521379,
+        "variance": 1.862543326115989
+      },
+      "ground_truth_se": {
+        "mean": 0.0021578596607031634,
+        "variance": 0.011423529355688349
+      }
+    },
+    {
+      "id": "S21",
+      "slug": "sde_quintic_drift_noise",
+      "type": "sde",
+      "tier": 3,
+      "family": "quintic_superlinear",
+      "title": "Quintic Superlinear Drift with Multiplicative Noise",
+      "challenge": "dX=-X^5 dt + X dW: the superlinear drift makes plain Euler-Maruyama diverge almost surely (Hutzenthaler-Jentzen-Kloeden); a tamed scheme stays finite. No closed form -- checked only for non-divergence.",
+      "has_ground_truth": false,
+      "ground_truth_kind": "stability",
+      "discriminator": true,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.005,
+      "eval_dt": 0.005,
+      "num_paths": 50000,
+      "seed": 42,
+      "stability_check": {
+        "type": "finite"
+      }
+    },
+    {
+      "id": "S22",
+      "slug": "sde_fene_blowup",
+      "type": "sde",
+      "tier": 3,
+      "family": "fene",
+      "title": "FENE Nonlinear Spring (Domain Blow-up)",
+      "challenge": "dX=-X/(1-X^2) dt + dW confined to (-1, 1) by a singular spring force; a fixed-step Euler overshoots the boundary and escapes to NaN. Checked for staying in-domain.",
+      "has_ground_truth": false,
+      "ground_truth_kind": "stability",
+      "discriminator": true,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.005,
+      "eval_dt": 0.005,
+      "num_paths": 50000,
+      "seed": 42,
+      "stability_check": {
+        "type": "domain",
+        "abs_bound": 1.0
+      }
+    }
+  ]
+}

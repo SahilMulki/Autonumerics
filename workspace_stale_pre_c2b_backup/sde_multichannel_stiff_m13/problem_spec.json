@@ -1,0 +1,54 @@
+{
+  "equation_type": "SDE",
+  "id": "sde_multichannel_stiff_m13",
+  "sde_family": "multichannel_linear_multiplicative",
+  "state_dimension": 2,
+  "noise_structure": "multiplicative",
+  "linear": true,
+  "stiff": true,
+  "num_noise_channels": 13,
+  "equation": "dX = F @ X * dt + sum_{r=1}^{13} G_r @ X * dW_r,  X(0) = (1, 1)^T,  F = [[-2, 3], [-3, -2]],  G_r = 0.6*M1 (r odd), G_r = 0.6*M2 (r even),  M1 = [[0,1],[0,0]], M2 = [[0,0],[1,0]]",
+  "parameters": {
+    "X_0": 1.0,
+    "Y_0": 1.0,
+    "F": [[-2.0, 3.0], [-3.0, -2.0]],
+    "g_scale": 0.6,
+    "M1": [[0.0, 1.0], [0.0, 0.0]],
+    "M2": [[0.0, 0.0], [1.0, 0.0]],
+    "num_odd_channels": 7,
+    "num_even_channels": 6
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": false,
+  "diffusion_derivative": "N/A (multi-dimensional, m=13 non-commuting channels; scalar Milstein not applicable)",
+  "milstein_correction": "N/A. Multi-dimensional Milstein requires the Levy areas (iterated integrals int int dW_i dW_j) because the diffusion generators do not commute ([M1, M2] != 0). Use Euler-Maruyama; refine dt to control the multiplicative-noise variance bias.",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 2,
+    "mean_X": "np.exp(-2*t) * (np.cos(3*t) + np.sin(3*t))",
+    "mean_Y": "np.exp(-2*t) * (np.cos(3*t) - np.sin(3*t))",
+    "variance_X": "P11 - mean_X**2, where [P11, P12, P22] = scipy.linalg.expm(A*t) @ np.array([1.0, 1.0, 1.0]) and A = np.array([[-4.0, 6.0, 2.52], [-3.0, -4.0, 3.0], [2.16, -6.0, -4.0]])",
+    "variance_Y": "P22 - mean_Y**2, where [P11, P12, P22] = scipy.linalg.expm(A*t) @ np.array([1.0, 1.0, 1.0]) and A = np.array([[-4.0, 6.0, 2.52], [-3.0, -4.0, 3.0], [2.16, -6.0, -4.0]])",
+    "second_moment_ode": "The second-moment matrix P(t) = E[X X^T] solves dP/dt = F P + P F^T + sum_r G_r P G_r^T with P(0) = X0 X0^T = [[1,1],[1,1]]. Because M1 P M1^T = [[P22,0],[0,0]] and M2 P M2^T = [[0,0],[0,P11]], the diffusion sum reduces to diag(0.36*7*P22, 0.36*6*P11) = diag(2.52*P22, 2.16*P11). Vectorizing the symmetric entries as p = (P11, P12, P22) gives the closed linear system dp/dt = A p with A = [[-4, 6, 2.52], [-3, -4, 3], [2.16, -6, -4]], so p(t) = expm(A*t) @ (1,1,1).",
+    "reference_values_at_T1": {
+      "mean_X": -0.1148824,
+      "mean_Y": -0.1530794,
+      "variance_X": 0.1715989,
+      "variance_Y": 0.1627163,
+      "P11": 0.1847968,
+      "P12": 0.0006360,
+      "P22": 0.1861496
+    }
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "2D linear Ito system driven by m=13 independent Brownian motions with multiplicative (state-dependent) noise. State layout: terminal_paths shape (num_paths, 2), column 0 = X, column 1 = Y. SCHEME: use Euler-Maruyama (vector form). Multi-dimensional Milstein is NOT available because the diffusion generators are non-commuting ([M1, M2] != 0), which would require simulating Levy areas. Assemble the noise correctly: 7 odd channels use G = 0.6*M1 = [[0, 0.6], [0, 0]] and 6 even channels use G = 0.6*M2 = [[0, 0], [0.6, 0]]. Draw 13 independent N(0,1) increments per step (or, since the 7 odd channels are identical and the 6 even channels are identical, the aggregate increment can be formed as 0.6*M1*sqrt(7)*Z_odd and 0.6*M2*sqrt(6)*Z_even with two independent standard normals Z_odd, Z_even per step per path — this is exactly equivalent in law and much cheaper). Per-path EM step: dX_drift = (F @ X)*dt; dX_noise = sum_r 0.6 * (M_r @ X) * dW_r. STIFFNESS/STEP SIZE: F has eigenvalues -2 +/- 3i (spiral decay, |lambda| ~ 3.6) and the multiplicative noise is strong, so the terminal variance is sensitive to dt. Use a small step (e.g. dt <= 0.005, refine until the variance error stabilizes); a semi-implicit treatment of the drift can help stability. EXACT MOMENTS: mean = expm(F*T) @ X0 (closed form given above); variances come from the second-moment matrix P(t) = expm(A*t) @ (1,1,1) with the 3x3 generator A above, then Var_X = P11 - mean_X^2, Var_Y = P22 - mean_Y^2. At T=1: mean_X = -0.11488, mean_Y = -0.15308 (both |mean| > 0.01 so the mean check applies), Var_X = 0.17160, Var_Y = 0.16272. Both components must pass variance and mean checks for overall PASS."
+}

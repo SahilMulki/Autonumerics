@@ -1,0 +1,36 @@
+{
+  "equation_type": "SDE",
+  "id": "black_scholes",
+  "sde_family": "black_scholes",
+  "state_dimension": 1,
+  "noise_structure": "multiplicative",
+  "linear": true,
+  "stiff": false,
+  "equation": "dX(t) = r * X(t) * dt + sigma * X(t) * dW(t)",
+  "parameters": {
+    "X_0": 100.0,
+    "r": 0.05,
+    "sigma": 0.20
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": true,
+  "diffusion_derivative": "dg/dX = sigma  (scalar 1D: g(X) = sigma*X, so dg/dX = sigma)",
+  "milstein_correction": "0.5 * sigma * X_n * sigma * (dW**2 - dt)  =  0.5 * sigma**2 * X_n * (dW**2 - dt)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "X_0 * np.exp(r * t)",
+    "variance_expression": "X_0**2 * np.exp(2*r*t) * (np.exp(sigma**2 * t) - 1)"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "Risk-neutral Black-Scholes asset price, mathematically identical to GBM with drift mu = r. Scalar multiplicative noise. X stays positive given X_0 = 100 > 0, so no positivity guard needed. Milstein eligible (g(X) = sigma*X, dg/dX = sigma). Exact mean E[X(T)] = X_0*exp(r*T) ~= 105.13; variance ~= large (order 1e2-1e3), so mean check applies (|mean| >> near_zero_threshold)."
+}

@@ -113,7 +113,7 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-Nx = 64
+Nx = N            # resolution supplied to solve_pde(N) — do not hard-code
 x = np.linspace(0, 1, Nx)
 dx = x[1] - x[0]
 
@@ -129,6 +129,42 @@ f_interior[-1] -= u_right / dx**2
 u_interior = spla.spsolve(A.tocsr(), f_interior)
 u = np.concatenate([[u_left], u_interior, [u_right]])
 ```
+
+---
+
+## Multi-Field Systems, 3-D, and Structure Preservation
+
+Some problems couple several fields and/or require a **structural constraint** that is a hard gate — a solution that is accurate in L2 but violates the constraint fails as a CONSTRAINT_VIOLATION. `solve_pde(N)` then returns `fields` (a dict of the declared components) instead of `numerical_solution`, plus the general-`d` `grid`.
+
+### Return shape (systems)
+```python
+return {
+    "fields": {"u": u, "v": v, "p": p},          # exact declared names + order
+    "grid": {"x": x, "y": y},                    # or {"x":x,"y":y,"z":z} in 3-D
+    "t_final": t_final,
+}
+```
+
+### Incompressible flow — projection method (`div u = 0`)
+Advance the velocity ignoring the constraint, then project onto the divergence-free space with a pressure-Poisson solve:
+```
+u* = u^n + dt * (-(u.grad)u + nu*Delta u)      # provisional velocity
+solve  Delta phi = div(u*) / dt                # pressure-Poisson (periodic: FFT; else sparse)
+u^{n+1} = u* - dt * grad(phi)                   # now div u^{n+1} ≈ 0
+```
+On a periodic box the Poisson solve is one FFT divide (`phi_hat = -div_hat / |k|^2`, zero the k=0 mode). Pressure is defined **up to a constant** — it is scored mean-removed, so do not chase an absolute level.
+
+### Solenoidal E/B — staggered (Yee) grid (`div B = 0`, `div E = div H = 0`)
+Place E and H components on offset half-grids and update with curls; the discrete divergence is then preserved to round-off by construction. Yee CFL: `c·dt ≤ dx/√d`. A collocated central scheme does *not* preserve the divergence and will trip the gate.
+
+### Positivity (`rho, c ≥ 0` — chemotaxis)
+Discretize the advective/chemotactic flux with an upwind or flux-limited scheme and use a positive time step (or clip with a positivity-preserving limiter, not a bare `np.maximum`). A plain central scheme produces negative density near aggregation and trips the positivity gate.
+
+### 3-D and heavy systems
+The fine grid is `N**d` points and `2N` costs `2**d`× — the base `N` the problem gives is smaller in 3-D. Keep operators **sparse / matrix-free** (never a dense `N**d × N**d` matrix); use dimensional splitting or an iterative solve. Build the mesh with `np.meshgrid(*axes, indexing="ij")`.
+
+### Masked (non-rectangular) domains and the L1 metric
+For an L-shape / Fichera domain, return the full rectangular grid; only in-domain nodes are scored (impose the PDE on in-domain nodes, set the rest to a finite value). A compact-support problem (porous medium) is scored in the **relative L1** norm — the solver contract is unchanged.
 
 ---
 
@@ -193,6 +229,19 @@ u(x,t) = u0(x - a*t)   # initial condition transported at speed a
 # Then f = 2π²sin(πx)sin(πy)
 ```
 
+### 2D Navier-Stokes: Taylor-Green vortex (exact, periodic on [0,2π]²)
+```
+u(x,y,t) =  sin(x)cos(y) exp(-2νt)
+v(x,y,t) = -cos(x)sin(y) exp(-2νt)
+p(x,y,t) =  0.25(cos2x + cos2y) exp(-4νt)     # note +1/4 (makes it an exact NS solution)
+```
+
+### 3D Maxwell: plane wave (exact, periodic on [0,2π]³)
+```
+# k=(1,1,1), |k|=√3, polarization a⊥k, b=(k×a)/|k|; phase = k·x - |k| t
+E(x,t) = a sin(phase),   H(x,t) = b sin(phase)     # div E = div H = 0
+```
+
 ---
 
 ## Stability Reference
@@ -215,18 +264,21 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-def solve_pde() -> dict:
+def solve_pde(N: int) -> dict:
+    # N is the number of grid points per spatial dimension, supplied by the harness.
+    # The solver is run at N and 2N and scored on both accuracy AND observed
+    # convergence order, so the mesh must be built from N (never hard-coded) and dt
+    # tied to the grid spacing so the temporal error stays subdominant.
     # --- Parameters (from problem_spec.json) ---
     alpha = 0.1
     x_min, x_max = 0.0, 1.0
     t_final = 0.1
-    Nx = 64
 
-    # --- Grid ---
-    x = np.linspace(x_min, x_max, Nx)
+    # --- Grid (from N) ---
+    x = np.linspace(x_min, x_max, N)
     dx = x[1] - x[0]
 
-    # --- CFL-safe dt ---
+    # --- CFL-safe dt as a function of dx (holds at any N) ---
     dt_cfl = 0.4 * dx**2 / alpha   # safety factor 0.4 < 0.5
     Nt = max(1, int(np.ceil(t_final / dt_cfl)))
     dt = t_final / Nt
@@ -248,10 +300,9 @@ def solve_pde() -> dict:
         "grid": {"x": x},
         "t_final": t_final,
         "dt": dt,
-        "Nx": Nx,
     }
 
 if __name__ == "__main__":
-    result = solve_pde()
+    result = solve_pde(64)
     print(f"max |u(T)|: {np.max(np.abs(result['numerical_solution'])):.6f}")
 ```

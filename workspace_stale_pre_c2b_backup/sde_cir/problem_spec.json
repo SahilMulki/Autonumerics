@@ -1,0 +1,37 @@
+{
+  "equation_type": "SDE",
+  "id": "cox_ingersoll_ross",
+  "sde_family": "cox_ingersoll_ross",
+  "state_dimension": 1,
+  "noise_structure": "multiplicative",
+  "linear": true,
+  "stiff": false,
+  "equation": "dX(t) = kappa * (theta - X(t)) * dt + sigma * sqrt(X(t)) * dW(t)",
+  "parameters": {
+    "X_0": 0.5,
+    "kappa": 2.0,
+    "theta": 1.0,
+    "sigma": 0.5
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": true,
+  "diffusion_derivative": "dg/dX = sigma / (2*sqrt(X))  (g(X) = sigma*sqrt(X))",
+  "milstein_correction": "0.5 * g * g' * (dW**2 - dt) = 0.5 * sigma*sqrt(X) * sigma/(2*sqrt(X)) * (dW**2 - dt) = (sigma**2/4) * (dW**2 - dt)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "theta + (X_0 - theta) * np.exp(-kappa * t)",
+    "variance_expression": "(sigma**2 / kappa) * (X_0 * (np.exp(-kappa*t) - np.exp(-2*kappa*t)) + 0.5 * theta * (1 - np.exp(-kappa*t))**2)"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "Cox-Ingersoll-Ross mean-reverting square-root process. Drift f(X)=kappa*(theta-X) is linear in X; diffusion g(X)=sigma*sqrt(X) is multiplicative. Feller condition 2*kappa*theta >= sigma^2 holds (4.0 >= 0.25) so X stays positive mathematically, but a positivity guard X_pos = np.maximum(X, 0.0) is MANDATORY before sqrt to protect against floating-point undershoot near zero. Milstein correction simplifies to (sigma**2/4)*(dW**2 - dt)."
+}

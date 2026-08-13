@@ -1,0 +1,37 @@
+{
+  "equation_type": "SDE",
+  "id": "ornstein_uhlenbeck",
+  "sde_family": "ornstein_uhlenbeck",
+  "state_dimension": 1,
+  "noise_structure": "additive",
+  "linear": true,
+  "stiff": false,
+  "equation": "dX(t) = theta * (mu - X(t)) * dt + sigma * dW(t)",
+  "parameters": {
+    "X_0": 2.0,
+    "theta": 1.5,
+    "mu": 0.0,
+    "sigma": 0.5
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": false,
+  "diffusion_derivative": "dg/dX = 0  (g(X) = sigma is constant, additive noise)",
+  "milstein_correction": "0  (additive noise: Milstein reduces to Euler-Maruyama)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "mu + (X_0 - mu) * np.exp(-theta * t)",
+    "variance_expression": "sigma**2 / (2*theta) * (1 - np.exp(-2*theta*t))"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "Ornstein-Uhlenbeck mean-reverting process with additive (constant) noise. Drift f(X) = theta*(mu - X) is linear in X; diffusion g = sigma is constant, so noise_structure is additive and Milstein is not eligible (correction term is 0). Use Euler-Maruyama. At T=1, exact mean = mu + (X_0-mu)*exp(-theta) = 2.0*exp(-1.5) ~ 0.446 (well above near_zero_mean_threshold, so the mean relative-error check applies). Exact variance = sigma^2/(2*theta)*(1 - exp(-2*theta)) ~ 0.0791."
+}

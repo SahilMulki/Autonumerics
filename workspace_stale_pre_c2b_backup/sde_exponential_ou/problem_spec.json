@@ -1,0 +1,36 @@
+{
+  "equation_type": "SDE",
+  "id": "exponential_ornstein_uhlenbeck",
+  "sde_family": "exponential_ornstein_uhlenbeck",
+  "state_dimension": 1,
+  "noise_structure": "multiplicative",
+  "linear": false,
+  "stiff": false,
+  "equation": "dX(t) = X(t) * (-theta * log(X(t)) + sigma**2 / 2) * dt + sigma * X(t) * dW(t)",
+  "parameters": {
+    "X_0": 1.0,
+    "theta": 1.0,
+    "sigma": 0.4
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": true,
+  "diffusion_derivative": "dg/dX = sigma  (scalar 1D: g(X) = sigma*X, so dg/dX = sigma)",
+  "milstein_correction": "0.5 * sigma * X_n * sigma * (dW**2 - dt)  =  0.5 * sigma**2 * X_n * (dW**2 - dt)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "np.exp((sigma**2 / (2*theta) * (1 - np.exp(-2*theta*t))) / 2)",
+    "variance_expression": "np.exp(sigma**2 / (2*theta) * (1 - np.exp(-2*theta*t))) * (np.exp(sigma**2 / (2*theta) * (1 - np.exp(-2*theta*t))) - 1)"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "Exponential Ornstein-Uhlenbeck. Nonlinear drift f(X) = X*(-theta*log(X) + sigma**2/2) requires X > 0 for log(X); apply a positivity guard np.maximum(X_n, 1e-12) before computing log. Diffusion g(X) = sigma*X is multiplicative and linear in X, so Milstein is eligible with dg/dX = sigma. With X_0 = 1.0, theta = 1.0, sigma = 0.4, X stays positive. Analytic moments: let v_t = sigma**2/(2*theta)*(1 - exp(-2*theta*t)); mean = exp(v_t/2), variance = exp(v_t)*(exp(v_t) - 1). log(X_t) is Gaussian (OU on the log scale), so X_t is lognormal."
+}

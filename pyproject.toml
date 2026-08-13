@@ -1,7 +1,7 @@
 [project]
-name = "auto-demo"
+name = "autonumerics"
 version = "0.1.0"
-description = "Auto-demo pipeline for LLM-driven PDE problem solving."
+description = "Agent pipeline that designs, implements, and independently verifies numerical solvers for SDEs and PDEs."
 requires-python = ">=3.13"
 dependencies = [
     "numpy>=1.26.0",

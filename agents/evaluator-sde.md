@@ -52,6 +52,20 @@ overall_pass    = variance_passes and mean_passes
 
 For **multi-D problems** (state_dimension > 1): compute per-component errors and check each component independently. All components must pass for overall_pass.
 
+**Stability problems.** If `analytic_moments.has_analytic_solution` is `false`, there are no moments to match and the moment tolerances above do not apply — read `evaluation_thresholds.stability_check` and score on that instead:
+
+```python
+chk = spec["evaluation_thresholds"]["stability_check"]   # e.g. {"type": "finite"}
+X = np.asarray(result["terminal_paths"], dtype=float)
+overall_pass = bool(np.all(np.isfinite(X)))
+if chk["type"] == "domain":
+    overall_pass = overall_pass and bool(np.max(np.abs(X)) < chk["abs_bound"])
+```
+
+Report the finite fraction, and `max|X(T)|` against the bound for a `domain` check. Score 10 if `overall_pass`, else 1 — a scheme that blew up or left its domain has failed the only thing this problem tests, and there is no partial credit for the size of the excursion. Also re-run once at half the step with the same seed and report whether the result is still finite: a scheme that survives one lucky `dt` is not stable.
+
+If `has_analytic_solution` is `false` **and** `stability_check` is `null` or absent, the spec gives you no criterion to score against. Do not invent one and do not go looking for one elsewhere in the repo. Score 1 and say in your review that `problem_spec.json` is missing `stability_check`, so the formulator's spec — not the solver — is what needs fixing.
+
 **Print format**:
 ```
 === Evaluation Results ===

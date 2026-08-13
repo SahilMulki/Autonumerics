@@ -1,0 +1,1211 @@
+<title>Autonumerics — Agent Loop Architecture</title>
+
+<style>
+  /* ============================================================
+     TOKENS
+     Palette derives from the project's thesis: a self-reported
+     score (claim, ochre) is not an independent confirmation
+     (verdigris). Neutrals are biased cool toward the slate ink.
+     ============================================================ */
+  :root {
+    --ground:      #EEF1F2;
+    --ground-sunk: #E3E8EA;
+    --panel:       #FFFFFF;
+    --panel-2:     #F7F9F9;
+
+    --ink:    #16202A;
+    --ink-2:  #4A5C68;
+    --ink-3:  #778994;
+
+    --rule:        #C7D1D6;
+    --rule-strong: #93A2AB;
+
+    --claim:    #A86A08;
+    --claim-bg: #F8EEDA;
+    --claim-br: #E0C48A;
+
+    --confirm:    #0B6B5D;
+    --confirm-bg: #DDEDE9;
+    --confirm-br: #8FC4BB;
+
+    --flag:    #A8371F;
+    --flag-bg: #F6E1DB;
+
+    --sans:  -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, "Helvetica Neue", sans-serif;
+    --mono:  ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Cascadia Mono", "Roboto Mono", "Liberation Mono", monospace;
+    --serif: "Iowan Old Style", Charter, "Bitstream Charter", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+
+    --shadow: 0 1px 0 rgba(22, 32, 42, .04), 0 1px 3px rgba(22, 32, 42, .06);
+
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:      #0F171E;
+      --ground-sunk: #0A1117;
+      --panel:       #1A242E;
+      --panel-2:     #16202A;
+
+      --ink:    #DCE5EA;
+      --ink-2:  #9CAFBB;
+      --ink-3:  #6D808D;
+
+      --rule:        #2B3A46;
+      --rule-strong: #485D6C;
+
+      --claim:    #E2A749;
+      --claim-bg: #2C2313;
+      --claim-br: #6A5221;
+
+      --confirm:    #43BCA4;
+      --confirm-bg: #102C29;
+      --confirm-br: #1F5A50;
+
+      --flag:    #E07A5F;
+      --flag-bg: #331A14;
+
+      --shadow: 0 1px 0 rgba(0, 0, 0, .25), 0 1px 4px rgba(0, 0, 0, .3);
+
+      color-scheme: dark;
+    }
+  }
+
+  /* Viewer's explicit toggle must win over the OS preference, both ways. */
+  :root[data-theme="light"] {
+    --ground: #EEF1F2; --ground-sunk: #E3E8EA; --panel: #FFFFFF; --panel-2: #F7F9F9;
+    --ink: #16202A; --ink-2: #4A5C68; --ink-3: #778994;
+    --rule: #C7D1D6; --rule-strong: #93A2AB;
+    --claim: #A86A08; --claim-bg: #F8EEDA; --claim-br: #E0C48A;
+    --confirm: #0B6B5D; --confirm-bg: #DDEDE9; --confirm-br: #8FC4BB;
+    --flag: #A8371F; --flag-bg: #F6E1DB;
+    --shadow: 0 1px 0 rgba(22, 32, 42, .04), 0 1px 3px rgba(22, 32, 42, .06);
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --ground: #0F171E; --ground-sunk: #0A1117; --panel: #1A242E; --panel-2: #16202A;
+    --ink: #DCE5EA; --ink-2: #9CAFBB; --ink-3: #6D808D;
+    --rule: #2B3A46; --rule-strong: #485D6C;
+    --claim: #E2A749; --claim-bg: #2C2313; --claim-br: #6A5221;
+    --confirm: #43BCA4; --confirm-bg: #102C29; --confirm-br: #1F5A50;
+    --flag: #E07A5F; --flag-bg: #331A14;
+    --shadow: 0 1px 0 rgba(0, 0, 0, .25), 0 1px 4px rgba(0, 0, 0, .3);
+    color-scheme: dark;
+  }
+
+  /* ============================================================
+     BASE
+     ============================================================ */
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding: clamp(20px, 4vw, 56px) clamp(14px, 3vw, 32px) 64px;
+  }
+
+  .plate {
+    max-width: 980px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* ---- shared atoms ---------------------------------------- */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .file {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: -.01em;
+    white-space: nowrap;
+    padding: 2px 6px;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    background: var(--panel-2);
+    color: var(--ink-2);
+  }
+  .file b { font-weight: 600; color: var(--ink); }
+  .file.w { border-color: var(--claim-br); background: var(--claim-bg); color: var(--claim); }
+  .file.w b { color: var(--claim); }
+
+  .math {
+    font-family: var(--serif);
+    font-size: 15px;
+    font-style: italic;
+    letter-spacing: .01em;
+  }
+  .math sub { font-style: normal; font-size: .72em; }
+
+  /* ============================================================
+     TITLE BLOCK — the drafting convention: identify the drawing
+     ============================================================ */
+  .titleblock {
+    border: 1.5px solid var(--ink);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+  .titleblock-main {
+    padding: clamp(20px, 3.4vw, 34px) clamp(18px, 3vw, 32px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .titleblock h1 {
+    font-size: clamp(28px, 5.4vw, 46px);
+    line-height: 1.02;
+    letter-spacing: -.035em;
+    font-weight: 700;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .titleblock h1 span { color: var(--ink-3); font-weight: 400; }
+  .lede {
+    font-size: clamp(14.5px, 1.7vw, 16.5px);
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 62ch;
+    text-wrap: pretty;
+  }
+  .lede em { font-style: normal; color: var(--ink); font-weight: 600; }
+
+  .titleblock-meta {
+    border-top: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .metacell {
+    padding: 11px 14px;
+    border-left: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .metacell:first-child { border-left: 0; }
+  .metacell .v {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+
+  /* ============================================================
+     SPINE + STAGES
+     ============================================================ */
+  .link {
+    height: 34px;
+    position: relative;
+    flex: none;
+  }
+  .link::before {
+    content: "";
+    position: absolute;
+    left: calc(50% - 1px);
+    top: 0; bottom: 7px;
+    border-left: 2px solid var(--rule-strong);
+  }
+  .link::after {
+    content: "";
+    position: absolute;
+    left: calc(50% - 5px);
+    bottom: 0;
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 8px solid var(--rule-strong);
+  }
+  .link .link-label {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(14px, -50%);
+    background: var(--ground);
+    padding: 1px 7px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .06em;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+
+  .stage {
+    border: 1px solid var(--rule);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+    position: relative;
+  }
+  .stage-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--panel-2);
+  }
+  .stage-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-3);
+  }
+  .stage-name {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+  }
+  .stage-note {
+    margin-left: auto;
+    font-size: 11.5px;
+    color: var(--ink-3);
+    text-align: right;
+  }
+  .stage-body { padding: 16px; }
+
+  /* ---- agent node ------------------------------------------ */
+  .agent-name {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -.02em;
+    color: var(--ink);
+  }
+  .agent-role {
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    margin-top: 4px;
+    text-wrap: pretty;
+  }
+  .io {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .io .arrow { color: var(--ink-3); font-size: 12px; }
+
+  /* ---- terminal (input / output) --------------------------- */
+  .terminal {
+    border: 1.5px solid var(--ink);
+    background: var(--panel);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    box-shadow: var(--shadow);
+  }
+  .terminal .tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ground);
+    background: var(--ink);
+    padding: 3px 8px;
+  }
+  .terminal .what { font-size: 14px; color: var(--ink-2); }
+  .terminal .what code {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  /* ============================================================
+     FORK — the equation_type branch
+     ============================================================ */
+  .fork {
+    height: 40px;
+    display: flex;
+    position: relative;
+  }
+  .fork::before {
+    content: "";
+    position: absolute;
+    left: calc(50% - 1px);
+    top: 0; height: 18px;
+    border-left: 2px solid var(--rule-strong);
+  }
+  .fork-arm { flex: 1; position: relative; }
+  .fork-arm::before {
+    content: "";
+    position: absolute;
+    top: 17px;
+    border-top: 2px solid var(--rule-strong);
+  }
+  .fork-arm.left::before  { left: 50%; right: 0; }
+  .fork-arm.right::before { left: 0; right: 50%; }
+  .fork-arm::after {
+    content: "";
+    position: absolute;
+    left: calc(50% - 1px);
+    top: 18px; bottom: 0;
+    border-left: 2px solid var(--rule-strong);
+  }
+  .fork-gap { width: 18px; flex: none; }
+  .fork-cond {
+    position: absolute;
+    left: 50%;
+    top: -1px;
+    transform: translate(12px, 0);
+    background: var(--ground);
+    padding: 0 7px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+
+  .branch-row {
+    display: grid;
+    grid-template-columns: 1fr 18px 1fr;
+    align-items: stretch;
+  }
+  .branch-row > .fork-gap { grid-column: 2; }
+
+  .branch-tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--ink-3);
+    border: 1px solid var(--rule);
+    padding: 2px 7px;
+    border-radius: 2px;
+  }
+
+  /* ============================================================
+     THE CYCLE — implement ⇄ verify
+     ============================================================ */
+  .cycle-stage { border-color: var(--rule-strong); }
+
+  .lanes { display: flex; flex-direction: column; gap: 9px; }
+
+  .lane-label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    flex: none;
+    width: 62px;
+  }
+
+  /* collapsed sibling lanes — parallelism shown by repetition */
+  .lane-ghost {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border: 1px dashed var(--rule);
+    background: var(--panel-2);
+    padding: 8px 12px;
+  }
+  .lane-ghost .track {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .lane-ghost .seg {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lane-ghost .rule {
+    flex: 1;
+    border-top: 1px dashed var(--rule-strong);
+    min-width: 12px;
+  }
+
+  /* expanded lane */
+  .lane-open {
+    border: 1.5px solid var(--rule-strong);
+    background: var(--panel);
+  }
+  .lane-open-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--panel-2);
+  }
+  .lane-open-head .t {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .lane-open-head .n {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+
+  .cyclerow {
+    display: grid;
+    grid-template-columns: 1fr 26px 1fr;
+    align-items: stretch;
+  }
+  .cell { padding: 14px; }
+
+  .connector {
+    position: relative;
+    align-self: stretch;
+  }
+  .connector::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0; right: 7px;
+    border-top: 2px solid var(--rule-strong);
+  }
+  .connector::after {
+    content: "";
+    position: absolute;
+    top: calc(50% - 5px);
+    right: 0;
+    width: 0; height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 8px solid var(--rule-strong);
+  }
+
+  .cell-title {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: -.015em;
+  }
+  .cell-sub {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    margin-top: 4px;
+    text-wrap: pretty;
+  }
+  .cell-verb {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: block;
+    margin-bottom: 5px;
+  }
+
+  /* the return path — a marching dashed line, as a control
+     diagram draws an active feedback branch */
+  .feedback {
+    border-top: 1px solid var(--rule);
+    background: var(--claim-bg);
+    padding: 11px 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .feedback-mark {
+    flex: none;
+    width: 58px;
+    align-self: stretch;
+    min-height: 34px;
+    position: relative;
+  }
+  .feedback-mark::before {
+    content: "";
+    position: absolute;
+    top: calc(50% - 1px);
+    left: 9px; right: 0;
+    height: 2px;
+    background-image: repeating-linear-gradient(
+      to right,
+      var(--claim) 0 5px,
+      transparent 5px 10px
+    );
+    background-size: 10px 2px;
+    animation: march 900ms linear infinite;
+  }
+  .feedback-mark::after {
+    content: "";
+    position: absolute;
+    top: calc(50% - 5px);
+    left: 0;
+    width: 0; height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-right: 9px solid var(--claim);
+  }
+  @keyframes march { to { background-position: -10px 0; } }
+
+  .feedback-body { min-width: 0; }
+  .feedback-title {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--claim);
+    letter-spacing: -.01em;
+  }
+  .feedback-list {
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .feedback-list li {
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--ink-2);
+    padding-left: 12px;
+    position: relative;
+  }
+  .feedback-list li::before {
+    content: "\203A";
+    position: absolute;
+    left: 0;
+    color: var(--claim);
+  }
+
+  .exit {
+    border-top: 1px solid var(--rule);
+    padding: 9px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-2);
+    background: var(--panel-2);
+  }
+  .exit .gate {
+    font-weight: 700;
+    color: var(--claim);
+    border: 1px solid var(--claim-br);
+    background: var(--claim-bg);
+    padding: 1px 7px;
+    border-radius: 2px;
+  }
+
+  .gate-defs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--rule);
+  }
+  .gate-def {
+    border-left: 2px solid var(--claim-br);
+    padding-left: 11px;
+  }
+  .gate-def .k {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .gate-def .v {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink);
+    margin-top: 3px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ============================================================
+     VERIFY BAND — drawn outside the loop, in reference-line dash
+     ============================================================ */
+  .outside {
+    margin-top: 40px;
+    position: relative;
+  }
+  .outside::before {
+    content: "";
+    position: absolute;
+    left: calc(50% - 1px);
+    top: -40px; height: 33px;
+    border-left: 2px solid var(--confirm);
+  }
+  .outside::after {
+    content: "";
+    position: absolute;
+    left: calc(50% - 5px);
+    top: -7px;
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 8px solid var(--confirm);
+  }
+
+  .verify {
+    border: 1.5px dashed var(--confirm-br);
+    background: var(--confirm-bg);
+    padding: clamp(16px, 2.6vw, 26px);
+  }
+  .verify-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .verify-head h2 {
+    font-size: clamp(17px, 2.4vw, 21px);
+    font-weight: 700;
+    letter-spacing: -.02em;
+    margin: 0;
+    color: var(--ink);
+  }
+  .verify-head .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--confirm);
+    border: 1px solid var(--confirm-br);
+    padding: 2px 7px;
+    border-radius: 2px;
+  }
+  .verify-lede {
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 68ch;
+    text-wrap: pretty;
+  }
+  .verify-lede em { font-style: italic; color: var(--ink); }
+
+  .verify-steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--confirm-br);
+    border: 1px solid var(--confirm-br);
+    margin-top: 16px;
+  }
+  .vstep {
+    background: var(--panel);
+    padding: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .vstep .k {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--confirm);
+    font-weight: 700;
+  }
+  .vstep .h {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -.015em;
+  }
+  .vstep .d {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    text-wrap: pretty;
+  }
+
+  .verdicts {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .verdict {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 9px;
+    border-radius: 2px;
+    border: 1px solid;
+  }
+  .verdict.ok   { color: var(--confirm); border-color: var(--confirm-br); background: var(--panel); }
+  .verdict.bad  { color: var(--flag);    border-color: var(--flag);       background: var(--flag-bg); }
+  .verdict.mute { color: var(--ink-3);   border-color: var(--rule);       background: var(--panel); }
+
+  /* ---- outcome strip --------------------------------------- */
+  .outcome {
+    margin-top: 16px;
+    border: 1px solid var(--confirm-br);
+    background: var(--panel);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .ocell {
+    padding: 14px;
+    border-left: 1px solid var(--confirm-br);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ocell:first-child { border-left: 0; }
+  .ocell .n {
+    font-size: clamp(22px, 3.6vw, 30px);
+    font-weight: 700;
+    letter-spacing: -.03em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.05;
+  }
+  .ocell.hi .n { color: var(--confirm); }
+  .ocell .l { font-size: 12px; color: var(--ink-2); line-height: 1.4; }
+  .footnote {
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--ink-3);
+    margin-top: 10px;
+    max-width: 72ch;
+  }
+
+  /* ============================================================
+     KEY
+     ============================================================ */
+  .key {
+    margin-top: 30px;
+    border-top: 1px solid var(--rule);
+    padding-top: 14px;
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .key-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11.5px;
+    color: var(--ink-2);
+  }
+  .swatch {
+    width: 22px; height: 12px;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    flex: none;
+  }
+  .swatch.write { background: var(--claim-bg); border-color: var(--claim-br); }
+  .swatch.read  { background: var(--panel-2); }
+  .swatch.dash  { background: transparent; border: 1px dashed var(--confirm-br); }
+
+  /* ============================================================
+     LOAD SEQUENCE — one orchestrated reveal down the spine
+     ============================================================ */
+  .rise { animation: rise .5s cubic-bezier(.2, .7, .3, 1) backwards; }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(9px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rise { animation: none; }
+    .feedback-mark::before { animation: none; }
+  }
+
+  /* ============================================================
+     NARROW
+     ============================================================ */
+  @media (max-width: 720px) {
+    .titleblock-meta { grid-template-columns: repeat(2, 1fr); }
+    .metacell:nth-child(3) { border-left: 0; }
+    .metacell:nth-child(n+3) { border-top: 1px solid var(--rule); }
+
+    .branch-row { grid-template-columns: 1fr; gap: 10px; }
+    .branch-row > .fork-gap { display: none; }
+    .fork { height: 26px; }
+    .fork-arm::before, .fork-arm.left::before, .fork-arm.right::before { display: none; }
+    .fork-arm.right::after { display: none; }
+    .fork-arm.left::after { left: calc(50% - 1px); top: 0; }
+    .fork-cond { transform: translate(12px, 2px); }
+
+    .cyclerow { grid-template-columns: 1fr; }
+    .connector { height: 26px; }
+    .connector::before { top: 0; bottom: 7px; left: calc(50% - 1px); right: auto; border-top: 0; border-left: 2px solid var(--rule-strong); }
+    .connector::after {
+      top: auto; bottom: 0; right: auto; left: calc(50% - 5px);
+      border-left: 5px solid transparent; border-right: 5px solid transparent;
+      border-top: 8px solid var(--rule-strong); border-bottom: 0;
+    }
+    .verify-steps, .outcome, .gate-defs { grid-template-columns: 1fr; }
+    .ocell { border-left: 0; border-top: 1px solid var(--confirm-br); }
+    .ocell:first-child { border-top: 0; }
+    .lane-label { display: none; }
+  }
+</style>
+
+<div class="plate">
+
+  <!-- ══ TITLE BLOCK ══════════════════════════════════════ -->
+  <header class="titleblock rise" style="animation-delay: 0ms">
+    <div class="titleblock-main">
+      <div class="eyebrow">Autonumerics &middot; agent architecture</div>
+      <h1>A differential equation goes in.<br><span>A verified solver comes out.</span></h1>
+      <p class="lede">
+        A multi-agent pipeline that reads a differential equation stated in plain English, designs
+        several competing numerical schemes, implements and tests each one in parallel, and returns
+        the winner &mdash; then <em>submits its own answer to an independent check it cannot influence.</em>
+      </p>
+    </div>
+    <div class="titleblock-meta">
+      <div class="metacell"><span class="eyebrow">Agents</span><span class="v">7</span></div>
+      <div class="metacell"><span class="eyebrow">Equation classes</span><span class="v">SDE &middot; PDE</span></div>
+      <div class="metacell"><span class="eyebrow">Benchmark</span><span class="v">37 problems</span></div>
+      <div class="metacell"><span class="eyebrow">Runtime</span><span class="v">Claude Agent SDK</span></div>
+    </div>
+  </header>
+
+  <!-- ══ INPUT ════════════════════════════════════════════ -->
+  <div class="link rise" style="animation-delay: 60ms"></div>
+
+  <div class="terminal rise" style="animation-delay: 90ms">
+    <span class="tag">Input</span>
+    <span class="what">
+      <code>problem.md</code> &mdash; the equation, domain, boundary conditions and horizon,
+      written the way a person would say them
+    </span>
+  </div>
+
+  <!-- ══ 01 FORMULATE ═════════════════════════════════════ -->
+  <div class="link rise" style="animation-delay: 150ms"></div>
+
+  <section class="stage rise" style="animation-delay: 180ms">
+    <div class="stage-head">
+      <span class="stage-num">01</span>
+      <span class="stage-name">Formulate</span>
+      <span class="stage-note">prose &rarr; a machine-checkable specification</span>
+    </div>
+    <div class="stage-body">
+      <div class="agent-name">formulator</div>
+      <p class="agent-role">
+        Classifies the problem as stochastic or partial, extracts every parameter, and &mdash; where one
+        exists &mdash; writes down the closed-form solution the whole pipeline will later be graded against.
+        This is the only agent that interprets the prose.
+      </p>
+      <div class="io">
+        <span class="file">reads <b>problem.md</b></span>
+        <span class="arrow">&rarr;</span>
+        <span class="file w">writes <b>problem_spec.json</b></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ ROUTING FORK ═════════════════════════════════════ -->
+  <div class="fork rise" style="animation-delay: 240ms">
+    <div class="fork-arm left"></div>
+    <div class="fork-gap"></div>
+    <div class="fork-arm right"></div>
+    <span class="fork-cond">branch on <b>equation_type</b></span>
+  </div>
+
+  <div class="branch-row rise" style="animation-delay: 270ms">
+    <section class="stage">
+      <div class="stage-head">
+        <span class="branch-tag">SDE</span>
+        <span class="stage-note">stochastic &middot; Monte&nbsp;Carlo</span>
+      </div>
+      <div class="stage-body">
+        <div class="math">dX = &mu;(X)&thinsp;dt + &sigma;(X)&thinsp;dW</div>
+        <div class="agent-name" style="margin-top:10px">plan-creator-sde</div>
+        <p class="agent-role">
+          Proposes 2&ndash;3 schemes &mdash; Euler&ndash;Maruyama, Milstein where the noise is scalar and
+          multiplicative, tamed variants where the drift grows superlinearly.
+        </p>
+      </div>
+    </section>
+
+    <div class="fork-gap"></div>
+
+    <section class="stage">
+      <div class="stage-head">
+        <span class="branch-tag">PDE</span>
+        <span class="stage-note">deterministic &middot; grid</span>
+      </div>
+      <div class="stage-body">
+        <div class="math">u<sub>t</sub> = &#8466;u &nbsp;on&nbsp; &Omega; &times; (0,&thinsp;T]</div>
+        <div class="agent-name" style="margin-top:10px">plan-creator-pde</div>
+        <p class="agent-role">
+          Proposes 2&ndash;4 discretizations &mdash; explicit finite difference, implicit
+          Crank&ndash;Nicolson, Fourier spectral &mdash; each checked against its stability condition
+          before it is ever written down.
+        </p>
+      </div>
+    </section>
+  </div>
+
+  <!-- ══ 02 DESIGN ════════════════════════════════════════ -->
+  <div class="link rise" style="animation-delay: 330ms">
+    <span class="link-label">one directory per candidate scheme</span>
+  </div>
+
+  <section class="stage rise" style="animation-delay: 360ms">
+    <div class="stage-head">
+      <span class="stage-num">02</span>
+      <span class="stage-name">Design</span>
+      <span class="stage-note">competing schemes, not one guess</span>
+    </div>
+    <div class="stage-body">
+      <p class="agent-role" style="margin-top:0">
+        Each plan is a self-contained brief: the scheme, its grid and step size, the stability
+        condition it must respect, and the traps specific to it. Plans are deliberately
+        differentiated &mdash; the pipeline is a search over methods, not a single attempt.
+      </p>
+      <div class="io">
+        <span class="file">reads <b>problem_spec.json</b></span>
+        <span class="arrow">&rarr;</span>
+        <span class="file w">writes <b>plans/{id}-{slug}/SOLUTION.md</b></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 03 THE CYCLE ═════════════════════════════════════ -->
+  <div class="link rise" style="animation-delay: 420ms">
+    <span class="link-label">plans dispatched concurrently</span>
+  </div>
+
+  <section class="stage cycle-stage rise" style="animation-delay: 450ms">
+    <div class="stage-head">
+      <span class="stage-num">03</span>
+      <span class="stage-name">Implement &#8646; Verify</span>
+      <span class="stage-note">every plan runs its own loop, in parallel</span>
+    </div>
+    <div class="stage-body">
+      <div class="lanes">
+
+        <!-- expanded lane -->
+        <div class="lane-open">
+          <div class="lane-open-head">
+            <span class="t">plan 1</span>
+            <span class="n">one cycle, repeated until the plan passes or exhausts its budget</span>
+          </div>
+
+          <div class="cyclerow">
+            <div class="cell">
+              <span class="cell-verb">Implement</span>
+              <div class="cell-title">solver</div>
+              <p class="cell-sub">
+                Writes the scheme as real code, executes it, and reports what actually came out.
+                Nothing advances on code that has not run clean.
+              </p>
+              <div class="io">
+                <span class="file w">writes + runs <b>solver.py</b></span>
+              </div>
+            </div>
+
+            <div class="connector"></div>
+
+            <div class="cell">
+              <span class="cell-verb">Verify</span>
+              <div class="cell-title">evaluator</div>
+              <p class="cell-sub">
+                Imports the solver, re-runs it, and measures the error against the exact solution
+                &mdash; then scores it 1&ndash;10 and says <em>specifically</em> what to fix.
+              </p>
+              <div class="io">
+                <span class="file w">writes + runs <b>evaluate.py</b></span>
+                <span class="file w">writes <b>&lt;review score=<i>n</i>&gt;</b></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="feedback">
+            <div class="feedback-mark" aria-hidden="true"></div>
+            <div class="feedback-body">
+              <div class="feedback-title">score &lt; 10 &nbsp;&rarr;&nbsp; back to the solver, with the diagnosis</div>
+              <ul class="feedback-list">
+                <li>CFL violated: dt/dx&sup2; = 1.0 &gt; 0.5 stability limit &mdash; halve dt</li>
+                <li>Dirichlet BC not re-imposed after each step &mdash; u(0,t) drifts</li>
+                <li>Missing positivity guard before &radic;&#8202; &mdash; produced NaN</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="exit">
+            <span class="gate">score = 10</span>
+            <span>plan is done &mdash; it left the pool and stopped consuming iterations</span>
+          </div>
+        </div>
+
+        <!-- collapsed sibling lanes -->
+        <div class="lane-ghost">
+          <span class="lane-label">plan 2</span>
+          <div class="track">
+            <span class="seg">solver</span><span class="rule"></span>
+            <span class="seg">evaluator</span><span class="rule"></span>
+            <span class="seg">score</span>
+          </div>
+        </div>
+        <div class="lane-ghost">
+          <span class="lane-label">plan 3</span>
+          <div class="track">
+            <span class="seg">solver</span><span class="rule"></span>
+            <span class="seg">evaluator</span><span class="rule"></span>
+            <span class="seg">score</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="gate-defs">
+        <div class="gate-def">
+          <div class="k">Passing, for an SDE</div>
+          <div class="v">variance rel. error &lt; 10%<br>and mean rel. error &lt; 5%</div>
+        </div>
+        <div class="gate-def">
+          <div class="k">Passing, for a PDE</div>
+          <div class="v">relative L&sup2; error &lt; 1%</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 04 SELECT ════════════════════════════════════════ -->
+  <div class="link rise" style="animation-delay: 510ms">
+    <span class="link-label">all plans settled</span>
+  </div>
+
+  <section class="stage rise" style="animation-delay: 540ms">
+    <div class="stage-head">
+      <span class="stage-num">04</span>
+      <span class="stage-name">Select</span>
+      <span class="stage-note">highest score, then fewest iterations</span>
+    </div>
+    <div class="stage-body">
+      <div class="agent-name">conductor</div>
+      <p class="agent-role">
+        The orchestrator never touches the mathematics. It reads one field &mdash; the equation type
+        &mdash; to route, dispatches every other agent, and keeps a durable ledger so an interrupted
+        run resumes mid-cycle instead of starting over.
+      </p>
+      <div class="io">
+        <span class="file">reads <b>plans/&#42;/SOLUTION.md</b></span>
+        <span class="arrow">&rarr;</span>
+        <span class="file w">writes <b>REPORT.md</b></span>
+        <span class="file w">writes <b>STATE.md</b></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ OUTPUT ═══════════════════════════════════════════ -->
+  <div class="link rise" style="animation-delay: 600ms"></div>
+
+  <div class="terminal rise" style="animation-delay: 630ms">
+    <span class="tag">Output</span>
+    <span class="what">
+      the winning <code>solver.py</code> &mdash; plus the error it achieved, the schemes it beat,
+      and why
+    </span>
+  </div>
+
+  <!-- ══ OUTSIDE THE LOOP: INDEPENDENT VERIFICATION ═══════ -->
+  <div class="outside rise" style="animation-delay: 700ms">
+    <section class="verify">
+      <div class="verify-head">
+        <h2>Then the loop is closed from outside</h2>
+        <span class="badge">Independent</span>
+      </div>
+      <p class="verify-lede">
+        Everything above grades itself: the formulator writes down the exact solution, and the evaluator
+        scores against it. That is circular &mdash; a formulator that transcribes the <em>wrong</em> exact
+        solution still gets scored 10/10. So ground truth is authored separately, in a benchmark the agents
+        never read, and the pipeline's answer is re-run against it.
+      </p>
+
+      <div class="verify-steps">
+        <div class="vstep">
+          <span class="k">Ground truth</span>
+          <span class="h">problems.py</span>
+          <span class="d">
+            Written independently and cross-checked three ways: closed form, a discretization-free
+            Monte Carlo reference, or &mdash; where no answer exists &mdash; the requirement that a correct
+            scheme merely stays finite.
+          </span>
+        </div>
+        <div class="vstep">
+          <span class="k">Re-run</span>
+          <span class="h">verify.py</span>
+          <span class="d">
+            The winning <code style="font-family:var(--mono);font-size:11.5px">solver.py</code> is
+            re-imported into a sandboxed subprocess &mdash; wall-clock timeout, memory cap, enforced
+            import policy &mdash; and executed at a fixed step, path count and seed.
+          </span>
+        </div>
+        <div class="vstep">
+          <span class="k">Verdict</span>
+          <span class="h">trust, but verify</span>
+          <span class="d">
+            The pipeline's self-reported score is compared against the independent measurement. Agreement
+            confirms it; disagreement is the finding that matters.
+          </span>
+        </div>
+      </div>
+
+      <div class="verdicts">
+        <span class="verdict ok">VERIFIED_PASS</span>
+        <span class="verdict bad">OVERCLAIM</span>
+        <span class="verdict ok">STABLE_PASS</span>
+        <span class="verdict bad">BLOWUP</span>
+        <span class="verdict mute">UNDERCLAIM</span>
+        <span class="verdict mute">FAIL</span>
+      </div>
+
+      <div class="outcome">
+        <div class="ocell">
+          <span class="n">37</span>
+          <span class="l">problems &mdash; 15 PDE, 22 SDE, tiered from textbook to beyond the reference manuals</span>
+        </div>
+        <div class="ocell hi">
+          <span class="n">35</span>
+          <span class="l">independently confirmed, of the 36 runs that completed</span>
+        </div>
+        <div class="ocell hi">
+          <span class="n">0</span>
+          <span class="l">overclaims &mdash; no success the pipeline reported failed its independent check</span>
+        </div>
+      </div>
+
+      <p class="footnote">
+        The 36th completed run is the chaotic Kuramoto&ndash;Sivashinsky equation, which has no closed
+        form to check against and is reported as self-score-only; one run errored out. Baselines
+        (a one-shot completion, and a single agent with tools) are graded by the same verifier, at the
+        same step, path count and seed &mdash; so the comparison measures the structure, not the model.
+      </p>
+    </section>
+  </div>
+
+  <!-- ══ KEY ══════════════════════════════════════════════ -->
+  <div class="key rise" style="animation-delay: 760ms">
+    <span class="eyebrow">Key</span>
+    <span class="key-item"><span class="swatch write"></span> agent writes this file</span>
+    <span class="key-item"><span class="swatch read"></span> agent reads it only</span>
+    <span class="key-item"><span class="swatch dash"></span> outside the agent loop</span>
+    <span class="key-item">Every file is a handoff &mdash; no agent may write another's.</span>
+  </div>
+
+</div>

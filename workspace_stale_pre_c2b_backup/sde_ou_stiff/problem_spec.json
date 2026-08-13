@@ -1,0 +1,37 @@
+{
+  "equation_type": "SDE",
+  "id": "sde_ou_stiff",
+  "sde_family": "ornstein_uhlenbeck",
+  "state_dimension": 1,
+  "noise_structure": "additive",
+  "linear": true,
+  "stiff": true,
+  "equation": "dX(t) = theta * (mu - X(t)) * dt + sigma * dW(t)",
+  "parameters": {
+    "X_0": 2.0,
+    "theta": 50.0,
+    "mu": 0.0,
+    "sigma": 2.0
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": false,
+  "diffusion_derivative": "dg/dX = 0  (additive noise: g(X) = sigma constant, so dg/dX = 0)",
+  "milstein_correction": "0  (Milstein == EM for additive noise)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "mu + (X_0 - mu) * np.exp(-theta * t)",
+    "variance_expression": "sigma**2 / (2*theta) * (1 - np.exp(-2*theta*t))"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "Stiff Ornstein-Uhlenbeck with fast mean reversion (theta=50). Explicit Euler-Maruyama is unstable unless dt < 2/theta = 0.04; choose dt well below this bound (e.g. dt <= 0.005) or use a semi-implicit/implicit scheme for stability. Additive noise (g=sigma constant), so Milstein reduces to EM and adds no accuracy. Analytic mean at T=1 is mu + (X_0-mu)*exp(-theta) = 2*exp(-50) ~ 3.9e-22, i.e. near zero: skip the mean relative-error check (|exact_mean| < near_zero_mean_threshold). Analytic variance at T=1 is sigma^2/(2*theta)*(1-exp(-2*theta)) = 0.04*(1-exp(-100)) ~ 0.04 (stationary variance essentially reached)."
+}

@@ -1,0 +1,38 @@
+{
+  "equation_type": "SDE",
+  "id": "fene_nonlinear_spring",
+  "sde_family": "fene_nonlinear_spring",
+  "state_dimension": 1,
+  "noise_structure": "additive",
+  "linear": false,
+  "stiff": true,
+  "equation": "dX(t) = -X(t) / (1 - X(t)**2) * dt + dW(t)",
+  "parameters": {
+    "X_0": 0.0,
+    "domain_lower": -1.0,
+    "domain_upper": 1.0
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": false,
+  "diffusion_derivative": "dg/dX = 0  (g(X) = 1 constant additive noise, so Milstein == Euler-Maruyama)",
+  "milstein_correction": "0 (additive noise: no Milstein correction term)",
+  "analytic_moments": {
+    "has_analytic_solution": false,
+    "state_dimension": 1,
+    "mean_expression": null,
+    "variance_expression": null
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42,
+    "stability_domain": [-1.0, 1.0],
+    "stability_check": "all terminal states must satisfy |X(T)| < 1 and be finite (no NaN/Inf)"
+  },
+  "implementation_notes": "FENE (finitely-extensible nonlinear elastic) Ito SDE on the open interval (-1, 1). The drift force -X/(1-X^2) diverges as |X| -> 1, confining the true process to (-1, 1) for all time. Additive unit noise (g = 1), so Milstein reduces to Euler-Maruyama. This is a STABILITY benchmark, not an accuracy benchmark: there is no closed-form solution, so analytic moments are null. A naive fixed-step Euler-Maruyama near the boundary takes a large step, overshoots past +-1, the force flips sign, and the path diverges to +-Inf / NaN. A boundary-aware ADAPTIVE step, an implicit/semi-implicit scheme, or a rejection scheme is required to keep every path inside (-1, 1). The independent check confirms only that every terminal state satisfies |X(T)| < 1 and is finite. Return terminal_paths (shape (num_paths,)) plus empirical mean and variance of X(T) at T = 1."
+}

@@ -1,0 +1,34 @@
+{
+  "id": "bm_standard",
+  "equation_type": "SDE",
+  "sde_family": "bm_standard",
+  "state_dimension": 1,
+  "noise_structure": "additive",
+  "linear": true,
+  "stiff": false,
+  "equation": "dX(t) = dW(t)",
+  "parameters": {
+    "X_0": 0.0
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": false,
+  "diffusion_derivative": "dg/dX = 0  (g(X) = 1 constant, additive noise)",
+  "milstein_correction": "0 (Milstein == EM for additive noise)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "0.0",
+    "variance_expression": "t"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "Standard Ito Brownian motion with constant unit diffusion (additive noise). Use Euler-Maruyama; Milstein adds no value since dg/dX = 0. Exact mean is 0 (below near_zero_mean_threshold, so mean check is skipped); exact variance equals T = 1.0."
+}

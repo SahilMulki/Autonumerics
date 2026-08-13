@@ -29,7 +29,7 @@ From `problem_spec.json`, extract:
 
 ### Step 2: Propose 2–4 differentiated plans
 
-Each plan must differ meaningfully — vary the spatial scheme, the time-stepping method, or the resolution. Typical plan families:
+Each plan must differ meaningfully — vary the spatial **scheme**, its **order of accuracy**, the **mesh strategy** (uniform vs graded/adaptive near a singularity or layer), or the time-stepping method. Note: the solver contract is `solve_pde(N)` — the harness fixes the grid resolution and scores the *observed convergence order* across two resolutions, so **resolution itself is not a differentiator** and a plan cannot hard-code a grid; differentiate by scheme/order/mesh instead. Typical plan families:
 
 **For time-dependent PDEs (1D)**:
 - FD explicit (FTCS for heat, upwind for advection) — low-to-medium Nx, moderate dt satisfying CFL
@@ -45,15 +45,22 @@ Each plan must differ meaningfully — vary the spatial scheme, the time-steppin
 **For steady-state PDEs (Poisson/Laplace)**:
 - FD with sparse direct solve (scipy.sparse.linalg.spsolve)
 - FD with iterative solver (scipy.sparse.linalg.gmres or bicgstab)
-- Different grid resolutions (Nx=32 vs Nx=64 vs Nx=128)
+- Higher-order (4th-order) stencils, or a graded/adaptive mesh near singularities/layers to recover the convergence rate
 
-Use `pde_manual.md` to check stability conditions (CFL: dt ≤ dx²/(2α) for explicit heat; dt ≤ dx/c for advection). Propose only stable configurations.
+**For multi-field systems and 3-D** (the problem declares `fields` and/or a hard structural gate — differentiate by the *structure-preserving mechanism*, since a scheme that ignores it fails as a CONSTRAINT_VIOLATION however accurate):
+- **Incompressible flow** (`div u = 0`: Navier-Stokes, MHD): a **projection / pressure-Poisson** method (advance velocity, then project onto the divergence-free space via a pressure solve) or a staggered MAC grid. Vary the projection order or the advection discretization between plans.
+- **Solenoidal fields** (`div B = 0`, `div E = div H = 0`: MHD, Maxwell): **constrained transport** or a **staggered Yee grid** (E and H on offset half-grids) — this preserves the divergence by construction. A collocated central scheme is a valid contrasting plan but will likely trip the gate.
+- **Positivity** (`rho, c ≥ 0`: Keller-Segel chemotaxis): a **positivity-preserving flux** (upwind/flux-limited advective-chemotactic flux) with a positive time integrator; contrast against a plain central scheme.
+- **Near-incompressible elasticity** (locking): a **mixed / stabilized** or higher-order displacement scheme that stays locking-free as λ/μ → 1e4; a plain P1/2nd-order displacement scheme is the contrasting (locking) plan.
+- **3-D** (Fichera, acoustic, Maxwell): keep the operator **sparse** (never dense `N³ × N³`); use matrix-free iterative solves or dimensional splitting. The base `N` is smaller for 3-D — respect it and stay tractable at `2N` (8× the unknowns).
+
+Use `pde_manual.md` to check stability conditions (CFL: dt ≤ dx²/(2α) for explicit heat; dt ≤ dx/c for advection; the Yee scheme has its own CFL `c·dt ≤ dx/√d`). Propose only stable configurations.
 
 ### Step 3: Choose hyperparameters
 
 For each plan:
-- `Nx`, `Ny` (grid points per dimension) — match the domain bounds from `problem_spec.json`
-- `dt` (must satisfy CFL for explicit schemes)
+- spatial **scheme and order** (e.g. 2nd-order central, 4th-order, spectral) and **mesh strategy** (uniform / graded / adaptive) — the grid *size* `N` is supplied by the harness, so express the mesh as a function of `N`, do not fix a resolution
+- `dt` **as a function of the grid spacing** so it satisfies CFL at whatever `N` is given (e.g. `dt = C * dx**2` for explicit heat); keep the temporal error subdominant so the spatial order is what is measured
 - `t_final` — from `problem_spec.json`
 - `solver_library`: `numpy` only for simple FD; `scipy.sparse` for implicit or large grids
 
@@ -75,7 +82,7 @@ strategy: {one-sentence summary}
 
 ## Numerical Scheme
 
-- **Spatial discretization**: {method, Nx, Ny, order}
+- **Spatial discretization**: {method, order of accuracy, mesh strategy expressed as a function of the harness-supplied `N`}
 - **Time stepping**: {method, dt, Nt, explicit_or_implicit}
 - **Stability check**: {CFL condition and whether this plan satisfies it}
 - **Solver library**: numpy / scipy.sparse
@@ -105,9 +112,9 @@ Use `id` = 1, 2, 3, 4 (sequential). Use `plan_slug` = e.g. `fd-explicit`, `crank
 
 - Do not write solver code.
 - Each plan is self-contained — copy the PDE equation and parameters into each SOLUTION.md.
-- Only propose plans that are numerically stable given the chosen dt and Nx.
+- Only propose plans that are numerically stable at the harness resolution (tie `dt` to the grid spacing so CFL holds at any `N`).
 - For 1D problems: always include at least one explicit and one implicit plan.
-- For 2D+ problems: keep Nx ≤ 128 per dimension unless the problem specifically requires higher resolution.
+- The harness runs each solver at `N` and `2N`, so keep the scheme tractable at the finer grid (in 2D the fine grid has 4× the unknowns) — prefer sparse/implicit or spectral solvers over dense ones.
 
 ## File Permissions
 

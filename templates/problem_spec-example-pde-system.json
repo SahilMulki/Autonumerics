@@ -1,0 +1,69 @@
+{
+  "equation_type": "navier-stokes",
+  "governing_equation": "u_t + (u.grad)u + grad p = nu*Delta u ; div u = 0",
+  "spatial_dimension": 2,
+  "time_dependent": true,
+  "linear": false,
+  "stiff": false,
+  "spatial_variables": ["x", "y"],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [0.0, 6.283185307179586],
+      "y": [0.0, 6.283185307179586]
+    }
+  },
+  "boundary_conditions": {
+    "type": "periodic"
+  },
+  "initial_condition": "u = sin(x)cos(y); v = -cos(x)sin(y); p = 0.25(cos2x+cos2y)",
+  "parameters": {
+    "nu": 0.1
+  },
+  "analytic_solution": {
+    "type": "fields",
+    "fields": {
+      "u": "np.sin(X)*np.cos(Y)*np.exp(-2*nu*t)",
+      "v": "-np.cos(X)*np.sin(Y)*np.exp(-2*nu*t)",
+      "p": "0.25*(np.cos(2*X)+np.cos(2*Y))*np.exp(-4*nu*t)"
+    },
+    "space_variables": ["x", "y"]
+  },
+  "evaluation_thresholds": {
+    "rel_l2_err_max": 0.01,
+    "grid_N": 48,
+    "min_spatial_order": 1.5,
+    "order_check": true,
+    "metric": "l2",
+    "axes": ["x", "y"],
+    "fields": ["u", "v", "p"],
+    "primary_field": "u",
+    "required_fields": ["u", "v"],
+    "gauge_fields": ["p"],
+    "diagnostics": [
+      {"name": "divergence_norm", "gate": true},
+      {"name": "energy_decay_error", "gate": false}
+    ]
+  },
+  "requirements": [
+    {"id": "R1", "kind": "equation", "quote": "u_t + (u . grad) u + grad p = nu * Delta u,   div u = 0",
+     "status": "mapped", "spec_path": "governing_equation"},
+    {"id": "R2", "kind": "parameter", "quote": "nu = 0.1",
+     "status": "mapped", "spec_path": "parameters.nu"},
+    {"id": "R3", "kind": "domain", "quote": "the periodic square [0, 2*pi]^2, over t in [0, 0.5]",
+     "status": "mapped", "spec_path": "domain.bounds, time_interval"},
+    {"id": "R4", "kind": "initial_condition", "quote": "u = sin(x)cos(y), v = -cos(x)sin(y), p = 0.25(cos(2x)+cos(2y))",
+     "status": "mapped", "spec_path": "initial_condition"},
+    {"id": "R5", "kind": "boundary_condition", "quote": "periodic in both directions",
+     "status": "mapped", "spec_path": "boundary_conditions"},
+    {"id": "R6", "kind": "evaluation", "quote": "a `fields` dict with keys `u`, `v`, `p` (each an (N, N) array)",
+     "status": "mapped", "spec_path": "evaluation_thresholds.fields, analytic_solution.fields"},
+    {"id": "R7", "kind": "evaluation", "quote": "relative L2 error of the velocity (u, v) plus an observed spatial-convergence-order check",
+     "status": "mapped", "spec_path": "evaluation_thresholds.required_fields, evaluation_thresholds.min_spatial_order"},
+    {"id": "R8", "kind": "evaluation", "quote": "the pressure is compared after removing its mean (it is defined up to a constant)",
+     "status": "mapped", "spec_path": "evaluation_thresholds.gauge_fields"},
+    {"id": "R9", "kind": "method", "quote": "The discrete divergence of the velocity must stay near zero -- this is a hard structural gate",
+     "status": "mapped", "spec_path": "evaluation_thresholds.diagnostics[divergence_norm].gate"}
+  ],
+  "implementation_notes": "Incompressible Navier-Stokes, Taylor-Green vortex (an exact solution). Multi-field: solve_pde(N) returns fields={u,v,p}. Scored on relative L2 of the velocity (u,v) plus the observed order of the primary field u; pressure p is compared mean-removed (defined up to a constant). The divergence_norm diagnostic is a HARD GATE -- the discrete div u must stay near zero or the solution fails as a CONSTRAINT_VIOLATION regardless of accuracy, so use a projection / pressure-Poisson scheme. For a masked domain set domain_mask; for a compact-support problem set metric='l1'."
+}

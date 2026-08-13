@@ -1,0 +1,52 @@
+{
+  "equation_type": "navier-stokes",
+  "governing_equation": "u_t + (u.grad)u + grad p = nu*Delta u ; div u = 0",
+  "spatial_dimension": 2,
+  "time_dependent": true,
+  "linear": false,
+  "stiff": false,
+  "spatial_variables": ["x", "y"],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [0.0, 6.283185307179586],
+      "y": [0.0, 6.283185307179586]
+    }
+  },
+  "boundary_conditions": {
+    "type": "periodic"
+  },
+  "initial_condition": "u = sin(x)cos(y); v = -cos(x)sin(y); p = 0.25(cos(2x)+cos(2y))",
+  "parameters": {
+    "nu": 0.1
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 0.5
+  },
+  "analytic_solution": {
+    "type": "fields",
+    "fields": {
+      "u": "np.sin(X)*np.cos(Y)*np.exp(-2*nu*t)",
+      "v": "-np.cos(X)*np.sin(Y)*np.exp(-2*nu*t)",
+      "p": "0.25*(np.cos(2*X)+np.cos(2*Y))*np.exp(-4*nu*t)"
+    },
+    "space_variables": ["x", "y"]
+  },
+  "evaluation_thresholds": {
+    "rel_l2_err_max": 0.01,
+    "grid_N": 48,
+    "min_spatial_order": 1.5,
+    "order_check": true,
+    "metric": "l2",
+    "axes": ["x", "y"],
+    "fields": ["u", "v", "p"],
+    "primary_field": "u",
+    "required_fields": ["u", "v"],
+    "gauge_fields": ["p"],
+    "diagnostics": [
+      {"name": "divergence_norm", "gate": true}
+    ]
+  },
+  "implementation_notes": "2-D incompressible Navier-Stokes, Taylor-Green vortex -- an EXACT closed-form solution on the periodic box [0,2*pi]^2. Report fields at t=0.5. Multi-field: solve_pde(N) returns fields={u,v,p} each of shape (N,N) plus grid={x,y} built from np.linspace(0,2*pi,N). Run at N=48 and N=96. Scored on relative L2 of the velocity (u,v) < 1% at the finer grid, plus observed spatial-convergence-order p=log2(err_N/err_2N) >= 1.5 on primary field u. Pressure p is compared AFTER removing its mean (defined only up to a constant), hence gauge_fields=[p]. The divergence_norm diagnostic is a HARD GATE: the discrete div u must stay near zero or the solution fails as CONSTRAINT_VIOLATION regardless of accuracy -- use a projection / pressure-Poisson (FFT on the periodic box) scheme rather than a collocated central update. Analytic velocity decays as exp(-2*nu*t); pressure as exp(-4*nu*t)."
+}

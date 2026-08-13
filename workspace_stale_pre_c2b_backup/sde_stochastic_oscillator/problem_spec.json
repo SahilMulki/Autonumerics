@@ -1,0 +1,38 @@
+{
+  "equation_type": "SDE",
+  "id": "stochastic_oscillator",
+  "sde_family": "stochastic_oscillator",
+  "state_dimension": 2,
+  "noise_structure": "additive",
+  "linear": true,
+  "stiff": false,
+  "equation": "dX = Y * dt;  dY = -X * dt + sigma * dW",
+  "parameters": {
+    "X_0": 1.0,
+    "Y_0": 0.0,
+    "sigma": 0.3
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 6.283185307179586
+  },
+  "milstein_eligible": false,
+  "diffusion_derivative": "N/A (additive noise, dg/dstate = 0; 2D system)",
+  "milstein_correction": "0 (additive noise, Milstein == EM; multi-D requires Levy area anyway)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 2,
+    "mean_X": "X_0 * np.cos(t) + Y_0 * np.sin(t)",
+    "variance_X": "sigma**2 / 2 * (t - np.sin(t) * np.cos(t))",
+    "mean_Y": "-X_0 * np.sin(t) + Y_0 * np.cos(t)",
+    "variance_Y": "sigma**2 / 2 * (t + np.sin(t) * np.cos(t))"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "seed": 42
+  },
+  "implementation_notes": "2D linear SDE (stochastic harmonic oscillator). Noise enters only the Y (velocity) component: diffusion matrix G = [[0],[sigma]]. X update has no stochastic term (X_{n+1} = X_n + Y_n*dt); Y update is Y_{n+1} = Y_n - X_n*dt + sigma*dW_n. Additive noise and state_dimension>1 => EM only, Milstein not applicable. At T=2*pi: mean_X ~= 1.0, mean_Y ~= 0.0 (near zero, skip mean check on Y per near_zero_mean_threshold). Both variances grow ~ sigma^2/2 * t and are strictly positive."
+}

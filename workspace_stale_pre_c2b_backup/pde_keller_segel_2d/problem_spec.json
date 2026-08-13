@@ -1,0 +1,59 @@
+{
+  "equation_type": "reaction-diffusion",
+  "governing_equation": "rho_t = D_r*Delta rho - chi*div(rho*grad c) + s_rho ; c_t = D_c*Delta c + alpha*rho - beta*c + s_c",
+  "spatial_dimension": 2,
+  "time_dependent": true,
+  "linear": false,
+  "stiff": false,
+  "spatial_variables": ["x", "y"],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [0.0, 1.0],
+      "y": [0.0, 1.0]
+    }
+  },
+  "boundary_conditions": {
+    "type": "dirichlet",
+    "values": {
+      "rho": "1 + 0.2*np.sin(np.pi*X)*np.sin(np.pi*Y)*np.exp(-t)",
+      "c": "1 + 0.1*np.cos(np.pi*X)*np.cos(np.pi*Y)*np.exp(-2*t)"
+    }
+  },
+  "initial_condition": "rho(x,y,0) = 1 + 0.2*np.sin(np.pi*x)*np.sin(np.pi*y) ; c(x,y,0) = 1 + 0.1*np.cos(np.pi*x)*np.cos(np.pi*y)",
+  "parameters": {
+    "D_r": 1.0,
+    "D_c": 1.0,
+    "chi": 1.0,
+    "alpha": 1.0,
+    "beta": 1.0,
+    "s_rho": "-0.2*np.sin(np.pi*X)*np.sin(np.pi*Y)*np.exp(-t) + 0.4*np.pi**2*np.sin(np.pi*X)*np.sin(np.pi*Y)*np.exp(-t) - 0.04*np.pi**2*np.sin(np.pi*X)*np.cos(np.pi*X)*np.sin(np.pi*Y)*np.cos(np.pi*Y)*np.exp(-3*t) - 0.2*np.pi**2*(1 + 0.2*np.sin(np.pi*X)*np.sin(np.pi*Y)*np.exp(-t))*np.cos(np.pi*X)*np.cos(np.pi*Y)*np.exp(-2*t)",
+    "s_c": "(0.2*np.pi**2 - 0.1)*np.cos(np.pi*X)*np.cos(np.pi*Y)*np.exp(-2*t) - 0.2*np.sin(np.pi*X)*np.sin(np.pi*Y)*np.exp(-t)"
+  },
+  "analytic_solution": {
+    "type": "fields",
+    "fields": {
+      "rho": "1 + 0.2*np.sin(np.pi*X)*np.sin(np.pi*Y)*np.exp(-t)",
+      "c": "1 + 0.1*np.cos(np.pi*X)*np.cos(np.pi*Y)*np.exp(-2*t)"
+    },
+    "space_variables": ["x", "y"]
+  },
+  "evaluation_thresholds": {
+    "rel_l2_err_max": 0.01,
+    "grid_N": 48,
+    "min_spatial_order": 1.4,
+    "order_check": true,
+    "metric": "l2",
+    "axes": ["x", "y"],
+    "fields": ["rho", "c"],
+    "primary_field": "rho",
+    "required_fields": ["rho", "c"],
+    "gauge_fields": [],
+    "diagnostics": [
+      {"name": "min_density", "gate": true}
+    ],
+    "num_paths": null,
+    "seed": 42
+  },
+  "implementation_notes": "2-D Keller-Segel chemotaxis on [0,1]^2, t in [0,0.5], manufactured so the exact fields are rho = 1 + 0.2*sin(pi x)*sin(pi y)*exp(-t) (range [1, 1.2]) and c = 1 + 0.1*cos(pi x)*cos(pi y)*exp(-2t) (range [0.9, 1.1]) -- both strictly positive. Multi-field: solve_pde(N) returns fields={rho, c} on grid {x,y}, reported at t_final=0.5. Coupled reaction-diffusion with a nonlinear chemotaxis flux -chi*div(rho*grad c). Time-dependent Dirichlet BCs taken from the manufactured fields (on the boundary sin(pi x)/sin(pi y)=0 so rho=1, while c=1+0.1*cos(...)*exp(-2t)). Add the explicit manufactured sources s_rho, s_c (given in parameters, ready as NumPy expressions with X,Y meshgrid and scalar t; verified to reproduce the exact fields to FD accuracy) to the RHS. Run at N=48 and N=96; scored on relative L2 error (<1%) of BOTH rho and c on the returned grid, plus observed convergence order p=log2(err_N/err_2N)>=1.4 on the primary field rho. HARD GATE: min_density -- the chemotaxis term is the classic source of spurious negative density near aggregation; discretize the -chi*div(rho*grad c) flux with an upwind / flux-limited (positivity-preserving) scheme, NOT a bare np.maximum clip, or the solution fails as CONSTRAINT_VIOLATION regardless of accuracy. No gauge fields (both fields fully determined). Rectangular domain (no mask). Build the mesh with np.meshgrid(indexing='ij') and keep operators sparse."
+}
