@@ -185,20 +185,34 @@ caffeinate -is uv run python benchmark/oneshot.py --discriminators --condition c
     2>&1 | tee -a benchmark/results/logs/disc_c0c1.log
 
 # 2. the pipeline runs.
-#    2a. C2a — the product as-is (Opus+Sonnet), the pipeline baseline.  Run FRESH
-#        over all 50 problems: the checked-in results/results.json is stale (37
-#        problems, pre-HardNumerics, scored under an older verify.py + older agents),
-#        and C2a must share ONE verify.py + agent version with C0/C1/C2b or the
-#        comparison is not apples-to-apples (§6).  Move the stale file aside first so
-#        --resume (for continuation, below) can't mistake old records for fresh ones.
-mv benchmark/results/results.json benchmark/results/results.stale-jul16.json
-caffeinate -is uv run python benchmark/run.py --fresh \
-    2>&1 | tee -a benchmark/results/logs/c2a_fresh.log
-#        If 2a is interrupted, CONTINUE it (do not restart) with:
-#            caffeinate -is uv run python benchmark/run.py --fresh --resume \
-#                2>&1 | tee -a benchmark/results/logs/c2a_fresh.log
-#        (results.json now holds only freshly-scored records, so --resume correctly
-#        skips just the problems already redone this run.)
+#    2a. C2a — the product as-is (Opus planners + Sonnet workers), the pipeline
+#        baseline.  Writes to the DEFAULT results/results.json (no --model, no
+#        --results-json).  C2a must share ONE verify.py + agent version with
+#        C0/C1/C2b or the comparison is not apples-to-apples (§6).
+#
+#        PRE-FLIGHT (both already done as of 2026-08-13 — listed so a re-run is
+#        reproducible; skip if the files/state below are already in place):
+#          - stale results/results.json moved aside -> results.stale-jul16.json, so
+#            C2a's default file starts empty.
+#          - workspace/ moved aside -> workspace_c2b_sonnet_backup/ and recreated
+#            EMPTY.  This is the key step: C2a shares workspace/ with C2b, and a
+#            leftover C2b (Sonnet) `phase: done` workspace would be silently REUSED,
+#            scoring C2b's solver as C2a.  A clean workspace makes every problem run
+#            genuinely fresh, so NO --fresh is needed (and --resume then continues an
+#            interrupted problem from its own STATE instead of re-wiping it).
+#          - agent frontmatter is at C2a intent (opus planners, sonnet workers) with
+#            no leftover .agent_model_override.bak.json sidecar.
+caffeinate -is uv run python benchmark/run.py \
+    2>&1 | tee -a benchmark/results/logs/c2a.log
+#        If 2a is interrupted, CONTINUE it (do not restart, no --fresh) with:
+#            caffeinate -is uv run python benchmark/run.py --resume \
+#                2>&1 | tee -a benchmark/results/logs/c2a.log
+#
+#        !! SWITCHING BACK TO C2b LATER: C2a will fill workspace/ with Opus+Sonnet
+#           runs.  Before resuming C2b, move workspace/ aside again (or C2b --resume
+#           will REUSE C2a's runs for the 22 remaining problems = contamination).
+#           The C2b live file (results/pipeline_sonnet.json, 35/50 done) is untouched
+#           by C2a and safe to resume against once the workspace is clean.
 #
 #    2b. C2b — pipeline pinned to Sonnet, written to ITS OWN file so it does NOT
 #        overwrite C2a.  (--results-json is why the old "copy results.json aside"
