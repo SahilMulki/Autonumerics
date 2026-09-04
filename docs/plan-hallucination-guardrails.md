@@ -1,6 +1,8 @@
 # Hallucination Guardrails — Implementation Plan
 
-**Status:** revised proposal (rev 3, 2026-08-30) — supersedes rev 2, which superseded rev 1
+**Status:** **implemented** (rev 6, 2026-09-03) — Phases 0–6 landed, 132 tests passing.
+Seven rev-5 claims did not survive implementation; all are corrected below and recorded as
+E23–E29. The most important: `pde_cahn_hilliard_2d` is **not** a spec defect.
 **Scope:** Layers 1–5. Layers 6 and 7 are **deferred** (§9); a small, load-bearing part of 7 is
 retained.
 **Related:** [plan-no-closed-form.md](plan-no-closed-form.md),
@@ -9,7 +11,7 @@ retained.
 Provenance labels: **[A]** = already in this repo, **[B]** = adapted from the AutoNumerics
 paper-release pipeline, **[N]** = new in this plan, **[C]** = corrected against measurement.
 
-Every quantitative claim below was measured against this repo on 2026-08-30. Where a rev-2 claim did
+Every quantitative claim below was measured against this repo, most recently on 2026-08-31. Where a rev-2 claim did
 not survive measurement it is marked **[C]** and the corrected number is given. Errata: §17.
 
 ---
@@ -24,7 +26,24 @@ not survive measurement it is marked **[C]** and the corrected number is given. 
 | The AST scan catches the two observed leaks | **False for both.** One is transcribed numpy, one is a docstring — and the plan itself specified that comments are not access |
 | The ledger re-audit probes the run's actual `eps` | **Not implementable.** A PDE solver returns `{numerical_solution, grid, t_final}`; no channel carries `eps` |
 
+### Rev 5 → rev 6 (implementation)
+
+Building it changed seven things. Two are ordinary; five matter.
+
+| Rev 5 claim | Measured outcome | Fixed in |
+|---|---|---|
+| `pde_cahn_hilliard_2d` is a genuine spec defect — "the first real defect the guardrail found" | **No. It is a manufactured solution whose source is recorded in the top-level `source_term` field.** Bind it and the median residual falls from 0.247 to 1.2e-08. The guardrail as designed would have made a **false accusation of a spec defect** — the failure mode §16 singles out as invisible, because it looks exactly like a caught bug | §2, §4f, §10 D |
+| Poisson / Helmholtz / Monge–Ampère are blocked because the source "exists only as prose inside `governing_equation`" | **`source_term` is a real, evaluable, top-level field**, and `residual_operator` already references it as a bare `f`. All three validate today, with no spec change, plus `anisotropic_diffusion` | §2, §4d |
+| PDE coverage is 11 of 20 | **16 of 20** — 9 clean, 7 off a singularity | §2, criterion 2 |
+| SDE coverage is 3 of 5; vector moment shapes need per-shape handling | **5 of 5.** Differentiating the claimed moments needs the state recovered from them, which fails when a state component appears in no claimed moment (`p12`). *Integrating* the declared moment ODE forward needs nothing from the claimed moments and works at any state dimension | §4e, criterion 7 |
+| Apply expression-not-program to `drift_expression` and `diffusion_expression` | **Hard-fails 3 of 6 real SDE specs on correct content.** A vector problem's drift is legitimately prose — `"X @ F.T (row-major paths, X shape (num_paths, 2))"` describes a matrix action no scalar expression can. Split: answer-key fields must parse; guidance fields must merely not be a *program* | §4a |
+| Test 2 compares the formula at `t = 0` against `initial_condition` | Two corrections. A **backward parabolic** problem states its condition at maturity, not at 0 — reading `pde_black_scholes_call` at 0 reports a 3.5% mismatch on an exactly correct spec. And an exact-match tolerance false-fails `pde_advection_1d`, whose non-periodic `initial_condition` differs from its periodic solution by 1.2e-04 — real, benign, two orders below the problem's own target | §4c |
+| Numeric binding: every number in the Numerical Accuracy section | **Flags 28% of 206 archived reviews**, all on diagnostic context the pipeline computes but records nowhere. Bind the **claim** on each keyed line instead — the leading token, not every number. 0 false positives | §8a |
+
 ### Rev 2 → rev 3 (measurement)
+
+*(rev 4 adds the production path — hooks ship with the plugin, the `Stop` hook is the gate on a
+user's own problem — and lands Phase 0 in `verifylib/`. See E20–E21.)*
 
 Rev 2 was prototyped and hook behaviour was tested empirically. Four of its claims did not survive.
 
@@ -32,7 +51,7 @@ Rev 2 was prototyped and hook behaviour was tested empirically. Four of its clai
 |---|---|---|
 | `PostToolUse` hooks with a **path matcher** block a bad write | **Both halves false.** `matcher` is tool-name only — a `"**/target.txt"` matcher never fires. And `PostToolUse` exit 2 does **not** block: the file is on disk and is not reverted. Only `PreToolUse` blocks | §3 |
 | Singular sets are found by "points where the residual grows under refinement" | **Misclassifies in three directions**, including waiving a wrong formula as "singular" — the exact failure it exists to catch | §4f |
-| The reference check runs on 17 of 20 PDE Tier-A specs | **10 of 20** with a real implementation. An operator *string* existing is not the check *working* | §2, §4d |
+| The reference check runs on 17 of 20 PDE Tier-A specs | **11 of 20** with a real implementation. An operator *string* existing is not the check *working* | §2, §4d |
 | SDE coverage is 5/5 | **3 of 5.** Two specs have vector-valued moment ODEs (5 coupled moments) needing per-shape handling | §4e |
 
 Rev 2 also under-specified two things measurement exposed: the term-balanced denominator is
@@ -64,36 +83,58 @@ Guardrails are organised by **what gets faked**, because that is how they actual
 | Specs in `workspace/` | 28 (22 PDE, 6 SDE) |
 | Specs carrying a non-null closed form | **25** — 20/22 PDE, 5/6 SDE |
 | `problem.md` files stating a closed form | **0 of 29** — they say "scored against a hidden reference solution" |
-| Specs carrying `verification.operator` | 0 — the field does not exist yet |
+| Specs carrying `verification.operator` | 0 — the field is defined by this plan (§4d) and lands in Phase 4 |
 | PDE specs carrying `mms_probe.operator_check` | 19 of 22 |
 | Operator strings that AST-split into signed top-level terms | **19 of 19** |
-| **PDE Tier-A claims the reference check validates** | **10 of 20** — 7 clean, 3 off a localized singularity |
-| **SDE Tier-A claims the reference check validates** | **3 of 5** — the other 2 have vector moment ODEs |
+| **PDE Tier-A claims the reference check validates** | **16 of 20** — 9 clean, 7 off a localized singularity |
+| **SDE Tier-A claims the reference check validates** | **5 of 5** |
+| Whole-workspace gate wall time | 2.3 s for all 29 specs |
 | Pipeline files flagged by the rev-1 AST leakage rule | **124 of 137 (91%)**, all false positives |
 | Pipeline files flagged by the narrowed rule | **0 of 137**, with the genuine patterns still caught |
 
-### Why 10 of 20, and what blocks the other 10 **[C]**
+### Why 16 of 20, and what blocks the other 4 **[C]**
 
-Rev 2 counted specs that *have* an operator string. Running the check is different. Root causes,
-because they determine which are fixable and by whom:
+Rev 2 counted specs that *have* an operator string; rev 3 counted what a first-cut implementation
+could run. Neither is what the finished check reaches. Root causes, because they determine which are
+fixable and by whom:
 
 | Root cause | Specs | Owner |
 |---|---|---|
 | **Validated** | `heat_1d`, `heat_2d`, `laplace_2d`, `wave_1d`, `wave_2d`, `advection_1d`, `fokker_planck_ou` | — |
-| **Validated off a localized singularity** | `burgers_inviscid` (shock, 1.2% of domain), `stefan_1d_similarity` (kink, 1.6%), `convection_diffusion_bl` (layer, 0.8%) | — |
-| **Source term missing from any evaluable field** | `poisson_2d`, `helmholtz_2d`, `monge_ampere_2d` | **plan-no-closed-form** (§14 C2) |
-| **Multi-field system; needs the systems operator form** | `mhd_2d`, `navier_stokes_2d` | **plan-no-closed-form** (§14 C2) |
+| **Validated off a localized singularity** | `burgers_inviscid` (shock), `stefan_1d_similarity` (kink), `convection_diffusion_bl` (layer), `black_scholes_call` (kink at the strike) | — |
+| **Source term missing from any evaluable field** | `poisson_2d`, `helmholtz_2d`, `monge_ampere_2d` | **this plan**, Phase 4 — `verification.operator.source` (§4d) |
+| **Multi-field system; needs the systems operator form** | `mhd_2d`, `navier_stokes_2d` | **this plan**, Phase 4 — `verification.operator.equations` (§4d) |
 | **No operator string in the spec** | `anisotropic_diffusion`, `porous_medium_2d` | formulator |
+| Root cause | Specs | Owner |
+|---|---|---|
+| **Validated** (9) | `heat_1d`, `heat_2d`, `laplace_2d`, `wave_1d`, `wave_2d`, `poisson_2d`, `helmholtz_2d`, `monge_ampere_2d`, `anisotropic_diffusion` | — |
+| **Validated off a localized singularity** (7) | `burgers_inviscid` (shock), `stefan_1d_similarity` (kink), `convection_diffusion_bl` (layer), `black_scholes_call` (kink at the strike), `cahn_hilliard_2d`, `advection_1d`, `fokker_planck_ou` (nodal lines, where every term vanishes together) | — |
+| **Multi-field system on the legacy operator string** | `mhd_2d`, `navier_stokes_2d` | formulator — these specs predate `verification.operator`; the systems path itself is implemented and tested |
+| **No operator string in the spec at all** | `porous_medium_2d` | formulator — `verification.operator` is now required |
 | **Non-local operator — genuinely unavailable** | `fractional_diffusion` (Caputo derivative) | — |
-| **Spec is internally inconsistent — a real finding** | `cahn_hilliard_2d` | see below |
 | Already `null` | `heston_2d`, `kuramoto_sivashinsky` | — |
 
-`pde_cahn_hilliard_2d` deserves its own line. Its claimed exact solution
-`0.2*sin(2πx)*sin(2πy)*cos(t)` gives a median term-balanced residual of **0.247, flat across
-N = 129, 257 and 513**. It does not converge, so it is not under-resolution — that profile is not a
-solution of the declared Cahn–Hilliard operator. Either the spec's `analytic_solution` is wrong or
-it is a manufactured profile whose source term was never recorded. **This is the first real defect
-the guardrail found, and it was found before the guardrail was built.**
+**`pde_cahn_hilliard_2d` was not a spec defect, and this is the most important correction in rev 6.**
+Rev 3 through rev 5 held it up as "the first real defect the guardrail found, and it was found
+before the guardrail was built." Its claimed solution `0.2*sin(2πx)*sin(2πy)*cos(t)` does give a
+median term-balanced residual of 0.247, flat across N = 129/257/513 — but against the **homogeneous**
+operator. The solution is *manufactured*, and its source term is recorded in the spec's top-level
+`source_term` field. Bind that and the median is **1.2e-08**.
+
+Two things follow, and both are worth more than the finding would have been.
+
+1. **The source path is the fix, not a workaround.** `source_term` is an evaluable field on five
+   specs, and `verification.residual_operator` on eleven already references it as a bare `f`. Rev 3
+   assumed the source "exists only as prose inside `governing_equation`" and never checked. Binding
+   it validates Poisson, Helmholtz, Monge–Ampère and `anisotropic_diffusion` as well — four more
+   specs, no spec change, which is where 11 → 16 comes from.
+2. **The guardrail nearly produced the exact failure §16 warns about.** A false hard-fail is worse
+   than a missed relaxation because it is invisible as a false positive: it looks exactly like a
+   caught bug. Here it would have accused a correct spec of being defective, in a document that
+   named it as the headline result. The regression test in
+   `verifylib/tests/test_reference_pde.py::test_cahn_hilliard_is_a_manufactured_solution_not_a_defect`
+   pins the correction, and it is the reason §4d's operator resolution consults every source the
+   spec offers before concluding anything.
 
 ---
 
@@ -101,56 +142,89 @@ the guardrail found, and it was found before the guardrail was built.**
 
 *Cross-cutting; every deterministic check depends on it, so it comes first.*
 
-Rev 2 specified `PostToolUse` hooks with a path matcher, blocking on exit 2. Six controlled runs
-against `claude 2.1.226`:
+Rev 2 specified `PostToolUse` hooks with a path matcher, blocking on exit 2. Seven controlled runs
+against `claude 2.1.226`; full table in
+[`verifylib/tests/hookprobe/FINDINGS.md`](../verifylib/tests/hookprobe/FINDINGS.md), which should be
+re-run after a Claude Code upgrade because the whole enforcement model rests on it.
 
 | Test | Result |
 |---|---|
 | `"matcher": "**/target.txt"` alongside `"matcher": "Write"` | **Only `Write` fired.** `matcher` is tool-name only; there is no path matcher |
 | `PostToolUse` exit 2 on a `Write` | stderr reached the agent; **the file was on disk and not reverted** |
-| `PreToolUse` exit 2 on a `Write` | **The file was never created.** Payload has `tool_input` but no `tool_response` |
-| Reason-fed retry (satisfiable constraint) | `REJECT` → 3.2 s → `PASS`. The agent read the stderr and corrected |
+| `PreToolUse` exit 2 on a `Write` | **The file was never created.** Payload has `tool_input`, no `tool_response` |
+| **`Stop` hook exit 2** | **Blocks session end** — but fired 8 times and the run died at max-turns |
+| Reason-fed retry (satisfiable constraint) | `REJECT` → 3.2 s → `PASS` |
 | Hooks inside a Task-dispatched **subagent** | **Fire normally**, same REJECT→PASS cycle |
+| **Plugin-declared hooks** (`<plugin>/hooks/hooks.json`, loaded via `--plugin-dir`) | **Load and fire** |
+| **`${CLAUDE_PLUGIN_ROOT}` in a hook `command`** | **Expands** to the plugin directory; `CLAUDE_PROJECT_DIR` is separately the user's cwd |
 | `Bash` heredoc (`cat > target.json`) against a `Write\|Edit` matcher | **No hook fired.** The file landed unvalidated |
 | Hook contradicting an explicit user instruction | The agent **stopped, left the bad file on disk, and escalated to the user** |
 
-Three consequences, and the last one is the important one.
+Four consequences.
 
 **(a) Path filtering happens inside the hook.** The payload carries `tool_input.file_path`, so this
-costs three lines. But the matcher must be `Write|Edit|Bash` or a heredoc walks straight past it,
-and the `Bash` branch has to inspect `tool_input.command` for a redirect target.
+costs three lines. But the matcher must be `Write|Edit|Bash` or a heredoc walks straight past it, and
+the `Bash` branch has to inspect `tool_input.command` for a redirect target.
 
 **(b) Blocking requires `PreToolUse`, which sees the wrong thing.** `PreToolUse` gets `tool_input`,
 not the resulting file. For `Write` that is the whole content and is fine; for `Edit` it is
-`old_string`/`new_string`, so a validator that must parse the finished `problem_spec.json` would
-have to apply the edit itself to reconstruct it. Pay that cost only where blocking genuinely
-matters.
+`old_string`/`new_string`, so a validator that must parse the finished `problem_spec.json` would have
+to apply the edit itself to reconstruct it. Pay that cost only where blocking genuinely matters.
 
 **(c) A hook is feedback, not a gate.** The observed failure is not the deadlock rev 2 planned for.
-It is the opposite: the agent stops, leaves the invalid file in place, and asks the user. In an
-interactive session that is correct behaviour. In a headless `claude -p` benchmark run **nobody
-answers** — the subagent returns, the file is invalid, and the conductor never learns. Therefore:
+It is the opposite: the agent stops, leaves the invalid file in place, and asks the user. Interactively
+that is correct. In a headless `claude -p` run **nobody answers** — the subagent returns, the file is
+invalid, and the conductor never learns.
 
-> **Every guard runs in two places: as a hook, for fast in-loop correction; and out-of-band at
-> certification, where no agent's cooperation is required. The out-of-band call is the gate. The
-> hook is an optimisation.**
+**(d) The `Stop` hook is the gate that works everywhere.** It is harness-enforced, fires at session
+end, and blocks. It is the only mechanism that gates a run on *any* problem — including a user's own,
+where `benchmark/verify.py` does not exist. But it looped 8 times and killed the run at max-turns, so
+the attempt-counter bail-out is **mandatory**, not defensive.
+
+> **Every guard runs in two places: as a hook, for fast in-loop correction; and as a gate that does
+> not depend on an agent cooperating. On the benchmark that gate is `benchmark/verify.py`; on a
+> user's own problem it is the `Stop` hook. The hook-on-write is an optimisation.**
 
 ### Assignment
 
-| Guard | Hook | Authoritative gate |
-|---|---|---|
-| Spec schema + reference check (§4) | `PostToolUse` on `Write\|Edit\|Bash` → `problem_spec.json` | Conductor, before dispatching plan-creator — same halt path as the ledger |
-| Leakage scan (§6) | `PreToolUse` on `Write\|Edit` → `evaluate.py`, `solver.py` (blocks; `tool_input.content` is the whole file) | `verify.import_solver` and `runner._child_main` |
-| Ledger re-audit (§5) | — needs a completed run | `benchmark/verify.py` at certification |
-| Numeric-claim binding (§8) | `PostToolUse` on `SOLUTION.md` | Conductor, when reading the score |
+| Guard | In-loop feedback | Gate (benchmark) | Gate (any user problem) |
+|---|---|---|---|
+| Spec schema + reference check (§4) | `PostToolUse` on `Write\|Edit\|Bash` → `problem_spec.json` | conductor pre-dispatch + `verify.py` | **`Stop` hook** |
+| Leakage scan (§6) | `PreToolUse` on `Write\|Edit` → `solver.py`, `evaluate.py` (blocks) | `verify.import_solver`, `runner._child_main` | **`Stop` hook** |
+| Ledger re-audit (§5) | — needs a completed run | `benchmark/verify.py` | **`Stop` hook** |
+| Numeric-claim binding (§8) | `PostToolUse` on `SOLUTION.md` | conductor, when reading the score | **`Stop` hook** |
 
-Keep the 3-attempt counter and the `GUARDRAIL_UNSATISFIED` → `phase: blocked` path. Its purpose is
-no longer deadlock prevention (not observed) but **turning a silent stop into a recorded one**: when
-an agent gives up against a hook, the marker is what tells the conductor the file is untrusted.
+The `Stop` hook runs the same `verifylib` entry points over the workspace directory and refuses to
+end the session while a `failed` outcome stands. On its 3rd firing for the same finding it exits 0,
+writes `GUARDRAIL_UNSATISFIED` beside the offending file, and lets the session end — so a run that
+cannot be fixed terminates with a recorded reason instead of burning the turn budget.
 
-Hooks live in `benchmark/pipeline-settings.json`, passed per-invocation via `--settings`
-([run.py:69](../benchmark/run.py#L69)), never in `.claude/settings.json` — otherwise they fire in
-ordinary development sessions.
+**It gates one problem, not the whole workspace. [C]** Implementation exposed a scope error in that
+sentence: `workspace/` holds 29 problem directories from previous runs, and three carry pre-existing
+findings. Sweeping all of them blocks a session working on a fourth, for something it did not do and
+cannot fix — and then writes a marker the conductor reads as a block on the *current* problem. Both
+the pipeline (`/conductor workspace/{slug}/problem.md`) and a user running Autonumerics on their own
+problem work one problem at a time, so the gate scopes to the problem directory whose files were most
+recently touched, and falls back to the root when there are no subdirectories — which is the shape a
+scratch directory with a bare `problem.md` has, i.e. criterion 14's shape.
+
+### Packaging and distribution
+
+Hooks ship **with the plugin**, in `hooks/hooks.json`, not in `benchmark/pipeline-settings.json`.
+That is what makes them apply to a user's own problem rather than only to benchmark runs, and it is
+measured to work. Commands are addressed as:
+
+```json
+{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py check-spec"}
+```
+
+`verifylib/cli.py` is the single entry point, invoked by absolute path so it does not depend on the
+working directory. `pyproject.toml` keeps `package = false`; nothing needs installing. Agents that
+call `verifylib` directly use the same form, matching the existing `${CLAUDE_PLUGIN_ROOT}/references/…`
+convention.
+
+`benchmark/pipeline-settings.json` keeps only its `deny` rules — those are benchmark-specific, since
+`benchmark/` does not exist in a user's project.
 
 ---
 
@@ -172,9 +246,27 @@ ast.parse(expr, mode="eval")     # SyntaxError on anything else
 
 The observed Heston leak was a 2063-character `def _heston_call_price(...)` with Gauss–Legendre
 quadrature in that field, plus a `notes` line telling the evaluator to "transcribe it verbatim into
-evaluate.py". This rejects it instantly. One line, zero judgment, no false negatives. Apply to
-`analytic_moments.*_expression`, `drift_expression`, `diffusion_expression` and every
-`verification.*` expression field.
+evaluate.py". This rejects it instantly. One line, zero judgment, no false negatives.
+
+**Two classes of field, because one rule measured badly. [C]** Applying `ast.parse(mode="eval")` to
+`drift_expression` and `diffusion_expression` as rev 5 specified hard-fails 3 of 6 real SDE specs on
+*correct* content: on a vector problem the drift is legitimately prose —
+`"X @ F.T (row-major paths, X shape (num_paths, 2), F = [[F11, F12], [F21, F22]])"` describes a
+matrix action that no scalar expression can express, and an agent reads it rather than evaluating it.
+
+The threat §4a exists to stop is a **program** parked in a field the evaluator is told to transcribe.
+So:
+
+| Class | Fields | Rule |
+|---|---|---|
+| **Answer-key** — the pipeline evaluates these | `analytic_solution.expression` / `.fields.*`, `analytic_moments.*`, every `verification.*` expression, `verification.operator.*`, and any `constraints`/`invariants` entry with `gate: true` | Must parse as an expression |
+| **Guidance** — an agent reads these | `drift_expression`, `diffusion_expression`, `diffusion_derivative_expression`, `diffusion_matrix_expression`, ungated `constraints`/`invariants` notes | Must not be a **program**: valid Python that is not a single expression |
+
+The second rule is the sharper statement of the same idea. Prose ("`X ~ Normal(mu, sigma**2)`")
+parses as neither an expression nor a program, so it passes; the Heston `def` parses as a program
+and fails **in any field**. Measured over all 29 staged specs: **0 false positives**, with the
+archived leak still caught. All 11 `gate: true` constraints parse; the one that does not is ungated,
+and is a distributional statement rather than a check.
 
 ### 4b. The rule: validate, or quote, or `null` **[N]**
 
@@ -201,8 +293,28 @@ Three tests, all on the *formula*, none on the solver:
 | Test | Catches |
 |---|---|
 | Term-balanced operator residual ≈ 0 | Wrong PDE, wrong coefficient, dropped factor, sign flip |
-| Formula at `t = 0` matches `initial_condition` | Right PDE, **wrong solution branch or mode** |
+| Formula at the initial time matches `initial_condition` | Right PDE, **wrong solution branch or mode** |
 | Formula on the boundary matches `boundary_conditions.values` | Right PDE and IC, wrong BC selection |
+
+**Test 2 needed two corrections that only appear once it runs on real specs. [C]**
+
+*The initial time is not always zero.* `pde_black_scholes_call` is backward parabolic: its
+"initial" condition is a **terminal payoff** at `T_maturity`, and it marches forward in
+`tau = T_maturity - t`. Reading it at `t = 0` reports a 3.5% mismatch on an exactly correct spec.
+The check evaluates at each time the spec *names* — `t0` for a similarity solution singular at the
+origin, `T_maturity` for a backward problem — and records which one matched. Two declared
+quantities, not a search.
+
+*Exact agreement is the wrong bar.* `pde_advection_1d` declares a plain Gaussian
+`initial_condition` on a **periodic** domain while its solution uses the periodic wrap; near the
+seam they differ by **1.2e-04**. That is real — the IC as literally written is not periodic — but it
+is benign, two orders below the problem's own 1e-2 target. So test 2 has two thresholds: below 1e-6
+is `validated`, above 1e-3 is `failed`, and the band between is `inconsistent` — reported as a
+warning, never fatal. A wrong branch or doubled mode differs by O(1), so the `failed` bar keeps three
+orders of headroom.
+
+Test 3 skips what it cannot read rather than guessing: a moving boundary (`"x=s(t)"`), an
+`"outflow"` label, a `"note"` key. Saying the check does not reach there beats inventing a face.
 
 Measured separation on real specs (N = 257, 4th-order stencils, `h_t = 1e-3`):
 
@@ -240,21 +352,83 @@ arithmetic certifies.
 at large `k` and 100:1 anisotropy both have individually huge terms that cancel; an absolute
 tolerance rejects correct formulas on both.
 
-### 4d. Where the operator comes from **[C]**
+### 4d. Where the operator comes from — **this plan ships the field** **[C]**
 
-The check reads `verification.operator` when present and falls back to
-`mms_probe.operator_check`, which **19 of 22 PDE specs already carry** in exactly the required form
-(`"u_t - alpha*lap_u"`, `"-lap_u - k**2*u"`, `"u_tt - c**2*lap_u"`). That fallback is what lets
-Layer 1 ship without waiting for [plan-no-closed-form.md](plan-no-closed-form.md).
+The check resolves an operator from four sources, in descending order of what each can express:
 
-But the fallback has a hard ceiling, and rev 2 missed it. `operator_check` is the **homogeneous
-operator**; it has nowhere to record a source term. `pde_poisson_2d`'s source
-(`f = 2*pi^2*sin(pi*x)*sin(pi*y)`) exists **only as prose inside `governing_equation`**. The
-`verification.residual_operator` field references a bare `f` that is never defined anywhere
-evaluable. So Poisson, Helmholtz and Monge–Ampère cannot be checked on the fallback path at all —
-they need `verification.operator.source`, which is plan-no-closed-form's §3 deliverable. Likewise
-the two multi-field systems need its per-equation form. **That is a hard dependency for 5 of the 20
-specs, and it is documented in §14 as C2.**
+| # | Source | Covers |
+|---|---|---|
+| 1 | `verification.operator` — the field this plan defines | everything: source terms, systems |
+| 2 | `verification.residual_operator`, with `f` bound to the top-level `source_term` | 11 specs; source-bearing scalar problems |
+| 3 | `mms_probe.operator_check`, minus `source_term` when the spec declares one | 19 specs; the homogeneous form, and manufactured solutions |
+| 4 | nothing | `unavailable`, with the reason recorded |
+
+**Rev 5 was wrong about routes 2 and 3, and the error mattered. [C]** It claimed
+`pde_poisson_2d`'s source "exists only as prose inside `governing_equation`" and that
+`residual_operator`'s bare `f` "is never defined anywhere evaluable". Neither is true:
+`source_term` is a real top-level field carrying `"2 * np.pi**2 * np.sin(np.pi * x) * np.sin(np.pi * y)"`,
+and binding it makes Poisson, Helmholtz, Monge–Ampère and `anisotropic_diffusion` all validate
+today, on the legacy path, with no spec change. It is also what shows `cahn_hilliard_2d` to be a
+manufactured solution rather than a defect (§2).
+
+The ceiling that *is* real: `operator_check` cannot express a **per-equation system**. `mhd_2d` and
+`navier_stokes_2d` declare `"u_t + adv_u + grad_p - nu*lap_u"`, where `adv_u` and `lorentz_u` are
+composites meaning something different in every system that uses them. Supplying them generically
+would be guessing, so the check reports `unavailable` and names the fix. Those two specs predate the
+field; a spec written after Phase 4 declares `operator.equations` and is checked in full —
+demonstrated on the real Taylor–Green solution, which validates at 1.8e-07 while a sign-flipped
+pressure fails at 2.0.
+
+**Decision: `verification.operator` is defined and required by this plan, not by
+[plan-no-closed-form.md](plan-no-closed-form.md).** Rev 3 listed it as that plan's §3 deliverable and
+therefore as a hard dependency on 5 of 20 specs. That ordering does not survive the requirement that
+Autonumerics work on any problem a user brings: a fresh `problem.md` with a source term or a system
+would get no reference check at all until a *different* plan landed. The field is a JSON shape plus a
+formulator paragraph — small, and this plan is the one that needs it first.
+
+The same ownership rule as C1: whoever lands first owns it. plan-no-closed-form **consumes** the
+declaration for its D1 residual gate rather than defining it, exactly as it consumes
+`verifylib.operator` for stencils. A cross-reference is added to that plan's §3 so the field cannot
+be specified twice with different shapes.
+
+#### The field
+
+Scalar, with the source that `operator_check` has no room for:
+
+```json
+"operator": {
+  "fields": ["u"],
+  "terms": {"u_t": "dt(u)", "diffusion": "-alpha*lap(u)"},
+  "source": "0"
+}
+```
+
+System — one entry per equation, which is what MHD and Navier–Stokes need:
+
+```json
+"operator": {
+  "fields": ["u", "v"],
+  "equations": {
+    "u": {"terms": {...}, "source": "0"},
+    "v": {"terms": {...}, "source": "0"}
+  },
+  "combine": "rms"
+}
+```
+
+The residual is `sum(terms) - source` per equation; systems combine by RMS. The term keys are the
+decomposition the balanced denominator needs, supplied explicitly rather than recovered by AST
+splitting — the split stays as the fallback path for legacy specs.
+
+**Required on every new PDE spec, both paths** — with or without a closed form. `formulator.md` gains
+the instruction and the two PDE templates gain the shape. A spec that cannot express its operator
+(a Caputo derivative) declares `"operator": null` with a reason, which is a recorded gap rather than
+a silent omission.
+
+**This is a legacy-spec ceiling, not a design one.** The 5 blocked specs were written before the
+field existed. A problem formulated after Phase 4 emits the operator with its source, so a user
+bringing their own `problem.md` gets the full check on the first pass. The fallback exists to cover
+`workspace/` as it stands, not to define what the check can do.
 
 Helper namespace required by the real strings: `u`, `u_t`, `u_tt`, `grad_u` (and `grad_u[i]`),
 `lap_u`, `lap_lap_u`, `lap(·)` as a callable, `u_xx`/`u_yy`/`u_xy` and the non-Cartesian analogues
@@ -265,32 +439,42 @@ plan-no-closed-form's helper list omits; that is §14 C1.
 
 ### 4e. The reference check — SDE **[N, C]**
 
-`analytic_moments.mean_expression` and `variance_expression` are functions of `t`. Differentiate
-them numerically in `t` and compare against the moment ODE the spec already declares:
+The moment ODE the spec declares — `state`, `rhs`, `initial` — is a **self-contained initial-value
+problem**. Integrate it forward and compare the result against the claimed moments, through the
+`mean_from` / `variance_from` map the spec also declares. Run it only where `closes_exactly` is
+`true`; a closure approximation is not a reference.
 
-```
-d/dt m1_claimed(t)  ==  rhs[0](m1_claimed(t), m2_claimed(t))
-d/dt m2_claimed(t)  ==  rhs[1](m1_claimed(t), m2_claimed(t))
-```
+**This replaces rev 5's differentiate-the-claimed-moments design, and it is why coverage is 5 of 5
+rather than 3 of 5. [C]** Differentiating requires the *full state vector* recovered from the
+claimed moments at each `t`, so it fails whenever a state component appears in no claimed moment —
+`sde_multichannel_stiff_m13`'s `p12` is exactly that, with nothing to differentiate. Integrating
+needs nothing from the claimed moments at all, so the state dimension stops mattering: it is one
+code path for scalar and vector alike, and it is *more* accurate (≤ 2.1e-10 against the
+differentiation route's 2e-11…2e-10 on a smaller set) because the integrator runs at rtol 1e-12,
+six orders tighter than the comparison tolerance.
 
-plus `m1_claimed(0) == initial[0]` and `m2_claimed(0) == initial[1]`. Run it only where
-`closes_exactly` is `true`; a closure approximation is not a reference.
+One trap worth naming, because pairing by name walks straight into it: `cross_from` is a
+**covariance** (`"mxy - m1x*m1y"`) while `cross_moment.expression` is the raw `E[XY]`. Matching
+those two reports a 1.0 mismatch on a perfectly consistent spec. The covariance is matched against
+`cross_moment.covariance_value_at_T` instead — both say covariance, and the spec commits to that
+number. Every pairing is by declared quantity; none is guessed.
 
 Measured over 12 time points on the real specs:
 
-| Spec | max relative mismatch | Verdict |
-|---|---|---|
-| `sde_bm_with_drift` | 2.35e-11 | consistent |
-| `sde_cir_feller_violated` | 7.47e-11 | consistent |
-| `sde_ornstein_uhlenbeck` | 1.55e-10 | consistent |
-| `sde_ornstein_uhlenbeck`, decay rate halved | **5.10e-01** | **caught** |
-| `sde_gbm_2d_high_corr` | — | vector state: 5 coupled moments |
-| `sde_multichannel_stiff_m13` | — | vector state: 5 coupled moments |
+| Spec | state | max relative mismatch | Verdict |
+|---|---|---|---|
+| `sde_bm_with_drift` | 2 | 1.9e-13 | `validated` |
+| `sde_cir_feller_violated` | 2 | 2.9e-13 | `validated` |
+| `sde_ornstein_uhlenbeck` | 2 | 4.1e-12 | `validated` |
+| `sde_gbm_2d_high_corr` | **5** | 2.1e-10 | `validated` |
+| `sde_multichannel_stiff_m13` | **5** | 1.5e-13 | `validated` |
+| `sde_ornstein_uhlenbeck`, decay halved | 2 | **5.3e-01** | **caught** |
+| `sde_ornstein_uhlenbeck`, variance `2*theta`→`theta` | 2 | **3.9e-01** | **caught** |
+| `sde_bm_with_drift`, `mu`→`2*mu` | 2 | **2.5e-01** | **caught** |
+| `sde_gbm_2d_high_corr`, `sigma1**2` halved | 5 | **5.1e-01** | **caught** |
+| `sde_multichannel_stiff_m13`, `F12*t`→`2*F12*t` | 5 | **1.8e+00** | **caught** |
 
-**Coverage is 3 of 5, not 5 of 5. [C]** The two remaining specs have vector-valued moment ODEs —
-`['m1x','m2x','m1y','m2y','mxy']` and `['m1','m2','p11','p12','p22']` — where the claimed moments
-are lists and the ODE carries cross-moments. Supporting them is a shape-handling problem, not a new
-idea, but it is real work and must be scoped as such.
+**Coverage is 5 of 5.** Nine orders between every correct spec and every corruption.
 
 This is a consistency check between two independently written spec fields rather than an external
 truth check (§4g), but a mis-recalled OU mean and a correctly transcribed OU moment ODE will not
@@ -311,44 +495,50 @@ three directions at once:
 The first row is disqualifying on its own: the rule waives a wrong formula as "singular", which is
 exactly what it exists to catch.
 
-**Two signals are needed, and neither works alone.**
+**The primary statistic is the median, not the max. [C]** An intermediate draft of this section
+gated on `max` plus a "singular set < 2% of the domain" threshold. Measured, that threshold is
+fragile — the three real singular cases land at 0.8%, 1.2% and 1.6%, a margin of 1.25× — and it
+cannot classify `pde_black_scholes_call` at all, whose kink at the strike keeps 3.9% of the domain
+"bad" even at N = 1025 while the solution is perfectly correct.
 
-- **Spatial concentration** separates a localized singularity from a global error. A wrong formula
-  is wrong everywhere; a shock is wrong on O(1) points.
-- **Refinement** separates under-resolution from a wrong formula. An under-resolved smooth feature
-  converges; a wrong formula does not.
+The median separates every case by seven orders with no threshold tuning:
 
-```
-bad(N)  = fraction of interior points with term-balanced residual > tol
-```
+| Case | **median** | q95 | max | Verdict |
+|---|---|---|---|---|
+| `heat_1d` correct | **2.5e-10** | 2.6e-10 | 3.1e-10 | `validated` |
+| `heat_2d` correct | **4.8e-09** | 4.8e-09 | 4.9e-09 | `validated` |
+| `wave_1d` correct | **2.4e-10** | 2.7e-10 | 2.9e-10 | `validated` |
+| `laplace_2d` correct | **2.6e-12** | 8.3e-12 | 7.0e-11 | `validated` |
+| `black_scholes_call` correct (kink at strike) | **5.7e-12** | 1.4e-02 | 1.1e+00 | `validated_off_singularity` |
+| `burgers_inviscid` correct (shock) | **0.0** | 0.0 | 1.0e+00 | `validated_off_singularity` |
+| `stefan_1d_similarity` correct (kink) | **1.1e-10** | 1.9e-10 | 1.3e+00 | `validated_off_singularity` |
+| `convection_diffusion_bl` correct (layer) | **0.0** | 0.0 | 5.7e-03 | `validated_off_singularity` |
+| `advection_1d` correct, under-resolved | **1.8e-05** | 5.0e-04 | 6.8e-01 | refine → 9.2e-07 at N=513 |
+| `fokker_planck_ou` correct, under-resolved | **6.3e-05** | 1.2e-03 | 1.7e-03 | refine → 4.1e-06 at N=513 |
+| `heat_1d`, `pi**2` dropped | **8.99e-01** | 8.99e-01 | 8.99e-01 | **`failed`** |
+| `heat_1d`, mode doubled | **7.50e-01** | 7.50e-01 | 1.01e+00 | **`failed`** |
+| `cahn_hilliard_2d` against the **homogeneous** operator | **2.47e-01** | 2.99e-01 | 1.03e+00 | `failed` — **and wrongly so**: it is a manufactured solution, and binding its declared `source_term` gives median **1.2e-08**. See §2 |
 
-| `max` residual | `bad(N)` falls toward 0 under refinement? | `bad` concentrated (< 2%)? | Verdict |
-|---|---|---|---|
-| < tol | — | — | `validated` |
-| ≥ tol | **yes** | — | `validated` — re-probe at the finer grid |
-| ≥ tol | no | **yes** | `validated_off_singularity` — gap recorded |
-| ≥ tol | no | no (global) | **`failed`** |
+Correct-and-resolved medians are all ≤ 4.8e-09; every wrong formula is ≥ 2.5e-01. **Tolerance:
+`median < 1e-6`**, which sits in a seven-order gap and leaves room for a coarse probe grid.
 
-Measured, this classifies every case correctly:
+The rule, in full:
 
-| Case | max | `bad` at N=129 / 257 / 513 | Verdict |
-|---|---|---|---|
-| `heat_1d` correct | 3.1e-10 | 0% | `validated` |
-| `heat_1d`, `pi**2` dropped | 8.99e-01 | 100% / 100% / 100% | **`failed`** |
-| `heat_1d`, mode doubled | 1.01e+00 | 100% | **`failed`** |
-| `heat_2d`, `laplace_2d`, `wave_1d` correct | ≤ 4.9e-09 | 0% | `validated` |
-| `advection_1d` correct (narrow Gaussian) | 4.5e-01 | 58% → 33% → **1%** | `validated`, under-resolved at coarse N |
-| `fokker_planck_ou` correct | 1.1e-04 | 67% → 45% → **1%** | `validated`, under-resolved at coarse N |
-| `burgers_inviscid` correct (shock) | 1.00e+00 | **1.2%**, flat | `validated_off_singularity` |
-| `stefan_1d_similarity` correct (kink) | 1.28e+00 | **1.6%**, flat | `validated_off_singularity` |
-| `convection_diffusion_bl` correct (layer) | 5.7e-03 | **0.8%**, flat | `validated_off_singularity` |
-| `cahn_hilliard_2d` as specified | 1.0e+00 | 100% / 100% / 100% | **`failed`** — see §2 |
+| Condition | Verdict |
+|---|---|
+| `median < tol` and `max < tol` | `validated` |
+| `median < tol`, `max ≥ tol` | `validated_off_singularity` — record where, and how much of the domain |
+| `median ≥ tol`, **falls** under refinement | re-probe at the finer grid; classify there |
+| `median ≥ tol`, **flat** under refinement | **`failed`** |
 
-Two things fall out that are better than rev 2 claimed. The non-smooth cases are not merely waived:
-**trimming the worst 2% of points drops their residual to 0.0, 2.3e-10 and 9.4e-10 respectively**,
-so they are genuinely *validated on the smooth complement* — a real Tier A with a recorded gap,
-rather than an unchecked one. And an under-resolved probe grid self-corrects by refining, instead of
-producing a false failure.
+Two signals still, but the roles change from the intermediate draft: the **median** is the gate and
+**refinement** disambiguates under-resolution. Spatial concentration demotes from gate to
+**diagnostic** — it says *where* the singularity is and how large it is, which belongs in the
+recorded gap, but it no longer decides pass/fail and the fragile 2% threshold disappears.
+
+This is also better than rev 2 claimed. The non-smooth cases are not merely waived: their median
+residual is at or below the smooth cases', so they are genuinely *validated on the smooth
+complement* — a real Tier A with a recorded gap, not an unchecked one.
 
 `np.where` / `np.maximum` / `np.minimum` / `np.sign` / `np.heaviside` in the expression is a
 syntactic tell for a piecewise solution, detectable by AST. Use it to *predict* where a singular set
@@ -360,7 +550,7 @@ self-report §4b exists to eliminate.
 | Outcome | Meaning | Consequence |
 |---|---|---|
 | `validated` | Residual, IC and BC all pass | Tier A |
-| `validated_off_singularity` | Passes on the smooth complement; singular set < 2% | Tier A, gap recorded in `<metrics>` and `REPORT.md` |
+| `validated_off_singularity` | Median passes; `max` does not. The singular set's size and location are recorded, not thresholded | Tier A, gap recorded in `<metrics>` and `REPORT.md` |
 | `unavailable` | No operator string, no source term, non-local operator, or a systems form not yet supported | Tier A **iff** verbatim-quoted; else `null`. Gap recorded |
 | `quoted` | Verbatim in `problem.md`, check not run | Tier A, gap recorded |
 | `failed` | The check ran and the formula did not satisfy it | **`null`, unconditionally** — including a quoted formula |
@@ -569,6 +759,26 @@ pipeline computed. Three corrections to rev 1's version:
    `evaluation_thresholds`, and the grid sizes actually run.
 3. **Warn and regenerate once**, then pass with the discrepancy recorded.
 
+**Binding the section was still too broad; bind the *claim*. [C]** Measured over 206 archived
+reviews, binding every number in the Numerical Accuracy section flags **28%** — all of them on
+diagnostic context the pipeline genuinely computes but records nowhere: per-grid error history,
+invariant drifts, the tolerance each invariant was judged against. What must trace is the **claim**
+on each keyed measurement line (`error`, `observed_order`, `tolerance`, …): its *leading* token, not
+every number after it. `"1.97e-04 at N=128 (PASS) — N=64: 3.15e-03"` claims 1.97e-04 and then
+recalls the ladder it came from.
+
+Two further calibrations, both measured:
+
+- **Match at the precision the number was printed to**, not at a flat relative tolerance. A review
+  writes `0.000026` for a value carried as `2.556e-05`, and the metrics block writes `1.968e-04` for
+  one the review gives as `1.9675e-04`. Both are correct rounding, in opposite directions; whichever
+  side rounded harder sets the slack. A flat rtol cannot separate that from drift at every magnitude.
+- **A line whose value is not a number claims nothing.** `"observed_order: inf — both grid errors are
+  below the 1e-9 floor"` claims `inf`, not 1e-9.
+
+Result: **0 false positives across all 206 reviews**, while a headline that disagrees with the
+metrics block above it is still caught.
+
 **Be honest about what it establishes.** The same LLM writes `<metrics>` and `<review>`, so binding
 one to the other catches *transcription drift* — the most common LLM-grader failure, worth catching
 — but not fabrication. That property arrives with the kernel (§14 C6).
@@ -630,12 +840,17 @@ is deliverable without a contract change.
 
 ### D — A spec whose exact solution does not solve its own equation
 
-*Not hypothetical:* `pde_cahn_hilliard_2d`, median residual 0.247 flat across three grids.
-
 | Layer | Outcome |
 |---|---|
-| **1** §4c/§4f | **Caught, `failed`.** Global (100% of domain), non-converging — the two signals that distinguish a wrong formula from a singularity or under-resolution |
+| **1** §4c/§4f | **Caught, `failed`.** Global (100% of the domain) and non-converging — the two signals that distinguish a wrong formula from a singularity or from under-resolution. Measured on injected corruptions: a dropped `pi**2` gives 8.99e-01, a doubled mode 7.50e-01, against ≤ 4.8e-09 for the correct form |
 | Today | Invisible. The evaluator grades against it and every plan agrees |
+
+**The example this scenario used to cite was a false positive.** Rev 3–5 named
+`pde_cahn_hilliard_2d` here as a live instance. It is not one: the solution is manufactured and its
+source is declared (§2). The scenario is still real — it is what §4c is for — but it is now
+demonstrated on injected corruptions rather than on a spec that turned out to be correct. That
+distinction is the whole point of §16's warning that a false hard-fail is invisible as a false
+positive.
 
 ---
 
@@ -646,23 +861,28 @@ is deliverable without a contract change.
 | `verifylib/__init__.py` **(new)** | Package marker. Deterministic guards only — **not** the numerical kernel | — |
 | `verifylib/operator.py` **(new)** | Helper namespace + stencils + AST term-splitting + restricted eval. **Shared with plan-no-closed-form's D1** — §14 C1 | 1 |
 | `verifylib/schema.py` **(new)** | Expression-not-program; evidence rule over `analytic_solution` + `verification`; ledger shape | 1, 2 |
-| `verifylib/reference.py` **(new)** | The reference check: PDE residual + IC + BC; SDE moment-ODE consistency; two-signal classification; five outcomes | 1 |
+| `verifylib/reference.py` **(new)** | The reference check: PDE residual + IC + BC; SDE moment-ODE consistency; median-gated classification; five outcomes | 1 |
 | `verifylib/audit.py` **(new)** | Ledger re-audit — output-derived gate, source-derived warn | 2 |
 | `verifylib/leakage.py` **(new)** | Citation scan + **narrowed** AST scan | 3 |
 | `verifylib/review.py` **(new)** | Scoped numeric-claim binding, warn-once | 5 |
-| `verifylib/hooks/` **(new)** | `PreToolUse`/`PostToolUse` entry points; in-hook path filtering; `Bash` redirect parsing; 3-attempt marker | 3 |
-| `verifylib/tests/` **(new)** | Unit tests per module + the two retained canaries | 12 |
-| `benchmark/pipeline-settings.json` | Add `hooks`; close the `Bash` read gaps in `deny` | 3 |
+| `verifylib/cli.py` **(new)** | Single entry point, invoked by absolute path as `${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py <check>` so it works from any working directory | 1, 3, 5, 6 |
+| `verifylib/hooks/` **(new)** | `PreToolUse` / `PostToolUse` / `Stop` handlers; in-hook path filtering; `Bash` redirect parsing; the 3-attempt bail-out | 3 |
+| `hooks/hooks.json` **(new, plugin root)** | Ships the hooks with the plugin so they apply to a user's own problem, not only to benchmark runs. Measured to load via `--plugin-dir` | 3 |
+| `verifylib/tests/` | **exists** — archived leak fixtures, hook-probe findings, 32 tests. Add the two retained canaries | 12 |
+| `benchmark/pipeline-settings.json` | Close the `Bash` read gaps in `deny`. **No hooks here** — they ship with the plugin instead, or they would only ever fire on benchmark runs | 3 |
 | `benchmark/runner.py` | Leakage scan in `_child_main` before executing | 3 |
 | `benchmark/verify.py` | Leakage scan in `import_solver`; `verifylib.audit` at certification | 2, 3 |
 | `benchmark/run.py` | Agent-file hashes per run in `results.json` (§13) | — |
-| `agents/formulator.md` | The §4b rule; the five outcomes; `analytic_solution_source_text` on the quote route; require an operator string on every PDE spec | 1 |
+| `agents/formulator.md` | The §4b rule; the five outcomes; `analytic_solution_source_text` on the quote route; **`verification.operator` required on every PDE spec, both paths**, with `null` + a reason where the operator is inexpressible | 1 |
+| `templates/problem_spec-example-pde.json` **(edit)** | Add the scalar `verification.operator` shape | 1 |
+| `templates/problem_spec-example-pde-system.json` **(edit)** | Add the multi-equation `operator` shape | 1 |
+| `references/verification_manual.md` **(edit)** | Document `verification.operator` as spec surface, so the formulator authors it from the manual it already reads | 1 |
 | `agents/evaluator-{pde,sde}.md` | Anti-plausibility rules from **[B]**; `resolution_evidence`; numeric-binding contract | 5 |
 | `commands/conductor.md` | Out-of-band gate calls; `GUARDRAIL_UNSATISFIED` → `phase: blocked`; `solver.py` hash check | 1, 3, 4 |
 | `references/project_manual.md` | The §4b rule, the five outcomes, the gate/warn split | 1, 2 |
 | `pyproject.toml` | `pytest` in the `dev` extra | 12 |
 
-**Deliberately not here:** `verification.operator`, the D1 gate, the ladder, Richardson, invariants,
+**Deliberately not here:** the D1 gate, the ladder, Richardson, invariants,
 the SDE numerical surrogates — all plan-no-closed-form. `verifylib/reference.py` shares that plan's
 helper vocabulary but is far smaller: it differentiates a *formula*, not a solver output, so it needs
 no discretization-family selection, no two-snapshot `dt(u)`, and no `override` hook.
@@ -671,33 +891,66 @@ no discretization-family selection, no two-snapshot `dt(u)`, and no `override` h
 
 ## 12. Phasing
 
-| Phase | Deliverable | Why here |
+| Phase | Deliverable | State |
 |---|---|---|
-| **0** | `verifylib/` skeleton, `pytest`, tests dir with the two retained canaries | Rev 1's own rule: build the harness first. Cutting Layer 7 removed it |
-| **1** | `verifylib/schema.py` — expression-not-program first | One line, zero judgment, catches the observed Heston leak |
-| **2** | `verifylib/leakage.py` — citation + narrowed AST; wire into `verify.import_solver` and `runner._child_main`; close the `deny` gaps | Catches both incidents. No prompt changes, safe to land any time |
-| **3** | Hook wiring: `PreToolUse` for leakage, `PostToolUse` for schema/review, `Bash` in the matcher, 3-attempt marker — **plus the out-of-band gate calls in the conductor** | Both halves, per §3(c). The hook alone is not a gate |
-| **4** | `verifylib/operator.py` + `reference.py` + the §4b rule in `formulator.md` | Highest consequence; the only prompt-touching change. Gate on §13 |
-| **5** | `verifylib/audit.py` | Closes the open loop in the strongest existing guardrail, honestly scoped |
-| **6** | `verifylib/review.py` | Cheapest, weakest, depends on nothing |
+| **0** | `verifylib/` package, `pytest` dependency, `tests/` with the archived leak fixtures and the hook-probe findings | **done** |
+| **1** | `verifylib/schema.py` — expression-not-program, the evidence rule, ledger shape, the `verification.operator` requirement | **done** — 0 false positives over 29 staged specs |
+| **2** | `verifylib/leakage.py` wired into `verify.import_solver` **and** `runner._import_solver`; `deny` gaps closed in `pipeline-settings.json` | **done** — both paths tested |
+| **3** | `verifylib/cli.py`; `hooks/hooks.json` shipping with the plugin: `PreToolUse` for leakage, `PostToolUse` for schema, `Bash` in the matcher, the `Stop` gate with its 3-attempt bail-out | **done** |
+| **4** | `verifylib/reference.py` complete + the §4b rule in `formulator.md`, `verification.operator` in both templates and `verification_manual.md` | **done** — 21 of 25 Tier-A claims validated |
+| **5** | `verifylib/audit.py` — ledger re-audit, output-derived gate / source-derived warn; wired at certification | **done** |
+| **6** | `verifylib/review.py` — scoped numeric binding | **done** — 0 false positives over 206 reviews |
+| — | §13 run provenance: agent-file hashes in `results.json` | **done** — 23 files |
+| — | The two retained canaries (§9) | **done** — they could not be written until Phases 2 and 5 existed |
 
-Phases 1–3 touch no agent prompt. **Phase 4 is the cut line** — §13.
+One deviation from the plan as written, forced by the language rather than by the design:
+`verifylib/operator.py` shadows the stdlib `operator` module whenever `cli.py` runs as a script,
+because Python puts the script's own directory first on `sys.path`. `collections` imports
+`operator`, `functools` imports `collections`, `re` imports `functools`, `json` imports `re` — so
+the failure surfaces as a circular-import error *inside stdlib json*, with nothing pointing at the
+cause. `cli.py` drops its own directory from `sys.path` before importing anything but `sys` and
+`os`. The module keeps its name, because §14 C1 freezes it as a cross-plan interface, and
+`test_cli_runs_from_any_directory_as_a_script` runs the real subprocess so it cannot come back.
+
+### What was actually in Phase 4
+
+It is the largest phase by a wide margin, so it is itemised rather than left as one line. The seed in
+`verifylib/` covers the first three rows; the rest is new work.
+
+| Piece | State | Note |
+|---|---|---|
+| Term splitting, signed top-level operands | **done** | 19/19 real operator strings |
+| Restricted eval; namespace passed as **globals** | **done** | several specs contain a lambda; locals fails |
+| Stencils + helper namespace, both `lap_lap_u` and `lap(·)` spellings, `u_xy` | **done** | shared with plan-no-closed-form's D1, §14 C1 |
+| Sub-term decomposition for single-term operators | **done** | Laplace is degenerate without it |
+| Median-gated classification + refinement re-probe | **done** | five outcomes, §4f |
+| SDE moment consistency, scalar **and vector** state | **done** | one path, by forward-integrating the declared ODE. 5 of 5 |
+| Test 2 — formula at the initial time vs `initial_condition` | **done** | two candidate times, two thresholds (§4c) |
+| Test 3 — formula on the boundary vs `boundary_conditions` | **done** | Dirichlet faces; moving/symbolic boundaries skipped, not guessed |
+| **`verification.operator` schema + formulator instruction + templates** | **done** | Owned here, not by plan-no-closed-form (§4d, §14 C2) |
+| Source-term path | **done** | via `source_term`, which already existed — Poisson / Helmholtz / Monge–Ampère / anisotropic |
+| Multi-field systems path (`operator.equations`, `combine`) | **done** | validated on real Taylor–Green; sign-flipped pressure fails at 2.0 |
+| Non-Cartesian axis names (`u_SS`, `u_Sv`, `u_vv`) | **done** | built from `spatial_variables`, so they come free |
+| Capitalised coordinate aliases (`X`, `Y`) | **new, unplanned** | several specs write the meshgrid capitalised while `spatial_variables` stays lower-case |
+| `formulator.md`: the §4b rule, five outcomes, operator required on every PDE spec | **done** | Step 3-0 |
 
 ---
 
-## 13. Run provenance and the sequencing constraint **[N]**
+## 13. Run provenance **[N]**
 
-`agents/formulator.md` is a pipeline input. Editing it changes behaviour, 28 problems are already
-scored in `benchmark/results/REPORT.md`, and an Opus campaign is queued per
-`BASELINE_COMPARISON_PLAN.md`. **Results either side of a prompt edit are not comparable**, and
-nothing records which prompt version produced which number.
+`agents/formulator.md` is a pipeline input, so editing it changes behaviour and results either side
+of the edit are not strictly comparable. That is **accepted**: these three plans change what the
+pipeline measures, and the point of changing it is that the new numbers are better grounded. The
+requirement is not to avoid the discontinuity but to make it **legible**.
 
-1. **Record agent-file hashes in `results.json` per run** — SHA-256 of every file under `agents/`,
-   `commands/`, `references/`, plus the `verifylib` version. This is the one piece of Layer 6 worth
-   pulling forward, and it is what plan-blind-evaluator's offline experiments need to be
-   reproducible over "frozen artifacts" (§14 C8).
-2. **Land Phase 4 before the campaign, or after it — never during.** Phases 0–3 and 5–6 are
-   prompt-neutral.
+**Record agent-file hashes in `results.json` per run** — SHA-256 of every file under `agents/`,
+`commands/`, `references/`, plus the `verifylib` version. This is the one piece of Layer 6 worth
+pulling forward, it is what makes a result attributable to a prompt version a year later, and it is
+what plan-blind-evaluator's offline experiments need to mean anything when they say "frozen
+artifacts" (§14 C8).
+
+Re-run the benchmark after Phase 4 and report both numbers, with the hash difference cited. A
+provenance change that is recorded is a finding; one that is silent is a confound.
 
 ---
 
@@ -709,9 +962,9 @@ resolve**, not a merge order.
 | # | Conflict | Between | Resolution |
 |---|---|---|---|
 | **C1** | **Two implementations of the same stencils.** This plan's `reference.py` and plan-no-closed-form's `operator.py` both discretize operator expressions. Two implementations of `lap_u` can silently disagree — the reference check passes with one stencil set while D1 fails with the other | guardrails ↔ no-closed-form | **One shared `verifylib/operator.py`**, owned by whichever lands first (this plan, Phase 4) and consumed by D1. It must supply `u_xy` (needed by `monge_ampere_2d`) and both `lap_lap_u` and `lap(·)` spellings — plan-no-closed-form's helper list currently omits all three |
-| **C2** | **The reference check is blocked on 5 of 20 specs** until `verification.operator` exists: Poisson / Helmholtz / Monge–Ampère need its `source` field (the source is prose in `governing_equation` today), and MHD / Navier–Stokes need its per-equation systems form | guardrails ← no-closed-form | Hard dependency. Until then those specs return `unavailable` and fall back to the quote route (which they will fail, since no `problem.md` quotes a solution) → `null` → they land on the Tier B/C ladder. **Acceptable, but it must be a deliberate choice, not a surprise** |
+| **C2** | **Who defines `verification.operator`.** The reference check needs its `source` field (Poisson / Helmholtz / Monge–Ampère) and its per-equation systems form (MHD / Navier–Stokes). plan-no-closed-form §3 also specifies the field, for D1 | guardrails ↔ no-closed-form | **Resolved: this plan defines and requires it (§4d); plan-no-closed-form consumes it.** Same rule as C1 — whoever lands first owns it. Rev 3 had this the other way round, which meant a user's own source-bearing problem got no reference check until a different plan landed. A cross-reference is added to plan-no-closed-form §3 so the shape cannot be defined twice. **Interface to freeze:** `fields` / `terms` / `source`, or `fields` / `equations` / `combine` for systems |
 | **C3** | **Metrics shape change.** plan-blind-evaluator §7 changes metrics values from scalars to `{"value": x, "oracle_derived": bool}`. This plan's numeric binding parses `<metrics>` | guardrails ↔ blind-evaluator | `verifylib/review.py` must accept both shapes from day one. Cheap if written that way; a rewrite if not |
-| **C4** | **Provenance vocabulary is not totally ordered once Tier A splits.** plan-blind-evaluator ranks on `analytic > surrogate > manufactured > manufactured_partial > self_convergence > none`. This plan introduces `validated` / `validated_off_singularity` / `quoted` / `unavailable` / `failed`. An **unvalidated quote would outrank a validated surrogate**, which is wrong | guardrails ↔ blind-evaluator | Add `analytic_unvalidated` to the tier list immediately below `analytic` and above `surrogate`, and map `quoted` → `analytic_unvalidated`. Keeps one total order, which the ranker needs |
+| **C4** | **Provenance stops being totally ordered once Tier A splits.** plan-blind-evaluator ranks on `analytic > surrogate > manufactured > manufactured_partial > self_convergence > none`. This plan splits Tier A by evidence quality, so an **unvalidated quote would outrank a validated surrogate** | guardrails ↔ blind-evaluator | **Decided: fix it here, now.** This plan owns the split, so it owns the vocabulary. The total order becomes `analytic` > `analytic_unvalidated` > `surrogate` > `manufactured` > `manufactured_partial` > `self_convergence` > `none`, with `validated` and `validated_off_singularity` mapping to `analytic` and `quoted` / `unavailable` mapping to `analytic_unvalidated`. A one-line cross-reference is added to plan-blind-evaluator §4 pointing here, so the ranker cannot be built against the stale list |
 | **C5** | **Two leakage mechanisms for the same concern.** plan-blind-evaluator §7 wants a leakage scan over the *evidence* fed to a blind ranker, with `oracle_derived` flags plus a `PROHIBITED_TOKENS` fallback. This plan owns the scanner | guardrails ↔ blind-evaluator | One implementation in `verifylib/leakage.py`, two call sites. `oracle_derived` is the structured version of the token blocklist — keep both, they fail differently, but do not write the scanner twice |
 | **C6** | **`evaluate.py` shrinks to a `verifylib.run` call** under plan-no-closed-form §8b | guardrails ← no-closed-form | *Synergy, not conflict.* The citation-scan surface shrinks (the spec and `SOLUTION.md` remain), and Layer 5's binding upgrades from LLM-written metrics to **kernel-computed** metrics — which is when it starts catching fabrication rather than only transcription drift (§8a) |
 | **C7** | **All three plans edit `commands/conductor.md`**: guardrails adds the out-of-band gate calls, `phase: blocked` on `GUARDRAIL_UNSATISFIED`, and the `solver.py` hash check; blind-evaluator rewrites the dispatch sort and Phase 3 ranking key; no-closed-form adds `manufactured_partial` parsing | all three | No logical conflict; a merge conflict. Sequence conductor edits, do not parallelise them |
@@ -733,19 +986,25 @@ Two interfaces worth freezing now, before either plan moves:
 1. Every `analytic_solution.expression` and `analytic_moments.*_expression` in `workspace/` parses
    under `ast.parse(mode="eval")`. The archived `pde_heston_2d` spec does not.
 2. The reference check reports one of `validated` / `validated_off_singularity` / `quoted` /
-   `unavailable` / `failed` on every non-null closed form, and reproduces the §2 distribution:
-   **10 validated, 5 blocked on C2, 2 needing an operator string, 1 non-local, 1 failed.**
+   `unavailable` / `failed` on every non-null closed form, and reproduces the §2 distribution over
+   all 20 PDE Tier-A specs: **16 validated (9 clean + 7 off a singularity), 2 needing the systems
+   operator form, 1 needing any operator string, 1 non-local.** ✅ *met*
 3. Corrupting a closed form — dropping `pi**2`, flipping a sign, doubling the mode — yields `failed`
-   with a term-balanced residual **at least 8 orders** above the correct formula's.
-4. `burgers_inviscid`, `stefan_1d_similarity` and `convection_diffusion_bl` report
-   `validated_off_singularity` via the **two-signal** rule, with singular sets ≤ 2% of the domain —
-   never via a formulator-set flag.
+   with a **median** term-balanced residual at least 7 orders above the correct formula's.
+4. `burgers_inviscid`, `stefan_1d_similarity`, `convection_diffusion_bl` and `black_scholes_call`
+   report `validated_off_singularity` — median below tolerance, `max` above it — never via a
+   formulator-set flag, and never via a thresholded singular-set fraction.
 5. `advection_1d` and `fokker_planck_ou`, under-resolved at N = 129, **validate at N = 513** rather
    than failing.
-6. `cahn_hilliard_2d` reports `failed`, and the report names it as a spec defect rather than a
-   solver defect.
-7. `sde_ornstein_uhlenbeck` with a halved decay rate is caught; the three scalar SDE specs are
-   consistent to < 1e-9. Vector moment shapes are either supported or explicitly `unavailable`.
+6. ~~`cahn_hilliard_2d` reports `failed`, and the report names it as a spec defect.~~
+   **Withdrawn — the premise was false.** It is a manufactured solution whose source is declared, and
+   it validates at 1.2e-08 (§2). The criterion is replaced by its real content: *an analytic solution
+   that genuinely does not solve its declared operator reports `failed`, demonstrated on injected
+   corruptions rather than on a spec assumed to be broken*, and a manufactured solution with a
+   declared source is **not** reported as a defect. Both are pinned by tests. ✅ *met*
+7. `sde_ornstein_uhlenbeck` with a halved decay rate is caught; **all five** SDE Tier-A specs are
+   consistent to < 1e-9, vector states included. ✅ *met* — 5 of 5 at ≤ 2.1e-10, every corruption at
+   ≥ 2.5e-01.
 8. The citation scan catches the Heston **spec** and both quintic artifacts. The narrowed AST scan
    flags **0 of 137** pipeline files while still catching `import problems` and
    `open("benchmark/...")`.
@@ -756,10 +1015,38 @@ Two interfaces worth freezing now, before either plan moves:
     sections contain CFL arithmetic.
 12. A `Bash` heredoc write to `problem_spec.json` fires the schema hook.
 13. An agent that abandons a file after 3 hook rejections leaves a `GUARDRAIL_UNSATISFIED` marker,
-    and the conductor halts at `phase: blocked` — **and the out-of-band gate catches the same file
-    independently, with hooks disabled.**
-14. `results.json` records agent-file hashes for every run.
-15. `uv run pytest verifylib` is part of the standard workflow and passes.
+    and the conductor halts at `phase: blocked` — **and the gate catches the same file
+    independently, with the write hooks disabled.**
+14. **The whole battery runs on a problem outside `benchmark/`.** Take a `problem.md` in a scratch
+    directory with no `benchmark/` anywhere, run `/conductor` on it with the plugin installed by
+    `--plugin-dir`, and confirm: the hooks fire, `${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py` resolves,
+    a deliberately corrupted `analytic_solution` is caught, and the `Stop` hook refuses to end the
+    session until it is fixed. This is the criterion that says Autonumerics is a tool rather than a
+    benchmark harness.
+15. **The `Stop` gate terminates.** A deliberately unsatisfiable finding ends the session within 3
+    firings with a recorded reason, and does **not** run to max-turns. Measured: without the
+    bail-out it fired 8 times and the run died.
+16. `results.json` records agent-file hashes for every run.
+17. `uv run --extra dev python -m pytest verifylib` is part of the standard workflow and passes.
+    (`--extra dev` is required; a plain `uv run` re-syncs to base deps and uninstalls pytest.)
+    ✅ *met* — 132 tests.
+
+### Status against the criteria
+
+Criteria 1–13, 16 and 17 are met and pinned by tests. **Criteria 14 and 15 are met only in
+part**, and the gap is worth stating rather than glossing:
+
+- **15 (the `Stop` gate terminates)** is tested at the unit level —
+  `test_stop_gate_blocks_then_gives_up_with_a_recorded_reason` drives the handler three times and
+  asserts it blocks twice and then releases with `GUARDRAIL_UNSATISFIED` on disk. What is *not*
+  re-measured is the original 8-firing live run that motivated the counter.
+- **14 (the whole battery on a problem outside `benchmark/`)** needs a live `claude` session with
+  `--plugin-dir` against a scratch `problem.md`. Every component it depends on is tested — the
+  hooks are wired to `cli.py`, `cli.py` resolves from any working directory as a real subprocess,
+  and the `Stop` gate runs `check_workspace` over whatever directory it is given, with no
+  `benchmark/` anywhere in the path — but the end-to-end run has not been performed. **This is the
+  one criterion that says Autonumerics is a tool rather than a benchmark harness, so it should be
+  run before the claim is made.**
 
 ---
 
@@ -768,9 +1055,12 @@ Two interfaces worth freezing now, before either plan moves:
 | Risk | Mitigation |
 |---|---|
 | **A hook is not a gate** — the agent stops and escalates, leaving an invalid file, and headless runs have nobody to answer | Every guard also runs out-of-band at certification (§3c). Criterion 13 tests the out-of-band path *with hooks disabled* |
-| The reference check false-fails a correct non-smooth solution | Two-signal classification (§4f), measured on all four real cases. Criterion 4 |
+| The reference check false-fails a correct non-smooth solution | Median-gated classification (§4f), measured on all four real cases. Criterion 4 |
+| ~~Coverage is lower still once the un-run specs are attempted~~ | **Resolved the other way.** Coverage rose to 16 of 20 PDE and 5 of 5 SDE, because two of the diagnosed blockers (E23, E24) were misdiagnoses rather than real ceilings. The remaining 4 are root-caused individually in §2 |
+| **The reference check false-*accuses* a correct spec.** The mirror of the row above, and the one that actually happened: rev 3–5 named `cahn_hilliard_2d` as a spec defect on a residual measured against the wrong operator | The operator resolution consults every source the spec offers before concluding anything (§4d), and the correction is pinned by a regression test. This is the failure mode to keep watching: a false hard-fail looks exactly like a caught bug |
 | The reference check false-*passes* because operator and solution are wrong the same way | Ledger entry on the operator declaration (§4g). Partial by construction; stated, not hidden |
-| Coverage is lower than hoped — 10 of 20 today | Root-caused in §2. 5 of the 10 unblock with plan-no-closed-form (C2); the rest are named individually |
+| **The `Stop` gate loops and burns the turn budget** — measured, it fired 8 times and the run died at max-turns | The 3-attempt bail-out is mandatory, not defensive. Criterion 15 |
+| A user's own problem has no `benchmark/verify.py` behind it | The `Stop` hook is the gate there, shipped with the plugin. Criterion 14 |
 | `PreToolUse` on `Edit` sees only the diff, not the file | Use `PreToolUse` only where blocking matters (leakage on `solver.py`/`evaluate.py`, where `Write` carries the whole content); `PostToolUse` + out-of-band elsewhere |
 | Source-derived ledger findings false-positive on nondimensionalised solvers | Warn, never gate (§5b) |
 | Divergent stencil implementations across plans | One shared `verifylib/operator.py` (§14 C1) |
@@ -802,6 +1092,9 @@ Two interfaces worth freezing now, before either plan moves:
 | Validate-or-quote-or-null, with `failed` overriding a quote | **[N]** |
 | AST term-splitting; sub-term decomposition for single-term operators | **[N]** |
 | Two-signal (concentration + refinement) classification | **[N]** |
+| Moment-ODE forward integration for any state dimension | **[N]**, replacing **[N]** differentiation |
+| Answer-key / guidance split on the expression check | **[C]** |
+| Claim-level numeric binding, matched at printed precision | **[C]** |
 | Text citation scan | **[N]** |
 | Ledger re-audit, gate/warn split | **[N]**, generalizing **[B]** |
 | Two-place enforcement: hook + out-of-band gate | **[N]** |
@@ -825,8 +1118,21 @@ Two interfaces worth freezing now, before either plan moves:
 | E11 | Canaries are Layer 7, therefore cut | Two of nine test *these* layers; retained (§9) | 1→2 |
 | **E12** | **`PostToolUse` with a path matcher blocks a bad write** | **Neither half is true.** `matcher` is tool-name only, and `PostToolUse` cannot block. Measured (§3) | 2→3 |
 | **E13** | **Hooks make the guards unskippable** | **They do not.** The agent stops and escalates, leaving the bad file. Every guard also runs out-of-band (§3c) | 2→3 |
-| **E14** | **Singular sets = "residual grows under refinement"** | **Misclassifies three ways, including waiving a wrong formula.** Replaced by the two-signal rule (§4f) | 2→3 |
-| **E15** | **17 of 20 PDE Tier-A specs are checkable** | **10 of 20** measured; root causes in §2 | 2→3 |
+| **E14** | **Singular sets = "residual grows under refinement"** | **Misclassifies three ways, including waiving a wrong formula.** Replaced; see E19 for the final rule (§4f) | 2→3 |
+| **E15** | **17 of 20 PDE Tier-A specs are checkable** | **11 of 20** measured (10 before E19); root causes in §2 | 2→3 |
 | **E16** | **SDE coverage is 5/5** | **3 of 5**; two have vector moment ODEs (§4e) | 2→3 |
 | **E17** | **The term-balanced denominator is well-defined** | Degenerate for single-term operators; needs sub-term decomposition (§4c) | 2→3 |
 | **E18** | The AST scan is usable as specified | Flags **124 of 137** pipeline files, all false positives. Narrowed (§6b) | 1→3 |
+| **E22** | **`verification.operator` is plan-no-closed-form's deliverable, so 5 specs are hard-blocked** | Ownership inverted. **This plan defines and requires the field**; the other consumes it for D1 (§4d). The rev-3 ordering meant a user's own source-bearing problem got no reference check until an unrelated plan shipped, which contradicts the requirement that Autonumerics run on any problem | 4→4 |
+| **E20** | **Hooks in `benchmark/pipeline-settings.json`** | That confines every guard to benchmark runs. Hooks ship with the **plugin** (`hooks/hooks.json`), measured to load via `--plugin-dir`, with `${CLAUDE_PLUGIN_ROOT}` expanding in the command (§3) | 3→3 |
+| **E21** | **The bail-out counter is defensive, since no deadlock was observed** | True of `PostToolUse`; **false of `Stop`**, which looped 8 times and killed the run. The gate that actually gates is the one that needs the counter (§3d) | 3→3 |
+| **E23** | **`pde_cahn_hilliard_2d` is a genuine spec defect — the plan's headline finding** | **It is not.** The 0.247 residual is against the *homogeneous* operator; the solution is manufactured and its source is declared in the top-level `source_term`. Bound, the median is **1.2e-08**. The plan would have published a false accusation of a spec defect — precisely the failure §16 calls invisible, because it looks exactly like a caught bug (§2) | 5→6 |
+| **E24** | **Poisson / Helmholtz / Monge–Ampère are blocked: the source exists only as prose in `governing_equation`, and `residual_operator`'s `f` is never evaluable** | **Both halves false.** `source_term` is a real top-level field on 5 specs, and 11 specs' `residual_operator` reference it as `f`. Binding it validates all three plus `anisotropic_diffusion`, with no spec change (§4d) | 5→6 |
+| **E25** | **SDE coverage is 3 of 5; vector moment shapes need per-shape handling** | **5 of 5, with less code.** Differentiating the claimed moments needs the state recovered from them and fails when a component appears in none (`p12`). Integrating the declared ODE forward needs nothing from them, so state dimension stops mattering (§4e) | 5→6 |
+| **E26** | **PDE coverage is 11 of 20** | **16 of 20** — 9 clean, 7 off a singularity, following E23 and E24 (§2) | 5→6 |
+| **E27** | **Apply expression-not-program to `drift_expression` and `diffusion_expression`** | Hard-fails 3 of 6 real SDE specs on *correct* content: a vector drift is legitimately prose describing a matrix action. Split into answer-key fields (must parse) and guidance fields (must not be a *program*), which is the sharper form of the same rule and still catches the Heston `def` anywhere (§4a) | 5→6 |
+| **E28** | **Test 2 compares the formula at `t = 0` against `initial_condition`** | Two errors. A backward parabolic problem states its condition at maturity — reading `black_scholes_call` at 0 reports 3.5% on a correct spec. And exact agreement is the wrong bar: `advection_1d`'s non-periodic IC differs from its periodic solution by 1.2e-04, real and benign. Two candidate times, two thresholds (§4c) | 5→6 |
+| **E29** | **`verifylib/operator.py` is a safe module name** | It shadows the stdlib `operator` whenever `cli.py` runs as a script, breaking `import json` inside the interpreter with a circular-import error that names nothing relevant. The name is kept (§14 C1 freezes it); `cli.py` drops its own directory from `sys.path` first (§12) | 5→6 |
+| **E31** | **The `Stop` gate runs "over the workspace directory"** | Wrong scope. `workspace/` holds every problem from every previous run, so one stale spec blocks every future session and writes a marker the conductor misreads as a block on the current problem. Gate the **active** problem directory (§3) | 5→6 |
+| **E30** | **Numeric binding over the Numerical Accuracy section** | Still too broad: flags 28% of 206 archived reviews, all on diagnostic context. Bind the *claim* on each keyed line — its leading token — and match at the precision each side printed to. 0 false positives (§8a) | 5→6 |
+| **E19** | **Gate on `max` residual plus a "singular set < 2%" threshold** | Fragile — the three real singular cases sit at 0.8/1.2/1.6% against a 2% bar — and it cannot classify `black_scholes_call` at all. **Gate on the median** (`< 1e-6`, a seven-order gap); concentration demotes to a diagnostic. Coverage 10 → **11 of 20** (§4f) | 3→3 |

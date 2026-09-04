@@ -276,6 +276,40 @@ def write_results(records, config):
     os.replace(tmp, RESULTS_JSON)
 
 
+# --- run provenance ---------------------------------------------------------
+# agents/*.md are pipeline *inputs*: editing one changes behaviour, so results
+# either side of an edit are not strictly comparable. That discontinuity is
+# accepted -- the point of changing the prompts is that the new numbers are better
+# grounded -- but it has to be legible. A provenance change that is recorded is a
+# finding; one that is silent is a confound.
+
+PROVENANCE_DIRS = ("agents", "commands", "references", "verifylib")
+
+
+def agent_file_hashes():
+    """SHA-256 of every prompt and library file the run actually used.
+
+    Taken *inside* the --model override, so a Sonnet-pinned sweep records the
+    Sonnet-pinned files rather than the originals restored afterwards.
+    """
+    import hashlib
+
+    out = {}
+    for name in PROVENANCE_DIRS:
+        root = os.path.join(REPO_ROOT, name)
+        for directory, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames
+                           if not d.startswith(".") and d not in ("__pycache__", "tests")]
+            for filename in sorted(filenames):
+                if filename.startswith(".") or filename.endswith((".pyc", ".bak")):
+                    continue
+                path = os.path.join(directory, filename)
+                with open(path, "rb") as fh:
+                    digest = hashlib.sha256(fh.read()).hexdigest()
+                out[os.path.relpath(path, REPO_ROOT)] = digest[:16]
+    return out
+
+
 def claude_version():
     try:
         return subprocess.run(["claude", "--version"], capture_output=True, text=True,
@@ -464,6 +498,8 @@ def main(argv=None):
     # Pin the whole pipeline to --model (if given) for the duration of the loop, not
     # just the conductor -- see override_agent_models. Restored on exit / crash.
     with override_agent_models(args.model):
+        config["agent_file_hashes"] = agent_file_hashes()
+        write_results(records, config)
         for i, problem in enumerate(chosen, 1):
             slug = problem["slug"]
             if args.resume and slug in prior and prior[slug].get("run", {}).get("status") == "completed":

@@ -107,10 +107,16 @@ measurement vector. Rank on it deterministically. No LLM involved.
 
 Two changes from the current Phase 3 order.
 
+> **Note (guardrails plan §14 C4).** Tier A splits once the analytic-reference check exists, so the
+> tier list below gains `analytic_unvalidated` between `analytic` and `surrogate`. Without it an
+> unvalidated quoted formula outranks a validated surrogate. Take the ordered vocabulary from
+> [plan-hallucination-guardrails.md](plan-hallucination-guardrails.md) §14 C4, not from this table.
+
 ```
 1. score                        ↓
-2. provenance tier              ↓     [N]  analytic > surrogate > manufactured
-                                          > manufactured_partial > self_convergence > none
+2. provenance tier              ↓     [N]  analytic > analytic_unvalidated > surrogate
+                                          > manufactured > manufactured_partial
+                                          > self_convergence > none
 3. estimated_rel_error          ↑
 4. observed_order - order_floor ↓
 5. D1 term-balanced residual    ↑     [N]

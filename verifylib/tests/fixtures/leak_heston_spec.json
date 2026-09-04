@@ -1,0 +1,54 @@
+{
+  "equation_type": "heston",
+  "governing_equation": "V_tau = 0.5*v*S**2*V_SS + rho*sigma*v*S*V_Sv + 0.5*sigma**2*v*V_vv + r*S*V_S + kappa*(theta - v)*V_v - r*V",
+  "spatial_dimension": 2,
+  "time_dependent": true,
+  "linear": true,
+  "stiff": true,
+  "spatial_variables": ["S", "v"],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "S": [0.0, 4.0],
+      "v": [0.0, 1.0]
+    }
+  },
+  "boundary_conditions": {
+    "type": "mixed",
+    "values": {
+      "S=0": 0.0,
+      "S=4": "4.0 - K * np.exp(-r * tau)",
+      "v=0": "degenerate boundary: diffusion terms 0.5*v*S**2*V_SS, rho*sigma*v*S*V_Sv, 0.5*sigma**2*v*V_vv all vanish as v->0, so the PDE reduces to the convection-reaction ODE-in-S V_tau = r*S*V_S + kappa*theta*V_v - r*V; do not impose a separate Dirichlet/Neumann condition here, march the reduced equation itself as the update for the v=0 row (a one-sided / upwind difference is needed for V_v since kappa*theta > 0 pushes inward from v=0)",
+      "v=1 (v_max)": "NOT stated in problem.md -- genuine gap in the spec. Standard Heston-PDE practice (Kluge 2002; In 't Hout & Foulon 2010) imposes a linear/natural boundary V_vv(S, v_max) = 0 (zero convexity in v) via a one-sided second-derivative stencil, or equivalently a homogeneous-Neumann-in-second-derivative extrapolation. Flagging this as an ambiguity for the solver to resolve with a standard, documented choice."
+    }
+  },
+  "initial_condition": "np.maximum(S - K, 0.0)",
+  "parameters": {
+    "kappa": 2.0,
+    "theta": 0.04,
+    "sigma": 0.3,
+    "rho": -0.7,
+    "r": 0.03,
+    "K": 1.0,
+    "T": 1.0,
+    "t_final": 0.0
+  },
+  "analytic_solution": {
+    "type": "explicit",
+    "expression": "def _heston_call_price(S, v, tau, kappa, theta, sigma, rho, r, K):\n    # Heston (1993) semi-closed price via characteristic-function quadrature,\n    # 'Little Trap' formulation (Albrecher, Mayer, Schoutens, Tistaert 2007) --\n    # numerically stable branch of the complex log for all tau (avoids the\n    # winding-number discontinuity of the original 1993 parametrization).\n    # Pure numpy (complex dtype + np.polynomial.legendre.leggauss); no scipy needed.\n    S = np.asarray(S, dtype=float)\n    v = np.asarray(v, dtype=float)\n    x = np.log(np.maximum(S, 1e-300))\n    N_GL, PHI_MAX = 160, 200.0\n    nodes, weights = np.polynomial.legendre.leggauss(N_GL)\n    phi = 0.5 * PHI_MAX * (nodes + 1.0)\n    w   = 0.5 * PHI_MAX * weights\n    phi_b = phi.reshape((1,) * x.ndim + (-1,))\n    xb, vb = x[..., None], v[..., None]\n    i = 1j\n\n    def prob(j):\n        u = 0.5 if j == 1 else -0.5\n        b = kappa - rho * sigma if j == 1 else kappa\n        rs = rho * sigma * i * phi_b\n        d = np.sqrt((rs - b)**2 - sigma**2 * (2*u*i*phi_b - phi_b**2))\n        g = (b - rs - d) / (b - rs + d)                     # little-trap factor\n        edt = np.exp(-d * tau)\n        D = ((b - rs - d) / sigma**2) * ((1.0 - edt) / (1.0 - g * edt))\n        C = (r * i * phi_b * tau\n             + (kappa * theta / sigma**2)\n             * ((b - rs - d) * tau - 2.0 * np.log((1.0 - g * edt) / (1.0 - g))))\n        f = np.exp(C + D * vb + i * phi_b * xb)\n        integrand = np.real(np.exp(-i * phi_b * np.log(K)) * f / (i * phi_b))\n        return 0.5 + (1.0 / np.pi) * np.sum(integrand * w, axis=-1)\n\n    price = S * prob(1) - K * np.exp(-r * tau) * prob(2)\n    return np.maximum(price, 0.0)\n\n# Evaluate on the returned tensor grid with tau = T = 1.0 (t_final = 0.0 <=> tau = T,\n# since tau = T - t and the problem reports the price at real time t = 0):\n# S_grid, v_grid = np.meshgrid(result['grid']['S'], result['grid']['v'], indexing='ij')\n# V_exact = _heston_call_price(S_grid, v_grid, tau=T, kappa=kappa, theta=theta,\n#                               sigma=sigma, rho=rho, r=r, K=K)",
+    "space_variables": ["S", "v"],
+    "notes": "Not a plain elementwise numpy one-liner -- it is a deterministic 160-point Gauss-Legendre quadrature of the Heston characteristic function (integrand decays smoothly, phi in [0,200] captures the mass to ~machine precision at these parameters), so it is exact to quadrature error (~1e-10 or better), not Monte Carlo. This exact function is used as the independent ground truth elsewhere in this project (benchmark/problems.py, _heston_call) and has been validated there -- transcribe it verbatim into evaluate.py rather than re-deriving from scratch, since sign errors in the 'little trap' d/g formula are a well-known pitfall (the naive Heston 1993 parametrization has a branch-cut discontinuity in the complex log that this form avoids). At S=0, x=log(S)->-inf is guarded by np.maximum(S,1e-300) before the log; price floors at 0 via np.maximum(price,0.0), consistent with the V(0,v)=0 boundary."
+  },
+  "evaluation_thresholds": {
+    "rel_l2_err_max": 0.01,
+    "grid_N": 64,
+    "min_spatial_order": 1.0,
+    "order_check": true,
+    "metric": "l2",
+    "axes": ["S", "v"],
+    "diagnostics": [
+      {"name": "min_price", "gate": false, "note": "numerical price should not dip meaningfully below 0 (floor ~ -1e-4 tolerance for discretization overshoot); soft check only, not a hard CONSTRAINT_VIOLATION gate"}
+    ]
+  },
+  "implementation_notes": "This is a genuinely 2-D, backward-in-time finance PDE recast as a forward-in-tau IVP (tau = T - t, same pattern as pde_black_scholes_call): the stated governing equation is already written in tau (V_tau = ...), with the payoff max(S-K,0) as the tau=0 initial condition and the target output V(S,v,t=0) = V(S,v,tau=T=1). Set t_final=0.0 in the returned dict (matching the parameters.t_final convention used elsewhere), even though internally the solver marches tau from 0 to T=1. Contract: solve_pde(N) returns numerical_solution shape (N,N) on a tensor grid S=np.linspace(0,4,N), v=np.linspace(0,1,N), grid={'S':S,'v':v} (grid keys must be 'S' and 'v', not 'x'/'y' -- matches evaluation_thresholds.axes). Key numerical difficulties: (1) the mixed second derivative V_Sv requires a genuine cross-derivative stencil (e.g. central difference on both S and v simultaneously: (V[i+1,j+1]-V[i+1,j-1]-V[i-1,j+1]+V[i-1,j-1])/(4*dS*dv)), which is what makes a naive dimensional-splitting/ADI scheme need special handling (Craig-Sneyd or Hundsdorfer-Verwer ADI schemes are the standard robust choice for Heston-type PDEs with cross terms; a plain Douglas ADI that drops the cross term is inconsistent). (2) the v=0 boundary is degenerate/characteristic (diffusion coefficients vanish there) -- do not impose an artificial Dirichlet/Neumann condition; instead solve the reduced convection-reaction equation directly on that row using a one-sided (upwind, forward) difference for V_v since the kappa*(theta-v) drift pushes into the domain from v=0. (3) the v=v_max=1 boundary condition is NOT specified in problem.md -- this is a real gap; the standard resolution (documented above in boundary_conditions.values['v=1']) is a linear/zero-second-derivative extrapolation. (4) the payoff kink at S=K is non-smooth in the second derivative, which can pollute Crank-Nicolson-type schemes with spurious oscillations right after the tau=0 start -- a few Rannacher (implicit Euler) smoothing steps before switching to a higher-order scheme is standard practice, same rationale as pde_black_scholes_call, though by tau=T=1 substantial parabolic smoothing has occurred. (5) 'stiff'=true reflects that a fully explicit scheme faces a severe combined CFL from the S^2 diffusion coefficient (grows like S_max^2=16), the cross term, and a degenerate/near-degenerate region near v=0 -- an implicit or ADI (unconditionally- or near-unconditionally-stable) scheme is strongly recommended over explicit FTCS, tie dt to dx/dv (e.g. dt = C*min(dS,dv) or a fixed number of tau-steps per unit of dx^2) so refining N also refines the time discretization and doesn't swamp the observed spatial order. Only numpy, scipy.sparse, and scipy.sparse.linalg are allowed in solver.py per the contract; evaluate.py (evaluator-authored, scores against the analytic_solution above) may use plain numpy only -- the reference formula needs no additional scipy imports (np.polynomial.legendre.leggauss and native complex dtype cover the whole quadrature)."
+}

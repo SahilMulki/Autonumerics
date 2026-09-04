@@ -37,6 +37,12 @@
   },
   "verification": {
     "expected_provenance": "analytic",
+    "operator": {
+      "fields": ["u"],
+      "terms": {"time_derivative": "dt(u)", "diffusion": "-alpha*lap(u)"},
+      "source": "0",
+      "note": "the residual form: sum(terms) - source must be zero for a true solution. REQUIRED on every PDE spec, with or without a closed form. Term keys are free-form; they exist so the residual can be scaled by the largest term rather than by an absolute value, which matters whenever the terms are individually huge and cancel (Helmholtz at large k, 100:1 anisotropy). Helpers: u, u_t, u_tt, u_x/u_xx/u_xy (and the same on non-Cartesian axis names, e.g. u_SS/u_Sv/u_vv), grad_u, lap_u, lap_lap_u, plus the callables dt(.), lap(.), lap2(.), d_x(.), d_xx(.). Use \"operator\": null with an \"operator_note\" only when the operator genuinely cannot be written (a non-local Caputo derivative)."
+    },
     "mms_probe": {
       "exact": "np.sin(2*np.pi*x)*np.exp(-t)",
       "source": "(-1 + 4*alpha*np.pi**2)*np.sin(2*np.pi*x)*np.exp(-t)",

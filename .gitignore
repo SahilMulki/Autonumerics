@@ -11,6 +11,13 @@ __pycache__/
 outputs_new_paper/
 workspace_oneshot/
 
+# Snapshots of previous pipeline runs, kept on disk for comparison. They are
+# regenerable output, not source, and there are thousands of files across them.
+# Anything from a snapshot that a test needs is extracted as a small fixture
+# under verifylib/tests/fixtures/ rather than by tracking the whole tree.
+workspace_c2b_sonnet_backup/
+workspace_stale_pre_c2b_backup/
+
 # Benchmark results are generated, but the headline report is committed so the
 # numbers quoted in README.md are checkable in the repo.
 benchmark/results/*

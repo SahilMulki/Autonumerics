@@ -42,6 +42,25 @@ If `STATE.phase == init`:
 
    To halt: write STATE.md with `phase: blocked`, a `blocked_reason:` naming the failing entries by `id` with their `quote`, and stop. Do not dispatch a plan-creator, do not create plans, and report the block as your final answer. A blocked run is a correct outcome, not a failure to work around — do not edit `problem_spec.json` yourself (you have no write permission on it) and do not re-dispatch the formulator hoping for a different ledger.
 
+3b. **Spec gate — run it, do not reason about it.**
+
+   ```bash
+   uv run python "${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py" check-spec workspace/{problem_slug}/problem_spec.json
+   ```
+
+   Exit 0 means clean or warnings only. **Exit 2 means an error-severity finding**: the spec has a
+   program where an expression belongs, a malformed ledger, an undeclared operator, an answer-key
+   citation, or a claimed closed form that does not satisfy the spec's own equation.
+
+   On exit 2, re-dispatch the `formulator` **once**, passing the tool's output verbatim as the
+   reason. If the second run still exits 2, halt with `phase: blocked` and put the findings in
+   `blocked_reason`. Do not edit `problem_spec.json` yourself.
+
+   This runs out-of-band on purpose. A write hook gives the formulator the same feedback in-loop,
+   but a hook is feedback, not a gate: when a hook contradicts an instruction the agent stops,
+   leaves the invalid file on disk, and escalates — and in a headless run nobody answers. This call
+   is what actually gates.
+
 4. **Determine problem type**:
    - If `equation_type == "SDE"`: `problem_type = "sde"`
    - Otherwise (any PDE family string: "heat", "wave", "poisson", etc.): `problem_type = "pde"`
@@ -88,7 +107,14 @@ First check for a winner: if any plan already has `score == 10`, launch no cycle
 0. Note the plan's **previous score** (its current `score` in STATE.md) before you start — you need it for the plateau check in step 5.
 1. Dispatch `solver-{sde|pde}` with argument `workspace/{problem_slug}/plans/{id}-{plan_slug}`. Wait for return.
 2. Set plan `state: await_evaluator` in STATE.md.
+2b. **Hash `solver.py`** (`shasum -a 256 workspace/{problem_slug}/plans/{id}-{plan_slug}/solver.py`)
+   and note it. The evaluator may import the solver but never modify it; this converts that rule
+   from prose into something you can detect.
 3. Dispatch `evaluator-{sde|pde}` with argument `workspace/{problem_slug}/plans/{id}-{plan_slug}`. Wait for return.
+3b. **Re-hash `solver.py`.** If it changed, the evaluator edited the code it was grading. Discard
+   that score, record `grading_violation: {id}-{plan_slug}` in STATE.md, and set the plan
+   `state: stopped` — a self-graded result is not evidence, and re-running the evaluator on a
+   solver it has already rewritten does not recover one.
 4. Read the new score from the `<review score=X>` block at the end of SOLUTION.md, and `provenance` + `estimated_rel_error` from the `<metrics>` block just above it.
 5. Write the new score, `provenance` and `est_err` to STATE.md and increment `iter`. Then set the plan's state by the early-stop rules:
    - new score `== 10` → winner (leave it; the refill/exit check below finalizes on it).
@@ -120,7 +146,23 @@ When the loop exits:
    - Best plan recommendation and why, citing the ranking criterion that decided it
    - Any plans that did not reach score 10 — their last score and remaining errors, and whether they hit max_iter, were `stopped` (plateaued — score stopped improving), or were left unfinished because another plan already reached 10
    - **Verification gaps** — any check that could not be run: a missing verification plan, a faulty MMS probe, an untrustworthy surrogate, an MC-inconclusive result, an invariant with no trace reported. These bound what the run actually established, so they belong in the report rather than being quietly dropped.
-4. Update STATE.md: `phase: done`, `best_plan: {id}-{plan_slug}`, `best_provenance: {provenance}`.
+4. **Final gate.** Run
+
+   ```bash
+   uv run python "${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py" gate workspace/{problem_slug}
+   ```
+
+   over the finished workspace. Fold every finding into REPORT.md's **Verification gaps** section:
+   error-severity ones as findings that bound the result, warnings as recorded gaps. A
+   `validated_off_singularity` outcome belongs here too — the score is real, and so is the fact
+   that the residual check was waived at a shock or a kink.
+
+5. **If `workspace/{problem_slug}/GUARDRAIL_UNSATISFIED` exists**, the `Stop` gate gave up after
+   three attempts on a finding nothing fixed. Set `phase: blocked` with its contents as
+   `blocked_reason` instead of `phase: done`. A run that could not satisfy its own guardrails is not
+   a finished run, and recording why beats reporting a score that nothing stands behind.
+
+6. Update STATE.md: `phase: done`, `best_plan: {id}-{plan_slug}`, `best_provenance: {provenance}`.
 
 ## Key Rules
 
@@ -132,3 +174,7 @@ When the loop exits:
 - When reading the score: search SOLUTION.md for `<review score=` and parse the integer. Also parse the `<metrics>` block immediately above it for `provenance`, `estimated_rel_error` and `observed_order` — you need them for Phase 3 ranking, and carrying `provenance` through to REPORT.md is not optional.
 - Do not second-guess a `provenance` tag or re-derive an error yourself. Record what the evaluator reported.
 - Agent arguments: formulator and plan-creators take `workspace/{problem_slug}`; solvers and evaluators take the plan directory path.
+- **Never work around a guardrail finding.** `verifylib` exit 2 is a fact about an artifact, not an
+  obstacle. Re-dispatch the agent that owns the file once with the finding as its reason; if it
+  stands, halt at `phase: blocked`. Editing the file yourself to clear the check defeats the only
+  layer that catches a fabricated reference.

@@ -132,8 +132,25 @@ def _apply_rlimits(mem_mb, cpu_s):
                 continue
 
 
+def _scan_for_leakage(solver_path):
+    """The sandbox half of the leakage gate. The import blocker stops a solver
+    *importing* the answer key; this stops it reading the files by path, and stops
+    a transcribed oracle citing where it came from."""
+    repo_root = os.path.dirname(HERE)
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    from verifylib.leakage import leakage_findings
+
+    with open(solver_path) as fh:
+        findings = leakage_findings(fh.read(), path=os.path.basename(solver_path))
+    hard = [f.message for f in findings if f.severity == "error"]
+    if hard:
+        raise BlockedImport("answer-key leakage: " + "; ".join(hard))
+
+
 def _import_solver(solver_path):
     import importlib.util
+    _scan_for_leakage(solver_path)
     spec = importlib.util.spec_from_file_location("_sandbox_solver", solver_path)
     mod = importlib.util.module_from_spec(spec)
     plan_dir = os.path.dirname(solver_path)

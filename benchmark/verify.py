@@ -41,6 +41,8 @@ ORDER_SUPERCONV_FLOOR = 1e-9  # below this, error is at noise; order is "passed"
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)  # verifylib is not installed; package = false
 
 import problems as P  # noqa: E402, I001
 
@@ -137,12 +139,34 @@ def best_plan_dir(workspace_dir, state=None):
 _import_counter = 0
 
 
+class OracleLeak(Exception):
+    """A solver reached for the answer key it is graded against."""
+
+
+def scan_for_leakage(path):
+    """Refuse to execute a solver that reads or cites the answer key.
+
+    Called from **both** execution paths. ``runner.run_solver`` is only reached
+    when ``sandbox=True``, which is the one-shot baseline; the pipeline path is
+    ``sandbox=False`` and imports inline through this module, so a scan wired only
+    into the runner would never see a pipeline-produced solver.
+    """
+    from verifylib.leakage import leakage_findings
+
+    with open(path) as fh:
+        findings = leakage_findings(fh.read(), path=os.path.relpath(path, REPO_ROOT))
+    hard = [f for f in findings if f.severity == "error"]
+    if hard:
+        raise OracleLeak("; ".join(f.message for f in hard))
+
+
 def import_solver(plan_dir):
     """Import solver.py from a plan directory as an isolated module."""
     global _import_counter
     solver_path = os.path.join(plan_dir, "solver.py")
     if not os.path.exists(solver_path):
         raise FileNotFoundError(f"no solver.py in {plan_dir}")
+    scan_for_leakage(solver_path)
     _import_counter += 1
     modname = f"_bench_solver_{_import_counter}"
     spec = importlib.util.spec_from_file_location(modname, solver_path)
@@ -747,7 +771,11 @@ def verify_pde(problem, plan_dir, sandbox=False, timeout_s=120, mem_mb=4096):
     runs, err = _produce_pde_runs(problem, plan_dir, sandbox, timeout_s, mem_mb)
     if err is not None:
         return err
-    return _score_pde_runs(problem, runs)
+    out = _score_pde_runs(problem, runs)
+    # The finest run, carried to the ledger re-audit and dropped before the record
+    # is written -- it holds full solution arrays and has no place in results.json.
+    out["_run_result"] = runs[-1][1]
+    return out
 
 
 # --- dispatch ---------------------------------------------------------------
@@ -805,11 +833,51 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
         else:
             out = verify_pde(problem, plan_dir, sandbox=sandbox,
                              timeout_s=timeout_s, mem_mb=mem_mb)
+    except OracleLeak as exc:
+        return {"status": "error", "error": f"answer-key leakage: {exc}",
+                "leakage": True, "plan_dir": os.path.relpath(plan_dir, REPO_ROOT)}
     except Exception as exc:  # noqa: BLE001 -- verification must never crash the runner
         return {"status": "error", "error": f"{type(exc).__name__}: {exc}",
                 "plan_dir": os.path.relpath(plan_dir, REPO_ROOT)}
     out["plan_dir"] = os.path.relpath(plan_dir, REPO_ROOT)
+    out.update(ledger_audit(workspace_dir, plan_dir, out))
+    out.pop("_run_result", None)
     return out
+
+
+def ledger_audit(workspace_dir, plan_dir, out):
+    """Layer 2 at certification: did the solver obey the spec it was given?
+
+    Output-derived findings are facts about the run and gate -- the score is capped
+    and the review names the ledger entry by id and quote. Source-derived findings
+    are read out of ``solver.py`` and only ever warn: they miss ``eps = 1e-3 * 10``
+    and false-positive on a nondimensionalised solver, and a false hard-fail on a
+    correct solver is worse than a missed relaxation because it is invisible as a
+    false positive.
+    """
+    spec_path = os.path.join(workspace_dir, "problem_spec.json")
+    if not os.path.exists(spec_path):
+        return {}
+    try:
+        import json as _json
+
+        from verifylib.audit import audit_run
+        with open(spec_path) as fh:
+            spec = _json.load(fh)
+        findings = audit_run(spec, result=out.get("_run_result"),
+                             run_meta=out.get("run"), plan_dir=plan_dir)
+    except Exception as exc:  # noqa: BLE001 -- an audit must never fail a good run
+        return {"ledger_audit_error": f"{type(exc).__name__}: {exc}"}
+
+    gates = [f.as_dict() for f in findings if f.severity == "error"]
+    warns = [f.as_dict() for f in findings if f.severity == "warning"]
+    result = {}
+    if warns:
+        result["ledger_warnings"] = warns
+    if gates:
+        result["ledger_violations"] = gates
+        result["score_cap"] = 3
+    return result
 
 
 def _fmt(out):

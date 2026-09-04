@@ -2,11 +2,29 @@
   "permissions": {
     "deny": [
       "Read(./benchmark/**)",
+      "Read(//Users/**/Autonumerics/benchmark/**)",
       "Edit(./benchmark/**)",
+      "Write(./benchmark/**)",
       "Bash(uv run python -c:*)",
       "Bash(uv run python3 -c:*)",
       "Bash(python -c:*)",
-      "Bash(python3 -c:*)"
+      "Bash(python3 -c:*)",
+      "Bash(cat benchmark/*)",
+      "Bash(cat ./benchmark/*)",
+      "Bash(head benchmark/*)",
+      "Bash(head ./benchmark/*)",
+      "Bash(tail benchmark/*)",
+      "Bash(tail ./benchmark/*)",
+      "Bash(less benchmark/*)",
+      "Bash(more benchmark/*)",
+      "Bash(sed benchmark/*)",
+      "Bash(awk benchmark/*)",
+      "Bash(grep:*benchmark/*)",
+      "Bash(rg:*benchmark/*)",
+      "Bash(uv run python benchmark/*)",
+      "Bash(uv run python3 benchmark/*)",
+      "Bash(python benchmark/*)",
+      "Bash(python3 benchmark/*)"
     ]
   }
 }

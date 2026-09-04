@@ -64,6 +64,14 @@ This is a small step from what this repo already does: `verification.mms_probe.o
 *already* an evaluable operator expression (`"u_t + adv_u + grad_p - nu*lap_u"`). It is currently
 used only to validate an MMS source term. Promote it.
 
+> **Ownership note (guardrails plan §4d / §14 C2).** The `verification.operator` field is **defined
+> and required by** [plan-hallucination-guardrails.md](plan-hallucination-guardrails.md), whose
+> analytic-reference check needs it first — a user's own source-bearing problem gets no reference
+> check without it. This plan **consumes** the declaration for D1 rather than defining it, the same
+> way it consumes `verifylib.operator` for stencils. Take the shape from that plan and do not
+> re-specify it here; the two must not diverge. The shape below is retained as the reference
+> description of what D1 does with it.
+
 ### Schema addition — `problem_spec.json → verification.operator`
 
 Scalar:
@@ -100,6 +108,10 @@ The residual is `sum(terms) - source` per equation; systems combine by RMS acros
 ### Kernel-provided helpers
 
 `dt`, `dx`, `dy`, `dz`, `dxx`, `lap`, `grad`, `div`, `adv`, plus `np` and the spec's `parameters`.
+**Also required**, measured against the real specs (guardrails plan §4d): the mixed derivative
+`u_xy` (`pde_monge_ampere_2d`), both the `lap_lap_u` and `lap(lap_u)` spellings (Cahn-Hilliard and
+Kuramoto-Sivashinsky each use one), and non-Cartesian axis names such as `u_SS` / `u_Sv` / `u_vv`.
+These live in the shared `verifylib.operator` (§14 C1), not in a second implementation here.
 Three rules govern how the kernel discretizes them:
 
 1. **Higher order than the solver used.** **[A]** — §9 already states this for the steady-state

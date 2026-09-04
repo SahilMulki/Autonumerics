@@ -13,7 +13,8 @@ above it.
 
 | Tier | Evidence | What it certifies | Provenance tag |
 |---|---|---|---|
-| **A** | Closed-form solution / exact moments | The answer is right | `analytic` |
+| **A** | Closed-form solution, **validated** against the spec's own operator / IC / BC | The answer is right | `analytic` |
+| **A⁻** | Closed form accepted on provenance alone — quoted verbatim, or the check could not run | The answer is right *if the formula is* | `analytic_unvalidated` |
 | **A′** | Deterministic surrogate (moment ODE, Kolmogorov solve, stationary density) | The answer is right, to a controlled tolerance | `surrogate` |
 | **B** | Manufactured solution, degenerate limit | The **scheme and code** are right | `manufactured` |
 | **C** | Self-convergence + Richardson extrapolation | It converges, and by how much it is off | `self_convergence` |
@@ -29,6 +30,66 @@ never a single substitute metric, and why the provenance tag must be carried all
 
 **Never report a bare pass.** Every score carries `provenance`. A 10 earned against a closed form and
 a 10 earned by self-convergence are different claims and must remain distinguishable downstream.
+
+**Tier A is not automatic.** A closed form in `problem_spec.json` is a *claim*, and a wrong one is
+the single most damaging thing that can enter the pipeline: every plan for a problem descends from
+one spec, so all plans are wrong identically, cross-plan consensus confirms it, and nothing
+downstream can see it. `A⁻` exists so that an unchecked closed form cannot silently outrank a
+*checked* surrogate — see §2b.
+
+---
+
+## 2b. `verification.operator` — the residual form
+
+**Required on every PDE spec, with or without a closed form.** It is what makes Tier A checkable;
+it is also what plan-no-closed-form's residual gate consumes, so one declaration serves both.
+
+```json
+"operator": {
+  "fields": ["u"],
+  "terms": {"time_derivative": "dt(u)", "diffusion": "-alpha*lap(u)"},
+  "source": "0"
+}
+```
+
+A true solution satisfies `sum(terms) - source == 0`. For a system, one entry per equation:
+
+```json
+"operator": {
+  "fields": ["u", "v"],
+  "equations": {
+    "u": {"terms": {"time_derivative": "dt(u)", "advection": "u*u_x + v*u_y",
+                    "pressure": "p_x", "viscous": "-nu*lap_u"}, "source": "0"},
+    "v": {"terms": {"time_derivative": "dt(v)", "advection": "u*v_x + v*v_y",
+                    "pressure": "p_y", "viscous": "-nu*lap_v"}, "source": "0"}
+  },
+  "combine": "rms"
+}
+```
+
+**Why terms rather than one string.** The residual is normalised by the largest term at each point,
+never by an absolute scale. Helmholtz at large `k` and 100:1 anisotropic diffusion both have
+individually enormous terms that cancel; an absolute tolerance rejects correct formulas on both.
+
+**Helpers**, for every declared field: `u`, `u_t`, `u_tt`, `u_x`, `u_xx`, `u_xy`, `grad_u`, `lap_u`,
+`lap_lap_u` — built from `spatial_variables`, so non-Cartesian axes come free (`["S", "v"]` gives
+`u_SS`, `u_Sv`, `u_vv`). Callables: `dt(·)`, `lap(·)`, `lap2(·)`, `d_x(·)`, `d_xx(·)`.
+
+There is deliberately **no** `adv_u`, `grad_p` or `lorentz_u`. A composite means something different
+in every system that uses it; write the term out.
+
+**Outcomes.** The check reports one of `validated`, `validated_off_singularity` (a shock, kink or
+layer keeps the max above tolerance while the median passes — Tier A on the smooth complement, with
+the gap recorded), `quoted`, `unavailable`, or `failed`. **`failed` nulls the claimed solution
+unconditionally, including a quoted one.**
+
+**What it cannot catch.** You write the operator and the analytic solution in one pass from one
+reading. Misread the equation and both come out consistent, so the residual is ~0 and the check is
+blind to it. The requirements ledger is the only place the operator is compared against `problem.md`
+itself, which is why an `equation` entry must name `verification.operator` in its `spec_path`.
+
+`"operator": null` is permitted only with an `operator_note` giving the reason — a non-local Caputo
+derivative is the genuine case. A recorded gap is fine; a silent omission is not.
 
 ---
 

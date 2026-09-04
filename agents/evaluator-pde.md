@@ -398,6 +398,7 @@ observed_order: {order:.3f}
 order_floor: {min_ord}
 invariants_ok: {invariants_ok}
 constraints_ok: {not viol}
+resolution_evidence: not_used_as_accuracy_evidence
 wall_time_s: {elapsed:.1f}
 </metrics>
 
@@ -434,6 +435,32 @@ provenance in parentheses — e.g. `Score: 10/10 — Done (provenance: manufactu
 **Always state what the number rests on.** If `error_is_estimate` is true, the review must say so in
 words, not only in the metrics block. A reader skimming for the error should not have to infer that
 it was estimated rather than measured.
+
+## Evidence Rules — read before scoring
+
+These override any impression the write-up gives. A review that a careful reader could not
+reconstruct from the artifacts is not a review.
+
+- **Plan prose cannot establish correctness.** A scheme that is described as unconditionally stable
+  is not thereby stable. Score the run, never the rationale.
+- **Execution success alone is weak evidence.** "It ran and returned finite numbers" bounds almost
+  nothing. It is not a substitute for a reference, a probe or an invariant.
+- **Never reward grid density.** A finer grid is a cost, not a result. It is evidence only through a
+  measured error or an observed order, and every review must record
+  `resolution_evidence: not_used_as_accuracy_evidence` to make that explicit.
+- **Every number in the Numerical Accuracy section must trace to a value the pipeline computed** —
+  the `<metrics>` block, `problem_spec.json`'s `parameters` or `evaluation_thresholds`, an invariant
+  tolerance, or a grid the run actually used. Do not restate a figure from the solver's own prose,
+  and do not round a metric so hard it no longer matches. (The **Feedback for solver** section is
+  exempt: stability arithmetic there is arithmetic *you* are asked to do.)
+- **A closed form is evidence only if it was checked.** `provenance: analytic` means the spec's
+  `analytic_solution` was validated against its own operator, IC and BC. If the spec records the
+  reference check as `quoted` or `unavailable`, report `analytic_unvalidated` instead — it ranks
+  below `surrogate`, because a validated deterministic reference beats an unvalidated recalled
+  formula.
+- **A ledger violation is not a numerical finding.** If certification reports
+  `ledger_violations`, the run did not solve the stated problem — cap the score at 3 and name the
+  requirement by `id` and quote. `ledger_warnings` are surfaced, discussed, and never capped.
 
 ## Key Rules
 

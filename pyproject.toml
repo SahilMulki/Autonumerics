@@ -11,6 +11,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pre-commit>=3.7.0",
+    "pytest>=8.0.0",
     "ruff>=0.9.1",
 ]
 
@@ -20,7 +21,9 @@ package = false
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-extend-exclude = ["outputs_new_paper"]
+# Test fixtures are archived pipeline artifacts, preserved byte-for-byte because
+# the leakage tests assert on their exact text. Never lint or reformat them.
+extend-exclude = ["outputs_new_paper", "verifylib/tests/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "SIM"]

@@ -108,6 +108,51 @@ A 10 earned against a closed form and a 10 earned by self-convergence are **diff
 tag must survive into `<metrics>`, `SOLUTION.md` and `REPORT.md`. See `verification_manual.md` for
 the full ladder of evidence and every test available at each tier.
 
+`analytic` splits by whether the closed form was **checked**, because an unvalidated closed form is
+weaker evidence than a validated deterministic surrogate:
+
+| Tag | Meaning |
+|---|---|
+| `analytic` | Closed form, **validated** against the spec's own operator / IC / BC |
+| `analytic_unvalidated` | Closed form accepted on provenance alone — quoted verbatim, or the check could not run. The gap is recorded |
+
+Ordering, most to least: `analytic` > `analytic_unvalidated` > `surrogate` > `manufactured` >
+`manufactured_partial` > `self_convergence` > `none`.
+
+## Claimed Solutions Must Be Checkable
+
+> **An `analytic_solution` (or `analytic_moments`) enters Tier A when it is validated against the
+> problem's own declared structure. Where validation cannot run, a verbatim quote from `problem.md`
+> is accepted in its place and the gap is recorded. Otherwise the field is `null`.**
+
+A wrong reference is the one input that fails common-mode: every plan for a problem descends from
+one spec, so all plans are wrong identically, cross-plan consensus confirms it, the solver spends
+its iterations chasing feedback derived from it, and the report cites it. Nothing downstream can
+detect it, which is why it is checked at the spec.
+
+The axis is **checkability, not origin**. A formula you were given and a formula you recalled are
+equally dangerous if neither is verified. Quoting establishes blame, not correctness — so a quoted
+formula that *fails* validation is still `null`.
+
+`verifylib` reports one of five outcomes: `validated`, `validated_off_singularity`, `quoted`,
+`unavailable`, `failed`. Only `failed` nulls the field, and it does so unconditionally.
+
+## Requirements Are Re-Audited After the Run
+
+The ledger proves the *spec* carries every constraint in `problem.md`. A second pass at
+certification asks whether the *solver obeyed it*, and the two kinds of finding are treated
+differently on purpose:
+
+| Finding | Source | Consequence |
+|---|---|---|
+| Grid, domain bounds, `t_final`, Dirichlet edge values, SDE `num_paths` / `seed` / `T` | The run's own output — facts | **Hard gate.** Score capped at 3; the review names the ledger entry by `id` and quote |
+| A spec parameter bound to a different constant in `solver.py` | A source scan | **Warning** (`ledger_warnings`). Never an automatic cap |
+
+The split is not timidity. A source scan misses `eps = 1e-3 * 10` and false-positives on a
+nondimensionalised solver where the parameter never appears literally. A false hard-fail on a
+correct solver is worse than a missed relaxation, because it is invisible as a false positive — it
+looks exactly like a caught bug.
+
 ## The `<metrics>` Block
 
 The evaluator writes this immediately before the `<review>` block on every pass. The conductor

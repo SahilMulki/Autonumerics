@@ -48,6 +48,17 @@
   },
   "verification": {
     "expected_provenance": "analytic",
+    "operator": {
+      "fields": ["u", "v"],
+      "equations": {
+        "u": {"terms": {"time_derivative": "dt(u)", "advection": "u*u_x + v*u_y",
+                        "pressure": "p_x", "viscous": "-nu*lap_u"}, "source": "0"},
+        "v": {"terms": {"time_derivative": "dt(v)", "advection": "u*v_x + v*v_y",
+                        "pressure": "p_y", "viscous": "-nu*lap_v"}, "source": "0"}
+      },
+      "combine": "rms",
+      "note": "one entry per equation, keyed by field. Every declared field needs an equation. Write each term out in the generic helpers -- a composite like adv_u means something different in every system that uses it, so it is not supplied. Helpers exist for every field: u_x, lap_v, p_y, dt(u), and so on. The per-equation residuals are combined by RMS (\"max\" is the alternative). Constraint equations that are not evolution equations (div u = 0) belong in evaluation_thresholds.diagnostics, not here."
+    },
     "mms_probe": {
       "exact": {
         "u": "np.sin(X)*np.cos(Y)*np.cos(t)",

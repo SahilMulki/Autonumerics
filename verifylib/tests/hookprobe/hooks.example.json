@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Write|Edit",
+       "hooks": [{"type":"command","command":"${CLAUDE_PLUGIN_ROOT}/hooks/probe.sh post"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type":"command","command":"${CLAUDE_PLUGIN_ROOT}/hooks/probe.sh stop"}]}
+    ]
+  }
+}

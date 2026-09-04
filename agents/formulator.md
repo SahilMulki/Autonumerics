@@ -72,7 +72,8 @@ These drive the Dynkin generator, the stationary density and the Kolmogorov solv
 - `analytic_moments: {has_analytic_solution, state_dimension, mean_expression, variance_expression}` — use `mean_X/variance_X/mean_Y/variance_Y` for 2D
 - `drift_expression`, `diffusion_expression`, `diffusion_derivative_expression`
 - `evaluation_thresholds: {variance_rel_err_max: 0.10, mean_rel_err_max: 0.05, near_zero_mean_threshold: 0.01, num_paths: 50000, seed: 42, stability_check: null, ci_mult: 2.0, dt0: 0.02, conv_levels: 3}`
-- `verification: {...}` — **see Step 3**; required whether or not a closed form was found
+- `verification: {...}` — **see Step 3**; required whether or not a closed form was found. Every
+  claimed moment expression is checked against `verification.moment_ode` — see **Step 3-0**.
 - `implementation_notes`
 
 **Stability problems.** Some SDEs have no closed-form moments and are scored *only* on whether a correct scheme stays finite / inside its domain (blow-up tests: superlinear drift, a singular confining force). The problem statement says so explicitly — "this problem is a **stability** benchmark", "the independent check confirms only that ...". When it does, `has_analytic_solution` is `false`, the moment expressions are `null`, and the moment tolerances in `evaluation_thresholds` are **meaningless** — the pass criterion goes in `stability_check` instead:
@@ -109,6 +110,9 @@ Read `problem.md` and identify:
 - `initial_condition` (or null for steady-state)
 - `parameters`
 - `analytic_solution: {type: "explicit"|"moments"|"fields", expression: "..." | fields: {...}, space_variables: [...]}` — or `null`, but then `verification` (Step 3) must carry the load
+- `verification.operator` — **required on every PDE spec, both paths**, with or without a closed
+  form. This is the residual form of the equation, and it is what makes the closed form checkable
+  rather than merely asserted. See **Step 3-0**.
 - `verification: {...}` — **see Step 3**; required whether or not a closed form was found
 - `evaluation_thresholds: {rel_l2_err_max: 0.01, grid_N: <int>, min_spatial_order: <float>, order_check: <bool>, refinement_levels: <int>}` — the PDE solver contract is `solve_pde(N, override=None)` and is scored across a nested grid ladder (`N`, `2N−1`, `4N−3`; or `N, 2N, 4N` when periodic). Set `refinement_levels: 2` when you supplied an analytic solution and `3` when you did not — Richardson needs the third point, a direct error measurement does not, and the top level costs `2^(d+2)`× the one below it. Only ask for 3 on an analytic problem when you expect the error to stall at a floor (a boundary treatment, a singularity) that two grids would hide. Copy `grid_N` (the base resolution N), `min_spatial_order` (the observed-order floor), and `order_check` from the **Solver contract** section of `problem.md`. If the contract states an order requirement, set `order_check: true`; if it says the order check is waived (e.g. a shock), set `order_check: false`. Default `rel_l2_err_max: 0.01`. **Also copy, when the contract states them:** `metric` (`"l1"` for a compact-support problem, else omit), `axes` (grid-key names if not `x/y/z`, e.g. `["S","v"]`), and for a **system**: `fields` (ordered field names), `primary_field`, `required_fields`, `gauge_fields` (mean-removed, e.g. incompressible pressure), `domain_mask` (a boolean expression over the coords for a non-rectangular domain), and `diagnostics` (list of `{name, gate}` structural checks — the hard gate is stated as "must satisfy ... or CONSTRAINT_VIOLATION" in the contract, e.g. `div u = 0`, `div B = 0`, positivity).
 - `implementation_notes`
@@ -164,6 +168,94 @@ between the pipeline and an unscoreable problem.
 
 Read §1 of `verification_manual.md` for the ladder of evidence. Work the tiers **in order** and stop
 at the first that applies, but always fill in the Tier-D invariants regardless.
+
+### 3-0. Validate, or quote, or `null` — the rule for every claimed closed form
+
+> **An `analytic_solution` (or `analytic_moments`) enters Tier A when it is validated against the
+> problem's own declared structure. Where validation cannot run, a verbatim quote from `problem.md`
+> is accepted in its place and the gap is recorded. Otherwise the field is `null`.**
+
+The reason is worth stating plainly, because it is not the obvious one. A recalled formula is not
+suspect because of where it came from; it is suspect because nothing checks it. A formula you were
+*given* and a formula you *remembered* are equally dangerous if neither is verified, and equally
+safe if both are. So the question is never "did I quote this?" — it is **"can this be checked, and
+does it pass?"** Quoting establishes blame, not correctness.
+
+What "the problem's own declared structure" means, concretely: your spec states the operator, the
+initial condition and the boundary conditions. A true solution satisfies all three. So the claimed
+formula is substituted into them and the residual is measured — no judgement, no self-report.
+
+`verifylib` runs this automatically on every spec you write and reports one of:
+
+| Outcome | Meaning | Consequence |
+|---|---|---|
+| `validated` | Residual, IC and BC all pass | Tier A |
+| `validated_off_singularity` | Median passes; the max does not, at a shock, kink or layer | Tier A, gap recorded |
+| `quoted` | Verbatim in `problem.md`; the check could not run | Tier A, gap recorded |
+| `unavailable` | No operator, non-local operator, or a form not yet supported | Tier A **iff** verbatim-quoted, else `null` |
+| `failed` | The check ran and the formula did not satisfy it | **`null`, unconditionally — including a quoted formula** |
+
+Three consequences for how you write a spec:
+
+1. **Write `verification.operator`.** Without it the check has nothing to substitute into, and a
+   correct solution you supplied gets recorded as unverified. See below.
+2. **Never invent a formula to avoid a `null`.** A wrong closed form is far worse than an absent
+   one: everything downstream descends from it, so every plan is wrong identically and the error is
+   invisible. `null` plus a good Step-3 verification plan is a complete answer; a fabricated
+   solution is a corrupted one.
+3. **On the quote route, emit `analytic_solution_source_text`** — the verbatim sentence from
+   `problem.md` that states the solution. It must contain the formula itself, not a description of
+   one ("the standard heat kernel" is not a quotation).
+
+#### `verification.operator` — required on every PDE spec
+
+The residual form of the equation: `sum(terms) - source` is zero for a true solution.
+
+```json
+"operator": {
+  "fields": ["u"],
+  "terms": {"time_derivative": "dt(u)", "diffusion": "-alpha*lap(u)"},
+  "source": "0"
+}
+```
+
+For a **system**, one entry per equation, keyed by field:
+
+```json
+"operator": {
+  "fields": ["u", "v"],
+  "equations": {
+    "u": {"terms": {"time_derivative": "dt(u)", "advection": "u*u_x + v*u_y",
+                    "pressure": "p_x", "viscous": "-nu*lap_u"}, "source": "0"},
+    "v": {"terms": {"time_derivative": "dt(v)", "advection": "u*v_x + v*v_y",
+                    "pressure": "p_y", "viscous": "-nu*lap_v"}, "source": "0"}
+  },
+  "combine": "rms"
+}
+```
+
+- **Split the equation into terms** rather than writing one string. The residual is scaled by the
+  largest term at each point, never by an absolute value — Helmholtz at large `k` and 100:1
+  anisotropy both have individually huge terms that cancel, and an absolute tolerance rejects
+  correct formulas on both. The keys are free-form labels; only the split matters.
+- **Put the source term in `source`**, not folded into `terms`. If the problem is `-lap u = f`,
+  write `terms: {"laplacian": "-lap(u)"}` and `source: "<the f expression>"`.
+- **Available helpers**, for every declared field: `u`, `u_t`, `u_tt`, `u_x`, `u_xx`, `u_xy`,
+  `grad_u`, `lap_u`, `lap_lap_u` — and the same on non-Cartesian axis names, so `["S", "v"]` gives
+  `u_SS`, `u_Sv`, `u_vv`. Callables: `dt(·)`, `lap(·)`, `lap2(·)`, `d_x(·)`, `d_xx(·)`.
+- **Write composite terms out.** There is no `adv_u` or `lorentz_u`: a composite means something
+  different in every system that uses it, so `u*u_x + v*u_y` is what to write.
+- **Constraints that are not evolution equations** (`div u = 0`) go in
+  `evaluation_thresholds.diagnostics`, not here.
+- **`"operator": null` is allowed only with a reason** in `verification.operator_note`, and only
+  when the operator genuinely cannot be written as a local expression — a Caputo fractional
+  derivative is the real case. A recorded gap is fine; a silent omission is not.
+
+**Also add an `equation` ledger entry whose `spec_path` names `verification.operator`.** You write
+the operator and the analytic solution in the same pass from the same reading of `problem.md`. If
+you misread the equation, you will write both consistently and the residual will be ~0 — the check
+cannot see its own blind spot. The ledger quote is the only place the operator is compared against
+`problem.md` itself, so it is the only thing that catches this.
 
 ### 3a. SDE — exhaust the three surrogate routes before writing `null`
 
@@ -301,6 +393,9 @@ actually achieved; a mismatch is a useful signal that the spec over-promised.
 - SDE moment expressions must use the same parameter names as the `parameters` dict.
 - If a problem matches a known family in `sde_manual.md` or `pde_manual.md`, use those formulas verbatim.
 - Never relax a stated specification because it looks hard to satisfy. Transcribe it and record the difficulty in `implementation_notes`.
+- **A closed form you cannot check is not evidence.** Write `verification.operator` (PDE) or
+  `verification.moment_ode` (SDE) on every spec, so the solution you claim can be substituted back
+  into the equation you claim it solves. See Step 3-0.
 
 ## File Permissions
 
@@ -312,3 +407,8 @@ actually achieved; a mismatch is a useful signal that the spec over-promised.
 Report: problem type (SDE or PDE), identified family, whether an analytic solution was found, and the requirements ledger tally — how many entries, and every `ambiguous` or `dropped` one quoted in full with its reason. If nothing is `ambiguous` or `dropped`, say so explicitly.
 
 Also report the **verification plan**: which tier of evidence you supplied (`expected_provenance`), which surrogate routes you tried and why each failed if you fell through to `self_convergence`, and which invariants you declared as hard gates. If you could supply no Tier A/B evidence at all, say so explicitly and explain why — that is a material ceiling on every score the problem can earn, and the conductor needs to see it.
+
+Finally, report **how the closed form is backed** (Step 3-0): whether you wrote
+`verification.operator` (or `moment_ode`) so the claim can be validated, or fell back to the quote
+route with `analytic_solution_source_text`, or set the field to `null`. If you declared
+`"operator": null`, quote your `operator_note`.
