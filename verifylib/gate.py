@@ -18,7 +18,7 @@ import contextlib
 import json
 import os
 
-from . import leakage, reference, review, schema
+from . import leakage, review, schema
 from .findings import Finding, error, errors, warning
 
 #: Files each check owns, matched on basename.
@@ -59,8 +59,16 @@ def check_spec_text(text, *, path="", with_reference=True) -> list[Finding]:
     if with_reference and not errors(found):
         # A spec that fails schema cannot be evaluated meaningfully; reporting a
         # residual on it would bury the real finding under a derived one.
+        #
+        # Imported here, not at module scope, so that an interpreter without numpy
+        # still runs every AST-only guard above instead of failing to import at all.
         try:
+            from . import reference
             found.extend(reference.reference_findings(spec))
+        except ImportError as exc:  # ModuleNotFoundError included
+            found.append(warning("reference", "analytic_solution",
+                                 f"reference check skipped: {exc}. The schema and leakage "
+                                 f"guards ran; the numeric check did not"))
         except Exception as exc:  # noqa: BLE001 -- a guard must never crash the run
             found.append(warning("reference", "analytic_solution",
                                  f"reference check could not run: {type(exc).__name__}: {exc}"))

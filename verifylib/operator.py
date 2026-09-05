@@ -20,21 +20,44 @@ import ast
 import math
 from functools import partial
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover -- see _require_numpy
+    np = None
 
 # --- restricted evaluation ---------------------------------------------------
+#
+# numpy is optional *at import time* on purpose. This module ships inside a plugin
+# whose hooks are executed by whatever `python3` the shell resolves -- not by the
+# repo's own interpreter -- and there is no guarantee that one has numpy. Making
+# the import hard would take the entire guard down, including the checks that need
+# nothing but `ast`: expression-not-program, the leakage scans, the ledger shape.
+# Those are the ones that catch the archived incidents, so they must survive an
+# interpreter that cannot do arithmetic. See gate.check_spec_text.
+
+
+def _require_numpy(what):
+    if np is None:
+        raise ModuleNotFoundError(
+            f"{what} needs numpy, which is not available to this interpreter "
+            f"({__import__('sys').executable}). The AST-only guards still run."
+        )
+
 
 def _erf(x):
     return np.vectorize(math.erf)(np.asarray(x, dtype=float))
 
 
-SAFE_FUNCS = {
-    "np": np,
-    "math": math,
-    "erf": _erf,
-    "erfc": lambda x: 1.0 - _erf(x),
-    "ndtr": lambda x: 0.5 * (1.0 + _erf(np.asarray(x, dtype=float) / np.sqrt(2.0))),
-}
+def _safe_funcs():
+    """Built on demand so importing this module never requires numpy."""
+    _require_numpy("evaluating a spec expression")
+    return {
+        "np": np,
+        "math": math,
+        "erf": _erf,
+        "erfc": lambda x: 1.0 - _erf(x),
+        "ndtr": lambda x: 0.5 * (1.0 + _erf(np.asarray(x, dtype=float) / np.sqrt(2.0))),
+    }
 
 
 def evaluate(expr: str, names: dict):
@@ -44,13 +67,14 @@ def evaluate(expr: str, names: dict):
     expression containing a lambda or a comprehension opens a new scope that
     cannot see a locals dict, and several real specs contain one.
     """
+    safe = _safe_funcs()
     code = compile(ast.parse(expr, mode="eval"), "<spec-expression>", "eval")
     # errstate: a correct closed form legitimately divides by zero at a singular
     # boundary (Black-Scholes at t = T_maturity). numpy's warning path needs
     # __import__, which the emptied builtins do not have, so an unsuppressed
     # warning surfaces as a baffling KeyError('__import__') instead of a nan.
     with np.errstate(all="ignore"):
-        return eval(code, {"__builtins__": {}, **SAFE_FUNCS, **names})  # noqa: S307
+        return eval(code, {"__builtins__": {}, **safe, **names})  # noqa: S307
 
 
 def assert_is_expression(expr: str, *, field: str) -> None:

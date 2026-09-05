@@ -230,3 +230,48 @@ def test_plugin_hooks_json_is_wired_to_the_cli():
             if event != "Stop":
                 # A Bash heredoc walks straight past a Write|Edit matcher.
                 assert "Bash" in entry["matcher"], f"{event} matcher misses Bash"
+
+
+# --- the plugin runs on whatever interpreter the shell resolves --------------
+
+def test_ast_only_guards_survive_an_interpreter_without_numpy(tmp_path):
+    """Hooks are executed by whatever ``python3`` the shell resolves, not by the
+    repo's own interpreter, and nothing guarantees that one has numpy. Measured:
+    with ``PATH=/usr/bin:/bin`` on macOS it does not.
+
+    A hard numpy import would take the whole guard down -- including the checks
+    that need nothing but ``ast``, which are the ones that catch both archived
+    incidents. Those must still run, and the numeric check must say plainly that
+    it did not.
+    """
+    shim = tmp_path / "noshim"
+    shim.mkdir()
+    (shim / "numpy.py").write_text("raise ImportError('numpy disabled for this test')\n")
+    (shim / "scipy.py").write_text("raise ImportError('scipy disabled for this test')\n")
+
+    env = {**os.environ, "PYTHONPATH": str(shim)}
+    env.pop("PYTHONHOME", None)
+
+    def run(name, text):
+        path = tmp_path / name
+        path.write_text(text)
+        return subprocess.run(
+            [sys.executable, os.path.join(REPO, "verifylib", "cli.py"), "check-spec", str(path)],
+            capture_output=True, text=True, cwd=str(tmp_path), env=env, timeout=120,
+        )
+
+    # The archived leak: both guards that caught the real incidents still fire.
+    leak = run("problem_spec.json", read_text(os.path.join(FIXTURES, "leak_heston_spec.json")))
+    assert "Traceback" not in leak.stderr, leak.stderr
+    assert leak.returncode == 2, leak.stdout + leak.stderr
+    assert "expression" in leak.stdout and "leakage" in leak.stdout
+
+    # A spec with nothing for the AST guards to say: the numeric check reports its
+    # own absence rather than being silently skipped.
+    clean = run("clean_spec.json", json.dumps({
+        **BAD_SPEC,
+        "analytic_solution": {"expression": "np.sin(np.pi * x)"},
+        "verification": {"operator": None, "operator_note": "steady state"},
+    }))
+    assert "Traceback" not in clean.stderr, clean.stderr
+    assert "reference check skipped" in clean.stdout, clean.stdout

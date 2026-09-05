@@ -82,6 +82,16 @@ def test_null_operator_needs_a_reason():
     assert not schema.check_operator_declaration(excused)
 
 
+def test_the_schema_gate_agrees_with_the_reference_check_on_legacy_sources():
+    """Both legacy sources, or the gate contradicts the check it gates for.
+    pde_anisotropic_diffusion carries only residual_operator, and the reference
+    check validates it at 2.5e-10 -- erroring on it here would block a spec that
+    passes the very test the field exists to enable."""
+    spec = {"spatial_variables": ["x", "y"],
+            "verification": {"residual_operator": "-(A_xx*u_xx + A_yy*u_yy) - f"}}
+    assert [f.severity for f in schema.check_operator_declaration(spec)] == ["warning"]
+
+
 def test_legacy_operator_check_warns_rather_than_blocks():
     """19 of 22 staged PDE specs predate the field. They still run on the fallback,
     and saying so is a warning, not a gate."""

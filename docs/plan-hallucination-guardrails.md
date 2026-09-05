@@ -1,8 +1,20 @@
 # Hallucination Guardrails — Implementation Plan
 
-**Status:** **implemented** (rev 6, 2026-09-03) — Phases 0–6 landed, 132 tests passing.
+**Status:** **implemented** (rev 6, 2026-09-04) — Phases 0–6 landed, 136 tests passing.
 Seven rev-5 claims did not survive implementation; all are corrected below and recorded as
-E23–E29. The most important: `pde_cahn_hilliard_2d` is **not** a spec defect.
+E23–E31. The most important: `pde_cahn_hilliard_2d` is **not** a spec defect.
+
+> **Two things are outstanding, and neither is a code change.**
+>
+> 1. **Criterion 14 has not been run.** The whole battery on a problem outside `benchmark/` needs a
+>    live `claude --plugin-dir` session; every component is tested but the end-to-end run is not.
+>    This is the criterion that says Autonumerics is a tool rather than a benchmark harness, so the
+>    claim should not be made until it passes. Procedure, and the one sub-check that testing the
+>    risk already turned into a real fix, in §15.
+> 2. **Two staged specs fail `check-spec` today** — `pde_porous_medium_2d` and
+>    `pde_fractional_diffusion`, both missing `verification.operator`. Neither blocks anything; both
+>    are pre-Phase-4 pipeline outputs that a re-formulation fixes. Details in §2.
+
 **Scope:** Layers 1–5. Layers 6 and 7 are **deferred** (§9); a small, load-bearing part of 7 is
 retained.
 **Related:** [plan-no-closed-form.md](plan-no-closed-form.md),
@@ -100,19 +112,38 @@ fixable and by whom:
 
 | Root cause | Specs | Owner |
 |---|---|---|
-| **Validated** | `heat_1d`, `heat_2d`, `laplace_2d`, `wave_1d`, `wave_2d`, `advection_1d`, `fokker_planck_ou` | — |
-| **Validated off a localized singularity** | `burgers_inviscid` (shock), `stefan_1d_similarity` (kink), `convection_diffusion_bl` (layer), `black_scholes_call` (kink at the strike) | — |
-| **Source term missing from any evaluable field** | `poisson_2d`, `helmholtz_2d`, `monge_ampere_2d` | **this plan**, Phase 4 — `verification.operator.source` (§4d) |
-| **Multi-field system; needs the systems operator form** | `mhd_2d`, `navier_stokes_2d` | **this plan**, Phase 4 — `verification.operator.equations` (§4d) |
-| **No operator string in the spec** | `anisotropic_diffusion`, `porous_medium_2d` | formulator |
-| Root cause | Specs | Owner |
-|---|---|---|
 | **Validated** (9) | `heat_1d`, `heat_2d`, `laplace_2d`, `wave_1d`, `wave_2d`, `poisson_2d`, `helmholtz_2d`, `monge_ampere_2d`, `anisotropic_diffusion` | — |
 | **Validated off a localized singularity** (7) | `burgers_inviscid` (shock), `stefan_1d_similarity` (kink), `convection_diffusion_bl` (layer), `black_scholes_call` (kink at the strike), `cahn_hilliard_2d`, `advection_1d`, `fokker_planck_ou` (nodal lines, where every term vanishes together) | — |
 | **Multi-field system on the legacy operator string** | `mhd_2d`, `navier_stokes_2d` | formulator — these specs predate `verification.operator`; the systems path itself is implemented and tested |
 | **No operator string in the spec at all** | `porous_medium_2d` | formulator — `verification.operator` is now required |
 | **Non-local operator — genuinely unavailable** | `fractional_diffusion` (Caputo derivative) | — |
 | Already `null` | `heston_2d`, `kuramoto_sivashinsky` | — |
+
+### Two staged specs fail the gate today **[N]**
+
+Distinct from the coverage table above, and more operationally important: these are specs that
+produce an **error-severity** finding, not merely an unvalidated one. `check-spec` exits 2 on them.
+
+| Spec | Finding | Why it stands |
+|---|---|---|
+| `pde_porous_medium_2d` | `verification.operator` required | No operator information of any kind — no `operator`, no `mms_probe.operator_check`, no `residual_operator`. Its Barenblatt solution is checkable; nothing in the spec says against what |
+| `pde_fractional_diffusion` | `verification.operator` required | A Caputo derivative is non-local, so the operator genuinely cannot be written as a local expression. The fix is `"operator": null` **with an `operator_note`** — the field distinguishes a recorded gap from a silent omission, and this spec currently records nothing |
+
+**Neither is a bug in the guard, and neither blocks anything today.** Both specs are outputs of
+previous pipeline runs, written before the field existed; `workspace/` is not tracked in git, and a
+re-formulation under the Phase-4 `formulator.md` emits the field. The `Stop` gate scopes to the
+active problem (§3), so a session working on a third problem is not blocked by either. What they
+*would* do is fail the conductor's step-3b `check-spec` call if either problem were re-run without
+re-formulating — which is the intended behaviour, and the reason they are named here rather than
+waived.
+
+**One near-miss worth recording.** A first cut of `schema.check_operator_declaration` accepted only
+`mms_probe.operator_check` as the legacy fallback, while `reference.resolve_operator` also consults
+`residual_operator`. That made three specs error, not two: `pde_anisotropic_diffusion` was rejected
+by the gate while the reference check it gates for **validated it at 2.5e-10**. A gate that
+contradicts the check it exists to enable is worse than no gate, because the contradiction is
+invisible from either side alone. The two now read the same sources, and
+`test_the_schema_gate_agrees_with_the_reference_check_on_legacy_sources` pins it.
 
 **`pde_cahn_hilliard_2d` was not a spec defect, and this is the most important correction in rev 6.**
 Rev 3 through rev 5 held it up as "the first real defect the guardrail found, and it was found
@@ -900,6 +931,7 @@ no discretization-family selection, no two-snapshot `dt(u)`, and no `override` h
 | **4** | `verifylib/reference.py` complete + the §4b rule in `formulator.md`, `verification.operator` in both templates and `verification_manual.md` | **done** — 21 of 25 Tier-A claims validated |
 | **5** | `verifylib/audit.py` — ledger re-audit, output-derived gate / source-derived warn; wired at certification | **done** |
 | **6** | `verifylib/review.py` — scoped numeric binding | **done** — 0 false positives over 206 reviews |
+| — | Guards degrade to AST-only on an interpreter without numpy (§15 b) | **done** |
 | — | §13 run provenance: agent-file hashes in `results.json` | **done** — 23 files |
 | — | The two retained canaries (§9) | **done** — they could not be written until Phases 2 and 5 existed |
 
@@ -1040,13 +1072,50 @@ part**, and the gap is worth stating rather than glossing:
   `test_stop_gate_blocks_then_gives_up_with_a_recorded_reason` drives the handler three times and
   asserts it blocks twice and then releases with `GUARDRAIL_UNSATISFIED` on disk. What is *not*
   re-measured is the original 8-firing live run that motivated the counter.
-- **14 (the whole battery on a problem outside `benchmark/`)** needs a live `claude` session with
-  `--plugin-dir` against a scratch `problem.md`. Every component it depends on is tested — the
-  hooks are wired to `cli.py`, `cli.py` resolves from any working directory as a real subprocess,
-  and the `Stop` gate runs `check_workspace` over whatever directory it is given, with no
-  `benchmark/` anywhere in the path — but the end-to-end run has not been performed. **This is the
-  one criterion that says Autonumerics is a tool rather than a benchmark harness, so it should be
-  run before the claim is made.**
+- **14 (the whole battery on a problem outside `benchmark/`)** has **not been run**. Every component
+  it depends on is tested — the hooks are wired to `cli.py`, `cli.py` resolves from any working
+  directory as a real subprocess, `active_problem` falls back to a bare directory holding a single
+  `problem_spec.json`, and the `Stop` gate runs `check_workspace` over whatever directory it is
+  given, with no `benchmark/` anywhere in the path. But component tests are not the criterion.
+  **This is the one criterion that says Autonumerics is a tool rather than a benchmark harness, so
+  the claim should not be made until it passes.**
+
+  What it takes, concretely:
+
+  ```bash
+  mkdir -p /tmp/anum-c14/workspace/my_problem
+  # write a problem.md by hand; no benchmark/ anywhere on the path
+  cd /tmp/anum-c14
+  claude --plugin-dir /path/to/Autonumerics -p "/conductor workspace/my_problem/problem.md"
+  ```
+
+  Four things have to hold, and each can fail independently:
+
+  | | Check |
+  |---|---|
+  | a | The hooks fire at all — plugin-declared hooks load via `--plugin-dir`, measured once on `claude 2.1.226`, and nothing since has re-measured it |
+  | b | ~~`cli.py` runs on whatever interpreter the hook resolves~~ — **measured and fixed**, see below |
+  | c | A deliberately corrupted `analytic_solution` is caught — inject one and confirm the run does not sail past it |
+  | d | The `Stop` hook refuses to end the session until it is fixed, then releases after 3 attempts |
+
+  **(b) was a real defect, found by testing the risk rather than only noting it. [C]** A plugin
+  hook's `command` is run by whatever `python3` the shell resolves, not by the repo's `.venv`, and
+  nothing guarantees that interpreter has numpy — measured, with `PATH=/usr/bin:/bin` on macOS it
+  does not, and `cli.py` died on `ModuleNotFoundError: numpy` before running a single check. It
+  worked in development only because this machine's `PATH` happens to put a numpy-bearing
+  interpreter first, which is exactly the kind of accident that survives testing and fails on
+  someone else's machine.
+
+  The fix is not a shebang. The guards **split cleanly by dependency**: expression-not-program, both
+  leakage scans, the ledger shape and the operator declaration need nothing but `ast` and `re`; only
+  the reference check and the re-audit need numpy. Those AST-only guards are the ones that catch
+  both archived incidents. So `verifylib.operator` imports numpy optionally and `gate` imports
+  `reference` lazily: on a numpy-less interpreter every AST guard still runs, exits 2 on the Heston
+  leak, and the reference check reports `reference check skipped: No module named 'numpy'` rather
+  than being silently absent. Verified end to end under `env -i PATH=/usr/bin:/bin`, and pinned by
+  `test_ast_only_guards_survive_an_interpreter_without_numpy`.
+
+  What is left for the live run is (a), (c) and (d) — the parts that need a real session.
 
 ---
 
@@ -1133,6 +1202,8 @@ part**, and the gap is worth stating rather than glossing:
 | **E27** | **Apply expression-not-program to `drift_expression` and `diffusion_expression`** | Hard-fails 3 of 6 real SDE specs on *correct* content: a vector drift is legitimately prose describing a matrix action. Split into answer-key fields (must parse) and guidance fields (must not be a *program*), which is the sharper form of the same rule and still catches the Heston `def` anywhere (§4a) | 5→6 |
 | **E28** | **Test 2 compares the formula at `t = 0` against `initial_condition`** | Two errors. A backward parabolic problem states its condition at maturity — reading `black_scholes_call` at 0 reports 3.5% on a correct spec. And exact agreement is the wrong bar: `advection_1d`'s non-periodic IC differs from its periodic solution by 1.2e-04, real and benign. Two candidate times, two thresholds (§4c) | 5→6 |
 | **E29** | **`verifylib/operator.py` is a safe module name** | It shadows the stdlib `operator` whenever `cli.py` runs as a script, breaking `import json` inside the interpreter with a circular-import error that names nothing relevant. The name is kept (§14 C1 freezes it); `cli.py` drops its own directory from `sys.path` first (§12) | 5→6 |
+| **E32** | **A plugin hook can rely on numpy being importable** | It cannot: the hook's `command` is run by whatever `python3` the shell resolves, and with `PATH=/usr/bin:/bin` on macOS that interpreter has no numpy — `cli.py` died before running any check. The AST-only guards (which catch both archived incidents) now survive it, and the reference check reports its own absence (§15) | 6→6 |
+| **E33** | **`schema` may accept only `mms_probe.operator_check` as the legacy operator fallback** | `reference.resolve_operator` also consults `residual_operator`, so the gate errored on `pde_anisotropic_diffusion` while the check it gates for **validated it at 2.5e-10**. A gate contradicting its own check is invisible from either side alone (§2) | 6→6 |
 | **E31** | **The `Stop` gate runs "over the workspace directory"** | Wrong scope. `workspace/` holds every problem from every previous run, so one stale spec blocks every future session and writes a marker the conductor misreads as a block on the current problem. Gate the **active** problem directory (§3) | 5→6 |
 | **E30** | **Numeric binding over the Numerical Accuracy section** | Still too broad: flags 28% of 206 archived reviews, all on diagnostic context. Bind the *claim* on each keyed line — its leading token — and match at the precision each side printed to. 0 false positives (§8a) | 5→6 |
 | **E19** | **Gate on `max` residual plus a "singular set < 2%" threshold** | Fragile — the three real singular cases sit at 0.8/1.2/1.6% against a 2% bar — and it cannot classify `black_scholes_call` at all. **Gate on the median** (`< 1e-6`, a seven-order gap); concentration demotes to a diagnostic. Coverage 10 → **11 of 20** (§4f) | 3→3 |

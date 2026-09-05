@@ -279,7 +279,12 @@ def check_operator_declaration(spec) -> list[Finding]:
     if not isinstance(verification, dict):
         return [error("operator", "verification", "PDE specs must carry a verification block")]
     if "operator" not in verification:
-        legacy = (verification.get("mms_probe") or {}).get("operator_check")
+        # Both legacy sources, because reference.resolve_operator consults both. An
+        # earlier version looked only at operator_check and so errored on
+        # pde_anisotropic_diffusion, whose residual_operator the reference check uses
+        # to validate it at 2.5e-10 -- a gate contradicting the check it gates for.
+        legacy = ((verification.get("mms_probe") or {}).get("operator_check")
+                  or verification.get("residual_operator"))
         if isinstance(legacy, str) and legacy.strip():
             # §4d: 19 of 22 existing PDE specs carry operator_check in exactly the
             # required form, so the reference check still runs. But operator_check is
