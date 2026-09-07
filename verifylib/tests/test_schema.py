@@ -10,6 +10,7 @@ import os
 import pytest
 
 from verifylib import schema
+from verifylib.findings import ERROR, errors
 
 from .conftest import FIXTURES, WORKSPACE, read_json
 
@@ -145,3 +146,89 @@ def test_operator_ledger_entry_is_a_warning_not_a_gate():
     assert [f.severity for f in findings] == ["warning"]
     spec["requirements"][0]["spec_path"] = "governing_equation, verification.operator"
     assert not schema.check_operator_ledgered(spec)
+
+
+# --- the invariant registry (plan-no-closed-form §6) -------------------------
+
+def test_a_gated_invariant_the_kernel_cannot_evaluate_is_a_schema_error():
+    """A gate nobody implements is worse than no gate, because it reads as
+    evidence that a check passed. Before this, ``{"name": "physically_reasonable",
+    "gate": true}`` passed the schema and matched nothing in the kernel."""
+    spec = {"spatial_variables": ["x"],
+            "verification": {"invariants": [
+                {"name": "physically_reasonable", "gate": True}]}}
+    found = schema.check_invariant_names(spec)
+    assert [f.severity for f in found] == [ERROR]
+    assert "not in the kernel registry" in found[0].message
+
+
+def test_an_ungated_invariant_stays_free_form():
+    """Eight distinct names are in use that way; requiring an implementation for a
+    diagnostic nobody gates on would buy nothing."""
+    spec = {"spatial_variables": ["x"],
+            "verification": {"invariants": [{"name": "front_position", "gate": False}]}}
+    assert schema.check_invariant_names(spec) == []
+
+
+def test_a_gated_entry_with_its_own_expression_is_accepted():
+    """Every gated SDE constraint in ``workspace/`` takes this route."""
+    spec = {"state_dimension": 1,
+            "verification": {"constraints": [
+                {"name": "finite", "expr": "np.isfinite(X)", "gate": True}]}}
+    assert schema.check_invariant_names(spec) == []
+
+
+def test_every_staged_spec_still_passes_the_registry_check():
+    """The Phase-0 gate: adding a check must not invalidate a spec that validates
+    today."""
+    for path in sorted(glob.glob(os.path.join(WORKSPACE, "*", "problem_spec.json"))):
+        found = errors(schema.check_invariant_names(read_json(path)))
+        assert not found, f"{path}: {[f.render() for f in found]}"
+
+
+# --- the chaotic flag (plan-no-closed-form §8a) ------------------------------
+
+_CHAOTIC = {
+    "spatial_variables": ["x"],
+    "time_interval": {"T": 50.0},
+    "chaotic": True,
+    "chaotic_T_ref": 5.0,
+    "requirements": [{"id": "R1", "kind": "other", "status": "mapped",
+                      "quote": "This equation is chaotic and has no closed-form solution",
+                      "spec_path": "chaotic, chaotic_T_ref"}],
+}
+
+
+def test_a_well_formed_chaotic_declaration_passes():
+    assert schema.check_chaotic(_CHAOTIC) == []
+
+
+def test_chaotic_without_a_ledger_quote_is_an_error():
+    """It waives the Tier-C order check, which is precisely the threat shape Layer 2
+    exists for: a formulator that sets it escapes Tier C entirely."""
+    spec = {**_CHAOTIC, "requirements": []}
+    found = errors(schema.check_chaotic(spec))
+    assert found and "requirements ledger entry" in found[0].message
+
+
+def test_chaotic_without_a_declared_reference_horizon_is_an_error():
+    spec = {k: v for k, v in _CHAOTIC.items() if k != "chaotic_T_ref"}
+    found = errors(schema.check_chaotic(spec))
+    assert found and "chaotic_T_ref" in found[0].path
+
+
+def test_a_reference_horizon_beyond_the_problems_own_is_an_error():
+    found = errors(schema.check_chaotic({**_CHAOTIC, "chaotic_T_ref": 500.0}))
+    assert found and "exceeds the problem's own horizon" in found[0].message
+
+
+def test_a_reference_horizon_without_the_flag_is_an_error():
+    """A stray relaxation: the window only means something once the order check has
+    been waived."""
+    found = errors(schema.check_chaotic({"chaotic_T_ref": 5.0}))
+    assert found and "without chaotic: true" in found[0].message
+
+
+def test_no_staged_spec_declares_chaotic_yet_and_none_is_broken_by_the_check():
+    for path in sorted(glob.glob(os.path.join(WORKSPACE, "*", "problem_spec.json"))):
+        assert errors(schema.check_chaotic(read_json(path))) == [], path

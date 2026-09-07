@@ -1,6 +1,6 @@
 # Verification Without a Closed Form — Implementation Plan
 
-**Status:** proposal, rev 2
+**Status:** implemented (rev 2 + implementation errata), 2026-09-05
 **Scope:** how a solution is scored when `analytic_solution` is `null` (PDE) or
 `analytic_moments.has_analytic_solution` is `false` (SDE)
 **Related:** [plan-hallucination-guardrails.md](plan-hallucination-guardrails.md),
@@ -13,6 +13,82 @@ against the shipped code.
 ---
 
 ## 0. What changed, and why
+
+### Rev 2 → implementation (2026-09-05)
+
+Phases 0–4 are built and under test. Everything below was found by *running* the
+design against `workspace/`'s 80 archived plans, and each entry is recorded rather than
+silently folded in, in the same spirit as the rev-1 table beneath it.
+
+| # | The plan said | What running it showed |
+|---|---|---|
+| I1 | §9b: add 6th/8th-order stencils | Adding them with **float** weights broke exact cancellation. `1/12 - 2/3 + 2/3 - 1/12` lands at 1.4e-17, and on `pde_burgers_inviscid` — whose exact solution is a step function, so every derivative is identically zero away from the shock — the residual *and* its own term-balanced denominator both become 1.4e-17 and their ratio is 1. An exactly correct formula reported `failed`. The weights are integer numerators over a common denominator, summed before the single division |
+| I2 | §2b: "the kernel reuses `benchmark/runner.py`" | It cannot. `runner.py` calls `solve_pde(N)` with no way to pass `override`, drops `invariant_trace` / `snapshots` / `path_integrals` on extraction, and lives outside the plugin root — so a kernel importing it works in this repo and nowhere else. The **isolation properties** are what §2b actually asks for, and `kernel/sandbox.py` reproduces them. `benchmark/` is untouched, per §8d |
+| I3 | §5a: four D1 outcomes | The table defines `clean` as reaching the design slope and `stalled` as "r does not fall", leaving the band between them unnamed. Routing it to `stalled` gates a slowly-converging solver at 3; routing it to `clean` lets it certify. It is named `slow`: reported, neither gates nor certifies |
+| I4 | *(not in the plan)* | **D1 must abstain on a non-uniform mesh.** `pde_convection_diffusion_bl`'s Shishkin and Bakhvalov plans return graded meshes with spacing ratios of 115:1 and 485:1 — exactly right for a boundary layer, and exactly what makes `h = axis[1] - axis[0]` meaningless. D1 reported `stalled` and dropped both from 10 to **3** |
+| I5 | §5e: masked domains | The trap that actually fired was different: **BC-periodicity is not the endpoint convention.** KS's solver returns an endpoint-*inclusive* grid whose last node duplicates the first, so `detect_periodic` correctly says "not exclusive" while the field still carries one physical point twice. Reading one flag for both facts rolled the full N-array by a fraction of a cell and reported a translation-invariance violation of **0.76** on three correct spectral schemes |
+| I6 | §6: the invariant registry | Two real specs write `tol: 0.0` for a quantity that is exactly conserved. The manual's own snippets test `drift < tol`, which reports a violation for a drift of exactly zero — a perfectly conserving scheme failing its own conservation check, measured on `pde_heat_1d`. Compare `drift <= tol + 1e-12` |
+| I7 | §5g: "boundary conditions — covered by **D2** BC check" | No such check existed in manual §8's catalogue. `boundary_consistency` was already in use as an *ungated* name, so it is now a registry entry with an evaluator |
+| I8 | §4c: "implemented in `kernel/score.py`" | §12 is explicitly the **no-analytic-solution** rubric and requires Tier-B evidence for a 10. Running it on Path A, where the closed form is strictly better evidence, fails every correct Path-A plan. `project_manual.md`'s analytic rubric is a separate table and is implemented as one. §12 also has **no row** for "accurate at the finest grid but under-converging"; such a run fell through to 4 with a message about instability that was untrue |
+| I9 | §20 (manual), consumed unchanged | The Dynkin check failed a **correct** Euler–Maruyama solver, for three independent reasons: the two `dt` levels were drawn independently, so `r_fine − r_coarse` was mostly Monte Carlo noise and Richardson amplified it (−3.9e-03 with CRN vs −6.5e-03 without, against the same 5.0e-03 bar); `se` was taken from the fine level while the extrapolated quantity is `2·r_fine − r_coarse`; and `K` test functions were tested simultaneously at a per-test 95% level, making a ~86% test at `K = 3` |
+| I10 | §4a: SDE Tier C is "CRN ladder + strong/weak order" | Two corrections. `orders_ok` gates on the **strong order alone** — §19's own heading says so, and a correct tamed Euler–Maruyama plan was failed for a weak order of 1.7514 against a limit of 1.75. And the expected strong order is a property of the *scheme*: `sde_ginzburg_landau_s6` declares 0.5 for tamed EM **and** 1.0 for Milstein, with a note saying in as many words not to fail a Milstein plan against the 0.5 default. `scheme_family` in the plan frontmatter selects among the spec's declared values |
+| I11 | §3c: "no spec surface and no contract change" for SDEs | True for Dynkin. Not true for the moments: `analytic_moments` has three shapes in use — a string, a list of per-component strings, and `mean_X` / `mean_Y`. Reading only the first made `sde_gbm_2d_high_corr` report "no test in the manual could be run" and score **2** |
+| I13 | §4a: Tier C is "Richardson + GCI + asymptotic guards" | The guards fail **every spectral solver on Path B**, and that — not chaos — is why all three Kuramoto-Sivashinsky plans scored 4. §4's `p_sane = p < theoretical_order + 1` reads a large `p` as noise, which is right for finite differences and wrong for a Fourier method, whose convergence is exponential and has no algebraic order. Measured: 10.47, 10.92 and 9.98 against `theoretical_order` 4 — and at a horizon where the ladder is fully resolved the order *rises* to **11.54**. `scheme_family` now selects the branch, and a fifth guard was added: `d10 < rms(u)`, because without it the spectral branch would certify an order built from a `d10` **four times the size of the field**. Measured separation on that guard: Heston 0.005%, KS 210–407% |
+| I14 | §8a: "Tier C runs instead at a declared `chaotic_T_ref`" | Implemented as a *label* only. `chaotic_T_ref` was schema-validated and then consumed nowhere, and the waiver touched `order_ok` — which `rubric_pde` never reaches, because `asymptotic` fails first and returns 4. Setting `chaotic: true` changed `waived_spec` to `waived_chaotic` and left the score at 4. Tier C now re-solves the ladder at the reference horizon, and the returned `t_final` is **checked against what was asked for**: two of the three KS solvers hard-code it, run cleanly, and hand back the full-`T` field, so the shifted ladder would have measured `t = 50` while reporting `t = 5` |
+| I15 | *(introduced by I13, caught by the sweep)* | Inferring `scheme_family` from the free-text `scheme:` fixed the PDE side and broke the SDE side: `expected_orders` treated an **inferred** family as a **declared** one, narrowing the strong-order band to two-sided. `sde_ginzburg_landau_s6/3-log-transform-euler` reads `scheme: euler-maruyama` and is Euler-Maruyama on the *log transform*, where the noise becomes additive and the strong order is therefore **1**. It measures 1.019, correctly, and the inferred band at 0.5 ± 0.4 failed it — 8 down to 3. The rule now: **an inference may loosen a test, never tighten one**, which is the same asymmetry the repo applies to every other guard, because a false hard-fail on correct work is invisible as a false positive |
+| I12 | §9a's tree | Four modules added: `sandbox.py` (I2), `driver.py` and `sde/driver.py` (the orchestration `__init__.py` would otherwise carry, which would break the lazy-import property `schema.py` needs), `plan_meta.py` (§3b's frontmatter) and `schema_bridge.py` (one function, to keep `schema` ↔ `kernel` from closing an import cycle) |
+
+**What the reconciliation actually showed** (§10's Phase-1 gate, and the reason §1 exists).
+The three implemented Kuramoto–Sivashinsky plans reported observed orders of 10.467,
+10.925 and 0.003 and all three scored 10. The kernel gives all three the same score —
+**4** — for the same stated reason: an observed order near 10 on a scheme whose
+`theoretical_order` is 4 fails manual §4's `p_sane` guard, which is the guard those
+evaluators were meant to apply. The fourth plan has no `solver.py` and reports as
+such. Rev 1's Phase-1 gate ("existing problems reproduce their current scores") would
+have called the *old* numbers a pass.
+
+**What the two follow-up fixes changed** (errata I13 and I14, 2026-09-06). With `chaotic: true` and
+`chaotic_T_ref: 5.0` declared, `pde_kuramoto_sivashinsky/1-etdrk4-spectral` moves from **4** to **9
+`manufactured_partial`** — Tier B evidence plus a resolved ladder, with D1 still `unavailable` for
+want of `snapshots`. Its two sibling plans stay at 4 and are told why: they ignore
+`override["params"]["t_final"]`, so the shorter horizon is not available to them. The KS spec itself
+still does not declare `chaotic`; `problem.md:11` carries the verbatim quote the ledger entry needs,
+so that is a two-line formulator change and the only thing standing between this machinery and a
+real score.
+
+**Two further measured changes to existing scores**, both deliberate and both from §4c
+rather than from a defect: a clean self-convergence run with no circularity break now
+tops out at **8** rather than manual §12's 9, and a plan whose reference check reports
+`unavailable` tops out at **9** rather than 10 (the A⁻ split).
+
+**Phase 5 is not done** *(done 2026-09-07, outside this plan — see criterion 13 in §11)*,
+and is the one part of this plan that was not. Acceptance criterion 13 was therefore
+open; every other criterion is met. Two things about it are now known that were not:
+
+*Its numerical claim holds, and is measured.* §8c argues chaos does not prevent a
+harness-owned KS reference, and it does not. Two independently written high-resolution
+schemes on the endpoint-exclusive `M = 1024` grid at `t = 50`:
+
+| Check | Result |
+|---|---|
+| ETDRK4, `dt` halved 2e-3 → 5e-4 | 7.1e-11, then 2.4e-10 |
+| ETDRK4, `M` 512 → 1024 (on the coarse nodes) | 2.3e-13 |
+| **ETDRK4 (`dt` 5e-4) vs IMEX-SBDF3 (`dt` 1e-4)** | **1.26e-09** |
+
+One order looser than §8c's "~1e-10" estimate, and still six orders below the
+problem's own 1% target. The reference is real and obtainable in about ten seconds of
+compute.
+
+*Its wiring is not the mechanical step §8c assumes.* `ground_truth_kind: "reference"`
+exists, but `verify.py` dispatches it **only for an SDE** — `verify_pde` is called for
+every PDE whatever the kind is set to. A PDE reference therefore needs a new
+`verify_pde_reference` path in `benchmark/verify.py`, which §9d lists as **"No
+change"**. The two sections disagree, and the disagreement is the reason to leave this
+as separable work with its own review rather than to fold it in here: it changes how
+the benchmark grades, it edits the answer key, and its validation belongs in
+`benchmark/validate_ground_truth.py` rather than in a script beside the kernel.
+
+---
 
 ### Rev 1 → rev 2 (review against the shipped guardrails work)
 
@@ -764,6 +840,24 @@ would be a failure, not a pass.
 
 Dropped from rev 1: "KS reports a provenance other than `none`" — already true before this plan
 (§8b), so it measures nothing.
+
+### Status, as built (2026-09-05)
+
+| # | Status | Evidence |
+|---|---|---|
+| 1 | **met** | `cli.py evaluate <plan_dir>` ships; both evaluator agents forbid writing an `evaluate.py`; `test_the_cli_is_the_entry_point_and_emits_a_pasteable_metrics_block` |
+| 2 | **met** | `metrics.render_block` emits the block the agent pastes; guardrails C6 updated to record that the upgrade landed |
+| 3 | **met** | `review.check_score_binding` is an **error**, on both the `<review score=X>` attribute and the `Score: N/10` headline; `test_an_agent_cannot_raise_a_score` asserts the rejection is recorded rather than silently ignored |
+| 4 | **met** | `test_the_four_ks_evaluators_reconcile_onto_one_number`; the sweep over all 84 staged plans is in §0's errata. After I13 the three KS plans still agree on 4, but the guard that catches them is now `coarse_resolved` rather than `p_sane` — a better diagnosis, because "your coarsest grid is not resolving the problem" is actionable and "your order estimate is noise" was not, and was wrong besides |
+| 5 | **met** | 7 seeded defects + a negative control, `tests/canaries/kernel/` and `test_kernel_canaries.py` |
+| 6 | **partly** | D1 is `clean` on 9 workspace plans and on the honest canary. The `unresolved` branch is tested at unit level (`test_two_stencils_that_disagree_mean_the_check_is_the_limit`) but has **not** been observed on a real spectral plan, because it needs a solver that returns `snapshots` and every staged solver predates Phase 0. What *did* fire on real spectral and graded-mesh plans is `unavailable` — see errata I4 and I5 |
+| 7 | **met** | `test_a_sign_flipped_operator_term_is_caught`, `test_a_dropped_operator_term_is_caught`, and the same corruption through the canary's full evaluation |
+| 8 | **met, measured** | On the canary at `N = 33/65/129`: 3 pinned levels **0.582 s**, the two-level probe path **0.479 s** (−17.7%), and a declared shock **0.572 s** (unchanged, +1.7% — noise). D1's own overhead is below timing noise (−0.3%), which is what "no extra solve" means in practice. The saving is modest here because the solves are cheap next to the sandbox spawn; §24's model has it growing as `2^(d+2)` |
+| 9 | **met** | `check_chaotic`; `_order_verdict` returns `waived_chaotic` and `waived_spec` as distinct, never-truthy states |
+| 10 | **met** | `check_invariant_names`; `run_declared` splits `not_reported` from `not_reported_gated` so only a **gated** unevaluable invariant caps |
+| 11 | **met** | `kernel/sandbox.py`; `test_kernel_sandbox.py` covers timeout, OOM, blocked import, bad schema, bad signature, missing function and a pre-import leakage scan |
+| 12 | **met** | 282 passing, up from 136. `ruff` clean |
+| 13 | **met** (2026-09-07) | Done as the pilot of the no-closed-form benchmark extension, not as part of this plan. `pde_kuramoto_sivashinsky` is `ground_truth_kind: "reference"` against a harness-owned field built by `benchmark/make_references.py`: ETDRK4 (dt=5e-4) and IMEX-SBDF3 (dt=1e-4) on a 1024-mode grid agree to **1.245e-09** at t = 50, reproducing §0's measured 1.26e-09. §9d's "No change" to `verify.py` was wrong and §8c was right — the PDE `reference` path did not exist and is now `verify_pde_reference`. Measured: a correct ETDRK4 solve is 30% off at N=64 and 6.6e-05 at N=128, so both gates bite and both are clearable; a solver that ignores `N` and one that returns its initial condition both FAIL. See `benchmark/NO_CLOSED_FORM_CANDIDATES.md` |
 
 ---
 

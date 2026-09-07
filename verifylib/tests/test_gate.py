@@ -275,3 +275,16 @@ def test_ast_only_guards_survive_an_interpreter_without_numpy(tmp_path):
     }))
     assert "Traceback" not in clean.stderr, clean.stderr
     assert "reference check skipped" in clean.stdout, clean.stdout
+
+    # The kernel's invariant registry is imported by schema.py, so it too must be
+    # readable on an interpreter that cannot do arithmetic. If ``kernel/__init__.py``
+    # ever imports numpy at module scope, this is what catches it.
+    gated = run("gated_spec.json", json.dumps({
+        **BAD_SPEC,
+        "analytic_solution": None,
+        "verification": {"operator": None, "operator_note": "steady state",
+                         "invariants": [{"name": "physically_reasonable", "gate": True}]},
+    }))
+    assert "Traceback" not in gated.stderr, gated.stderr
+    assert gated.returncode == 2, gated.stdout + gated.stderr
+    assert "not in the kernel registry" in gated.stdout, gated.stdout

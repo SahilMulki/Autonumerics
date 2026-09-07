@@ -313,6 +313,103 @@ def check_operator_declaration(spec) -> list[Finding]:
     return _operator_shape_findings(op, "verification.operator")
 
 
+# --- the invariant registry (plan-no-closed-form §6) --------------------------
+
+def check_invariant_names(spec) -> list[Finding]:
+    """A gated invariant the kernel cannot evaluate is worse than no gate.
+
+    ``_GATED_EXPR_KEYS`` above validates only entries carrying an ``expr``, so
+    ``{"name": "physically_reasonable", "gate": true}`` used to pass the schema,
+    match nothing in the kernel, and read downstream as a satisfied gate. The
+    registry in ``kernel/invariants.py`` is closed and importable, so this is a set
+    membership -- and it is an **error**, not a warning, because unlike the operator
+    rules there is no legacy population to grandfather: measured over ``workspace/``,
+    all 24 gated entries name a registry entry or carry an ``expr``.
+
+    Ungated entries stay free-form notes. Eight distinct names are in use that way
+    (``front_position``, ``monotone_in_S``, ...) and requiring an implementation for
+    a diagnostic nobody gates on would buy nothing.
+    """
+    verification = spec.get("verification")
+    if not isinstance(verification, dict):
+        return []
+    # Imported here rather than at module scope: this module must keep importing on
+    # an interpreter without numpy (E32), and a lazy import inside the one function
+    # that needs the registry is cheaper to reason about than a try/except at the top.
+    from .kernel.invariants import INVARIANTS, gateable
+
+    out = []
+    for key in _GATED_EXPR_KEYS:
+        for i, entry in enumerate(verification.get(key) or []):
+            if not isinstance(entry, dict) or not entry.get("gate"):
+                continue
+            if gateable(entry):
+                continue
+            out.append(error(
+                "invariant", f"verification.{key}[{i}].name",
+                f"gated invariant {entry.get('name')!r} is not in the kernel registry "
+                f"and carries no 'expr'. A gate nothing implements reads as evidence "
+                f"that a check passed. Known names: {sorted(INVARIANTS)}; or supply an "
+                f"evaluable 'expr'; or set gate: false and keep it as a diagnostic",
+            ))
+    return out
+
+
+# --- the chaotic flag (plan-no-closed-form §8a) ------------------------------
+
+def check_chaotic(spec) -> list[Finding]:
+    """``chaotic: true`` waives the Tier-C order check, so it is a self-relaxation
+    vector and needs the same treatment as any other.
+
+    The consumer already shipped -- ``reference.check_reference`` short-circuits on
+    it (guardrails §14 C9) -- with no producer side at all: it appears in no spec,
+    in no template, and in ``formulator.md`` nowhere. This is the producer side.
+
+    Two requirements, both because of what the flag *buys*. It must be quoted from
+    ``problem.md`` through the ledger, because a formulator that can set it escapes
+    Tier C entirely; and ``chaotic_T_ref`` must be **declared**, because an
+    evaluator choosing the predictable window at scoring time chooses its own bar.
+    """
+    out = []
+    chaotic = spec.get("chaotic")
+    if chaotic is not None and not isinstance(chaotic, bool):
+        out.append(error("chaotic", "chaotic",
+                         f"must be true or false, got {type(chaotic).__name__}"))
+        return out
+    t_ref = spec.get("chaotic_T_ref")
+    if not chaotic:
+        if t_ref is not None:
+            out.append(error("chaotic", "chaotic_T_ref",
+                             "declared without chaotic: true. The reference window only "
+                             "means something when the order check has been waived"))
+        return out
+
+    if not isinstance(t_ref, (int, float)) or isinstance(t_ref, bool) or t_ref <= 0:
+        out.append(error(
+            "chaotic", "chaotic_T_ref",
+            "chaotic: true waives the Tier-C order check at full T, so the horizon "
+            "Tier C runs at instead must be declared here -- inside the predictable "
+            "window, and chosen by the formulator rather than by the evaluator at "
+            "scoring time"))
+    else:
+        horizon = (spec.get("time_interval") or {}).get("T")
+        if isinstance(horizon, (int, float)) and float(t_ref) > float(horizon):
+            out.append(error("chaotic", "chaotic_T_ref",
+                             f"{t_ref} exceeds the problem's own horizon T = {horizon}"))
+
+    reqs = [r for r in (spec.get("requirements") or []) if isinstance(r, dict)]
+    if not any("chaotic" in (r.get("spec_path") or "") and (r.get("quote") or "").strip()
+               for r in reqs):
+        out.append(error(
+            "chaotic", "requirements",
+            "chaotic: true waives a scoring gate, so it needs a requirements ledger "
+            "entry naming 'chaotic' in its spec_path and quoting the clause of "
+            "problem.md that establishes it. Without the quote the waiver rests on "
+            "the formulator's own judgement, which is exactly what the ledger exists "
+            "to check"))
+    return out
+
+
 # --- requirements ledger shape (§5) ------------------------------------------
 
 LEDGER_KINDS = frozenset({
@@ -400,6 +497,8 @@ def check_spec(spec) -> list[Finding]:
         *check_prose_as_formula(spec),
         *check_source_text(spec),
         *check_operator_declaration(spec),
+        *check_invariant_names(spec),
+        *check_chaotic(spec),
         *check_ledger(spec),
         *check_operator_ledgered(spec),
     ]

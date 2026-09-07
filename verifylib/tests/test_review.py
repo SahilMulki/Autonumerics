@@ -9,6 +9,7 @@ import os
 
 import pytest
 
+from verifylib import review
 from verifylib.review import (
     bound_claims,
     bound_section,
@@ -154,3 +155,57 @@ def test_no_false_positives_on_archived_reviews():
             if "<metrics>" not in finding.path:
                 flagged.append((path, finding.message))
     assert not flagged, f"{len(flagged)} of {len(paths)} reviews false-flagged: {flagged[:3]}"
+
+
+# --- the kernel-emitted score is binding, not advisory -----------------------
+
+_MATCHING = """<metrics>
+score: 8
+provenance: manufactured_partial
+estimated_rel_error: 1.000e-03
+</metrics>
+
+<review score=8>
+
+**Score: 8/10**
+
+### Numerical Accuracy
+- estimated_rel_error: 1.000e-03
+</review>"""
+
+
+def test_a_review_that_transcribes_the_kernel_score_passes():
+    assert review.check_score_binding(_MATCHING) == []
+
+
+def test_a_review_that_states_a_different_score_is_rejected():
+    """This is what makes a kernel-emitted score binding rather than advisory. It
+    is an error rather than a warning because ``score`` is a small integer the
+    kernel computed and the agent is asked only to copy -- a mismatch is not
+    rounding drift, it is the agent substituting its own judgement for the rubric.
+    """
+    raised = _MATCHING.replace("<review score=8>", "<review score=10>") \
+                      .replace("**Score: 8/10**", "**Score: 10/10**")
+    found = review.check_score_binding(raised)
+    assert len(found) == 2
+    assert all(f.severity == "error" for f in found)
+    assert "may only move the score downward" in found[0].message
+
+
+def test_a_headline_that_drifts_from_the_attribute_is_caught_on_its_own():
+    half = _MATCHING.replace("**Score: 8/10**", "**Score: 9/10**")
+    found = review.check_score_binding(half)
+    assert len(found) == 1 and "headline" in found[0].message
+
+
+def test_a_review_with_no_kernel_score_is_left_alone():
+    """Every SOLUTION.md written before the kernel is in exactly this state, and
+    they are not wrong, only older."""
+    legacy = "<metrics>\nprovenance: analytic\n</metrics>\n\n<review score=10>\nScore: 10/10 — Done\n</review>"
+    assert review.check_score_binding(legacy) == []
+
+
+def test_the_binding_runs_as_part_of_the_ordinary_review_check():
+    raised = _MATCHING.replace("<review score=8>", "<review score=4>")
+    found = review.check_review(raised)
+    assert any(f.severity == "error" for f in found)

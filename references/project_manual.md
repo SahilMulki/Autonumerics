@@ -70,9 +70,18 @@ This is enforced by permission deny rules during benchmark runs, but treat it as
 
 Score 10 = terminal condition. Both SDE and PDE evaluators use the same 1–10 scale.
 
+**The score is computed, not assigned.** `verifylib/kernel/score.py` applies the rubrics below and
+emits `score` and `provenance` in the metrics; the evaluator transcribes them into the review and
+`review.py` requires the `Score: N/10` headline to match `metrics.score` **exactly**. The evaluator's
+one authority is asymmetric — it may record `agent_cap: {score, reason}` to move the score *down*,
+never up. That escape hatch exists for what no check measures: a `SOLUTION.md` describing a different
+scheme than `solver.py` implements, an answer smuggled in as a lookup table, a plan that "converges"
+by returning its input. It is the same shape `benchmark/verify.py`'s `ledger_audit` already uses
+(`score_cap: 3`).
+
 Which rubric applies depends on the **provenance** of the reference (see below). The rubrics here
-are the *analytic* path — when there is no closed form, the evaluator uses the corresponding rubric
-in `verification_manual.md` (§12 for PDE, §23 for SDE).
+are the *analytic* path — when there is no closed form, the kernel uses the corresponding rubric
+in `verification_manual.md` (§12 for PDE, §23 for SDE), under the certification ceiling in §26.
 
 **SDE, analytic path** (`evaluator-sde`, `analytic_moments.has_analytic_solution == true`):
 - **10**: `variance_rel_err < 10%` AND (`|exact_mean| < 0.01` OR `mean_rel_err < 5%`), **and the
@@ -100,9 +109,17 @@ Ground truth is not binary. Every score carries a `provenance` tag naming the ev
 |---|---|
 | `analytic` | Closed-form solution / exact moments |
 | `surrogate` | Deterministic reference derived by the evaluator (SDE moment ODE, Kolmogorov solve, stationary density) |
-| `manufactured` | Manufactured solution or degenerate-limit check passed at design order |
-| `self_convergence` | Richardson/GCI estimate only — no independent reference |
+| `manufactured` | Manufactured solution or degenerate-limit check passed at design order, **and** the D1 operator residual clean against a validated operator — two independent circularity breaks |
+| `manufactured_partial` | Exactly **one** circularity break: Tier B alone, or a clean D1 alone. Caps at 9 |
+| `self_convergence` | Richardson/GCI estimate only — no independent reference. Caps at 8 |
 | `none` | No test could be run (caps the score at 2) |
+
+**A 10 without a closed form requires two independent circularity breaks.** MMS checks the
+*discretization* against a known solution of a *modified* problem; D1 checks the *produced field*
+against the *stated* operator on the real problem, where the shock, layer or stiffness the
+manufactured problem lacks actually lives. They are independent only given a correct operator — a
+misread equation fools both — which is why D1 counts as a break only when the operator has been
+independently validated (`verification_manual.md` §26).
 
 A 10 earned against a closed form and a 10 earned by self-convergence are **different claims**. The
 tag must survive into `<metrics>`, `SOLUTION.md` and `REPORT.md`. See `verification_manual.md` for
@@ -160,18 +177,32 @@ parses it to rank plans when scores tie.
 
 ```
 <metrics>
-provenance: analytic | surrogate | manufactured | self_convergence | none
+score: 9
+provenance: analytic | analytic_unvalidated | surrogate | manufactured | manufactured_partial | self_convergence | none
 estimated_rel_error: 3.10e-03
 error_is_estimate: false
 observed_order: 1.98
 order_floor: 1.50
 invariants_ok: true
 constraints_ok: true
+d1_outcome: clean | slow | stalled | unresolved | unavailable
+d1_slope: 1.98
+operator_validated: true
+reference_outcome: validated       # what the reference check said about the closed form
+order_check: true | waived_spec | waived_chaotic
+asymptotic_source: ladder | probe
 mc_se_rel: 0.0041          # SDE only
 resolved: true             # SDE only
+resolution_evidence: not_used_as_accuracy_evidence
+agent_cap: {"score": 3, "reason": "..."}   # only when the evaluator capped downward
 wall_time_s: 12.4
 </metrics>
 ```
+
+The kernel emits this block; the evaluator copies it verbatim rather than retyping it. Any value
+that is a **skip** rather than a verdict uses the closed vocabulary `not_run`, `unavailable`,
+`unresolved`, `not_reported`, `waived_chaotic`, `faulty_probe` — none of which is ever truthy and
+none of which may be rendered as a pass.
 
 `estimated_rel_error` is always populated — it is the primary tiebreaker, so an evaluator with no
 true reference must still supply the Richardson estimate. Omit fields that do not apply.

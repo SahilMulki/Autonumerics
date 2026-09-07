@@ -1,0 +1,126 @@
+{
+  "equation_type": "reaction-diffusion",
+  "governing_equation": "u_t = alpha*u_xx - k*u",
+  "spatial_dimension": 1,
+  "time_dependent": true,
+  "linear": true,
+  "spatial_variables": [
+    "x"
+  ],
+  "time_variable": "t",
+  "domain": {
+    "bounds": {
+      "x": [
+        0.0,
+        1.0
+      ]
+    }
+  },
+  "boundary_conditions": {
+    "type": "dirichlet",
+    "values": {
+      "x=0": "0.0",
+      "x=1": "0.0"
+    }
+  },
+  "initial_condition": "np.sin(np.pi*x)",
+  "parameters": {
+    "alpha": 0.05,
+    "k": 0.3,
+    "t_final": 0.5
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 0.5
+  },
+  "analytic_solution": null,
+  "evaluation_thresholds": {
+    "rel_l2_err_max": 0.01,
+    "grid_N": 33,
+    "min_spatial_order": 1.8,
+    "order_check": true,
+    "refinement_levels": 3,
+    "metric": "l2",
+    "axes": [
+      "x"
+    ]
+  },
+  "verification": {
+    "expected_provenance": "manufactured",
+    "theoretical_order": 2.0,
+    "operator": {
+      "fields": [
+        "u"
+      ],
+      "terms": {
+        "time": "dt(u)",
+        "diffusion": "-alpha*lap(u)",
+        "reaction": "k*u"
+      },
+      "source": "0"
+    },
+    "mms_probe": {
+      "exact": "np.sin(np.pi*x)*np.cos(t)",
+      "source": "-np.sin(np.pi*x)*np.sin(t) + (alpha*np.pi**2 + k)*np.sin(np.pi*x)*np.cos(t)",
+      "expected_order": 2.0,
+      "space_variables": [
+        "x"
+      ]
+    },
+    "degenerate_limit": {
+      "params": {
+        "k": 0.0
+      },
+      "exact": "np.exp(-alpha*np.pi**2*t)*np.sin(np.pi*x)",
+      "tol": 0.01,
+      "space_variables": [
+        "x"
+      ]
+    },
+    "invariants": [
+      {
+        "name": "positivity",
+        "gate": true,
+        "tol": 1e-10
+      },
+      {
+        "name": "boundary_consistency",
+        "gate": true,
+        "bc_values": [
+          0.0
+        ],
+        "tol": 1e-08
+      },
+      {
+        "name": "symmetry",
+        "gate": false,
+        "axis": 0,
+        "parity": "even",
+        "tol": 1e-06
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "kind": "equation",
+      "quote": "u_t = alpha*u_xx - k*u",
+      "status": "mapped",
+      "spec_path": "governing_equation, verification.operator"
+    },
+    {
+      "id": "R2",
+      "kind": "domain",
+      "quote": "x in [0, 1], t in [0, 0.5]",
+      "status": "mapped",
+      "spec_path": "domain.bounds.x, parameters.t_final"
+    },
+    {
+      "id": "R3",
+      "kind": "evaluation",
+      "quote": "relative L2 error below 1%",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.rel_l2_err_max"
+    }
+  ]
+}

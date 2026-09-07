@@ -131,8 +131,15 @@ When the loop exits:
 
 1. Read all `SOLUTION.md` files — both the `<metrics>` and `<review>` blocks.
 2. Identify the best plan. Score alone will often tie, so rank **lexicographically**:
-   1. `score` descending
-   2. `estimated_rel_error` ascending (from `<metrics>`)
+   1. `score` descending — from `<metrics>` `score:`, which the kernel computed, **not** from the
+      review prose. The `<review score=X>` attribute is a transcription of it and `verifylib` rejects
+      a review where the two disagree, so either reads the same number; prefer the metrics block.
+   2. `provenance` by the ordering in `project_manual.md`: `analytic` > `analytic_unvalidated` >
+      `surrogate` > `manufactured` > `manufactured_partial` > `self_convergence` > `none`. A 9 tagged
+      `manufactured_partial` rests on one circularity break; a 9 tagged `analytic_unvalidated` rests
+      on a formula nobody could check. They are different claims and the tag is how they stay
+      distinguishable.
+   3. `estimated_rel_error` ascending (from `<metrics>`)
    3. observed order margin (`observed_order − order_floor`) descending
    4. `wall_time_s` ascending
    5. fewest iterations
@@ -171,8 +178,10 @@ When the loop exits:
 - Read only `equation_type` and `requirements` from `problem_spec.json` — do not analyze the problem yourself. You check the ledger's *structure* (statuses and `spec_path`s), never whether the mathematics in it is right; that is the formulator's job and not yours to second-guess.
 - STATE.md is your sole responsibility — keep it accurate after every dispatch.
 - Always use `run_in_background: true` in the solving loop.
-- When reading the score: search SOLUTION.md for `<review score=` and parse the integer. Also parse the `<metrics>` block immediately above it for `provenance`, `estimated_rel_error` and `observed_order` — you need them for Phase 3 ranking, and carrying `provenance` through to REPORT.md is not optional.
-- Do not second-guess a `provenance` tag or re-derive an error yourself. Record what the evaluator reported.
+- When reading the score: parse the `<metrics>` block for `score`, `provenance`, `estimated_rel_error` and `observed_order`. `score` and `provenance` are **computed by the kernel**, not written by the evaluator, so they are the fields to rank on; `<review score=X>` is a transcription of the same number and `verifylib` rejects a review where the two disagree. Carrying `provenance` through to REPORT.md is not optional.
+- If a plan's metrics carry `agent_cap`, the evaluator lowered the score below what the checks computed and recorded a reason. Report both the capped score and the reason in REPORT.md — a cap is a finding, not a formality. A cap can only ever lower a score.
+- Do not second-guess a `provenance` tag or re-derive an error yourself. Record what the kernel computed.
+- `manufactured_partial` and `analytic_unvalidated` are real provenance values and must survive into STATE.md and REPORT.md unchanged. They mean "one circularity break" and "a closed form nobody could check" respectively, and flattening either to its neighbour destroys the distinction the tag exists for.
 - Agent arguments: formulator and plan-creators take `workspace/{problem_slug}`; solvers and evaluators take the plan directory path.
 - **Never work around a guardrail finding.** `verifylib` exit 2 is a fact about an artifact, not an
   obstacle. Re-dispatch the agent that owns the file once with the finding as its reason; if it

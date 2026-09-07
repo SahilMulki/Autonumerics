@@ -48,10 +48,11 @@ Tiers
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache, partial
 
 import numpy as np
-from scipy.linalg import expm
+from scipy.linalg import eigh, expm
 from scipy.optimize import brentq
 from scipy.special import erf, erfcx, ndtr  # ndtr = standard-normal CDF
 
@@ -336,6 +337,52 @@ def _burgers_inviscid(t, x):
     return np.where(x < 0.5 * t, 1.0, 0.0)
 
 
+_BV_NU = 0.01                      # viscous Burgers: Re = 100
+_BV_L = 2.0 * np.pi
+
+
+def _burgers_viscous_1d(t, x, *, nu=_BV_NU, n_quad=8192, chunk=64):
+    """u_t + u u_x = nu u_xx on the periodic interval [0, 2 pi], u(x,0) = sin x.
+
+    **No closed form, and exact truth anyway** -- the Route-S pattern of
+    NO_CLOSED_FORM_CANDIDATES.md. The Cole-Hopf transform linearizes the equation to
+    the heat equation, which turns the solution into a ratio of two integrals
+
+        u(x,t) = int (x-y)/t * exp(-G/2nu) dy  /  int exp(-G/2nu) dy,
+        G(y) = (1 - cos y) + (x-y)^2 / (2t),
+
+    with no elementary evaluation. Written naively it also does not survive float64:
+    at nu = 0.01 the exponent spans e^{+-100}, and at the nu = 1e-3 that a genuinely
+    thin layer would need it spans e^{+-1000}, past the overflow limit entirely. The
+    fix is the standard one -- subtract the row maximum before exponentiating, which
+    cancels identically in the ratio.
+
+    What is left is a smooth, rapidly decaying integrand on a periodic base, where the
+    trapezoid rule converges geometrically: measured, the value stops moving at
+    ``n_quad = 2048`` (max change 1e-15 to 32768) and is insensitive to the
+    integration span. So the ground truth here is machine-precision despite there
+    being no formula to write down.
+
+    The honest caveat, recorded rather than hidden: a *solver* could also evaluate
+    this quadrature instead of discretizing the PDE, and would pass. That is a
+    legitimate numerical solution of the stated problem rather than a hard-coded
+    answer, and at this viscosity it is not the easy route -- but it is the reason
+    this problem sits at the boundary of "no closed form" rather than inside it."""
+    x = np.atleast_1d(np.asarray(x, dtype=float))
+    s = np.linspace(-_BV_L, _BV_L, n_quad)
+    out = np.empty(x.shape, dtype=float)
+    flat, res = x.ravel(), out.ravel()
+    for i in range(0, flat.size, chunk):
+        xc = flat[i:i + chunk][:, None]
+        y = xc + s[None, :]
+        w = -((1.0 - np.cos(y)) + s[None, :] ** 2 / (2.0 * t)) / (2.0 * nu)
+        w -= w.max(axis=1, keepdims=True)      # log-sum-exp; cancels in the ratio
+        e = np.exp(w)
+        res[i:i + chunk] = (np.trapezoid(e * (-s[None, :] / t), s, axis=1)
+                            / np.trapezoid(e, s, axis=1))
+    return out
+
+
 def _fokker_planck_ou(t, x, *, mu0, var0):
     mu = mu0 * np.exp(-t)
     var = 1.0 + (var0 - 1.0) * np.exp(-2.0 * t)
@@ -426,6 +473,80 @@ def _lshape_mask(X, Y):
 # u* = 0.2 sin(2pi x) sin(2pi y) cos(t) is hidden; the solver is handed the source
 # s(x,y,t) below (derived from u* and cross-checked against a sympy derivation and
 # the PDE residual in validate_ground_truth.py).
+# --- 2-D Schrodinger ground state: no closed form, exact by spectral expansion ---
+# Route S of NO_CLOSED_FORM_CANDIDATES.md. -Delta u + V u = lambda u with Dirichlet
+# data on the unit square has no closed-form eigenpair for a generic V, but the sine
+# basis phi_m(x) = sqrt2 sin(m pi x) satisfies the boundary condition exactly and
+# diagonalizes the Laplacian, so the whole problem is one dense symmetric eigensolve
+# in a basis where the potential's matrix elements are known in closed form.
+#
+# V is a trigonometric polynomial precisely so those matrix elements are exact:
+#
+#   <phi_m|cos(2 pi p x)|phi_m'> = (1/2)[ 1{m-m' = 2p} + 1{m-m' = -2p} ] - (1/2) 1{m+m' = 2p}
+#
+# from 2 sin(a)sin(b) = cos(a-b) - cos(a+b) and int_0^1 cos(n pi x) dx = 1{n = 0}.
+# The potential's coefficients are deliberately not those of any tabulated problem:
+# a published eigenvalue can be *recalled* by a model that solved nothing, which would
+# corrupt exactly the one-shot-vs-pipeline comparison this benchmark exists to make.
+_EIG_V = ((1, 0, 40.0), (0, 1, 25.0), (1, 1, 30.0), (2, 1, 15.0))
+_EIG_K = 48                      # sine modes per direction; converged by K = 30
+
+
+def _eig_cos_matrix(K, p):
+    """<phi_m|cos(2 pi p x)|phi_m'>, exactly, for m, m' = 1..K.
+
+    The two indicator terms must be added as *numbers*. Adding them as booleans is
+    numpy's logical OR, which is right wherever they are disjoint (p > 0) and silently
+    halves the diagonal at p = 0 -- i.e. it halves every potential term that is
+    constant in one direction, and the resulting eigenvalue is a perfectly plausible
+    number for a different potential."""
+    m = np.arange(1, K + 1)
+    diff = m[:, None] - m[None, :]
+    summ = m[:, None] + m[None, :]
+    same = (diff == 2 * p).astype(float) + (diff == -2 * p).astype(float)
+    return 0.5 * same - 0.5 * (summ == 2 * p).astype(float) * (p > 0)
+
+
+@lru_cache(maxsize=1)
+def _eig_ground_state(K=_EIG_K):
+    """``(lambda_1, lambda_2, C)`` -- the two lowest eigenvalues and the ground
+    state's sine coefficients ``C[m-1, n-1]``, normalized to unit L2 norm."""
+    m = np.arange(1, K + 1)
+    kinetic = np.diag((m * np.pi) ** 2)
+    ident = np.eye(K)
+    H = np.kron(kinetic, ident) + np.kron(ident, kinetic)
+    for px, py, c in _EIG_V:
+        H = H + c * np.kron(_eig_cos_matrix(K, px), _eig_cos_matrix(K, py))
+    w, V = eigh(H, subset_by_index=[0, 1])
+    C = V[:, 0].reshape(K, K)
+    # An eigenvector's sign is arbitrary and LAPACK's choice is not contractual, so
+    # pin it. Scoring does not depend on this (the eigen gauge in verify.py aligns the
+    # solver's field to whichever sign the reference carries), but a ground state that
+    # silently flips between runs is a reference nobody can reason about.
+    C = C if C.flat[np.argmax(np.abs(C))] > 0 else -C
+    return float(w[0]), float(w[1]), C
+
+
+def _schrodinger_eigen_2d(_t, X, Y):
+    """The ground-state eigenfunction on the solver's nodes, to machine precision."""
+    _lam1, _lam2, C = _eig_ground_state()
+    K = C.shape[0]
+    m = np.arange(1, K + 1)
+    x, y = np.asarray(X)[:, 0], np.asarray(Y)[0, :]
+    Sx = np.sqrt(2.0) * np.sin(np.outer(m, np.pi * x))       # (K, nx)
+    Sy = np.sqrt(2.0) * np.sin(np.outer(m, np.pi * y))       # (K, ny)
+    return np.einsum("mn,mi,nj->ij", C, Sx, Sy)
+
+
+def schrodinger_potential(X, Y):
+    """V(x, y) -- stated in problem.md, so the problem is fully specified."""
+    out = np.zeros(np.shape(X), dtype=float)
+    for px, py, c in _EIG_V:
+        out = out + c * np.cos(2.0 * np.pi * px * np.asarray(X)) \
+                      * np.cos(2.0 * np.pi * py * np.asarray(Y))
+    return out
+
+
 _CH_EPS = 0.1
 
 
@@ -771,6 +892,195 @@ def _diag_convexity_min_eig(field="u", floor=-1e-2):
         mn = float(np.min(core))
         return mn, bool(mn >= floor)
     return fn
+
+
+def _diag_nontrivial(field, floor=0.1, relative_to_initial=True):
+    """The field has not collapsed onto a homogeneous steady state.
+
+    A residual or an operator check rewards any field sitting on a stable steady
+    state of the operator, whether or not it is the state the initial condition
+    actually evolves to (plan-no-closed-form.md §5f). Gray-Scott is the sharp case:
+    ``u = 1, v = 0`` solves every term to machine precision, having eliminated the
+    only phenomenon the problem is about. Against a reference field the same trap is
+    live -- an over-diffusive scheme is *smooth*, so nothing but this notices. The
+    gate compares the returned field's RMS variation against the reference's, so it
+    fires on collapse and never on a merely inaccurate pattern."""
+    def fn(num, exact, axes, mask):
+        sel = slice(None) if mask is None else mask
+        u, ue = np.asarray(num[field])[sel], np.asarray(exact[field])[sel]
+        var_n = float(np.sqrt(np.mean((u - np.mean(u)) ** 2)))
+        var_e = float(np.sqrt(np.mean((ue - np.mean(ue)) ** 2)))
+        ratio = var_n / (var_e + 1e-300) if relative_to_initial else var_n
+        return ratio, bool(ratio >= floor)
+    return fn
+
+
+def _diag_mass_error(field="u", tol=1e-3):
+    """Deviation of the domain mean from the reference's, relative to the field scale.
+
+    Cahn-Hilliard is written as ``u_t = div(...)``, so total mass is conserved
+    exactly and a scheme that loses it is wrong in a way no pointwise error at a
+    single time reveals cheaply. Measured against the reference's mean rather than
+    against zero, so the check states conservation rather than a coincidence of this
+    particular initial condition."""
+    def fn(num, exact, axes, mask):
+        sel = slice(None) if mask is None else mask
+        u, ue = np.asarray(num[field])[sel], np.asarray(exact[field])[sel]
+        scale = float(np.sqrt(np.mean(ue ** 2))) + 1e-300
+        err = abs(float(np.mean(u)) - float(np.mean(ue))) / scale
+        return err, bool(err <= tol)
+    return fn
+
+
+def _diag_single_signed(field="u", tol=1e-3, rel_floor=0.01):
+    """The field does not change sign -- the defining property of a ground state.
+
+    A Dirichlet ground state is nodeless (Perron-Frobenius); every excited state has a
+    nodal line. So this separates "solved the eigenproblem" from "solved *an*
+    eigenproblem", which is the realistic failure here: ``which='SM'`` returns the
+    eigenvalue smallest in *magnitude*, not the smallest algebraically, and on a
+    potential deep enough to push the ground state negative those are different
+    states. Sign-agnostic, because an eigenvector's overall sign is arbitrary."""
+    def fn(num, exact, axes, mask):
+        sel = slice(None) if mask is None else mask
+        v = np.asarray(num[field])[sel].ravel()
+        big = v[np.abs(v) > rel_floor * float(np.max(np.abs(v)) + 1e-300)]
+        if big.size == 0:
+            return 1.0, False                      # an all-zero field is not a mode
+        frac = float(min((big > 0).mean(), (big < 0).mean()))
+        return frac, bool(frac <= tol)
+    return fn
+
+
+# =============================================================================
+# Harness-owned reference fields (problems with no closed form)
+# =============================================================================
+#
+# A PDE with no closed form is still independently checkable: compute the answer
+# once, offline, with two independent method families, confirm they agree far below
+# the problem's own tolerance, and store the result. ``make_references.py`` produces
+# the artifacts under ``benchmark/references/``; this half loads one and evaluates it
+# at whatever nodes a solver returned.
+#
+# Evaluation must not smuggle interpolation error into the score, so there are
+# exactly two ways to leave the reference grid:
+#
+#   * a **periodic** axis is interpolated by the band-limited trigonometric
+#     interpolant, which is exact to round-off for a resolved field and does not care
+#     whether the solver's grid is endpoint-inclusive (the convention the solver
+#     contract asks for) or exclusive (the convention a spectral solve uses
+#     internally) -- the mismatch that plan-no-closed-form.md errata I5 measured;
+#   * a **non-periodic** axis must nest: every requested node is a node of the
+#     reference grid, or the reference reports that it cannot be evaluated. Choose
+#     ``grid_N`` accordingly (M = 1025 admits N = 65 and N = 129 exactly).
+
+_REFERENCE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "references")
+
+
+class ReferenceUnavailable(Exception):
+    """The stored reference cannot be evaluated at the requested nodes."""
+
+
+@lru_cache(maxsize=None)
+def _load_reference(slug):
+    path = os.path.join(_REFERENCE_DIR, f"{slug}.npz")
+    if not os.path.exists(path):
+        raise ReferenceUnavailable(
+            f"no reference artifact for {slug!r} at {path}; run "
+            f"`uv run python benchmark/make_references.py --only {slug}`")
+    with np.load(path, allow_pickle=False) as z:
+        data = {k: z[k] for k in z.files}
+    meta = {
+        "axes": [str(a) for a in data["axis_names"]],
+        "fields": [str(f) for f in data["field_names"]],
+        "periodic": [bool(p) for p in data["periodic"]],
+        "t_eval": float(data["t_eval"]),
+        "reference_error": float(data["reference_error"]),
+    }
+    meta["grids"] = [data[f"axis_{n}"] for n in meta["axes"]]
+    meta["values"] = {n: data[f"field_{n}"] for n in meta["fields"]}
+    return meta
+
+
+def _trig_interp_matrix(ref_axis, targets):
+    """Band-limited interpolation from an M-point endpoint-exclusive uniform periodic
+    grid to arbitrary targets, as the periodic-sinc matrix acting on *physical*
+    values. Exact to round-off for a field resolved at M modes.
+
+    The kernel is Trefethen's ``S_M(y) = sin(My/2) / (M tan(y/2))`` for even M, which
+    already carries the correct treatment of the Nyquist mode: for even M that
+    coefficient is real and its two conjugate half-modes recombine as a cosine, and a
+    matrix that keeps only the ``-M/2`` term instead interpolates a *complex* function
+    and is wrong by O(1) wherever that mode has energy. Odd M uses ``sin(y/2)``."""
+    ref = np.asarray(ref_axis, dtype=float)
+    M = ref.size
+    L = M * float(ref[1] - ref[0])
+    delta = 2.0 * np.pi * (np.asarray(targets, dtype=float)[:, None] - ref[None, :]) / L
+    on_node = np.isclose(np.mod(delta + np.pi, 2.0 * np.pi) - np.pi, 0.0, atol=1e-12)
+    safe = np.where(on_node, 1.0, delta)                   # keep the 0/0 out of the ufunc
+    half = 0.5 * safe
+    denom = np.tan(half) if M % 2 == 0 else np.sin(half)
+    P = np.sin(0.5 * M * safe) / (M * denom)
+    P[on_node] = 1.0
+    return P
+
+
+def _restrict_index(ref_axis, targets, atol=1e-9):
+    """Indices of ``targets`` in ``ref_axis``, or None when the grids do not nest."""
+    ref, tgt = np.asarray(ref_axis, dtype=float), np.asarray(targets, dtype=float)
+    j = np.abs(ref[None, :] - tgt[:, None]).argmin(axis=1)
+    scale = max(1.0, float(np.ptp(ref)))
+    return j if np.allclose(ref[j], tgt, rtol=0.0, atol=atol * scale) else None
+
+
+def _apply_along(u, axis, op):
+    """Contract a per-axis operator (matrix or index array) into ``u`` on ``axis``."""
+    moved = np.moveaxis(u, axis, -1)
+    out = moved[..., op] if op.ndim == 1 else moved @ op.T
+    return np.moveaxis(out, -1, axis)
+
+
+def reference_evaluator(slug):
+    """``(t, *coords) -> {field: array}`` reading the stored reference for ``slug``.
+
+    ``coords`` is the meshgrid the verifier built from the solver's own grid, so the
+    reference is resampled onto the solver's nodes rather than the other way round --
+    the solver is never told what resolution the answer key lives at."""
+    def evaluate(_t, *coords):
+        meta = _load_reference(slug)
+        d = len(meta["axes"])
+        if len(coords) != d:
+            raise ReferenceUnavailable(
+                f"{slug}: reference is {d}-D, asked for {len(coords)}-D coordinates")
+        # Recover the 1-D target axes from the ij-indexed meshgrid.
+        targets = [np.asarray(coords[i])[tuple(0 if j != i else slice(None)
+                                               for j in range(d))] for i in range(d)]
+        ops = []
+        for i, (ref_axis, periodic) in enumerate(zip(meta["grids"], meta["periodic"],
+                                                     strict=True)):
+            idx = _restrict_index(ref_axis, targets[i])
+            if idx is not None:
+                ops.append(idx)
+            elif periodic:
+                ops.append(_trig_interp_matrix(ref_axis, targets[i]))
+            else:
+                raise ReferenceUnavailable(
+                    f"{slug}: axis {meta['axes'][i]!r} is not periodic and the requested "
+                    f"{targets[i].size} nodes are not a subset of the {ref_axis.size}-node "
+                    "reference grid; set grid_N so the grids nest")
+        out = {}
+        for name, values in meta["values"].items():
+            u = np.asarray(values, dtype=float)
+            for i, op in enumerate(ops):
+                u = _apply_along(u, i, op)
+            out[name] = u
+        return out
+    return evaluate
+
+
+def reference_error_of(slug):
+    """The stored two-scheme agreement, in the problem's own relative metric."""
+    return _load_reference(slug)["reference_error"]
 
 
 # =============================================================================
@@ -1211,12 +1521,28 @@ by relative L2 error.
         "tier": 3,
         "family": "kuramoto-sivashinsky",
         "title": "Kuramoto-Sivashinsky (chaotic)",
-        "challenge": "Fourth-order, chaotic, no closed form; stiff and requires an ETDRK/IMEX spectral integrator. No analytic ground truth.",
+        "challenge": "Fourth-order, chaotic, no closed form; stiff and requires an ETDRK/IMEX spectral integrator. Ground truth is a harness-owned high-resolution reference, not a formula.",
         "dims": 1,
         "domain": {"x": [0.0, 100.53096491487338]},  # 32*pi
         "t_eval": 50.0,
-        "has_ground_truth": False,
+        "axes": ["x"],
+        # No closed form exists, and none is needed. Two independent time integrators
+        # on a 1024-mode spectral discretization (ETDRK4 at dt=5e-4, IMEX-SBDF3 at
+        # dt=1e-4) agree to 1.245e-09 at t = 50 -- six orders below this problem's own
+        # 1% target, which is the quantitative reason chaos does not prevent a
+        # reference here. See make_references.py:reference_kuramoto_sivashinsky.
+        "closed_form": False,
+        "has_ground_truth": True,
+        "ground_truth_kind": "reference",
         "analytic": None,
+        "reference": reference_evaluator("pde_kuramoto_sivashinsky"),
+        "reference_error": 1.245e-09,
+        # Measured against that reference: a correct ETDRK4 solve is 30% off at N=64
+        # and 6.6e-05 at N=128, so both gates bite and both are clearable -- but only
+        # by a scheme that resolves the fourth-order operator. N=48 does not merely
+        # lose accuracy, it goes non-finite.
+        "grid_N": 64,
+        "min_order": 1.0,
         "description": """# Kuramoto-Sivashinsky Equation (chaotic)
 
 Solve the Kuramoto-Sivashinsky equation on the periodic interval [0, 32 pi]:
@@ -1825,6 +2151,167 @@ Report the fields at t = 0.5 as a `fields` dict with keys `Ex, Ey, Ez, Hx, Hy, H
 spatial-convergence-order check. **Both div E and div H must stay near zero** --
 two hard structural gates (a Yee-type staggered scheme preserves them; a naive
 collocated scheme accumulates spurious divergence).
+""",
+    },
+    # -------------------------------------------------------------------------
+    # PDE -- Tier 3, no closed form (NO_CLOSED_FORM_CANDIDATES.md)
+    #
+    # The set above is dominated by exact and *manufactured* solutions, and a
+    # manufactured problem hands the solver's author a closed form -- so nothing in
+    # it exercises scoring without one. These do. Each carries an independent check
+    # by one of the four routes (harness-owned reference field, semi-analytic exact,
+    # scalar functional, structure), never by a formula, and each is flagged
+    # ``closed_form: False`` so the suite can run on its own.
+    # -------------------------------------------------------------------------
+    {
+        "id": "P29",
+        "slug": "pde_burgers_viscous_1d",
+        "type": "pde",
+        "tier": 3,
+        "family": "burgers-viscous",
+        "title": "1D Viscous Burgers (Re = 100)",
+        "challenge": "Nonlinear advection steepens into an internal layer of width ~2 nu; ground truth is a Cole-Hopf quadrature, not a formula. The matched pair to the inviscid shock problem, with the closed form removed.",
+        "dims": 1,
+        "axes": ["x"],
+        "domain": {"x": [0.0, 6.283185307179586]},   # 2*pi
+        "t_eval": 1.5,                                # past the t = 1 breaking time
+        "closed_form": False,
+        "has_ground_truth": True,
+        "analytic": _burgers_viscous_1d,
+        # Measured against that truth at t = 1.5: a Fourier pseudospectral solve is
+        # 8.8e-03 at N = 256 and 1.1e-04 at N = 512; a second-order central FD solve
+        # is 4.8e-02 and 8.0e-03. Both clear the fine grid, neither clears the coarse
+        # one, so the order check bites on a real difference rather than on noise --
+        # and a scheme that under-resolves the layer fails outright.
+        "grid_N": 256,
+        "min_order": 1.0,
+        "description": """# 1-D Viscous Burgers Equation
+
+Solve the viscous Burgers equation on the periodic interval [0, 2 pi]:
+
+    u_t + u u_x = nu u_xx,   x in [0, 2 pi],   t in [0, 1.5]
+
+**Parameter**:  nu = 0.01.
+
+**Initial condition**:  u(x, 0) = sin(x)
+
+**Boundary conditions**:  periodic.
+
+The inviscid characteristics of this initial condition cross at t = 1, so by the
+reporting time the solution has steepened into an internal layer whose width is set
+by the viscosity rather than by the grid. Report the numerical solution at t = 1.5.
+""",
+    },
+    {
+        "id": "P30",
+        "slug": "pde_cahn_hilliard_2d_coarsening",
+        "type": "pde",
+        "tier": 3,
+        "family": "cahn-hilliard",
+        "title": "Cahn-Hilliard, free coarsening (no closed form)",
+        "challenge": "The matched pair to the MMS Cahn-Hilliard: same fourth-order operator, same eps, source deleted. Without a manufactured solution the dynamics are spinodal separation and coarsening, where a first-order energy-stable scheme at a comfortable step is stable, smooth, and wrong.",
+        "dims": 2,
+        "axes": ["x", "y"],
+        "domain": {"x": [0.0, 1.0], "y": [0.0, 1.0]},
+        "t_eval": 0.1,
+        "closed_form": False,
+        "has_ground_truth": True,
+        "ground_truth_kind": "reference",
+        "analytic": None,
+        "reference": reference_evaluator("pde_cahn_hilliard_2d_coarsening"),
+        # ETDRK4 (dt=4e-6) and IMEX-SBDF3 (dt=2e-6) on a 128^2 spectral grid agree to
+        # 5.9e-10; the recorded error is the max over that and two refinement checks,
+        # which is deliberately conservative. Measured discrimination at t = 0.1:
+        # ETDRK4 is under 1% even at dt = 2e-3, while the *first-order* stabilized
+        # IMEX scheme -- the textbook energy-stable choice -- is 2.6e-02 at dt = 4e-4
+        # and 5.8e-02 at dt = 1e-3, and needs dt <= 1e-5 to get inside the gate. The
+        # discriminator here is the time integrator, not the mesh.
+        "reference_error": 9.303e-08,
+        "grid_N": 48,
+        "min_order": 1.0,
+        "diagnostics": [
+            {"name": "mass_error", "fn": _diag_mass_error("u", tol=1e-3), "gate": True},
+            {"name": "nontrivial", "fn": _diag_nontrivial("u", floor=0.5), "gate": True},
+        ],
+        "description": """# Cahn-Hilliard Equation (free coarsening)
+
+Solve the Cahn-Hilliard equation on the periodic unit square [0, 1]^2, over
+t in [0, 0.1]:
+
+    u_t = Delta(mu),
+    mu  = -eps^2 * Delta u + u^3 - u,
+
+**Parameters**:  eps = 0.03.
+
+**Initial condition**:
+
+    u(x, y, 0) =  0.3 * sin(2*pi*x) * sin(2*pi*y)
+                + 0.2 * cos(4*pi*x) * cos(2*pi*y)
+                - 0.15 * sin(6*pi*x) * cos(4*pi*y)
+                + 0.1 * cos(2*pi*x) * sin(6*pi*y)
+
+**Boundary conditions**:  periodic in both directions.
+
+There is no source term: the initial state phase-separates into domains of u ~ +-1
+and those domains then coarsen. The fourth-order operator is stiff (a fully explicit
+scheme needs dt ~ h^4 / eps^2), so an energy-stable or IMEX/spectral integrator is
+appropriate -- but stability is not accuracy, and the interface motion this problem
+is scored on is set by the temporal accuracy of the scheme. Total mass is conserved
+exactly by the equation. Report the numerical solution u(x, y, 0.1).
+""",
+    },
+    {
+        "id": "P31",
+        "slug": "pde_schrodinger_eigen_2d",
+        "type": "pde",
+        "tier": 3,
+        "family": "schrodinger-eigenvalue",
+        "title": "2D Schrodinger ground state (eigenvalue + eigenfunction)",
+        "challenge": "An eigenvalue problem rather than an evolution: the answer is a number and a mode, neither with a closed form. Scored on both, so returning a plausible eigenpair from the wrong end of the spectrum fails.",
+        "dims": 2,
+        "axes": ["x", "y"],
+        "domain": {"x": [0.0, 1.0], "y": [0.0, 1.0]},
+        "t_eval": None,                       # steady (time-independent) problem
+        "closed_form": False,
+        "has_ground_truth": True,
+        "analytic": _schrodinger_eigen_2d,    # exact by a convergent spectral expansion
+        # The eigenfunction is defined only up to a scalar multiple, so it is compared
+        # in a common gauge (unit norm, sign aligned on the largest reference node).
+        "normalize_fields": True,
+        "functional_truth": {"lambda_1": -8.442746362964},
+        # Calibrated against a standard second-order FD eigensolve: |dlam|/|lam| is
+        # 1.19e-03 at N = 64 and 2.93e-04 at N = 128 (field error 3.4e-04 -> 8.4e-05,
+        # a clean order 2.02). So a 5e-04 functional gate is cleared at the fine grid
+        # by an ordinary scheme and missed at the coarse one -- the eigenvalue, not the
+        # field, is the live gate here, and the field keeps a solver from passing on a
+        # number it did not compute a mode for.
+        "functional_tol": 5e-4,
+        "grid_N": 64,
+        "min_order": 1.0,
+        "diagnostics": [
+            {"name": "ground_state_nodeless", "fn": _diag_single_signed("u"), "gate": True},
+        ],
+        "description": """# 2-D Schrodinger Ground State
+
+Find the lowest Dirichlet eigenpair of the Schrodinger operator on the unit square:
+
+    -Delta u + V(x, y) u = lambda u,   (x, y) in (0, 1)^2,
+    u = 0 on the boundary,
+
+with the potential
+
+    V(x, y) =  40 * cos(2*pi*x)
+             + 25 * cos(2*pi*y)
+             + 30 * cos(2*pi*x) * cos(2*pi*y)
+             + 15 * cos(4*pi*x) * cos(2*pi*y).
+
+Report **the algebraically smallest eigenvalue** lambda_1 and its eigenfunction. The
+potential is deep enough that lambda_1 is negative, so the lowest eigenvalue is not
+the one of smallest magnitude. The eigenfunction is defined only up to a nonzero
+scalar multiple; any normalization and either sign is accepted.
+
+Return the eigenfunction as `numerical_solution` on the grid, and the eigenvalue in a
+`functionals` dict as `{"lambda_1": <float>}`.
 """,
     },
     # -------------------------------------------------------------------------
@@ -2592,6 +3079,13 @@ def discriminator_problems():
     incoming hard PDEs with ``"discriminator": True`` to fold them in (a one-line
     change per problem, so the subset is defined in exactly one place)."""
     return [p for p in PROBLEMS if p.get("discriminator")]
+
+
+def no_closed_form_problems():
+    """Problems whose solution has no closed form -- the suite that exercises scoring
+    without a formula (NO_CLOSED_FORM_CANDIDATES.md). Run on its own so the
+    50-problem baseline denominators stay comparable across the C0/C1/C2 sweep."""
+    return [p for p in PROBLEMS if p.get("closed_form") is False]
 
 
 if __name__ == "__main__":

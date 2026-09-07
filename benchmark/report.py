@@ -438,6 +438,39 @@ def generate_report(results, config=None):
                f"{'; '.join(detail) if detail else 'see log'}.{logstr}")
         ap("")
 
+    # ---- kernel provenance vs the independent verdict ---------------------
+    # Only rendered when the run recorded it. This is the whole point of the
+    # no-closed-form suite: the pipeline's kernel says what its answer *rests on*
+    # (a closed form, a manufactured solution, self-convergence alone), and this is
+    # the only place that claim meets an independent verdict. A `manufactured` 10
+    # sitting on an OVERCLAIM row is a rubric bug; a `self_convergence` 8 on a
+    # VERIFIED_PASS row is the rubric being appropriately cautious.
+    kerneled = [r for r in results if (r.get("kernel") or {}).get("status") == "ok"]
+    if kerneled:
+        ap("## Kernel provenance vs the independent verdict\n")
+        ap("What the pipeline's own kernel says its score rests on (`provenance`, from "
+           "`verifylib/kernel/score.py`), against what the harness's independent check "
+           "found. The kernel never sees the ground truth these verdicts are computed "
+           "from, so agreement here is evidence and disagreement is a finding.\n")
+        provs, verds = {}, []
+        for r in kerneled:
+            provs.setdefault(r["kernel"].get("provenance") or "none", {})
+            provs[r["kernel"]["provenance"] or "none"][r["_verdict"]] = \
+                provs[r["kernel"]["provenance"] or "none"].get(r["_verdict"], 0) + 1
+            if r["_verdict"] not in verds:
+                verds.append(r["_verdict"])
+        verds = [v for v in _VERDICT_ORDER if v in verds]
+        ap(_table(["kernel provenance", *verds],
+                  [[prov, *[str(provs[prov].get(v, 0) or "") for v in verds]]
+                   for prov in sorted(provs)]))
+        ap("")
+        ap(_table(["problem", "kernel score", "provenance", "tier", "independent verdict"],
+                  [[r["slug"], str(r["kernel"].get("score")),
+                    r["kernel"].get("provenance") or "-", r["kernel"].get("tier") or "-",
+                    VERDICT_LABEL.get(r["_verdict"], r["_verdict"])]
+                   for r in sorted(kerneled, key=lambda r: r["slug"])]))
+        ap("")
+
     # ---- methodology ------------------------------------------------------
     ap("## Methodology and reproducibility\n")
     ap("- **Pipeline pass** = the conductor's best plan reached the terminal self-score of "
@@ -453,6 +486,15 @@ def generate_report(results, config=None):
        "discretization-free Monte-Carlo of the known exact solution, compared within an "
        "SE-aware tolerance); *stability* (no ground truth — the independent check only confirms "
        "a correct scheme stays finite / in its domain, which is what a naive scheme gets wrong).")
+    ap("- **Problems with no closed form** (`closed_form: False`) run as their own suite "
+       "(`--no-closed-form`) and are excluded by default, so the main benchmark's baseline "
+       "denominators stay comparable. They are still independently checked, by one of four "
+       "routes: a harness-owned high-resolution *reference field* (two independent method "
+       "families agreeing far below the pass tolerance, built by `make_references.py` and "
+       "recorded as the problem's `reference_error`, which widens the tolerance so the answer "
+       "key's own error cannot fail a correct solver); *semi-analytic exact* truth from a "
+       "quadrature, series or eigen-expansion; a scalar *functional* (`functional_truth`); and "
+       "structural gates. See `benchmark/NO_CLOSED_FORM_CANDIDATES.md`.")
     ap(f"- Ground truth for all {len(gt)} exact/reference problems is validated independently "
        "(SDE moments against moment-ODE integration, matrix-exponential / affine systems, and "
        "direct simulation; the Ginzburg-Landau reference anchored to the literature value "

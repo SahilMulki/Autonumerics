@@ -225,6 +225,15 @@ def process(problem, args):
     # 4. independent verification
     verify = V.verify_problem(problem, workspace_dir)
 
+    # 5. the pipeline's OWN verdict on itself, computed by the kernel rather than
+    #    parsed out of prose an agent wrote about its own work. Recorded beside the
+    #    independent one so the two can be cross-tabulated: does `manufactured`
+    #    actually correlate with being right, and does `self_convergence` ever hide an
+    #    OVERCLAIM? Nothing inside the pipeline can answer that about itself, and on
+    #    the no-closed-form suite it is the measurement the suite exists to produce.
+    kernel = (None if getattr(args, "skip_kernel", False)
+              else kernel_metrics(V.best_plan_dir(workspace_dir)))
+
     rec = {
         "id": problem["id"], "slug": slug, "type": problem["type"], "tier": problem["tier"],
         "family": problem["family"], "title": problem["title"], "challenge": problem["challenge"],
@@ -232,8 +241,48 @@ def process(problem, args):
         "ground_truth_kind": problem.get("ground_truth_kind", "exact"),
         "run": run, "pipeline": pipeline, "verify": verify,
     }
+    if kernel is not None:
+        rec["kernel"] = kernel
     rec["verdict"] = R.compute_verdict(rec)
     return rec
+
+
+def kernel_metrics(plan_dir, timeout_s=900):
+    """Read the kernel's own score for the winning plan, or None.
+
+    This re-runs ``verifylib/cli.py evaluate``, which executes the solver in the
+    kernel's sandbox -- so it costs a solve and is skippable. It is deliberately a
+    *read* of the pipeline's own scoring, never an input to the benchmark verdict:
+    ``verify.py`` grades against harness-owned ground truth and must stay independent
+    of anything the pipeline produced.
+
+    Never fatal. A plan predating the kernel's contract, a missing spec, or a solver
+    the sandbox refuses all yield a recorded reason rather than a failed benchmark
+    run."""
+    if not plan_dir or not os.path.isdir(plan_dir):
+        return None
+    cli = os.path.join(REPO_ROOT, "verifylib", "cli.py")
+    if not os.path.exists(cli):
+        return None
+    try:
+        proc = subprocess.run([sys.executable, cli, "evaluate", plan_dir, "--json"],
+                              capture_output=True, text=True, timeout=timeout_s,
+                              cwd=REPO_ROOT)
+    except subprocess.TimeoutExpired:
+        return {"status": "timeout", "timeout_s": timeout_s}
+    except Exception as exc:  # noqa: BLE001 -- a measurement must not break the run
+        return {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return {"status": "unavailable",
+                "error": (proc.stderr or "").strip()[:400] or f"exit {proc.returncode}"}
+    try:
+        m = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        return {"status": "error", "error": f"kernel output is not JSON: {exc}"}
+    cert = m.get("certification") or {}
+    return {"status": "ok", "score": m.get("score"), "provenance": m.get("provenance"),
+            "tier": cert.get("tier"), "bound_by": cert.get("bound_by"),
+            "reason": cert.get("reason"), "agent_cap": m.get("agent_cap")}
 
 
 # --- results.json IO --------------------------------------------------------
@@ -426,6 +475,10 @@ def override_agent_models(model):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--only", default="", help="comma-separated slugs or ids (default: all 37)")
+    S.add_suite_arguments(ap)
+    ap.add_argument("--skip-kernel", dest="skip_kernel", action="store_true",
+                    help="do not record the pipeline's own kernel score/provenance "
+                         "(it costs one extra sandboxed solve per problem)")
     ap.add_argument("--type", dest="type_filter", choices=("pde", "sde"), default=None,
                     help="restrict to one problem type (for staggering across usage windows)")
     ap.add_argument("--tier", type=int, choices=(1, 2, 3), default=None,
@@ -471,6 +524,7 @@ def main(argv=None):
         REPORT_MD = os.path.join(RESULTS_DIR, "REPORT.md")
 
     chosen = S.select(args.only)
+    chosen = S.apply_suite_filter(chosen, args.only, args.no_closed_form, args.include_all)
     if args.type_filter:
         chosen = [p for p in chosen if p["type"] == args.type_filter]
     if args.tier:

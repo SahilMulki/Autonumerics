@@ -394,6 +394,7 @@ def write_results(records, config):
 
 def select_problems(args):
     chosen = S.select(args.only)
+    chosen = S.apply_suite_filter(chosen, args.only, args.no_closed_form, args.include_all)
     if args.discriminators:
         chosen = [p for p in chosen if p.get("discriminator")]
     if args.type_filter:
@@ -416,6 +417,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--only", default="", help="comma-separated slugs or ids (default: all)")
+    S.add_suite_arguments(ap)
     ap.add_argument("--discriminators", action="store_true",
                     help="restrict to the hard discriminator subset")
     ap.add_argument("--type", dest="type_filter", choices=("pde", "sde"), default=None)

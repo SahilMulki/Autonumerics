@@ -1,0 +1,41 @@
+{
+  "id": "canary_ou",
+  "equation_type": "SDE",
+  "sde_family": "ornstein_uhlenbeck",
+  "state_dimension": 1,
+  "noise_structure": "additive",
+  "equation": "dX = theta*(mu - X)*dt + sigma*dW",
+  "parameters": {"X_0": 2.0, "theta": 1.5, "mu": 0.0, "sigma": 0.5},
+  "time_interval": {"T0": 0.0, "T": 1.0},
+  "drift_expression": "theta * (mu - X)",
+  "diffusion_expression": "sigma * np.ones_like(X)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 1,
+    "mean_expression": "mu + (X_0 - mu) * np.exp(-theta * t)",
+    "variance_expression": "sigma**2 / (2*theta) * (1 - np.exp(-2*theta*t))"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.1, "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01, "num_paths": 50000, "seed": 42,
+    "dt": 0.001, "dt0": 0.02, "conv_levels": 3, "ci_mult": 2.0
+  },
+  "verification": {
+    "expected_provenance": "analytic",
+    "expected_strong_order": 1.0,
+    "expected_weak_order": 1.0,
+    "dynkin_test_functions": ["X", "X**2"],
+    "moment_ode": {
+      "state": ["m1", "m2"],
+      "rhs": ["theta*(mu - m1)", "2*theta*mu*m1 - 2*theta*m2 + sigma**2"],
+      "initial": ["X_0", "X_0**2"],
+      "closes_exactly": true,
+      "mean_from": "m1", "variance_from": "m2 - m1**2"
+    },
+    "constraints": [{"name": "finite", "expr": "np.isfinite(X)", "gate": true}]
+  },
+  "requirements": [
+    {"id": "R1", "kind": "equation", "quote": "dX = theta*(mu - X)*dt + sigma*dW",
+     "status": "mapped", "spec_path": "equation, parameters"}
+  ]
+}

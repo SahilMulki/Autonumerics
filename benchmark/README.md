@@ -2,13 +2,23 @@
 
 A rigorous, ground-truth-verified benchmark for the Autonumerics pipeline.
 
-**37 problems — 15 PDE + 22 SDE.** The SDE side is deliberately weighted toward hard
-tier-3 cases drawn from a deep numerical-SDE literature review (see
-[`hard_sde_candidates_from_lit.md`](hard_sde_candidates_from_lit.md)). Every problem
-except the chaotic Kuramoto–Sivashinsky PDE is **independently checkable** — by exact
-ground truth, a discretization-free Monte-Carlo reference, or a stability
-(no-blow-up) criterion — so the benchmark can catch the pipeline believing it
-succeeded when it did not.
+Two suites that run separately:
+
+- **The main benchmark** — problems whose solution has a closed form (or
+  machine-precision moments). The SDE side is deliberately weighted toward hard tier-3
+  cases drawn from a deep numerical-SDE literature review (see
+  [`hard_sde_candidates_from_lit.md`](hard_sde_candidates_from_lit.md)).
+- **The no-closed-form suite** (`--no-closed-form`) — problems with *no formula to
+  transcribe*, which is where a pipeline that scores itself against a closed form has
+  nothing to lean on. See
+  [`NO_CLOSED_FORM_CANDIDATES.md`](NO_CLOSED_FORM_CANDIDATES.md). It is excluded by
+  default so the main benchmark's baseline denominators stay comparable across the
+  C0/C1/C2 sweep.
+
+**Every problem is independently checkable** — by exact ground truth, a
+discretization-free Monte-Carlo reference, a harness-owned high-resolution reference
+field, a scalar quantity of interest, or a stability (no-blow-up) criterion — so the
+benchmark can catch the pipeline believing it succeeded when it did not.
 
 ## What makes it rigorous
 
@@ -35,6 +45,17 @@ wrong solution can still be scored 10/10. This benchmark closes the loop:
    - **stability** — for blow-up/domain stress tests with no ground truth at all, the
      independent check is only that a correct scheme stays finite / in-domain — which
      is exactly what a naive scheme gets wrong.
+
+   For PDEs with no closed form, `reference` means something slightly different and
+   equally independent: a **harness-owned high-resolution solution**, computed offline
+   by two independent method families whose disagreement is measured and stored as the
+   problem's `reference_error` (see [`make_references.py`](make_references.py)). The
+   pass tolerance is widened to `3 x` that number, so the answer key's own error can
+   never fail a correct solver — the same rule the SDE side applies to Monte-Carlo
+   standard error. `verify.py` refuses to score against a reference that does not carry
+   a measured error: a reference whose accuracy nobody established is an answer key,
+   not ground truth. A problem may also declare `functional_truth`, where the answer is
+   a scalar quantity of interest (an eigenvalue) rather than a field.
 3. **Trust-but-verify scoring.** After the pipeline finishes a problem, the runner
    re-imports the winning `solver.py`, re-runs it, and compares the raw numerical
    output to the independent ground truth. Each problem gets a **verdict**:
@@ -80,7 +101,7 @@ wrong solution can still be scored 10/10. This benchmark closes the loop:
 
 ```
 benchmark/
-├── problems.py     # the 37-problem set + independently-authored ground truth
+├── problems.py     # the problem set + independently-authored ground truth
 ├── setup.py        # write workspace/{slug}/problem.md (+ auto-appended solver
 │                   #   contract & exact eval config) and manifest.json
 ├── run.py          # sequential PIPELINE runner: setup → conductor → verify → results → report
@@ -89,6 +110,9 @@ benchmark/
 ├── oneshot.py      # BASELINE runner: C0 (one-shot) / C1 (single agent+tools) on the same problems
 ├── compare.py      # head-to-head report: pipeline vs baselines (accuracy + cost)
 ├── report.py       # thorough REPORT.md generator (verdicts, discrepancies, tiers)
+├── make_references.py  # OFFLINE: build the harness-owned reference fields (two
+│                   #   independent method families; records their disagreement)
+├── references/     # generated: {slug}.npz reference artifacts (never read by the pipeline)
 ├── manifest.json   # generated: JSON summary of every problem (with ground-truth moments)
 └── results/        # generated: results.json, REPORT.md, oneshot_results.json, COMPARISON.md, logs/
 ```
@@ -98,7 +122,7 @@ benchmark/
 All commands run from the repo root with `uv`.
 
 ```bash
-# 1. stage the inputs (writes workspace/{slug}/problem.md for all 37, plus manifest.json)
+# 1. stage the inputs (writes workspace/{slug}/problem.md for every problem, plus manifest.json)
 uv run python benchmark/setup.py
 
 # 2a. run the full benchmark — sequential, and EXPENSIVE:
@@ -220,19 +244,28 @@ Identical to the pipeline's own thresholds, applied independently:
 The independent re-run scales the step to the horizon (`dt = min(problem_dt, 0.04/T)`)
 so a *correct* scheme's discretization error cannot masquerade as a failure.
 
-## The 37 problems
+## The problem set (53 total)
 
-**PDE (15)** — T1: `heat_1d`, `heat_2d`, `wave_1d`, `advection_1d`, `poisson_2d`;
-T2: `laplace_2d`, `convection_diffusion_bl` (ε=1e-3 layer), `helmholtz_2d` (indefinite),
-`anisotropic_diffusion` (100:1), `wave_2d`;
-T3: `burgers_inviscid` (shock), `fokker_planck_ou`, `fractional_diffusion` (Caputo α=½),
-`black_scholes_call`, `kuramoto_sivashinsky` (chaotic, no closed form).
+**Main benchmark: 49** (27 PDE, 22 SDE). **No-closed-form suite: 4** (`--no-closed-form`).
 
-**SDE (22)** — T1: `gbm`, `ornstein_uhlenbeck`, `bm_with_drift`, `linear_additive`,
-`bm_standard`; T2: `cir`, `exponential_ou`, `black_scholes`, `gbm_2d_correlated`,
-`stochastic_oscillator`; T3 (classical stress): `cir_feller_violated` (zero-hitting),
-`gbm_high_vol` (heavy tail), `ou_stiff` (θ=50), `gbm_2d_high_corr` (ρ=0.95),
-`oscillator_long_horizon`.
+`manifest.json` is the authoritative listing and `run.py --list` prints the current selection; the summaries below are generated from `problems.py`.
+
+**PDE (27)** — T1: `heat_1d`, `heat_2d`, `wave_1d`, `advection_1d`, `poisson_2d`;
+T2: `laplace_2d`, `convection_diffusion_bl`, `helmholtz_2d`, `anisotropic_diffusion`, `wave_2d`;
+T3: `burgers_inviscid`, `fokker_planck_ou`, `fractional_diffusion`, `black_scholes_call`, `stefan_1d_similarity`, `monge_ampere_2d`, `porous_medium_2d`, `poisson_lshape`, `cahn_hilliard_2d`, `heston_2d`, `fichera_3d`, `acoustic_3d_layered`, `navier_stokes_2d`, `mhd_2d`, `keller_segel_2d`, `elasticity_2d`, `maxwell_3d`.
+
+**SDE (22)** — T1: `gbm`, `ornstein_uhlenbeck`, `bm_with_drift`, `linear_additive`, `bm_standard`;
+T2: `cir`, `exponential_ou`, `black_scholes`, `gbm_2d_correlated`, `stochastic_oscillator`;
+T3: `cir_feller_violated`, `gbm_high_vol`, `ou_stiff`, `gbm_2d_high_corr`, `oscillator_long_horizon`, `log_heston_feller_violated`, `multichannel_stiff_m13`, `quintic_random_ic`, `ginzburg_landau_s4`, `ginzburg_landau_s6`, `quintic_drift_noise`, `fene_blowup`.
+
+**The no-closed-form suite** — each independently checked without a formula (see [`NO_CLOSED_FORM_CANDIDATES.md`](NO_CLOSED_FORM_CANDIDATES.md)):
+
+| Slug | Ground truth | What makes it hard |
+|---|---|---|
+| `pde_kuramoto_sivashinsky` | reference field | chaotic and stiff, fourth-order. Two spectral time integrators agree to 1.2e-09 at t=50 — six orders below the 1% gate, which is why chaos does not prevent a reference. |
+| `pde_burgers_viscous_1d` | semi-analytic exact | an internal layer of width ~2·nu at Re=100. The truth is a Cole–Hopf quadrature (converged to 5.6e-16), not a formula. |
+| `pde_cahn_hilliard_2d_coarsening` | reference field | the matched pair to the MMS Cahn–Hilliard, source deleted. A first-order energy-stable scheme is stable, smooth, mass-conserving — and wrong. |
+| `pde_schrodinger_eigen_2d` | semi-analytic exact + functional | an eigenproblem: a number *and* a mode. The ground state is negative, so the lowest eigenvalue is not the smallest in magnitude. |
 
 **SDE T3 — hard-literature additions (7):**
 
@@ -270,6 +303,32 @@ makes a one-shot LLM given only `problem.md` a fair comparison to the pipeline.
 PDE tuning knobs on a problem: `grid_N` (base resolution, default 64), `min_order`
 (order floor, default 1.0), `pde_order_check` (default True; False for shocks).
 
+For a problem with **no closed form**, pick a route first (the four are catalogued in
+[`NO_CLOSED_FORM_CANDIDATES.md`](NO_CLOSED_FORM_CANDIDATES.md); if none applies, the
+problem is not ready) and set `closed_form=False` so it joins `--no-closed-form`:
+
+- *harness-owned reference field*: add a generator to
+  [`make_references.py`](make_references.py) that runs **two independent method
+  families** and records their disagreement, build the artifact, then set
+  `ground_truth_kind="reference"`, `reference=reference_evaluator(slug)` and
+  `reference_error=<the measured number>`. Grids must nest or be periodic (a periodic
+  axis is trig-interpolated exactly; a non-periodic one needs `grid_N` chosen so the
+  solver's `N` and `2N` are subsets of the reference grid).
+- *semi-analytic exact*: an ordinary `analytic` callable that evaluates a quadrature,
+  series or eigen-expansion. No harness change.
+- *functional*: `functional_truth={"name": value}` (plus `functional_tol`); the solver
+  returns a `functionals` dict. Compute the value yourself at a **de-memorized**
+  parameter — a published constant can be recalled by a one-shot model that solved
+  nothing, which corrupts the very comparison the benchmark exists to make.
+- *structure*: `diagnostics` entries with `gate=True` (`_diag_mass_error`,
+  `_diag_nontrivial`, `_diag_single_signed`, `_diag_divergence_free`, ...). Never the
+  only check — a wrong-but-conservative scheme passes it.
+
 Then re-run `uv run python benchmark/validate_ground_truth.py` before trusting it in a
-benchmark run. It also checks that a *correct* scheme actually clears both gates at
+benchmark run. For a no-closed-form problem it checks both directions: that the
+reference is far more accurate than the gate it defines and that its declared
+`reference_error` matches the artifact, and — the part that actually matters — that a
+**correct scheme clears every gate at the benchmark's own resolutions**. Calibrate that
+before paying for a high-resolution reference: a problem every resolution passes
+measures nothing, and is worse than no problem at all. It also checks that a *correct* scheme actually clears both gates at
 that evaluation `dt` (the mean gate, 5%, is tighter than the variance gate, 10%).

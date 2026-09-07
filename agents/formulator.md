@@ -371,13 +371,47 @@ Set `gate: true` only for properties the PDE *mathematically guarantees* — a v
 definite bug. Mark `requires_trace: true` for anything needing a time history rather than the final
 snapshot; the solver returns those under `invariant_trace`.
 
+**A gated invariant must be a name the kernel implements.** `verification_manual.md` §27 holds the
+closed registry, and `check-spec` errors on a gated entry whose name is not in it and which carries
+no evaluable `expr`. This is not bureaucracy: `{"name": "physically_reasonable", "gate": true}` used
+to pass the schema, match nothing, and read downstream as a gate that had been satisfied. Ungated
+entries stay free-form — write whatever diagnostic is useful.
+
+**Do not write `tol: 0.0` for a quantity that is exactly conserved.** The check compares
+`drift <= tol + 1e-12`, so zero works — but say what you mean, and use the tolerance the physics
+allows rather than the one the algebra suggests.
+
 For steady-state problems also emit `residual_operator` (e.g. `"-lap_u - f"`) so the evaluator can
 compute an a-posteriori residual.
+
+### 3c-2. `chaotic` — only with a quote, and only with a reference horizon
+
+A problem whose trajectories separate past the Lyapunov time cannot be scored on convergence at full
+`T`: the asymptotic guards cannot pass and their failure says nothing about the scheme. Two
+top-level fields declare it:
+
+```json
+"chaotic": true,
+"chaotic_T_ref": 5.0
+```
+
+When set, the Tier-C order check at full `T` is **waived** (recorded as `order_check:
+waived_chaotic`, never as a pass), Tier C runs instead at `chaotic_T_ref` inside the predictable
+window, and Tiers B, D1 and D2 run unchanged at full `T`. The reference check also short-circuits:
+no closed form can apply.
+
+**This waives a scoring gate, so it is a self-relaxation vector and is gated accordingly.** It
+requires a `requirements` ledger entry naming `chaotic` in its `spec_path` and quoting the clause of
+`problem.md` that establishes it — the Kuramoto-Sivashinsky statement's "This equation is chaotic and
+has no closed-form solution" is exactly the shape. `chaotic_T_ref` must be declared here rather than
+chosen by the evaluator at scoring time, for the same reason. Both are `check-spec` errors when
+absent. Do not set `chaotic` because a problem is merely stiff, sensitive or hard.
 
 ### 3d. Set the provenance you expect
 
 Record your own assessment in `verification.expected_provenance`
-(`analytic` / `surrogate` / `manufactured` / `self_convergence`). The evaluator will report what it
+(`analytic` / `analytic_unvalidated` / `surrogate` / `manufactured` / `manufactured_partial` /
+`self_convergence`). The evaluator will report what it
 actually achieved; a mismatch is a useful signal that the spec over-promised.
 
 ---
@@ -396,6 +430,13 @@ actually achieved; a mismatch is a useful signal that the spec over-promised.
 - **A closed form you cannot check is not evidence.** Write `verification.operator` (PDE) or
   `verification.moment_ode` (SDE) on every spec, so the solution you claim can be substituted back
   into the equation you claim it solves. See Step 3-0.
+- **`verification.operator` is also the residual gate's input**, not only the reference check's. On a
+  problem with no closed form it is the *only* thing that lets the produced field be tested against
+  the stated equation, so write it even — especially — when `analytic_solution` is `null`.
+- **Set `verification.theoretical_order`.** It is the design order of the *problem*, and both the
+  asymptotic `p_sane` guard and the residual slope test read it. It is deliberately not
+  `evaluation_thresholds.min_spatial_order`, which is an acceptance floor and is legitimately `0.0`
+  on a problem whose contract imposes no order requirement.
 
 ## File Permissions
 

@@ -121,6 +121,15 @@ Requirements:
         schema = (f"- `numerical_solution`: numpy array of shape `{shape}`\n"
                   f'- `grid`: `{{{axis_list}}}`\n'
                   "- `t_final`: float — the time at which the solution is reported")
+    # A problem whose answer is partly a scalar quantity of interest (an eigenvalue, a
+    # drag coefficient) asks for it explicitly: the harness reads the number the solver
+    # reports rather than trying to recover it from the returned field, which for most
+    # such quantities is a second numerical problem in its own right.
+    functionals = problem.get("functional_truth")
+    if functionals:
+        keys = ", ".join(f'`"{k}"`' for k in functionals)
+        schema += (f"\n- `functionals`: a dict of scalar results, containing {keys} "
+                   "— each a float")
 
     t_eval = problem["t_eval"]
     when = ("This is a steady (time-independent) problem."
@@ -148,6 +157,17 @@ Requirements:
         calls = f"The harness imports `solve_pde` and calls it at **N = {grid_N}**."
         bullets = [f"- **accuracy** — {acc_target} against the hidden reference."]
 
+    if functionals:
+        ftol = V._pde_functional_tol(problem)
+        names = ", ".join(f"`{k}`" for k in functionals)
+        bullets.append(f"- **quantity of interest** — {names} must be within "
+                       f"{ftol * 100:g}% (relative) of the reference value. This gate is "
+                       "independent of the field accuracy: reporting a number without a "
+                       "solution behind it, or a solution without the number, fails.")
+    if problem.get("normalize_fields"):
+        bullets.append("- the returned field is compared **up to a nonzero scalar "
+                       "multiple** (normalized and sign-aligned), so any normalization "
+                       "and either sign is accepted.")
     if problem.get("gauge_fields"):
         g = ", ".join("`" + f + "`" for f in problem["gauge_fields"])
         bullets.append(f"- the field(s) {g} are compared after subtracting the mean "
@@ -214,6 +234,12 @@ def manifest_entry(problem):
         "ground_truth_kind": kind,
         "discriminator": bool(problem.get("discriminator")),
     }
+    # Only present when False: the no-closed-form suite is the exception, and a key
+    # that appears on 50 unrelated entries reads as noise rather than as a flag.
+    if problem.get("closed_form") is False:
+        entry["closed_form"] = False
+    if problem.get("reference_error"):
+        entry["reference_error"] = float(problem["reference_error"])
     if problem["type"] == "sde":
         entry.update(
             state_dimension=problem["state_dimension"],
@@ -244,6 +270,10 @@ def manifest_entry(problem):
             entry["required_fields"] = problem.get("required_fields") or list(problem["fields"])
             if problem.get("gauge_fields"):
                 entry["gauge_fields"] = list(problem["gauge_fields"])
+        if problem.get("functional_truth"):
+            entry["functional_truth"] = {k: float(v)
+                                         for k, v in problem["functional_truth"].items()}
+            entry["functional_tol"] = V._pde_functional_tol(problem)
         diags = problem.get("diagnostics")
         if diags:
             entry["diagnostics"] = [{"name": d["name"], "gate": bool(d.get("gate"))} for d in diags]
@@ -276,6 +306,32 @@ def select(only):
     if missing:
         raise SystemExit(f"unknown problem selector(s): {sorted(missing)}")
     return chosen
+
+
+def apply_suite_filter(chosen, only, no_closed_form=False, include_all=False):
+    """Split the no-closed-form suite off from the main benchmark.
+
+    The 50 closed-form problems carry the C0/C1/C2 baseline whose rates are already
+    measured, so folding a new suite into them silently would move every denominator
+    those rates are quoted against. The no-closed-form problems therefore run **on
+    their own** by default: excluded unless asked for by ``--no-closed-form``, by
+    ``--all-problems``, or by naming them explicitly in ``--only`` (an explicit
+    request always wins, which is what makes a single-problem smoke test work)."""
+    if only or include_all:
+        return chosen
+    if no_closed_form:
+        return [p for p in chosen if p.get("closed_form") is False]
+    return [p for p in chosen if p.get("closed_form") is not False]
+
+
+def add_suite_arguments(ap):
+    """The two flags every runner needs, defined once so they cannot drift apart."""
+    ap.add_argument("--no-closed-form", dest="no_closed_form", action="store_true",
+                    help="run ONLY the no-closed-form suite (see NO_CLOSED_FORM_CANDIDATES.md); "
+                         "by default those problems are excluded so the main benchmark's "
+                         "baseline denominators stay comparable")
+    ap.add_argument("--all-problems", dest="include_all", action="store_true",
+                    help="run every problem, closed-form suite and no-closed-form suite together")
 
 
 def main(argv=None):

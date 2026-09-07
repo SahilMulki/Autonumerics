@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 
-from .findings import Finding, warning
+from .findings import Finding, error, warning
 
 #: The one section whose claims must be traceable.
 BOUND_SECTION = "Numerical Accuracy"
@@ -42,6 +42,9 @@ BOUND_KEYS = (
 )
 
 _SECTION_RE = re.compile(r"^#{2,4}\s*(.+?)\s*$", re.M)
+#: ``<review score=10>`` and the ``Score: 10/10`` headline inside it.
+_REVIEW_ATTR_RE = re.compile(r"<review[^>]*\bscore\s*=\s*[\"']?(\d+)")
+_HEADLINE_RE = re.compile(r"^\s*(?:\*\*)?Score:\s*(\d+)\s*/\s*10", re.M)
 _METRICS_RE = re.compile(r"<metrics>(.*?)</metrics>", re.S)
 _REVIEW_RE = re.compile(r"<review[^>]*>(.*?)</review>", re.S)
 #: Numbers, including scientific notation and percentages. Deliberately does not
@@ -211,25 +214,75 @@ def unbound_numbers(review_text, metrics, spec=None, grids=(), section=BOUND_SEC
             if not _traces_to(value, text, backing)]
 
 
+def check_score_binding(solution_text) -> list[Finding]:
+    """The review's score must equal ``metrics.score`` exactly.
+
+    This is the check that makes a kernel-emitted score **binding rather than
+    advisory**, and it is an error rather than a warning for a reason the rest of
+    this module does not have: every other binding here compares two numbers an
+    LLM wrote about the same measurement, so rounding and phrasing make an exact
+    match unreasonable. ``score`` is a small integer the kernel computed and the
+    agent is asked only to transcribe. A mismatch is not drift, it is the agent
+    substituting its own judgement for the rubric -- which is the failure
+    ``workspace/pde_kuramoto_sivashinsky`` recorded three times over.
+
+    Silent on a review whose metrics block carries no ``score``: every SOLUTION.md
+    written before the kernel is in exactly that state, and they are not wrong,
+    only older.
+    """
+    metrics = parse_metrics(solution_text)
+    computed = metrics.get("score")
+    if computed is None:
+        return []
+    try:
+        computed = int(float(computed))
+    except (TypeError, ValueError):
+        return [error("review", "<metrics>.score",
+                      f"score must be an integer, got {computed!r}")]
+    match = _REVIEW_RE.search(solution_text or "")
+    if not match:
+        return []
+    found = []
+    claimed = _REVIEW_ATTR_RE.search(solution_text or "")
+    headline = _HEADLINE_RE.search(match.group(1))
+    for label, hit in (("<review score=...>", claimed), ("the `Score: N/10` headline",
+                                                         headline)):
+        if hit is None:
+            found.append(error("review", "<review>",
+                               f"{label} is missing, so the kernel's score "
+                               f"{computed} is not carried into the review"))
+            continue
+        stated = int(hit.group(1))
+        if stated != computed:
+            found.append(error(
+                "review", "<review>",
+                f"{label} says {stated} but the kernel computed {computed}. The "
+                f"evaluator transcribes the score; it does not assign one. To record a "
+                f"judgement no check measures, pass an `agent_cap` -- which may only "
+                f"move the score downward"))
+    return found
+
+
 def check_review(solution_text, spec=None, grids=()) -> list[Finding]:
     """Warn once. The caller regenerates and, on a second pass, records and moves on."""
     metrics = parse_metrics(solution_text)
+    bound = check_score_binding(solution_text)
     review = _REVIEW_RE.search(solution_text or "")
     if not review:
-        return []
+        return bound
     claims = bound_claims(review.group(1))
     if not claims:
-        return []  # a stub review ("Awaiting solver") claims nothing
+        return bound  # a stub review ("Awaiting solver") claims nothing
     if not metrics:
-        return [warning("review", "<metrics>",
+        return [*bound, warning("review", "<metrics>",
                         f"a <review> stating {len(claims)} measurement(s) was written "
                         "with no <metrics> block, so none of them can be traced to a "
                         "computed value")]
     stray = unbound_numbers(review.group(1), metrics, spec, grids,
                             texts=metrics_texts(solution_text))
     if not stray:
-        return []
-    return [warning(
+        return bound
+    return [*bound, warning(
         "review", f"<review>.{BOUND_SECTION}",
         f"{len(stray)} claim(s) in the {BOUND_SECTION} section trace to nothing the "
         f"pipeline computed: {stray[:6]}. The same model writes <metrics> and "

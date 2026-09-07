@@ -143,42 +143,180 @@ def normalize_helpers(expr: str) -> str:
 
 
 # --- stencils ----------------------------------------------------------------
+#
+# Central-difference weights, keyed by order of accuracy. Index 0 of each tuple is
+# the coefficient at offset -order/2, ascending to +order/2.
+#
+# The default stays **4** everywhere the reference check touches. reference.TOL,
+# its PROBE_N escalation and the measured 16-of-20 Tier-A distribution are all
+# calibrated against the 4th-order stencils, and silently sharpening them would
+# move results the guardrails plan pins with tests. The 6th- and 8th-order
+# variants are opt-in, and the only caller that opts in is the D1 residual, which
+# must difference at higher order than the solver used (plan-no-closed-form §3b
+# rule 1, §9b).
 
-def d1(f, axis, h):
-    """4th-order central first derivative."""
-    return (-np.roll(f, -2, axis) + 8 * np.roll(f, -1, axis)
-            - 8 * np.roll(f, 1, axis) + np.roll(f, 2, axis)) / (12 * h)
+# Stored as **integer numerators over a common denominator**, not as floats, and
+# summed before the single division. That is not tidiness: `1/12 - 2/3 + 2/3 -
+# 1/12` does not cancel to zero in binary, it lands at 1.4e-17, and on
+# `pde_burgers_inviscid` -- whose exact solution is a step function, so every
+# derivative is identically zero away from the shock -- both the residual and its
+# own term-balanced denominator become that 1.4e-17 and their ratio is 1. A
+# formula that is exactly right then reports `failed`. The integer form cancels
+# exactly, which is the property the original hard-coded 4th-order expressions had
+# and the reference check's whole calibration rests on.
+_D1_WEIGHTS = {
+    2: ((-1, 0, 1), 2),
+    4: ((1, -8, 0, 8, -1), 12),
+    6: ((-1, 9, -45, 0, 45, -9, 1), 60),
+    8: ((3, -32, 168, -672, 0, 672, -168, 32, -3), 840),
+}
+
+_D2_WEIGHTS = {
+    2: ((1, -2, 1), 1),
+    4: ((-1, 16, -30, 16, -1), 12),
+    6: ((2, -27, 270, -490, 270, -27, 2), 180),
+    8: ((-9, 128, -1008, 8064, -14350, 8064, -1008, 128, -9), 5040),
+}
+
+STENCIL_ORDERS = tuple(sorted(_D1_WEIGHTS))
 
 
-def d2(f, axis, h):
-    """4th-order central second derivative."""
-    return (-np.roll(f, -2, axis) + 16 * np.roll(f, -1, axis) - 30 * f
-            + 16 * np.roll(f, 1, axis) - np.roll(f, 2, axis)) / (12 * h * h)
+def _apply(table, order, f, axis, scale):
+    numerators, denominator = table[order]
+    half = len(numerators) // 2
+    out = None
+    for k, w in enumerate(numerators):
+        if w == 0:
+            continue
+        # np.roll(f, -s) shifts f[i+s] into position i, so offset s wants shift -s.
+        term = w * (f if k == half else np.roll(f, half - k, axis))
+        out = term if out is None else out + term
+    return out / (denominator * scale)
+
+
+def d1(f, axis, h, order=4):
+    """Central first derivative, ``order``-th order accurate (default 4)."""
+    _require_numpy("differencing a field")
+    return _apply(_D1_WEIGHTS, order, f, axis, h)
+
+
+def d2(f, axis, h, order=4):
+    """Central second derivative, ``order``-th order accurate (default 4)."""
+    _require_numpy("differencing a field")
+    return _apply(_D2_WEIGHTS, order, f, axis, h * h)
 
 
 STENCIL_HALO = 4  # points to exclude at each edge; np.roll wraps, so trim
 
 
-def _derivative_helpers(name, a, spatial_vars, hs, lap):
+def halo_for(order):
+    """Edge points a stencil of this order corrupts by wrapping.
+
+    ``STENCIL_HALO`` stays 4 because an 8th-order central stencil reaches exactly
+    4 points, so the existing trim already covers every order offered here. This
+    exists so a future 10th-order variant cannot silently reuse a halo that is one
+    point too small.
+    """
+    if order == "spectral":
+        return 0  # a spectral derivative is global; there is no corrupted edge
+    return max(STENCIL_HALO, order // 2)
+
+
+def spectral_d(f, axis, h, degree=1):
+    """Fourier derivative along one axis of an endpoint-**exclusive** periodic grid.
+
+    Exact to round-off for a band-limited field, which is what makes it the second
+    member of the §5b insensitivity pair on a periodic problem: FD8 and a spectral
+    derivative are as far apart in stencil family as this repo can get, so their
+    agreeing is real evidence that the residual measures the solver rather than the
+    check.
+
+    The caller owns the endpoint convention. Passing an endpoint-**inclusive**
+    array (whose last node duplicates the first) puts a full extra cell into the
+    period and returns a derivative that is wrong everywhere, not just at the edge
+    -- which is why :class:`Stencil` refuses to build a spectral member unless the
+    grid was detected as exclusive.
+    """
+    _require_numpy("spectral differentiation")
+    n = f.shape[axis]
+    k = 2.0 * np.pi * np.fft.fftfreq(n, d=h)
+    shape = [1] * f.ndim
+    shape[axis] = n
+    k = k.reshape(shape)
+    if degree % 2 == 1 and n % 2 == 0:
+        # The Nyquist mode has no meaningful odd derivative on a real field; leaving
+        # it in makes d1 complex-valued in a way that shows up as noise at the grid
+        # scale, which is exactly where the residual is being measured.
+        k = np.where(np.abs(np.abs(k) - np.pi / h) < 1e-9 * np.pi / h, 0.0, k)
+    return np.real(np.fft.ifft((1j * k) ** degree * np.fft.fft(f, axis=axis), axis=axis))
+
+
+class Stencil:
+    """One differencing family, so a caller can ask for the *same* derivative twice.
+
+    ``order`` is 2, 4, 6, 8 or the string ``"spectral"``. ``periodic`` is a
+    per-axis boolean sequence and is consulted only by the spectral family, which
+    falls back to 8th-order FD on any axis that is not periodic-exclusive.
+    """
+
+    def __init__(self, order=4, periodic=None):
+        if order != "spectral" and order not in _D1_WEIGHTS:
+            raise ValueError(f"unknown stencil order {order!r}; expected one of "
+                             f"{STENCIL_ORDERS} or 'spectral'")
+        self.order = order
+        self.periodic = tuple(periodic) if periodic is not None else None
+        self.halo = halo_for(order if order != "spectral" or not self._all_periodic() else 8)
+
+    def _all_periodic(self):
+        return bool(self.periodic) and all(self.periodic)
+
+    def _spectral_on(self, axis):
+        return self.order == "spectral" and self.periodic is not None \
+            and axis < len(self.periodic) and self.periodic[axis]
+
+    def d1(self, f, axis, h):
+        if self._spectral_on(axis):
+            return spectral_d(f, axis, h, degree=1)
+        return d1(f, axis, h, order=8 if self.order == "spectral" else self.order)
+
+    def d2(self, f, axis, h):
+        if self._spectral_on(axis):
+            return spectral_d(f, axis, h, degree=2)
+        return d2(f, axis, h, order=8 if self.order == "spectral" else self.order)
+
+    def __repr__(self):
+        return f"Stencil(order={self.order!r})"
+
+
+#: The family every pre-existing caller gets. Constructing it needs no numpy.
+_MODULE_STENCIL = Stencil(4)
+
+
+def default_stencil():
+    return _MODULE_STENCIL
+
+
+def _derivative_helpers(name, a, spatial_vars, hs, lap, stencil=None):
     """Every spelling of a derivative of one field that real operator strings use."""
     nd = len(spatial_vars)
+    st = stencil or _MODULE_STENCIL
     ns = {name: a}
     ns[f"lap_{name}"] = lap(a)
     ns[f"lap_lap_{name}"] = lap(lap(a))
     ns[f"lap_{name}3"] = lap(a ** 3)
-    g = [d1(a, i, hs[i]) for i in range(nd)]
+    g = [st.d1(a, i, hs[i]) for i in range(nd)]
     ns[f"grad_{name}"] = g[0] if nd == 1 else np.array(g)
     for i in range(nd):
         ns[f"grad_{name}_{i}"] = g[i]
     for i, v in enumerate(spatial_vars):
         ns[f"{name}_{v}"] = g[i]
-        ns[f"{name}_{v}{v}"] = d2(a, i, hs[i])
+        ns[f"{name}_{v}{v}"] = st.d2(a, i, hs[i])
     # Mixed second derivatives, for every axis pair. pde_monge_ampere_2d needs u_xy;
     # Heston needs u_Sv, which is the same helper on non-Cartesian axis names.
     for i, vi in enumerate(spatial_vars):
         for j, vj in enumerate(spatial_vars):
             if i < j:
-                mixed = d1(d1(a, i, hs[i]), j, hs[j])
+                mixed = st.d1(st.d1(a, i, hs[i]), j, hs[j])
                 ns[f"{name}_{vi}{vj}"] = mixed
                 ns[f"{name}_{vj}{vi}"] = mixed
     return ns
@@ -198,7 +336,7 @@ def coord_aliases(coords):
     return out
 
 
-def build_namespace(fields, coords, spatial_vars, hs, *, time_derivs=None):
+def build_namespace(fields, coords, spatial_vars, hs, *, time_derivs=None, stencil=None):
     """Helper names for one or many fields, plus the callable spellings.
 
     ``fields`` maps a field name to its array. A scalar problem passes ``{"u": u}``;
@@ -212,16 +350,20 @@ def build_namespace(fields, coords, spatial_vars, hs, *, time_derivs=None):
     """
     nd = len(spatial_vars)
     time_derivs = time_derivs or {}
+    # `stencil` is how the D1 residual differences at *higher order than the solver
+    # used* (§3b rule 1). Default None keeps every pre-existing caller -- the whole
+    # reference check -- on the 4th-order stencils its tolerances are calibrated for.
+    st = stencil or _MODULE_STENCIL
 
     def lap(a):
-        return sum(d2(a, i, hs[i]) for i in range(nd))
+        return sum(st.d2(a, i, hs[i]) for i in range(nd))
 
     ns = coord_aliases(coords)
     ns["lap"] = lap
     ns["lap2"] = lambda a: lap(lap(a))
     for i, v in enumerate(spatial_vars):
-        ns[f"d_{v}"] = partial(d1, axis=i, h=hs[i])
-        ns[f"d_{v}{v}"] = partial(d2, axis=i, h=hs[i])
+        ns[f"d_{v}"] = partial(st.d1, axis=i, h=hs[i])
+        ns[f"d_{v}{v}"] = partial(st.d2, axis=i, h=hs[i])
         ns[f"d{v}"] = ns[f"d_{v}"]
 
     # dt(u) is resolved by identity: the time derivative of an arbitrary expression
@@ -229,7 +371,7 @@ def build_namespace(fields, coords, spatial_vars, hs, *, time_derivs=None):
     # dt(u*v) -- every real spelling is dt of a bare field.
     by_id = {}
     for name, a in fields.items():
-        ns.update(_derivative_helpers(name, a, spatial_vars, hs, lap))
+        ns.update(_derivative_helpers(name, a, spatial_vars, hs, lap, st))
         dts = time_derivs.get(name) or (None, None)
         if dts[0] is not None:
             ns[f"{name}_t"] = dts[0]
@@ -250,7 +392,7 @@ def build_namespace(fields, coords, spatial_vars, hs, *, time_derivs=None):
     return ns
 
 
-def helper_namespace(u, coords, spatial_vars, hs, *, u_t=None, u_tt=None):
+def helper_namespace(u, coords, spatial_vars, hs, *, u_t=None, u_tt=None, stencil=None):
     """Scalar convenience wrapper over :func:`build_namespace`."""
     return build_namespace({"u": u}, coords, spatial_vars, hs,
-                           time_derivs={"u": (u_t, u_tt)})
+                           time_derivs={"u": (u_t, u_tt)}, stencil=stencil)

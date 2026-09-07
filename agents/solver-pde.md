@@ -13,7 +13,7 @@ The argument is a single plan directory (e.g. `workspace/{problem_slug}/plans/{i
 
 - Read `${CLAUDE_PLUGIN_ROOT}/references/project_manual.md` to understand the file handoff protocol. **Required.** You are `solver-pde` in the pipeline.
 - Read `${CLAUDE_PLUGIN_ROOT}/references/pde_manual.md` for scheme implementations, CFL conditions, and boundary condition handling. **Required.**
-- Read §7 and §8 of `${CLAUDE_PLUGIN_ROOT}/references/verification_manual.md` — the `override` hook you must implement, and the invariants your solution will be checked against. **Required.**
+- Read §7, §8 and §26 of `${CLAUDE_PLUGIN_ROOT}/references/verification_manual.md` — the `override` hook you must implement, the optional `invariant_trace` / `snapshots` return keys, the invariants your solution will be checked against, and what the operator residual does with `snapshots`. **Required.**
 - Read the plan directory's `SOLUTION.md`. This is your primary specification.
 - Read `workspace/{problem_slug}/problem_spec.json` for domain bounds, parameters, and analytic solution.
 - If `solver.py` already exists, read it along with the evaluator's `<review>` feedback to understand what to fix.
@@ -36,7 +36,18 @@ def solve_pde(N: int, override: dict | None = None) -> dict:
 - `grid`: dict of the `d` spatial coordinate arrays, keyed by the problem's axis names — `{"x": ...}` / `{"x":..., "y":...}` / `{"x":..., "y":..., "z":...}`, or the problem's own names (e.g. `{"S":..., "v":...}` for Heston). Each length `N`.
 - `t_final`: float — the time at which the solution was computed (for time-dependent problems)
 - `dt`: float — actual dt used (optional)
-- `invariant_trace`: dict of name → 1-D array over time steps (optional). Fill this in when `problem_spec.json → verification.invariants` declares an invariant with `requires_trace: true` — `energy_decay`, `energy_conservation`, `mass_flux_balance` cannot be checked from the final snapshot alone. Example: `{"energy": np.array([...]), "mass": np.array([...])}`, one entry per step. If you omit a declared trace the invariant is reported as `not_reported` and the plan cannot score above 9.
+- `invariant_trace`: dict of name → 1-D array over time steps (optional). Fill this in when `problem_spec.json → verification.invariants` declares an invariant with `requires_trace: true` — `energy_decay`, `energy_conservation`, `mass_flux_balance`, `energy_bounded` cannot be checked from the final snapshot alone. Example: `{"energy": np.array([...]), "mass": np.array([...])}`, one entry per step. If you omit a declared trace the invariant is reported as `not_reported` and the plan cannot score above 9.
+- `snapshots`: the **last few states**, ending at `t_final` (optional, three lines, and it is what the operator-residual gate runs on):
+
+  ```python
+  "snapshots": [{"t": t_nm2, "fields": {"u": u_nm2}},
+                {"t": t_nm1, "fields": {"u": u_nm1}},
+                {"t": t_final, "fields": {"u": u_n}}]
+  ```
+
+  Keep a small ring of the states you already have in hand and return the last `K >= 3` of them — for a system, every field, keyed exactly as in `fields`. The kernel forms `u_t` of your produced field by Fornberg weights over the returned `t` values, so the spacing may be uneven and an adaptive final step is fine. It then substitutes your field back into the problem's declared operator and checks that the residual **falls** under grid refinement.
+
+  Costs nothing: the states are already in the time loop. Omitting it makes the D1 residual `unavailable` — skipped, never a failure — but it also removes one of the two circularity breaks a score of 10 needs when there is no closed form (`verification_manual.md` §26).
 
 **Convergence matters, not just one-grid accuracy**: the evaluator calls `solve_pde` at three resolutions up a nested ladder (`N`, then `2N−1`, then `4N−3` for endpoint-inclusive grids; `N, 2N, 4N` for periodic ones) and checks the *observed convergence order* of the **primary field** — the error must fall as the grid refines, at least at the problem's minimum order. A scheme tuned to a single grid (or one that hard-codes an answer) will fail. Choose any internal time step / iteration count you need, but tie the spatial mesh to `N`.
 
@@ -55,6 +66,14 @@ The ladder is nested so the coarse grid's nodes are exactly a subset of the fine
 | `dt_factor` | `float` | Multiply your internally computed `dt` by this |
 
 `coords` is the tuple of meshgrid arrays you already build, in `indexing="ij"` order. Every key is optional — an absent key means "use the problem's own".
+
+**Every key you are handed must actually take effect, `params` included.** A solver that hard-codes a
+value it also accepts through `override["params"]` runs cleanly, returns `status: ok`, and hands back
+the *unmodified* answer — so the evaluator measures one thing and reports another. Measured on
+`pde_kuramoto_sivashinsky`: two of its three solvers ignore `params["t_final"]` this way. The kernel
+now compares the `t_final` you return against the one it asked for and refuses the measurement when
+they disagree, but the fix is to route `params` through the same solve path rather than reading a
+module-level constant. Return the `t_final` you actually used.
 
 **The discretization must be identical between an overridden run and a normal one.** Same stencil, same mesh strategy, same time integrator, same CFL rule. That is the entire point: the evaluator is testing *your scheme* against a problem whose answer is known. Structure the code so the override flows into one shared solve path rather than a separate branch:
 
@@ -107,7 +126,8 @@ A solver that ignores `override` still runs, but it forfeits the manufactured-so
 - For **steady-state** (Poisson/Laplace): assemble the full sparse system directly and solve
 - For **2D/3D problems**: use `np.meshgrid(*axes, indexing="ij")` and reshape solution for matrix operations
 - For **multi-field systems**: advance all fields together (they are coupled); return them under `fields` with the exact declared key names
-- `if __name__ == "__main__"`: call `solve_pde(N)` at a representative `N` and print a summary of the result, then call it once more with a trivial `override` (e.g. `{"dt_factor": 0.5}`) to confirm the hook works
+- `if __name__ == "__main__"`: call `solve_pde(N)` at a representative `N` and print a summary of the result, then call it once more with a trivial `override` (e.g. `{"dt_factor": 0.5}`) to confirm the hook works. Print `len(result["snapshots"])` too — a snapshot list that came back empty is a silent loss of the residual gate
+- **Return a uniform mesh unless the problem needs otherwise.** A graded mesh (Shishkin, Bakhvalov) is the right answer for a boundary layer and is fully supported — but the residual gate differences with equal-spacing stencils, so on a graded mesh it reports `unavailable` rather than a wrong number. That is not a penalty; it just means the plan rests on its other evidence
 
 **Use only**: `numpy`, `scipy.sparse`, `scipy.sparse.linalg` — no other external libraries.
 

@@ -1,6 +1,6 @@
 {
-  "n_total": 50,
-  "n_pde": 28,
+  "n_total": 53,
+  "n_pde": 31,
   "n_sde": 22,
   "pass_thresholds": {
     "pde": {
@@ -408,10 +408,12 @@
       "tier": 3,
       "family": "kuramoto-sivashinsky",
       "title": "Kuramoto-Sivashinsky (chaotic)",
-      "challenge": "Fourth-order, chaotic, no closed form; stiff and requires an ETDRK/IMEX spectral integrator. No analytic ground truth.",
-      "has_ground_truth": false,
-      "ground_truth_kind": "exact",
+      "challenge": "Fourth-order, chaotic, no closed form; stiff and requires an ETDRK/IMEX spectral integrator. Ground truth is a harness-owned high-resolution reference, not a formula.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "reference",
       "discriminator": false,
+      "closed_form": false,
+      "reference_error": 1.245e-09,
       "dims": 1,
       "domain": {
         "x": [
@@ -421,7 +423,7 @@
       },
       "t_eval": 50.0,
       "grid_N": 64,
-      "order_check": false,
+      "order_check": true,
       "min_order": 1.0,
       "metric": "l2",
       "l2_tol": 0.01,
@@ -955,6 +957,116 @@
         {
           "name": "field_energy_error",
           "gate": false
+        }
+      ]
+    },
+    {
+      "id": "P29",
+      "slug": "pde_burgers_viscous_1d",
+      "type": "pde",
+      "tier": 3,
+      "family": "burgers-viscous",
+      "title": "1D Viscous Burgers (Re = 100)",
+      "challenge": "Nonlinear advection steepens into an internal layer of width ~2 nu; ground truth is a Cole-Hopf quadrature, not a formula. The matched pair to the inviscid shock problem, with the closed form removed.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "closed_form": false,
+      "dims": 1,
+      "domain": {
+        "x": [
+          0.0,
+          6.283185307179586
+        ]
+      },
+      "t_eval": 1.5,
+      "grid_N": 256,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false
+    },
+    {
+      "id": "P30",
+      "slug": "pde_cahn_hilliard_2d_coarsening",
+      "type": "pde",
+      "tier": 3,
+      "family": "cahn-hilliard",
+      "title": "Cahn-Hilliard, free coarsening (no closed form)",
+      "challenge": "The matched pair to the MMS Cahn-Hilliard: same fourth-order operator, same eps, source deleted. Without a manufactured solution the dynamics are spinodal separation and coarsening, where a first-order energy-stable scheme at a comfortable step is stable, smooth, and wrong.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "reference",
+      "discriminator": false,
+      "closed_form": false,
+      "reference_error": 9.303e-08,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": 0.1,
+      "grid_N": 48,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false,
+      "diagnostics": [
+        {
+          "name": "mass_error",
+          "gate": true
+        },
+        {
+          "name": "nontrivial",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "P31",
+      "slug": "pde_schrodinger_eigen_2d",
+      "type": "pde",
+      "tier": 3,
+      "family": "schrodinger-eigenvalue",
+      "title": "2D Schrodinger ground state (eigenvalue + eigenfunction)",
+      "challenge": "An eigenvalue problem rather than an evolution: the answer is a number and a mode, neither with a closed form. Scored on both, so returning a plausible eigenpair from the wrong end of the spectrum fails.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "closed_form": false,
+      "dims": 2,
+      "domain": {
+        "x": [
+          0.0,
+          1.0
+        ],
+        "y": [
+          0.0,
+          1.0
+        ]
+      },
+      "t_eval": null,
+      "grid_N": 64,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false,
+      "functional_truth": {
+        "lambda_1": -8.442746362964
+      },
+      "functional_tol": 0.0005,
+      "diagnostics": [
+        {
+          "name": "ground_state_nodeless",
+          "gate": true
         }
       ]
     },

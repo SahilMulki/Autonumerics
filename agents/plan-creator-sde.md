@@ -60,8 +60,18 @@ Create the directory `workspace/{problem_slug}/plans/{id}-{plan_slug}/` and writ
 id: {1..K}
 plan_slug: {kebab-slug}
 scheme: euler-maruyama | milstein
+scheme_family: euler-maruyama | milstein | tamed-euler-maruyama | tamed-milstein | implicit | other
 strategy: {one-sentence summary}
 ---
+
+`scheme_family` is a **declared field the evaluator reads**, not prose. The expected strong order is
+a property of the *scheme*, and a spec can declare more than one: `sde_ginzburg_landau_s6` carries
+`expected_strong_order: 0.5` for tamed Euler-Maruyama and `expected_strong_order_milstein: 1.0`, with
+a note saying in as many words "do not fail a Milstein plan for measuring 1.0 against the 0.5
+default". `scheme_family` is how the kernel knows which of the spec's declared orders applies to
+you — you select among the values the formulator set, you do not set your own. Omit it and the
+convergence guard widens to a one-sided band spanning every declared order, which is safe but
+weaker.
 
 ## SDE Reference
 

@@ -83,8 +83,21 @@ Create `workspace/{problem_slug}/plans/{id}-{plan_slug}/` and write `SOLUTION.md
 id: {1..K}
 plan_slug: {kebab-slug}
 scheme: finite-difference-explicit | finite-difference-implicit | spectral | ...
+scheme_family: fd | spectral | fv | fe | other
+spatial_order: {integer order of accuracy in space}
 strategy: {one-sentence summary}
 ---
+
+`scheme_family` and `spatial_order` are **declared fields the evaluator reads**, not prose.
+`scheme:` stays free text for a human; those two have two consumers. The operator-residual gate uses
+them to pick a differencing stencil of *higher order and a different family* than yours — which is
+the whole reason its agreement with your solution means anything (§26). And `scheme_family` selects
+which **asymptotic guard** applies: a spectral method converges exponentially, so the algebraic
+`p < theoretical_order + 1` test reads its convergence as noise and fails it (§4). Get them right:
+`spatial_order` is the order of the spatial discretization alone, and if the plan is spectral, say
+`spectral` and give the order you would claim in a convergence study. Omitting them is not fatal —
+the kernel falls back to 8th-order finite differences and records `stencil_choice: default` — but a
+6th-order or spectral plan will then usually get `unresolved` and forfeit that evidence.
 
 ## PDE Reference
 

@@ -218,10 +218,31 @@ certify — unless all of these hold:
 ```python
 shrinking   = d21 < d10 * 0.95           # differences actually decrease
 p_finite    = np.isfinite(p) and p > 0
-p_sane      = p < (theoretical_order + 1.0)   # a wild p signals noise, not super-convergence
+p_sane      = (p >= theoretical_order) if spectral else (p < theoretical_order + 1.0)
+coarse_resolved = d10 < rms(u1)          # the coarse grid solves the same problem
 not_at_roundoff = d21 > 1e-13 * (rms(u1) + 1e-30)
-asymptotic  = shrinking and p_finite and p_sane and not_at_roundoff
+asymptotic  = shrinking and p_finite and p_sane and coarse_resolved and not_at_roundoff
 ```
+
+**`p_sane` depends on the scheme family**, which the plan declares as `scheme_family` in its
+`SOLUTION.md` frontmatter (and which the kernel infers from the free-text `scheme:` when it is
+absent, recording that it guessed). The upper bound reads a large `p` as noise, and for a
+finite-difference scheme it is. A **spectral** method converges exponentially, so `log2(d10/d21)` is
+not an algebraic order at all and has no upper bound — measured on `pde_kuramoto_sivashinsky`, whose
+three plans are all spectral: 10.47, 10.92 and 9.98 against a `theoretical_order` of 4, and at a
+horizon where the ladder is fully resolved the order *rises* to 11.54 rather than falling. Applying
+the algebraic guard there fails every correct spectral solver. For a spectral scheme the meaningful
+test is the other direction: it must converge at least as fast as the algebraic design order.
+
+Note that `theoretical_order` describes the **equation** — KS's biharmonic term makes it 4 — not the
+scheme's rate. Conflating the two is what made the algebraic guard look right.
+
+**`coarse_resolved` is a fifth guard, not in the original four.** A `d10` larger than the solution
+itself means the coarse grid is not approximating the same function, and no ratio formed from it is a
+convergence rate. Measured across every Path-B ladder in `workspace/`: the three Heston plans sit at
+0.005% of the field and the three KS plans at 210–407%. Five orders of separation with nothing in
+between, so this is not a tuned threshold. Without it, the spectral branch above would certify an
+order of 10.47 built from a `d10` four times the size of the field.
 
 If `not_at_roundoff` is false the scheme has converged to machine precision — treat as
 `e_est = 0`, `order = inf`, `asymptotic = True`. If any other guard fails, the plan cannot exceed
@@ -314,6 +335,34 @@ strategy, stencil and time integrator must be **identical** to the unmodified ru
 point. A solver that ignores `override` cannot be certified above Tier C.
 
 `coords` is the tuple of meshgrid arrays the solver already builds, in `indexing="ij"` order.
+
+### Optional return keys
+
+`override` is an **input** dict and has no return channel, so two checks that need more than
+the final field take optional **return** keys instead. Both are optional; an absent key makes the
+check that needs it `unavailable`, which is **skipped, never failed**.
+
+| Key | Shape | Consumed by |
+|---|---|---|
+| `invariant_trace` | `{name: 1-D array, one entry per step}` | §8's trace invariants (`energy_decay`, `energy_conservation`, `mass_flux_balance`, `energy_bounded`) |
+| `snapshots` | `[{"t": float, "fields": {name: array}}, ...]` — the last `K` states, ending at `t_final` | §26's D1 residual, for the time term |
+
+```python
+"snapshots": [{"t": 0.480, "fields": {"u": u_nm2}},
+              {"t": 0.490, "fields": {"u": u_nm1}},
+              {"t": 0.500, "fields": {"u": u_n}}]      # t_final = 0.5
+```
+
+**Why a return key and not a second solve.** D1 needs `u_t` of the *produced* field. The two routes
+that do not require a contract change both fail. A second solve at `t_final = T - dt` picks a
+different internal step sequence, so each run approximates its own exact solution to `O(dt^p)`
+independently and the difference quotient carries `O(dt^{p-1})` — `O(1)` for a first-order scheme —
+and it costs a full extra solve. The solver's own last step is what the scheme computes, so the time
+term is consistent by construction and D1 degenerates to a test of the spatial operator alone.
+
+The kernel forms the derivative by Fornberg weights over the returned `t` values, so the spacing may
+be arbitrary and an adaptive final step is fine. `K >= 3` gives `O(dt^2)`; `K = 2` runs and records
+its own truncation floor.
 
 ---
 
@@ -458,6 +507,11 @@ measuring is masked by time-stepping error.*
 
 ## 11. Cross-Plan Consensus
 
+> **Moving to the ranking layer.** Consensus is a *cross-plan* comparison, so it belongs to how
+> plans are ranked against each other rather than to how one plan is scored. It is documented here
+> until [plan-blind-evaluator.md](../docs/plan-blind-evaluator.md) lands, and the kernel does not
+> compute it: nothing that can never lift a score needs to run inside the scoring path.
+
 The multi-plan architecture makes this nearly free, and it is the one check that uses information no
 single plan has. Run **only** when `provenance` is `self_convergence` (with a real reference there is
 nothing to gain), and only at the base resolution `N0`, and only against sibling plans whose
@@ -492,6 +546,20 @@ and it can never by itself lift a score.
 ---
 
 ## 12. PDE Scoring Rubric
+
+> **This table is the specification for `verifylib/kernel/score.py`, not an instruction to an
+> agent.** Every input below is a boolean the kernel already computed, so applying the table is a
+> lookup with no judgement in it — and handing those booleans to a language model adds no
+> information while adding a drift surface. The measured shape of that drift is
+> `workspace/pde_kuramoto_sivashinsky`, where three independently regenerated evaluators reported
+> observed orders of 10.467, 10.925 and 0.003 and all three scored 10. Changing this rubric means
+> editing `kernel/score.py` and its tests. That is a real cost, and it is the point: a rubric that
+> can be reinterpreted per cycle is not a rubric.
+>
+> Two additions the code makes to the table below, both recorded here rather than left implicit:
+> a run that is accurate at the finest grid but under-converging scores **7** (the table had no row
+> for it and such a run used to fall through to 4); and §26's certification rule *caps* the result,
+> so a clean self-convergence run with no circularity break tops out at **8**, not 9.
 
 Scores below are for the **no-analytic-solution** path. When `analytic_solution` is present, the
 existing analytic rubric in `project_manual.md` applies unchanged (with the metrics block added).
@@ -840,6 +908,21 @@ weak_ok   = (w is None) or (0.5 * expected_weak_order <= w <= expected_weak_orde
 not evidence of a defect. An order far *above* the theoretical one is noise, not a bonus; that is
 what the noise-floor filter exists to remove.
 
+**And so the weak order does not gate.** The heading above says the strong order is the gate and the
+weak order a diagnostic, and the kernel implements exactly that: `orders_ok = strong_ok`. An
+above-band weak order is the same noise the `w is None` branch already forgives, and it just did not
+happen to be caught by the floor filter — measured, a correct tamed Euler-Maruyama plan on
+`sde_ginzburg_landau_s6` lands at **1.7514** against an upper limit of 1.75. It is recorded as
+`weak_order_out_of_band` and reported, never scored on.
+
+**The expected strong order is a property of the scheme, so it depends on the plan.** A spec may
+declare more than one — `sde_ginzburg_landau_s6` carries `expected_strong_order: 0.5` for tamed
+Euler-Maruyama *and* `expected_strong_order_milstein: 1.0` — and the plan's `scheme_family`
+frontmatter selects which applies. The plan chooses among the values the formulator set; it does not
+set its own. Where the plan declares no family, the band widens to a one-sided bar at
+`min(declared) - 0.4`: an order below the least of the declared expectations is a defect, an order
+above the greatest is noise.
+
 ---
 
 ## 20. Dynkin's Identity — Reference-Free Residual
@@ -872,6 +955,26 @@ r_extrap = r_fine + (r_fine - r_coarse) / (2**1.0 - 1)        # residual is O(dt
 dynkin_ok = np.all(np.abs(r_extrap) < ci_mult * se_resid)
 ```
 
+Three things this sketch leaves out, each of which was measured to matter on a **correct** solver:
+
+1. **The two `dt` levels must share a Brownian path**, by §18's own argument. With independent
+   draws, `r_fine - r_coarse` is mostly Monte Carlo noise and the extrapolation amplifies it: on a
+   correct Euler–Maruyama OU solver the extrapolated residual moved from −3.9e-03 (CRN, passing) to
+   −6.5e-03 (independent draws, failing) against the same 5.0e-03 bar.
+2. **Extrapolate path by path, then take the standard error of the result.** `2·r_fine − r_coarse`
+   has neither the variance nor the correlation structure of `r_fine`, so `se_resid` taken from the
+   fine level alone is wrong in both directions at once.
+3. **Correct for the number of test functions.** Requiring all `K` to sit inside a 95% interval is a
+   ~86% test at `K = 3`, so one correct solver in seven fails — and the failure moves a Path-B score
+   from 9 to 7. Bonferroni: `ci_mult` becomes 2.28 at `K = 2`, 2.43 at `K = 3`.
+
+Even corrected, this check's resolution is set by the path count, because the residual's dominant
+term is the sample mean of the **martingale part** `∫φ′g dW` — a property of the seed, not of the
+scheme. Measured across six seeds on a correct solver at 40 000 paths, the extrapolated residual
+lands between 0.2 and 3.2 standard errors of zero and one seed in six fails. Report `z` in the
+metrics so a reader can see the margin, and raise `num_paths` or `ci_mult` rather than reading a
+marginal excursion as a defect.
+
 Choose test functions that probe different parts of the state space — `x`, `x²`, and one bounded
 nonlinear function such as `np.exp(-x²)` or `np.tanh(x)`. A scheme that is right on polynomials and
 wrong on a bounded function has a tail problem worth reporting.
@@ -903,6 +1006,8 @@ A bare `np.maximum(X, 0)` clip hides the defect without fixing the scheme — fl
 
 ## 22. Cross-Plan Consensus (SDE)
 
+> Moving to the ranking layer with §11, and for the same reason.
+
 Same rules as §11, with one addition specific to Monte Carlo: sibling plans must be run with
 **independent seeds**, and agreement is tested against the *combined* standard error:
 
@@ -915,6 +1020,8 @@ Two plans agreeing on a shared seed proves nothing — they saw the same noise.
 ---
 
 ## 23. SDE Scoring Rubric
+
+> Like §12, this is the specification for `kernel/score.py` rather than an instruction to an agent.
 
 Applies when `analytic_moments.has_analytic_solution` is false. When exact moments are present, the
 analytic rubric in `project_manual.md` applies unchanged — **plus** the confidence-interval logic of
@@ -1047,3 +1154,160 @@ lack ground truth, which is where it belongs.
 - A confidence interval omitted from a Monte Carlo comparison.
 - A `10` whose `provenance` is not carried into `<metrics>`, `SOLUTION.md` and `REPORT.md`.
 - Cross-plan agreement used to lift a score. It corroborates; it never certifies.
+- **An evaluator assigning its own score.** The kernel computes `score` and `provenance`; the
+  evaluator transcribes them. The one authority it keeps is asymmetric: it may cap the score
+  *downward* with a machine-readable reason (`agent_cap: {score, reason}`), never raise it. An agent
+  that cannot inflate cannot launder a 4 into a 10; one that can deflate can still stop a wrong 10
+  from shipping.
+- **A residual reported as a magnitude.** There is no calibrated passing value for a residual on
+  solver output (§26). Report the rate.
+
+---
+
+## 26. D1 — The Operator Residual as a Slope Test
+
+The PDE counterpart of §20's Dynkin check, and it took the same shape for the same reason.
+
+**There is no calibrated magnitude threshold, and there cannot be.** A solver's residual is
+dominated by its own truncation error, `O(h^p) + O(dt^q)`; it does not approach zero at fixed
+resolution. The only calibrated number in this repo is `reference.TOL = 1e-6`, measured for *a
+closed form on a 1025-point grid whose own discretization error is 1e-10* — a solver cannot do that.
+Any constant threshold either fails every correct coarse-grid solver or passes everything.
+
+So D1 tests the **rate**, exactly as §20 does for Dynkin:
+
+```python
+r(h)  = median over the interior of  |sum(terms) - source| / max_k |term_k|
+p_res = log2(r(h) / r(h/2))          # both grids are already on the ladder
+```
+
+| Outcome | Condition | Effect |
+|---|---|---|
+| `clean` | `p_res >= theoretical_order - 1`, **or** `r` has reached the round-off floor | Counts as a circularity break |
+| `slow` | `r` falls, but under-performs the design order | Reported; neither gates nor certifies |
+| `stalled` | `r` does not fall and is not at round-off | **Gate** (score 3) when the operator is validated; a warning naming both suspects otherwise |
+| `unresolved` | The two kernel stencils disagree | Skipped; never counts against the plan |
+| `unavailable` | No `snapshots`, no operator, a non-uniform mesh, or an unsupported masked domain | Skipped |
+
+`p_design` is `verification.theoretical_order` — **not** `evaluation_thresholds.min_spatial_order`,
+which is `0.0` on `pde_kuramoto_sivashinsky` and would make every guard vacuous. It is the problem's
+property, so a plan cannot lower its own bar by claiming a lower order.
+
+**The median, never the max.** `reference.check_operator_residual` gates on the median because the
+max-plus-"singular set < 2%" design was measured to be fragile (real singular cases land at
+0.8/1.2/1.6%) and could not classify `pde_black_scholes_call` at all. Solver fields have shocks and
+layers too. D1 inherits the rule.
+
+**Difference at higher order, and in a different family.** Rule 1 (manual §9, extended to the
+time-dependent case): use a stencil of higher order than the solver did. Rule 2: use a different
+discretization *family* — if the solver was spectral, difference with high-order FD and vice versa.
+Reusing the solver's own stencil makes agreement a tautology; the paper-release pipeline's
+`5.03e-15` viscous-Burgers artifact is what that looks like. Both rules read `scheme_family` and
+`spatial_order` from the plan's `SOLUTION.md` frontmatter.
+
+**The stencil-insensitivity guard.** Compute `r` twice with two stencil families (FD8 and FD6, or
+FD8 and spectral on a periodic grid). Disagreement by more than ~2x means the residual is measuring
+the *kernel*, not the solver: report `unresolved` and skip. This is the escalation idiom
+`reference.PROBE_N = (257, 513, 1025)` already uses to separate "under-resolved" from "wrong".
+
+**Validating the operator itself.** D1's residual and the solver both descend from
+`verification.operator`; if it is wrong, both are wrong consistently and D1 is not an independent
+check at all. Three routes, descending in strength: the reference check passing on Path A; applying
+the operator to `mms_probe.exact` and requiring it to reproduce `mms_probe.source`; applying it with
+the degenerate parameters to `degenerate_limit.exact` and requiring the residual to vanish. **D1
+gates only when one of them has run.** None of them catches an operator misread the same way
+`problem.md` was — that is the requirements ledger's job, and it is the only check that reaches
+outside the spec.
+
+**The three trivial-attractor guards.** A residual rewards any field sitting on a stable steady state
+of the operator, whether or not it is the state the initial condition evolves to. `u = 1, v = 0` is
+an exact homogeneous Gray-Scott solution, so a solver that over-diffuses and destroys the pattern
+satisfies every term to near machine precision, having eliminated the only phenomenon the problem is
+about. Worse, if `u -> 0` the numerator and denominator both vanish and the epsilon leaves you
+dividing zero by `1e-300` — a perfect score for solving nothing.
+
+```python
+nontrivial    = rms(u_T) > 1e-3 * rms(u_0)          # not collapsed
+ic_consistent = rel_err(solve_to(t=0), u_0) < 1e-10 # the run started where it should
+structural    = all(gate_invariants_pass)           # D2, §8
+```
+
+**What a residual is still blind to**, and what covers each: no error bound (`‖e‖ <= ‖L_h^-1‖·‖r‖`,
+and the stability constant is unbounded near a Helmholtz resonance) — Tier C. Amplitude and phase:
+for a linear homogeneous PDE `c·u` is also a solution, and for a translation-invariant problem so is
+`u(x-s)`, so the residual is *identically zero* on both — D2's invariants. Boundary conditions: a
+stencil needs ghost points, so the residual is interior-only and a BC violation lives exactly where
+it cannot be computed — D2's `boundary_consistency`. Under-resolution: on a coarse grid every
+derivative is small and mutually consistent, the residual small, and the answer 30% wrong — Tier C.
+
+---
+
+## 27. The Invariant Registry
+
+`verification.invariants` and `verification.constraints` entries are **catalogue names with
+parameters**, not free expressions:
+
+```json
+{"name": "divergence_free", "gate": true, "tol": 1e-08, "fields": ["Bx", "By"]}
+{"name": "energy_bounded",  "gate": true, "bound": 100.0, "requires_trace": true}
+```
+
+`verifylib/kernel/invariants.py` owns a **closed registry** of the §8 and §21 names, and
+`verifylib/schema.py` errors on a gated entry that neither names a registry entry nor carries an
+evaluable `expr`. A gate nobody implements is worse than no gate, because it reads as evidence:
+`{"name": "physically_reasonable", "gate": true}` used to pass the schema, match nothing, and render
+downstream as a satisfied gate.
+
+Ungated entries stay free-form notes — eight distinct names are in use that way, and requiring an
+implementation for a diagnostic nobody gates on would buy nothing.
+
+**A declared gate the kernel cannot evaluate reports `not_reported`, never `pass`, and caps the
+score at 9** — the standing rule for a missing `invariant_trace` (§8), generalised.
+
+One measured trap, worth stating because two real specs write it: a tolerance of `tol: 0.0` for a
+quantity that is *exactly* monotone or *exactly* conserved. The reference snippets in §8 test
+`drift < tol`, which on `tol = 0.0` reports a violation for a drift of exactly zero — a perfectly
+conserving scheme failing its own conservation check. Compare `drift <= tol + 1e-12`.
+
+---
+
+## 28. Chaotic Problems and the Tier-C Waiver
+
+`chaotic: true` on the spec, with `chaotic_T_ref`. When set:
+
+- Tier **C** at full `T` is **waived, not failed** — trajectories separate past the Lyapunov time,
+  so the asymptotic guards cannot pass and their failure carries no information about the scheme.
+- Tier **C** runs instead at the declared `chaotic_T_ref`, inside the predictable window. That means
+  a **second full ladder**, solved through `override={"params": {"t_final": chaotic_T_ref}}`. There
+  is no way to measure convergence at a horizon the solver did not run to, and that second ladder is
+  the price of a chaotic problem.
+- Tiers **B**, **D1** and **D2** run unchanged at full `T`.
+- The waiver is recorded as `order_check: waived_chaotic` so it never reads as a pass.
+- `reference.check_reference` short-circuits: no closed form can apply, so `unavailable` would
+  misreport the metrics.
+
+**It is a self-relaxation vector.** It waives a scoring gate, so it requires a `requirements` ledger
+entry naming `chaotic` in its `spec_path` and quoting the clause of `problem.md` that establishes it,
+and `chaotic_T_ref` must be **declared** rather than chosen by the evaluator at scoring time. Both
+are schema errors when absent.
+
+**The solver must honour the horizon override, and the kernel checks that it did.** A solver that
+hard-codes `t_final` runs cleanly, returns `status: ok`, and hands back the full-`T` field — so the
+shifted ladder would measure convergence at `t = 50` while reporting it as `t = 5`. Measured on
+`pde_kuramoto_sivashinsky`: **two of its three solvers do exactly that.** The kernel compares the
+returned `t_final` against what it asked for, and where they disagree it stays on the full-`T` ladder
+and names the defect. §7 already said a solver that ignores `override` cannot be certified above Tier
+C; this is what makes that detectable rather than assumed.
+
+Note also what the waiver is *not* for. It moves the horizon Tier C is measured at; it does not
+relax a guard. A spectral scheme failing `p_sane` is a separate problem with a separate fix (§4), and
+setting `chaotic` will not rescue it — measured, it changes the label and leaves the score at 4.
+
+A second, narrower waiver exists and is deliberately distinct: `evaluation_thresholds.order_check:
+false` records `order_check: waived_spec`. There the problem contract simply imposes no
+convergence-order requirement (`pde_kuramoto_sivashinsky` lists only a relative-L2 target). The
+asymptotic guards still run, against `verification.theoretical_order`; `order_ok` is vacuously true;
+and Tier C rests on the GCI alone. Keeping the two waivers separate is what stops a spec-level
+opt-out from silently becoming a tier-level one.
+
+---

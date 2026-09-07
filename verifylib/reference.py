@@ -177,7 +177,7 @@ def _interior(shape, nd):
     return mask
 
 
-def _scaled_residual(terms, source, ns, sv, hs, fields):
+def _scaled_residual(terms, source, ns, sv, hs, fields, stencil=None):
     """``|sum(terms) - source| / max_k |term_k|`` -- term-balanced, never absolute.
 
     Helmholtz at large k and 100:1 anisotropy both have individually huge terms
@@ -196,13 +196,14 @@ def _scaled_residual(terms, source, ns, sv, hs, fields):
     else:
         # A single-term operator makes residual/max|term| identically 1, so Laplace
         # fails on a correct harmonic solution. Decompose one level down.
-        from .operator import d2
+        from .operator import default_stencil
+        st = stencil or default_stencil()
         u = next(iter(fields.values()))
-        den = np.maximum.reduce([np.abs(d2(u, i, hs[i])) for i in range(len(sv))])
+        den = np.maximum.reduce([np.abs(st.d2(u, i, hs[i])) for i in range(len(sv))])
     return np.abs(total) / np.maximum(den, 1e-300)
 
 
-def residual_field(spec, operator, N=257, ht=1e-3, t=None, exprs=None):
+def residual_field(spec, operator, N=257, ht=1e-3, t=None, exprs=None, stencil=None):
     """Pointwise term-balanced residual of the claimed solution. ``(scaled, mask)``.
 
     ``operator`` is either a resolved dict from :func:`resolve_operator` or a bare
@@ -217,7 +218,7 @@ def residual_field(spec, operator, N=257, ht=1e-3, t=None, exprs=None):
     t = _t_probe(spec) if t is None else t
 
     fields, derivs = _sample(spec, exprs, coords, sv, t, ht)
-    ns = build_namespace(fields, coords, sv, hs, time_derivs=derivs)
+    ns = build_namespace(fields, coords, sv, hs, time_derivs=derivs, stencil=stencil)
     ns.update(spec.get("parameters") or {})
     ns["t"] = t  # a source term is a function of space *and* time
     if spec.get("source_term") is not None:
@@ -225,10 +226,11 @@ def residual_field(spec, operator, N=257, ht=1e-3, t=None, exprs=None):
 
     if operator["kind"] == "scalar":
         scaled = _scaled_residual(operator["terms"], operator.get("source"),
-                                  ns, sv, hs, fields)
+                                  ns, sv, hs, fields, stencil)
     else:
         per_eq = [
-            _scaled_residual(eq.get("terms") or {}, eq.get("source"), ns, sv, hs, fields)
+            _scaled_residual(eq.get("terms") or {}, eq.get("source"), ns, sv, hs, fields,
+                             stencil)
             for eq in operator["equations"].values()
         ]
         stack = np.stack(per_eq)
@@ -243,7 +245,7 @@ def _stats(scaled, mask):
             "max": float(np.max(s)), "frac_above_tol": float(np.mean(s > TOL))}
 
 
-def check_operator_residual(spec, operator, tol=TOL, exprs=None):
+def check_operator_residual(spec, operator, tol=TOL, exprs=None, stencil=None):
     """Test 1. Classify a claimed solution. Returns ``(outcome, detail)``.
 
     The gate is the **median**, not the max. An earlier design gated on the max
@@ -257,7 +259,7 @@ def check_operator_residual(spec, operator, tol=TOL, exprs=None):
     """
     trace = []
     for N in PROBE_N:
-        scaled, mask = residual_field(spec, operator, N=N, exprs=exprs)
+        scaled, mask = residual_field(spec, operator, N=N, exprs=exprs, stencil=stencil)
         st = _stats(scaled, mask)
         st["N"] = N
         trace.append(st)

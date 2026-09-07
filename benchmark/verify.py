@@ -13,6 +13,15 @@ cannot catch itself:
 For SDE problems it recomputes the terminal moments; for PDE problems it recomputes
 the relative L2 error. Problems with no closed form (``has_ground_truth=False``)
 return ``status="no_ground_truth"`` -- the pipeline's self-score is all we have.
+
+A PDE need not have a closed form to be checked independently. ``ground_truth_kind:
+"reference"`` compares against a **harness-owned reference field** -- a stored
+high-resolution solution computed offline by two independent method families that
+agree far below the problem's own tolerance (``benchmark/make_references.py``). The
+tolerance is widened by the recorded agreement so the reference's own error can never
+fail a correct solver, exactly as the SDE reference path widens by the Monte-Carlo
+standard error. ``functional_truth`` adds the other no-closed-form route: the truth is
+a scalar quantity of interest (an eigenvalue, an extremum) rather than a field.
 """
 
 from __future__ import annotations
@@ -37,6 +46,12 @@ DEFAULT_PDE_N = 64          # base resolution (points per dimension) if unset
 DEFAULT_PDE_MIN_ORDER = 1.0  # observed-order acceptance floor if unset
 PDE_L2_TOL = 0.01           # relative-L2 pass tolerance (matches pde_manual.md)
 ORDER_SUPERCONV_FLOOR = 1e-9  # below this, error is at noise; order is "passed"
+# A harness-owned reference field carries its own error (the measured disagreement
+# between the two independent schemes that produced it). The pass tolerance is
+# widened to at least this multiple of it, so a solver can never be failed by the
+# answer key's own inaccuracy -- the same rule the SDE reference path applies to the
+# Monte-Carlo standard error.
+REFERENCE_TOL_FACTOR = 3.0
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
@@ -485,19 +500,46 @@ def _pde_min_order(problem):
     return float(problem.get("min_order", DEFAULT_PDE_MIN_ORDER))
 
 
+def _pde_truth(problem):
+    """The field-valued ground truth, ``(t, *coords) -> array | {field: array}``.
+
+    ``analytic`` is a closed form; ``reference`` is a harness-owned high-resolution
+    solution evaluated on the requested nodes (``ground_truth_kind="reference"``).
+    They are interchangeable from here down -- every per-field error, gauge removal,
+    mask and diagnostic works the same on either. ``None`` when the problem has no
+    field truth at all (a pure ``functional`` problem, or a self-score-only one)."""
+    return problem.get("analytic") or problem.get("reference")
+
+
+def _pde_reference_error(problem):
+    """The reference field's own relative error: the measured disagreement between
+    the two independent schemes that produced it. Zero for a closed form."""
+    return float(problem.get("reference_error", 0.0) or 0.0)
+
+
 def _pde_l2_tol(problem):
     """Accuracy gate for the (primary) relative error. Defaults to 1% but a
     per-problem override lets a genuinely harder problem (a free boundary, a
     corner singularity) set the floor a correct reference scheme can actually
-    clear at the harness resolution."""
-    return float(problem.get("pde_l2_tol", PDE_L2_TOL))
+    clear at the harness resolution.
+
+    Against a harness-owned reference the gate additionally never drops below
+    ``REFERENCE_TOL_FACTOR`` times the reference's own error -- otherwise a solver
+    more accurate than the answer key would fail for being right."""
+    tol = float(problem.get("pde_l2_tol", PDE_L2_TOL))
+    return max(tol, REFERENCE_TOL_FACTOR * _pde_reference_error(problem))
+
+
+def _pde_functional_tol(problem):
+    return float(problem.get("functional_tol", _pde_l2_tol(problem)))
 
 
 def _pde_order_check(problem):
-    """Whether to run the 2-grid order check: on by default, but requires an exact
-    solution to measure error against, and can be turned off per problem (e.g. a
-    shock, where the L2 order is inherently fractional/ill-defined)."""
-    return bool(problem.get("pde_order_check", True)) and problem.get("analytic") is not None
+    """Whether to run the 2-grid order check: on by default, but requires a field
+    ground truth to measure error against (closed form *or* harness-owned reference),
+    and can be turned off per problem (e.g. a shock, where the L2 order is inherently
+    fractional/ill-defined)."""
+    return bool(problem.get("pde_order_check", True)) and _pde_truth(problem) is not None
 
 
 def _pde_call_mode(fn):
@@ -621,14 +663,75 @@ def _run_diagnostics(problem, num_fields, exact_fields, axes, mask):
     return out
 
 
+def _eigen_normalize(un, ue, metric, mask):
+    """Put an eigenfunction pair in a common gauge before comparing them.
+
+    An eigenfunction is defined only up to a nonzero scalar multiple, so a correct
+    solver's field can differ from the reference by an arbitrary amplitude and sign
+    and still be exactly right. Normalize each to unit norm over the in-domain nodes
+    and align the sign on the largest-magnitude reference node (which is far from any
+    zero of the mode, so the choice is stable under refinement)."""
+    sel = slice(None) if mask is None else mask
+    nn, ne = _field_norm(un, metric, mask), _field_norm(ue, metric, mask)
+    if nn <= 0.0 or ne <= 0.0:
+        return un, ue
+    un, ue = un / nn, ue / ne
+    k = int(np.argmax(np.abs(np.asarray(ue)[sel])))
+    if float(np.asarray(un)[sel].ravel()[k]) * float(np.asarray(ue)[sel].ravel()[k]) < 0.0:
+        un = -un
+    return un, ue
+
+
+def _functional_errs(problem, result):
+    """Relative error of each scalar quantity of interest the solver reported.
+
+    The other no-closed-form route: for an eigenvalue, an extremum, or a drag
+    coefficient the truth is a *number*, authored in ``problems.py`` (and, per
+    NO_CLOSED_FORM_CANDIDATES.md §3, computed here rather than quoted from a paper,
+    so a recalled constant is not a passing answer). Returns ``(errs, err_status)``;
+    a problem that declares ``functional_truth`` and gets no ``functionals`` back has
+    violated the contract, which is a failure of that solver, not an inconclusive."""
+    truth = problem.get("functional_truth")
+    if not truth:
+        return {}, None
+    got = result.get("functionals")
+    if not isinstance(got, dict):
+        return None, {"status": "inconclusive",
+                      "error": "solver returned no 'functionals' dict; this problem is "
+                               f"scored on {sorted(truth)}"}
+    errs = {}
+    for name, ref in truth.items():
+        if name not in got:
+            return None, {"status": "inconclusive",
+                          "error": f"solver's 'functionals' is missing {name!r}"}
+        try:
+            val = float(got[name])
+        except (TypeError, ValueError):
+            return None, {"status": "inconclusive",
+                          "error": f"functional {name!r} is not a real number: {got[name]!r}"}
+        if not np.isfinite(val):
+            return None, {"status": "nonfinite", "passed": False, "verified_score": 1,
+                          "rel_l2_err": float("inf"), "primary_err": float("inf")}
+        errs[name] = abs(val - float(ref)) / (abs(float(ref)) + 1e-14)
+    return errs, None
+
+
 def _pde_eval_run(problem, result):
-    """Relative error of one solve against the exact solution, per field, plus the
+    """Relative error of one solve against the ground truth, per field, plus the
     structure diagnostics. Returns ``(eval_dict, err)`` with ``err`` a status dict
     or None. Handles any spatial dimension (via ``meshgrid(*axes)``), scalar or
-    multi-field output, an optional in-domain mask, and the L1 or L2 metric."""
+    multi-field output, an optional in-domain mask, and the L1 or L2 metric.
+
+    The truth is whichever of ``analytic`` (closed form) or ``reference``
+    (harness-owned high-resolution solution) the problem carries -- everything below
+    is identical for the two. A problem may additionally, or instead, be scored on
+    ``functional_truth``; when it is the *only* truth, the functional error becomes
+    the primary error, so the 2-grid order check measures the convergence of the
+    quantity of interest itself."""
     grid = result.get("grid", {})
     t_eval = problem["t_eval"]  # trust the benchmark's evaluation time, not the solver label
     metric = problem.get("pde_metric", "l2")
+    truth_fn = _pde_truth(problem)
 
     axes = _pde_axes(problem, grid)
     if axes is None:
@@ -638,9 +741,23 @@ def _pde_eval_run(problem, result):
     coords = np.meshgrid(*axes, indexing="ij")  # d-generic; for d=1 this is [x]
     mask = _domain_mask(problem, coords)
 
+    func_errs, ferr = _functional_errs(problem, result)
+    if ferr is not None:
+        return None, ferr
+
+    if truth_fn is None:
+        # Functional-only problem: no field truth exists, so the QoI carries the score.
+        primary = problem.get("primary_functional") or sorted(func_errs)[0]
+        ev = {"rel_l2_err": func_errs[primary], "primary_err": func_errs[primary],
+              "primary_field": primary, "metric": "functional", "field_errs": {},
+              "functional_errs": func_errs, "max_abs_err": func_errs[primary],
+              "grid_shape": [len(a) for a in axes], "diagnostics": [],
+              "t_final": result.get("t_final")}
+        return ev, None
+
     try:
         num, field_names = _field_num(result, problem)
-        exact = problem["analytic"](t_eval, *coords)
+        exact = truth_fn(t_eval, *coords)
         exact = exact if isinstance(exact, dict) else {"u": exact}
         pairs = {}
         for name in field_names:
@@ -660,13 +777,18 @@ def _pde_eval_run(problem, result):
 
     # Gauge fields (e.g. incompressible pressure) are defined only up to a constant;
     # compare them mean-removed over the domain so a valid gauge choice is not failed.
+    # An eigenproblem's fields are defined up to a scalar multiple, which is the same
+    # idea one gauge wider.
     gauge = set(problem.get("gauge_fields", ()))
+    eigen = bool(problem.get("normalize_fields", False))
     shifted = {}
     for name, (un, ue) in pairs.items():
         if name in gauge:
             sel = slice(None) if mask is None else mask
             un = un - float(np.mean(un[sel]))
             ue = ue - float(np.mean(ue[sel]))
+        if eigen:
+            un, ue = _eigen_normalize(un, ue, metric, mask)
         shifted[name] = (un, ue)
     # A field that is identically ~0 (e.g. a vector component along a zero polarization
     # axis) has no meaningful self-relative error, so normalize it by the global field
@@ -679,8 +801,11 @@ def _pde_eval_run(problem, result):
         field_errs[name] = pde_error(un, ue, metric=metric, mask=mask, ref_norm=rn)
 
     primary = problem.get("primary_field", field_names[0])
+    # Reported, never gated. Measured on the raw pair, except under an eigen gauge
+    # where the raw amplitudes are arbitrary and the difference would be meaningless.
+    for_max = shifted if eigen else pairs
     max_abs = max(float(np.max(np.abs((un - ue) if mask is None else (un - ue)[mask])))
-                  for un, ue in pairs.values())
+                  for un, ue in for_max.values())
     diagnostics = _run_diagnostics(problem, {n: p[0] for n, p in pairs.items()},
                                    {n: p[1] for n, p in pairs.items()}, axes, mask)
 
@@ -688,6 +813,8 @@ def _pde_eval_run(problem, result):
           "primary_field": primary, "metric": metric, "field_errs": field_errs,
           "max_abs_err": max_abs, "grid_shape": list(pairs[primary][0].shape),
           "diagnostics": diagnostics, "t_final": result.get("t_final")}
+    if func_errs:
+        ev["functional_errs"] = func_errs
     return ev, None
 
 
@@ -708,10 +835,29 @@ def _fold_diagnostics(out, ev):
 
 
 def _pde_converged(problem, ev):
-    """Accuracy gate: every *required* field within the (primary-metric) tolerance."""
+    """Accuracy gate: every *required* field within the (primary-metric) tolerance,
+    and every declared quantity of interest within its own."""
     tol = _pde_l2_tol(problem)
     required = problem.get("required_fields") or list(ev["field_errs"])
-    return bool(all(ev["field_errs"][f] < tol for f in required)), tol
+    ok = all(ev["field_errs"][f] < tol for f in required)
+    ftol = _pde_functional_tol(problem)
+    ok = ok and all(e < ftol for e in ev.get("functional_errs", {}).values())
+    return bool(ok), tol
+
+
+def _fold_reference(out, problem, ev):
+    """Record what the score rested on: the quantity-of-interest errors, and -- for a
+    harness-owned reference -- the answer key's own error and the tolerance widening
+    it bought, so a near-threshold result can be read without re-deriving them."""
+    if ev.get("functional_errs"):
+        out["functional_errs"] = ev["functional_errs"]
+        out["functional_tol"] = _pde_functional_tol(problem)
+    ref_err = _pde_reference_error(problem)
+    if ref_err > 0.0:
+        out["reference_error"] = ref_err
+        out["tol_used"] = _pde_l2_tol(problem)
+        out["tol_widened"] = bool(out["tol_used"] > float(problem.get("pde_l2_tol", PDE_L2_TOL)))
+    return out
 
 
 def _score_pde_runs(problem, runs):
@@ -734,7 +880,7 @@ def _score_pde_runs(problem, runs):
                "solver_t_final": ev["t_final"], "order_checked": False}
         if N is not None:
             out["grid_N"] = N
-        return _fold_diagnostics(out, ev)
+        return _fold_reference(_fold_diagnostics(out, ev), problem, ev)
 
     # Two grids: observed convergence order p = log2(e_N / e_2N) on the primary field.
     (N0, _r0), (N1, _r1) = runs[0], runs[1]
@@ -764,7 +910,7 @@ def _score_pde_runs(problem, runs):
            "observed_order": p_hat, "order_min": min_order, "order_ok": order_ok,
            "converged": converged, "grid_N": N0, "fine_grid_N": N1,
            "grid_errors": {str(N0): e0, str(N1): e1}}
-    return _fold_diagnostics(out, evals[1])
+    return _fold_reference(_fold_diagnostics(out, evals[1]), problem, evals[1])
 
 
 def verify_pde(problem, plan_dir, sandbox=False, timeout_s=120, mem_mb=4096):
@@ -778,6 +924,29 @@ def verify_pde(problem, plan_dir, sandbox=False, timeout_s=120, mem_mb=4096):
     return out
 
 
+def verify_pde_reference(problem, plan_dir, sandbox=False, timeout_s=120, mem_mb=4096):
+    """A PDE with no closed form, scored against a harness-owned reference field.
+
+    The scoring path is `verify_pde`'s, unchanged: ``_pde_eval_run`` takes the truth
+    from ``problem["reference"]`` instead of ``problem["analytic"]`` and every
+    per-field error, mask, metric and diagnostic below that is identical. What this
+    wrapper adds is the *dispatch* -- ``plan-no-closed-form.md`` §9d says
+    ``benchmark/verify.py`` needs "No change" while §8c requires this path; §8c is
+    right, and the disagreement is the reason it is named rather than folded in --
+    and the guarantee that the reference actually carries a measured error, since a
+    reference whose accuracy nobody established is an answer key, not ground truth."""
+    if problem.get("reference") is None:
+        return {"status": "error",
+                "error": f"{problem['slug']}: ground_truth_kind='reference' but no "
+                         "reference callable is authored in problems.py"}
+    if _pde_reference_error(problem) <= 0.0:
+        return {"status": "error",
+                "error": f"{problem['slug']}: reference has no measured reference_error; "
+                         "run benchmark/make_references.py and record the two-scheme "
+                         "agreement before scoring against it"}
+    return verify_pde(problem, plan_dir, sandbox=sandbox, timeout_s=timeout_s, mem_mb=mem_mb)
+
+
 # --- dispatch ---------------------------------------------------------------
 
 
@@ -788,9 +957,14 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
     crashed.
 
     Dispatch is on ``ground_truth_kind`` (default ``exact``): ``reference`` compares
-    against a discretization-free MC reference within an SE-aware tolerance;
-    ``stability`` checks only that a correct scheme stays finite / in-domain (and is
-    checkable even though ``has_ground_truth`` is False).
+    against a discretization-free MC reference within an SE-aware tolerance (SDE) or
+    a harness-owned high-resolution reference field within a tolerance widened by the
+    reference's own error (PDE); ``stability`` checks only that a correct scheme stays
+    finite / in-domain (and is checkable even though ``has_ground_truth`` is False).
+
+    ``functional_truth`` is orthogonal to the kind rather than a kind of its own: any
+    PDE problem may add scalar quantities of interest to its gate, and a problem whose
+    *only* truth is a functional simply has no ``analytic`` and no ``reference``.
 
     ``sandbox=True`` runs ``solver.py`` in an isolated subprocess (wall-clock
     timeout, memory cap, numpy+stdlib-only import policy) via ``runner.py`` and
@@ -830,6 +1004,9 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
                 out = verify_sde_reference(problem, plan_dir, injected=injected)
             else:
                 out = verify_sde(problem, plan_dir, injected=injected)
+        elif kind == "reference":
+            out = verify_pde_reference(problem, plan_dir, sandbox=sandbox,
+                                       timeout_s=timeout_s, mem_mb=mem_mb)
         else:
             out = verify_pde(problem, plan_dir, sandbox=sandbox,
                              timeout_s=timeout_s, mem_mb=mem_mb)
@@ -880,7 +1057,10 @@ def ledger_audit(workspace_dir, plan_dir, out):
     return result
 
 
-def _fmt(out):
+def _fmt(out, problem=None):
+    """Render one verification result. ``problem`` is display-only -- it supplies the
+    problem's own tolerance, which the summary line previously printed as the global
+    default whatever the problem had set."""
     lines = [f"status: {out['status']}"]
     if out["status"] == "no_ground_truth":
         lines.append("  " + out["note"])
@@ -901,10 +1081,20 @@ def _fmt(out):
         metric = out.get("metric", "l2").upper()
         pfld = out.get("primary_field", "u")
         lines.append(f"  rel {metric} error : {out['rel_l2_err']:.3e}  (field '{pfld}', "
-                     f"pass < {_pde_l2_tol({}):g} -> {'PASS' if out.get('passed') else 'FAIL'})")
+                     f"gate < {_pde_l2_tol(problem or {}):g})")
+        lines.append(f"  verdict      : {'PASS' if out.get('passed') else 'FAIL'}")
         if out.get("field_errs"):
             per = "  ".join(f"{k}={v:.2e}" for k, v in out["field_errs"].items())
             lines.append(f"  per-field    : {per}")
+        if out.get("functional_errs"):
+            ftol = out.get("functional_tol", _pde_functional_tol(problem or {}))
+            for name, err in out["functional_errs"].items():
+                lines.append(f"  functional   : {name} rel err {err:.3e}  "
+                             f"(pass < {ftol:g} -> {'ok' if err < ftol else 'FAIL'})")
+        if out.get("reference_error"):
+            lines.append(f"  reference    : own error {out['reference_error']:.3e}"
+                         + (f", tolerance widened to {out['tol_used']:.3e}"
+                            if out.get("tol_widened") else ""))
         if out.get("order_checked"):
             p = out.get("observed_order")
             pstr = "inf" if p == float("inf") else f"{p:.2f}"
@@ -955,7 +1145,7 @@ def main(argv=None):
     out = verify_problem(problem, wdir, plan_dir=plan_dir, sandbox=args.sandbox,
                          timeout_s=args.timeout, mem_mb=args.mem_mb)
     print(f"=== {problem['id']} {args.slug} ({problem['type'].upper()}, tier {problem['tier']}) ===")
-    print(_fmt(out))
+    print(_fmt(out, problem))
 
 
 if __name__ == "__main__":

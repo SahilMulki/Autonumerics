@@ -6,6 +6,7 @@
     ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py hook pre-tool-use
     ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py hook stop
     ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py gate <workspace_dir> [--json]
+    ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py evaluate <plan_dir> [--json]
 
 Exit codes follow the hook contract measured in ``tests/hookprobe/FINDINGS.md``:
 2 is the blocking/feedback code the agent sees on stderr, 0 is pass. Only
@@ -165,6 +166,67 @@ def _report(found, as_json):
     return BLOCK if errors(found) else PASS
 
 
+def _evaluate(plan_dir, as_json) -> int:
+    """Run the numerical kernel on one plan directory.
+
+    This is the entry point that replaces a generated ``evaluate.py``. It is a CLI
+    subcommand rather than a ``verifylib.run(...)`` call inside a generated script
+    for three reasons: ``import verifylib`` only resolves inside this repo, while on
+    a user's own problem the package lives at ``${CLAUDE_PLUGIN_ROOT}``; this module
+    already does the ``sys.path`` surgery that stops ``verifylib/operator.py``
+    shadowing the stdlib ``operator`` module for the whole interpreter, which the
+    kernel would hit the moment it imported ``functools``; and "no ``evaluate.py``
+    contains numerical logic" is not a checkable criterion while "no ``evaluate.py``
+    exists" is.
+    """
+    from verifylib import gate as _gate
+    from verifylib.kernel import run
+
+    plan_dir = os.path.abspath(plan_dir)
+    spec = _gate._sibling_spec(os.path.join(plan_dir, "SOLUTION.md"))
+    if spec is None:
+        print(f"no problem_spec.json above {plan_dir}", file=sys.stderr)
+        return 1
+
+    config = {}
+    override = os.environ.get("VERIFYLIB_EVAL_CONFIG")
+    if override:
+        try:
+            config = json.loads(override)
+        except json.JSONDecodeError as exc:
+            print(f"VERIFYLIB_EVAL_CONFIG is not valid JSON: {exc}", file=sys.stderr)
+            return 1
+
+    metrics = run(spec, plan_dir, config)
+    if as_json:
+        print(json.dumps(metrics, indent=2, default=_jsonable))
+    else:
+        from verifylib.kernel.metrics import render_block
+        print(render_block(metrics))
+        print()
+        print(f"bound by: {metrics['certification']['bound_by']} -- "
+              f"{metrics['certification']['reason']}")
+        for name, outcome in sorted(metrics.get("checks", {}).items()):
+            print(f"  {name:26s} {outcome}")
+        for line in metrics.get("notes", []):
+            print(f"  note: {line}")
+    # 0 whatever the score: a low score is a measurement, not a tool failure. Only a
+    # kernel that could not run at all is an error, and that raises.
+    return PASS
+
+
+def _jsonable(value):
+    try:
+        import numpy as np
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, (np.floating, np.integer, np.bool_)):
+            return value.item()
+    except ImportError:
+        pass
+    return str(value)
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
@@ -193,6 +255,11 @@ def main(argv=None) -> int:
         return _report(gate.check_review_file(args[0]), as_json)
     if command in ("gate", "check-workspace"):
         return _report(gate.check_workspace(args[0] if args else "workspace"), as_json)
+    if command == "evaluate":
+        if not args:
+            print("evaluate takes a plan directory", file=sys.stderr)
+            return 1
+        return _evaluate(args[0], as_json)
 
     print(f"unknown command {command!r}", file=sys.stderr)
     return 1
