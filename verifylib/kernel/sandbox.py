@@ -17,9 +17,9 @@ be. Three reasons, each independently sufficient:
   translation-invariance, four of the five things the kernel exists to run, are
   all unreachable through it.
 * It extracts ``numerical_solution`` / ``fields`` / ``grid`` / ``t_final`` and
-  drops everything else, including ``invariant_trace``, ``snapshots`` and
-  ``path_integrals`` -- respectively D2's trace invariants, D1's time term, and
-  Dynkin.
+  drops everything else, including ``invariant_trace``, ``snapshots``,
+  ``path_integrals`` and ``functionals`` -- respectively D2's trace invariants,
+  D1's time term, Dynkin, and a declared scalar quantity of interest.
 * It lives in ``benchmark/``, which does not ship with the plugin. On a user's own
   problem ``${CLAUDE_PLUGIN_ROOT}`` holds ``verifylib/`` and nothing else, so a
   kernel that imports it works in this repo and nowhere else.
@@ -216,6 +216,22 @@ def _dump_pde(res, out):
         scalars["trace_keys"] = list(trace)
         for k, v in trace.items():
             arrays[f"trace__{k}"] = np.asarray(v, dtype=float).ravel()
+    # A declared scalar quantity of interest -- an eigenvalue, a drag coefficient.
+    # It rides back as a scalar rather than an array. A non-numeric, non-scalar or
+    # non-finite entry is dropped here rather than crashing the solve: the check that
+    # consumes it then reports `not_reported`, which is a measurement, where a raised
+    # exception would report `crashed` and blame the solver for the wrong thing.
+    funcs = res.get("functionals")
+    if isinstance(funcs, dict) and funcs:
+        kept = {}
+        for k, v in funcs.items():
+            try:
+                if np.ndim(v) == 0 and np.isfinite(float(v)):
+                    kept[str(k)] = float(v)
+            except (TypeError, ValueError):
+                continue
+        if kept:
+            scalars["functionals"] = kept
     snaps = res.get("snapshots")
     if isinstance(snaps, (list, tuple)) and snaps:
         times, keys = [], []
@@ -462,6 +478,8 @@ def _reconstruct(kind, scalars, arrays):
             out[key] = scalars[key]
     if scalars.get("trace_keys"):
         out["invariant_trace"] = {k: arrays[f"trace__{k}"] for k in scalars["trace_keys"]}
+    if scalars.get("functionals"):
+        out["functionals"] = dict(scalars["functionals"])
     if scalars.get("snapshot_keys"):
         times = arrays["snap__t"]
         snaps = [{"t": float(t), "fields": {}} for t in times]

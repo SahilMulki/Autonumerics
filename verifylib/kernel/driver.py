@@ -21,7 +21,18 @@ import numpy as np
 
 from ..operator import evaluate
 from ..reference import claimed_fields, resolve_operator
-from . import degenerate, invariants, ladder, metrics, mms, plan_meta, residual, sandbox, temporal
+from . import (
+    degenerate,
+    functionals,
+    invariants,
+    ladder,
+    metrics,
+    mms,
+    plan_meta,
+    residual,
+    sandbox,
+    temporal,
+)
 from . import richardson as rich
 from .score import certify
 
@@ -165,10 +176,23 @@ def evaluate_pde(spec, plan_dir, agent):
     m["summary"]["order_floor"] = min_order
     m["summary"]["order_check"] = order_state
 
+    # Declared scalar quantities of interest, checked by self-convergence up the same
+    # ladder. A *gated* one that has not converged to its declared tolerance makes the
+    # run not converged: the problem is scored on that number, so "converged" cannot
+    # mean the field alone. Absent a declaration this is `unavailable` and folds in as
+    # a no-op -- only an explicit failure downgrades.
+    fn = functionals.run_declared(thresholds, runs)
+    m["functionals"] = fn
+    metrics.record(m, "functionals_ok", fn["functionals_ok"],
+                   outcomes=fn["outcomes"], errors=fn["errors"], values=fn["values"],
+                   gate_failed=fn["gate_failed"], not_reported=fn["not_reported"])
+
     converged = (e_fine is not None and np.isfinite(e_fine) and e_fine < tol
-                 and (asymptotic is not False))
+                 and (asymptotic is not False)
+                 and not metrics.failed(fn["functionals_ok"]))
     metrics.record(m, "converged", bool(converged), e_fine=e_fine, tol=tol,
-                   asymptotic=asymptotic)
+                   asymptotic=asymptotic,
+                   functionals_ok=fn["functionals_ok"])
     m["summary"]["estimated_rel_error"] = e_fine
     m["summary"]["error_is_estimate"] = error_is_estimate
     if per_field:
@@ -675,6 +699,8 @@ def _evidence(spec, m, path, tol, e_fine, d1, d2, tier_b, agent, chaotic):
         "shrinking": (m.get("detail", {}).get("richardson") or {}).get("shrinking"),
         "gate_violation": bool(d2["gate_failed"]),
         "not_reported_invariants": d2["not_reported_gated"],
+        "functionals_ok": checks.get("functionals_ok"),
+        "not_reported_functionals": (m.get("functionals") or {}).get("not_reported_gated") or [],
         "interpolated": bool(m.get("ladder", {}).get("interpolated")),
         "any_test_ran": e_fine is not None or tier_b["outcome"] is True,
         "e_fine": e_fine, "rel_err_tol": tol,

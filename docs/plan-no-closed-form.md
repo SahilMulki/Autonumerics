@@ -61,32 +61,35 @@ rather than from a defect: a clean self-convergence run with no circularity brea
 tops out at **8** rather than manual §12's 9, and a plan whose reference check reports
 `unavailable` tops out at **9** rather than 10 (the A⁻ split).
 
-**Phase 5 is not done** *(done 2026-09-07, outside this plan — see criterion 13 in §11)*,
-and is the one part of this plan that was not. Acceptance criterion 13 was therefore
-open; every other criterion is met. Two things about it are now known that were not:
+**Phase 5 is done** (2026-09-07), landed as the pilot of the no-closed-form benchmark
+extension rather than as a deliverable of this plan. It was the last open criterion;
+every criterion in §11 is now met. Two things about it turned out differently from what
+§8c assumed:
 
 *Its numerical claim holds, and is measured.* §8c argues chaos does not prevent a
 harness-owned KS reference, and it does not. Two independently written high-resolution
-schemes on the endpoint-exclusive `M = 1024` grid at `t = 50`:
+schemes on the endpoint-exclusive `M = 1024` grid at `t = 50`, as shipped and
+reproducible with `make_references.py --check`:
 
 | Check | Result |
 |---|---|
-| ETDRK4, `dt` halved 2e-3 → 5e-4 | 7.1e-11, then 2.4e-10 |
-| ETDRK4, `M` 512 → 1024 (on the coarse nodes) | 2.3e-13 |
-| **ETDRK4 (`dt` 5e-4) vs IMEX-SBDF3 (`dt` 1e-4)** | **1.26e-09** |
+| ETDRK4, `dt` halved 2e-3 → 5e-4 | 1.8e-10 |
+| ETDRK4, `M` 512 → 1024 (on the coarse nodes) | 9.0e-14 |
+| **ETDRK4 (`dt` 5e-4) vs IMEX-SBDF3 (`dt` 1e-4)** | **1.245e-09** |
 
-One order looser than §8c's "~1e-10" estimate, and still six orders below the
-problem's own 1% target. The reference is real and obtainable in about ten seconds of
-compute.
+One order looser than §8c's "~1e-10" estimate, and still six orders below the problem's
+own 1% target. `reference_error: 1.245e-09` is recorded on the problem and widens the
+pass tolerance, so the answer key is never trusted beyond its own measured accuracy. The
+whole reference costs about 40 s of compute.
 
-*Its wiring is not the mechanical step §8c assumes.* `ground_truth_kind: "reference"`
-exists, but `verify.py` dispatches it **only for an SDE** — `verify_pde` is called for
-every PDE whatever the kind is set to. A PDE reference therefore needs a new
-`verify_pde_reference` path in `benchmark/verify.py`, which §9d lists as **"No
-change"**. The two sections disagree, and the disagreement is the reason to leave this
-as separable work with its own review rather than to fold it in here: it changes how
-the benchmark grades, it edits the answer key, and its validation belongs in
-`benchmark/validate_ground_truth.py` rather than in a script beside the kernel.
+*Its wiring was not the mechanical step §8c assumed.* `ground_truth_kind: "reference"`
+existed, but `verify.py` dispatched it **only for an SDE** — `verify_pde` was called for
+every PDE whatever the kind was set to. The PDE path had to be built:
+`verify_pde_reference` in `benchmark/verify.py`, which §9d listed as **"No change"**.
+§9d was wrong and §8c was right; that row is corrected. Keeping it separable was still
+the right call — it changes how the benchmark grades, it edits the answer key, and its
+validation belongs in `benchmark/validate_ground_truth.py` rather than in a script
+beside the kernel, where it now lives as 130 lines of new checks.
 
 ---
 
@@ -779,7 +782,7 @@ enforces for the guardrails layers.
 | `verifylib/schema.py` | Unknown gated invariant name → error; `chaotic` type + ledger check |
 | `verifylib/review.py` | The review's `Score: N/10` headline must equal `metrics.score` **exactly** — a new check, and the one that makes the kernel-emitted score binding rather than advisory |
 | `verifylib/cli.py` | `evaluate <plan_dir> [--json]` |
-| `benchmark/verify.py`, `benchmark/report.py` | **No change** (§8d). The benchmark's KS blind spot is fixed by a harness-owned reference in `problems.py` — separable work, not a deliverable of this plan |
+| `benchmark/verify.py`, `benchmark/report.py` | ~~**No change** (§8d)~~ — **corrected 2026-09-07**: §8c was right and this row was wrong. `ground_truth_kind: "reference"` was dispatched for SDE only, so the PDE path had to be built (`verify_pde_reference`, plus the `reference_error` tolerance widening); `report.py` gained the kernel-provenance-vs-independent-verdict section. Still separable work, landed with the benchmark extension rather than with the kernel |
 | `commands/conductor.md` | Rank on the kernel's `score` / `provenance` fields rather than a number parsed from review prose. Parse `manufactured_partial` and `analytic_unvalidated`; rank per guardrails C4. **Sequence against the other two plans' conductor edits (C7)** |
 
 The provenance vocabulary is now seven values and is read by `report.py`, `compare.py`, `run.py`,
@@ -799,7 +802,7 @@ would be legacy forever. They are cheap and they gate everything else.
 | **2** | `residual.py` — D1 with the slope test, the stencil guard and the trivial guards; operator validation (§5d) | The trivial-collapse and sign-flipped-operator canaries are caught; the FD6/FD8 guard reports `unresolved` rather than failing on the spectral plans |
 | **3** | The Tier-B-order trick with §7a's preconditions | Path B wall time falls measurably where the preconditions hold, and is unchanged where they do not — both measured, not assumed |
 | **4** | `kernel/sde/` — surrogates, CRN, Dynkin, constraints | The 6 SDE problems in `workspace/` reproduce their metrics on frozen artifacts |
-| **5** | *(Separable — not a dependency of 0–4, and touches no file this plan owns.)* Give KS a harness-owned reference in `benchmark/problems.py`: high-resolution spectral solve, stored `u(x, t=50)`, `ground_truth_kind: "reference"` | Two independent high-resolution schemes agree to ~1e-10, and KS's benchmark verdict is no longer `SELF_ONLY` |
+| **5** — **done 2026-09-07** | *(Separable — not a dependency of 0–4, and touches no file this plan owns.)* Give KS a harness-owned reference in `benchmark/problems.py`: high-resolution spectral solve, stored `u(x, t=50)`, `ground_truth_kind: "reference"` | **Met.** ETDRK4 vs IMEX-SBDF3 agree to **1.245e-09**; the field is stored at `benchmark/references/pde_kuramoto_sivashinsky.npz` and built/rechecked by `make_references.py`; KS now grades through `verify_pde_reference` instead of reporting `SELF_ONLY` |
 
 Phase 0 is a day. Phases 1–2 deliver most of the value. Phase 4 is the largest single chunk.
 

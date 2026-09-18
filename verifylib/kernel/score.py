@@ -311,6 +311,14 @@ def certify(evidence):
                      "reason": f"declared invariant(s) {not_reported} could not be "
                                f"evaluated and are reported as not_reported, never as a "
                                f"pass"})
+    not_reported_fn = list(evidence.get("not_reported_functionals") or [])
+    if not_reported_fn:
+        # The same rule as above, for a declared scalar quantity of interest. A gate
+        # nobody evaluated reads as evidence, which is worse than no gate at all.
+        caps.append({"source": "not_reported_functional", "score": 9,
+                     "reason": f"declared functional(s) {not_reported_fn} carry "
+                               f"gate: true but the solver reported no value for them, "
+                               f"so the gate could not be evaluated"})
     if evidence.get("interpolated"):
         caps.append({"source": "interpolated", "score": 9,
                      "reason": "the ladder did not nest, so the order estimate rests on "

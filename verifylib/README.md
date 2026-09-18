@@ -41,11 +41,12 @@ one authority is asymmetric — `agent_cap` can lower a score, never raise it.
 | Module | What it does |
 |---|---|
 | `__init__.py` | `run(spec, plan_dir, config) -> metrics`. Imports lazily, so `schema.py` can read the invariant registry without pulling in numpy |
-| `sandbox.py` | Runs `solver.py` in a subprocess with a wall-clock timeout, rlimits, an import policy matching the solver agents' grant, and a leakage scan before import. Speaks the whole return contract — `override`, `snapshots`, `invariant_trace`, `path_integrals` |
+| `sandbox.py` | Runs `solver.py` in a subprocess with a wall-clock timeout, rlimits, an import policy matching the solver agents' grant, and a leakage scan before import. Speaks the whole return contract — `override`, `snapshots`, `invariant_trace`, `path_integrals`, `functionals` |
 | `ladder.py` | Nested refinement, endpoint-convention detection, restriction, norms, grid-uniformity |
 | `richardson.py` | GCI, the asymptotic-range guards, and the two-level probe-order variant with its clamp |
 | `residual.py` | **D1**: the slope test, the stencil-insensitivity guard, the trivial-attractor guards, operator validation |
 | `invariants.py` | **D2**: the closed registry of gateable names, and every evaluator |
+| `functionals.py` | Declared scalar quantities of interest (an eigenvalue, a drag coefficient), checked by self-convergence up the ladder. The kernel has no reference value for them on a problem with no closed form, so it asks whether the number is *resolved* to the declared tolerance, never whether it is right |
 | `mms.py`, `degenerate.py` | The two Tier-B drivers. A faulty probe is skipped, never failed |
 | `temporal.py` | `dt_factor` isolation, reusing the ladder run it compares against |
 | `score.py` | The rubrics as code — manual §12/§23 under the §26 certification ceiling |
