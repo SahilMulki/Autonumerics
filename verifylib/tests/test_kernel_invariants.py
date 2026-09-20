@@ -184,3 +184,19 @@ def test_the_not_reported_split_only_caps_on_gated_entries():
     got = run_declared(verification, PdeContext({"u": np.ones(9)}, [_grid(9)]))
     assert sorted(got["not_reported"]) == ["energy_bounded", "gaussianity"]
     assert got["not_reported_gated"] == ["energy_bounded"]
+
+
+def test_a_registry_name_beside_an_expr_is_evaluated_by_the_registry():
+    """The name wins. ``{"name": "positivity", "expr": "X > -5"}`` tests ``X > 0``
+    -- the registry's definition -- and the expression is ignored. A formulator
+    who wants a custom predicate must give it a name the registry does not own;
+    otherwise the declared gate and the evaluated one silently differ."""
+    import numpy as np
+
+    from verifylib.kernel.invariants import SdeContext, evaluate_invariant
+
+    ctx = SdeContext(np.array([1.0, -1.0, 2.0]))
+    shadowed, _ = evaluate_invariant({"name": "positivity", "expr": "X > -5", "gate": True}, ctx)
+    assert shadowed is False                      # X > 0 fails on the -1.0 path
+    custom, _ = evaluate_invariant({"name": "floor_minus_five", "expr": "X > -5", "gate": True}, ctx)
+    assert custom is True

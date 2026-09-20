@@ -34,3 +34,10 @@ quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
 skip-magic-trailing-comma = false
+
+[tool.pytest.ini_options]
+testpaths = ["verifylib", "benchmark/tests"]
+markers = [
+    "slow: rebuilds a harness reference from scratch (40 s+ each); run with `-m slow`",
+]
+addopts = "-m 'not slow'"

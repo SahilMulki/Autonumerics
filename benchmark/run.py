@@ -66,9 +66,51 @@ import verify as V  # noqa: E402
 # --- pipeline invocation ----------------------------------------------------
 
 
-def conductor_command(slug, skip_permissions, permission_mode, model):
+# Commands the base settings file already denies against benchmark/; the same set is
+# denied against every *other* problem's workspace, matched anywhere in the command
+# so an absolute path is caught too (the base file's relative-only `cat benchmark/*`
+# rules let `cat /Users/.../workspace/<sibling>/problem_spec.json` straight through).
+_WORKSPACE_READERS = ("cat", "head", "tail", "less", "more", "sed", "awk", "grep", "rg",
+                      "cp", "python", "python3", "uv run python", "uv run python3")
+
+
+def isolated_settings(slug, log_dir):
+    """Write a per-run settings file: the base denials plus a read-denial on every
+    other problem's workspace. Returns its path.
+
+    Found by reading a transcript, not by design: the formulator for the coarsening
+    Cahn-Hilliard problem `cat`ed its manufactured-solution twin's problem_spec.json
+    and used it as a template. Nothing in `pipeline-settings.json` forbade it --
+    benchmark/ is denied, workspace/ is not. That is not a ground-truth leak, but it
+    collapses the matched-pair design: "same operator, closed form removed" isolates
+    one variable only if the pipeline cannot copy from the closed-form sibling. So
+    each run sees exactly one workspace: its own.
+
+    The file is generated fresh each run from what is on disk, so a workspace added
+    later is covered without touching the base file, and it sits next to the
+    transcript so a run can be reproduced with the isolation it actually had."""
+    with open(PIPELINE_SETTINGS) as fh:
+        settings = json.load(fh)
+    deny = list(settings.setdefault("permissions", {}).get("deny", []))
+    others = sorted(d for d in os.listdir(WORKSPACE_ROOT)
+                    if d != slug and os.path.isdir(os.path.join(WORKSPACE_ROOT, d)))
+    for other in others:
+        deny.append(f"Read(./workspace/{other}/**)")
+        deny.append(f"Read(//Users/**/Autonumerics/workspace/{other}/**)")
+        deny.append(f"Edit(./workspace/{other}/**)")
+        for cmd in _WORKSPACE_READERS:
+            deny.append(f"Bash({cmd}:*workspace/{other}/*)")
+    settings["permissions"]["deny"] = deny
+    os.makedirs(log_dir, exist_ok=True)
+    path = os.path.join(log_dir, f"{slug}.settings.json")
+    with open(path, "w") as fh:
+        json.dump(settings, fh, indent=1)
+    return path
+
+
+def conductor_command(slug, skip_permissions, permission_mode, model, settings=None):
     cmd = ["claude", "--plugin-dir", REPO_ROOT,
-           "--settings", PIPELINE_SETTINGS, "-p",
+           "--settings", settings or PIPELINE_SETTINGS, "-p",
            f"/conductor workspace/{slug}/problem.md"]
     if skip_permissions:
         cmd.append("--dangerously-skip-permissions")
@@ -83,7 +125,8 @@ def run_conductor(slug, timeout, skip_permissions, permission_mode, model):
     """Invoke the conductor headlessly; capture the transcript. Returns a run dict."""
     os.makedirs(LOGS_DIR, exist_ok=True)
     log_path = os.path.join(LOGS_DIR, f"{slug}.log")
-    cmd = conductor_command(slug, skip_permissions, permission_mode, model)
+    cmd = conductor_command(slug, skip_permissions, permission_mode, model,
+                            settings=isolated_settings(slug, LOGS_DIR))
 
     # Elapsed is measured on the monotonic clock, which is what subprocess's own
     # timeout uses. On macOS it does not advance while the system is asleep, so a
@@ -131,7 +174,10 @@ def _looks_like_limit(log_path):
             text = fh.read().lower()
     except OSError:
         return False
-    return any(phrase in text for phrase in _LIMIT_PHRASES)
+    # Whole words only: the kernel's own vocabulary contains "degene|rate limit",
+    # and a successful transcript that names its tier-B route must not read as a
+    # usage limit -- on a timed-out run that would halt the whole queue.
+    return any(re.search(r"\b" + re.escape(phrase) + r"\b", text) for phrase in _LIMIT_PHRASES)
 
 
 # --- pipeline-state summary -------------------------------------------------
