@@ -15,6 +15,8 @@ plan already near certification, and each of its gates has a *distinct* rational
 
 from __future__ import annotations
 
+import hashlib
+import os
 import time
 
 import numpy as np
@@ -22,6 +24,7 @@ import numpy as np
 from ..operator import evaluate
 from ..reference import claimed_fields, resolve_operator
 from . import (
+    agreement,
     degenerate,
     functionals,
     invariants,
@@ -59,6 +62,13 @@ def evaluate_pde(spec, plan_dir, agent):
     path = "A" if exact_exprs else "B"
     chaotic = bool(spec.get("chaotic"))
     chaotic_t_ref = _chaotic_horizon(spec) if chaotic else None
+    # Declared, never inferred: "the full-T differences do not shrink at these
+    # grids" is not the fact "cannot shrink at any grid", and an under-resolved
+    # scheme on a coarse ladder shows the same signature (findings F1 [rev2]).
+    unshadowable = bool(spec.get("unshadowable")) and chaotic_t_ref is not None
+    graded_N = thresholds.get("graded_N")
+    graded_N = int(graded_N) if isinstance(graded_N, (int, float)) \
+        and not isinstance(graded_N, bool) and graded_N > 0 else None
 
     grid_N = int(cfg.pick("grid_N", agent, thresholds.get("grid_N"), 64))
     metric = cfg.pick("metric", agent, thresholds.get("metric"), "l2")
@@ -85,6 +95,15 @@ def evaluate_pde(spec, plan_dir, agent):
     m["summary"] = {}
     m["plan"] = plan_meta.read(plan_dir)
     m["chaotic"] = chaotic
+    m["unshadowable"] = unshadowable
+    # The file this score belongs to. The guardrails review already hashes it
+    # across one evaluation; carrying the hash in the metrics extends the same
+    # check across the layer boundary, so the harness never grades a solver.py
+    # the kernel did not score (findings F6).
+    m["solver_sha256"] = solver_sha256(plan_dir)
+    if graded_N is not None:
+        cfg.set("graded_N", graded_N, "spec")
+        m["summary"]["graded_N"] = graded_N
 
     def solve(N, override=None, in_arrays=None):
         return sandbox.run(plan_dir, "pde", {"N": N}, override=override,
@@ -116,6 +135,15 @@ def evaluate_pde(spec, plan_dir, agent):
             return _crashed(m, cfg, got, N, level, started)
         result = got["result"]
         axes = ladder.axes_of(result, axis_names)
+        # §7.1: a solver that ignores `N` returns the same array at every level, and
+        # `d10 = d21 = 0` used to read as "converged to round-off"; a NaN in the
+        # field made every difference NaN and read the same way. Both are contract
+        # violations of the returned value, named here before any ladder arithmetic
+        # can misread them.
+        contract = _check_returned_grid(result, axes, N)
+        if contract is not None:
+            return _crashed(m, cfg, {"reason": "bad_schema", "error": contract},
+                            N, level, started)
         if exclusive is None:
             bounds = ((spec.get("domain") or {}).get("bounds") or {})
             exclusive = [ladder.detect_periodic(axes[i], bounds[axis_names[i]])
@@ -133,7 +161,16 @@ def evaluate_pde(spec, plan_dir, agent):
     field_names = list((fine.get("fields") or {}))
     primary = primary if primary in field_names else field_names[0]
     required = [f for f in (required or field_names) if f in field_names]
-    mask = _domain_mask(spec, thresholds, runs[-1]["axes"], axis_names)
+    # §7.4: the mask is built per level, because D1 differences the top *two*
+    # grids and a mask shaped for the finest one cannot be applied to the other.
+    mask_error = None
+    for run in runs:
+        run["mask"], mask_error = _domain_mask(spec, thresholds, run["axes"], axis_names)
+    mask = runs[-1]["mask"]
+    if mask_error:
+        m["ladder"]["domain_mask_error"] = mask_error
+        metrics.note(m, f"the declared domain_mask could not be evaluated ({mask_error}); "
+                        f"the error is measured over the full rectangle and D1 abstains")
 
     # --- Stage 1: the error, by path ---------------------------------------
     e_fine, error_is_estimate, richardson, per_field = None, None, None, {}
@@ -190,9 +227,33 @@ def evaluate_pde(spec, plan_dir, agent):
     converged = (e_fine is not None and np.isfinite(e_fine) and e_fine < tol
                  and (asymptotic is not False)
                  and not metrics.failed(fn["functionals_ok"]))
-    metrics.record(m, "converged", bool(converged), e_fine=e_fine, tol=tol,
-                   asymptotic=asymptotic,
-                   functionals_ok=fn["functionals_ok"])
+    converged_detail = {"e_fine": e_fine, "tol": tol, "asymptotic": asymptotic,
+                        "functionals_ok": fn["functionals_ok"]}
+    if richardson is not None and richardson.get("reason"):
+        converged_detail["reason"] = richardson["reason"]
+        metrics.note(m, richardson["reason"])
+
+    # --- F1 / F4: the accuracy statistic at the horizon and grid the problem
+    # names. The GCI above certifies the *top* ladder level at the horizon the
+    # ladder ran at. Two things can make that the wrong statement: a chaotic
+    # problem whose ladder ran at `chaotic_T_ref`, where the spectrum that sets the
+    # resolution requirement does not exist yet; and a `graded_N` that is not the
+    # top level. In both the honest statistic is the pair difference between two
+    # full-T runs, which *is* the error at the coarser of the pair.
+    horizon_ok, horizon_detail = _horizon_accuracy(m, runs, richardson, primary, metric,
+                                                   tol, path, unshadowable)
+    converged_detail.update(horizon_detail)
+    if horizon_ok == "unshadowable":
+        converged = "unshadowable" if converged else False
+    elif horizon_ok is False:
+        converged = False
+    graded_ok, graded_detail = _graded_accuracy(m, runs, richardson, primary, metric, tol,
+                                                graded_N, path, e_fine, per_field=per_field)
+    converged_detail.update(graded_detail)
+    if graded_ok is False:
+        converged = False
+    metrics.record(m, "converged", converged if metrics.is_skip(converged) else bool(converged),
+                   **converged_detail)
     m["summary"]["estimated_rel_error"] = e_fine
     m["summary"]["error_is_estimate"] = error_is_estimate
     if per_field:
@@ -221,8 +282,13 @@ def evaluate_pde(spec, plan_dir, agent):
     m["summary"]["constraints_ok"] = not d2["gate_failed"]
 
     # --- Stage 1: D1, the operator residual ---------------------------------
-    d1 = _run_d1(spec, verification, runs, axis_names, exclusive, m, primary, mask,
-                 theoretical, initial_field, d2, solve)
+    d1 = _run_d1(spec, verification, runs, axis_names, exclusive, m, primary,
+                 theoretical, initial_field, d2, solve, wraps=wraps,
+                 mask_error=mask_error)
+    # §5f's third guard, wired: did the run start where the spec says? A linear
+    # problem started from twice its initial condition satisfies the residual
+    # identically and passes MMS (which supplies its own IC); only this sees it.
+    d1.update(_ic_consistency(spec, runs[0], axis_names, primary, solve))
     m["d1"] = d1
     metrics.record(m, "d1_outcome", True if d1["outcome"] == "clean" else (
         False if d1["outcome"] == "stalled" else d1["outcome"]
@@ -230,6 +296,18 @@ def evaluate_pde(spec, plan_dir, agent):
     m["summary"]["d1_outcome"] = d1["outcome"]
     m["summary"]["d1_slope"] = d1.get("p_res")
     m["summary"]["operator_validated"] = d1["operator_validated"]
+    metrics.record(m, "ic_consistent", d1.get("ic_consistent", "not_reported"),
+                   **(d1.get("ic_detail") or {}))
+
+    # --- F2: what `cli.py compare` recorded about this plan, read against the
+    # current solver hashes. Path B only: on Path A the closed form settles it.
+    agree = (agreement.for_plan(plan_dir, sha_of=solver_sha256) if path == "B"
+             else {"agreement": None, "disagreement": None, "entries": [], "stale": []})
+    m["agreement"] = agree
+    metrics.record(m, "cross_plan_agreement",
+                   True if agree["agreement"] else (
+                       False if agree["disagreement"] else "unavailable"),
+                   entries=agree["entries"], stale=len(agree["stale"]))
 
     # --- Stage 2, gated: each for its own reason (§24) -----------------------
     provisional = _provisional(path, converged, order_ok, d2)
@@ -514,17 +592,236 @@ def _order_verdict(order, floor, order_check, chaotic):
 
 
 def _domain_mask(spec, thresholds, axes, axis_names):
+    """``(mask, error)`` on the given axes. ``(None, None)`` when no mask is
+    declared; ``(None, reason)`` when the declared one does not evaluate -- which
+    the caller reports, because plan §5e's "never quietly difference across a hole"
+    is violated exactly when an unevaluable mask silently becomes no mask."""
     expr = thresholds.get("domain_mask")
     if not isinstance(expr, str) or not expr.strip():
-        return None
+        return None, None
     from ..operator import coord_aliases
     mesh = np.meshgrid(*[np.asarray(a, dtype=float) for a in axes], indexing="ij")
     ns = {**(spec.get("parameters") or {}),
           **coord_aliases(dict(zip(axis_names, mesh, strict=False)))}
     try:
-        return np.asarray(evaluate(expr, ns), dtype=bool)
-    except Exception:  # noqa: BLE001 -- an unevaluable mask is no mask
+        return np.asarray(evaluate(expr, ns), dtype=bool), None
+    except Exception as exc:  # noqa: BLE001 -- reported, never swallowed
+        return None, f"{type(exc).__name__}: {exc}"
+
+
+def solver_sha256(plan_dir):
+    """The hash of the ``solver.py`` a score belongs to, or ``None``."""
+    path = os.path.join(plan_dir, "solver.py")
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+    except OSError:
         return None
+
+
+def _check_returned_grid(result, axes, N):
+    """The returned-value half of the solver contract, checked per level.
+
+    Returns a reason string when the value is unusable, ``None`` when it is fine.
+    The grid must change with ``N`` -- ``len(axis)`` within one of ``N``, which
+    covers both endpoint conventions and an ``N``-cell / ``N+1``-node mesh -- and
+    every field must be finite. The SDE driver already crashes on non-finite
+    output; the PDE driver used to let a NaN reach the ladder.
+    """
+    if not axes:
+        return "solve_pde returned no 1-D grid axis"
+    for i, axis in enumerate(axes):
+        n = int(np.size(axis))
+        if abs(n - int(N)) > 1:
+            return (f"solve_pde ignored N: asked for N={N}, the returned grid axis {i} "
+                    f"has {n} points -- the grid did not change with N (manual §7: a "
+                    f"solver that ignores its inputs cannot be certified)")
+    for name, value in (result.get("fields") or {}).items():
+        arr = np.asarray(value, dtype=float)
+        bad = int(np.sum(~np.isfinite(arr)))
+        if bad:
+            return (f"field {name!r} contains {bad} non-finite value(s) (NaN or Inf) at "
+                    f"N={N}; the output is not a solution")
+    return None
+
+
+def _pair_differences(runs, primary, metric):
+    """Relative difference between each adjacent pair of ladder runs, restricting
+    the finer onto the coarser: ``[d10, d21, ...]``, ``None`` where the pair does
+    not nest. Each entry *is* the error at the coarser grid of its pair."""
+    out = []
+    for coarse, fine in zip(runs, runs[1:], strict=False):
+        u_c = ladder.primary_of(coarse["result"], primary)
+        u_f = ladder.primary_of(fine["result"], primary)
+        fine_on_coarse = ladder.restrict(u_f, fine["axes"], coarse["axes"])
+        if fine_on_coarse is None:
+            out.append(None)
+            continue
+        mask = coarse.get("mask")
+        out.append(ladder.rel_err(fine_on_coarse, u_c, metric,
+                                  mask if mask is not None and mask.shape == u_c.shape
+                                  else None))
+    return out
+
+
+def _horizon_accuracy(m, runs, richardson, primary, metric, tol, path, unshadowable):
+    """F1: the chaotic waiver waives the *order*, not the *accuracy*.
+
+    When Tier C ran at ``chaotic_T_ref`` the GCI certifies a horizon the problem
+    does not ask about: at ``t = 5`` a KS initial condition is two long modes that
+    a 4th-order stencil on ``dx = 0.8`` resolves, and by ``t = 50`` the instability
+    has filled the spectrum and the same grid is 7% wrong (measured). Chaos
+    amplifies differences that exist; two grids that both resolve the developed
+    spectrum have none to amplify, so the relative difference between the two
+    finest **full-T** runs -- already in memory, they are what D1 and D2 read --
+    reproduces the harness verdict on every KS plan without a reference.
+
+    Returns ``(verdict, detail)``: ``None`` when it does not apply, ``True`` /
+    ``False`` for the pair difference against ``tol``, or ``"unshadowable"`` when
+    the spec declares the horizon past what any resolution shadows and the pair
+    difference did not clear -- a statistic is then the honest deliverable, and
+    the feedback must not be "refine".
+    """
+    if path != "B" or richardson is None or "error_horizon" not in m["summary"]:
+        return None, {}
+    pairs = _pair_differences(runs, primary, metric)
+    d21_T = pairs[-1] if pairs else None
+    d10_T = pairs[-2] if len(pairs) >= 2 else None
+    horizon = runs[-1]["result"].get("t_final")
+    detail = {"d21_T": d21_T, "d10_T": d10_T,
+              "horizon_T": float(horizon) if horizon is not None else None,
+              "graded_by_pair": [runs[-2]["N"], runs[-1]["N"]]}
+    richardson.update({"d21_T": d21_T, "d10_T": d10_T})
+    m["summary"]["estimated_rel_error_T"] = d21_T
+    if d21_T is None or not np.isfinite(d21_T):
+        metrics.note(m, "the full-T ladder does not nest, so the accuracy at t_final "
+                        "could not be formed from the pair difference; `converged` "
+                        "rests on the reference-horizon GCI alone")
+        return None, detail
+    shrinking = bool(d10_T is not None and np.isfinite(d10_T) and d21_T < 0.5 * d10_T)
+    detail["shrinking_T"] = shrinking if d10_T is not None else None
+    grids = f"N={runs[-2]['N']} vs N={runs[-1]['N']}"
+    if d21_T < tol:
+        metrics.note(m, f"accuracy at t_final: the two finest full-T solves ({grids}) "
+                        f"differ by {d21_T:.3e} < {tol:g}; `estimated_rel_error_T` is "
+                        f"the error at the requested horizon")
+        return True, detail
+    if unshadowable:
+        metrics.note(m, f"the spec declares the horizon unshadowable: the reference-"
+                        f"horizon ladder converged but the full-T pair difference is "
+                        f"{d21_T:.3e} ({grids}), above {tol:g}. Pointwise accuracy at "
+                        f"t_final is not attainable at any resolution; a statistic, not "
+                        f"a field, is the deliverable, and the score is capped at 8 "
+                        f"rather than sent back to refine")
+        return "unshadowable", detail
+    if d10_T is not None and not shrinking:
+        metrics.note(m, f"under-resolved at t_final: the full-T pair differences "
+                        f"d10_T = {d10_T:.3e}, d21_T = {d21_T:.3e} do not shrink under "
+                        f"refinement. If the reporting horizon is past what any "
+                        f"resolution shadows, the formulator may declare "
+                        f"`unshadowable: true` beside `chaotic` (with a ledger quote); "
+                        f"without that declaration this is scored as not accurate "
+                        f"enough at t_final, because on a coarse ladder an "
+                        f"under-resolved scheme shows the same pattern")
+    else:
+        metrics.note(m, f"under-resolved at t_final: the two finest full-T solves "
+                        f"({grids}) differ by {d21_T:.3e} >= {tol:g}, although the "
+                        f"ladder at the reference horizon converged. The resolution "
+                        f"requirement is set by the spectrum at t_final; refine")
+    return False, detail
+
+
+def _graded_accuracy(m, runs, richardson, primary, metric, tol, graded_N, path,
+                     e_fine, per_field=None):
+    """F4: certify at the grid ``problem.md`` names.
+
+    ``evaluation_thresholds.graded_N`` is the level being graded. On a
+    ``grid_N / 2 grid_N / 4 grid_N`` ladder the GCI is a statement about the top
+    level; if the statement grades the middle one, the pair difference between it
+    and the level above *is* its error, and ``converged`` reads that. On Path A
+    the exact error at that level is already measured. Returns ``(verdict,
+    detail)`` with ``None`` when the key is absent or the graded level is the top.
+    """
+    if graded_N is None:
+        return None, {}
+    Ns = [r["N"] for r in runs]
+    level = next((j for j, n in enumerate(Ns) if abs(int(n) - graded_N) <= 1), None)
+    if level is None:
+        m["summary"]["estimated_rel_error_graded"] = None
+        metrics.note(m, f"graded_N = {graded_N} is not a level of the ladder {Ns}, so "
+                        f"the certification is at the top level; build the ladder from "
+                        f"the graded grid to certify there")
+        return None, {"graded_level": None}
+    if path == "A":
+        grids = (per_field or {}).get("per_grid") or []
+        e_graded = grids[level].get(primary) if level < len(grids) else None
+    elif level == len(runs) - 1:
+        e_graded = e_fine
+    else:
+        pairs = _pair_differences(runs, primary, metric)
+        e_graded = pairs[level]
+    m["summary"]["estimated_rel_error_graded"] = e_graded
+    detail = {"graded_level": level, "graded_N_on_ladder": Ns[level],
+              "e_graded": e_graded}
+    if richardson is not None:
+        richardson["e_graded"] = e_graded
+    if e_graded is None or not np.isfinite(e_graded):
+        return None, detail
+    if level == len(runs) - 1 or path == "A":
+        return None, detail  # already what `converged` reads
+    ok = bool(e_graded < tol)
+    if not ok:
+        metrics.note(m, f"not accurate enough at the graded grid N={Ns[level]}: the "
+                        f"pair difference against N={Ns[level + 1]} is {e_graded:.3e} "
+                        f">= {tol:g}, although the top-level GCI is {e_fine}")
+    return ok, detail
+
+
+def _ic_consistency(spec, run0, axis_names, primary, solve):
+    """§5f's third guard: did the run start from the declared initial condition?
+
+    Reads the ``t0`` snapshot when the solver returned one, else buys one solve at
+    ``t_final = t0`` on the base grid. Anything that cannot be formed -- a steady
+    problem, a multi-field IC stated in prose, a terminal-condition problem whose
+    ``t = 0`` state is the *answer*, a solver that crashes at zero horizon or
+    ignores the override -- is ``not_reported`` with the reason, never a failure.
+    """
+    ic = spec.get("initial_condition")
+    params = spec.get("parameters") or {}
+    if not spec.get("time_dependent", True) or not isinstance(ic, str) or not ic.strip():
+        return {"ic_consistent": "not_reported",
+                "ic_detail": {"reason": "steady problem, or no initial_condition expression"}}
+    if any(k in params for k in ("T_maturity", "T_expiry")):
+        return {"ic_consistent": "not_reported",
+                "ic_detail": {"reason": "terminal-condition problem: the t = 0 state is "
+                                        "the solution, not the declared data"}}
+    t0 = float(params.get("t0", 0.0))
+    at_zero, axes, source = None, run0["axes"], "snapshot"
+    for snap in run0["result"].get("snapshots") or []:
+        if abs(float(snap["t"]) - t0) <= 1e-9 * max(1.0, abs(t0))                 and primary in (snap.get("fields") or {}):
+            at_zero = np.asarray(snap["fields"][primary], dtype=float)
+    if at_zero is None:
+        source = "solve"
+        got = solve(run0["N"], {"params": {"t_final": t0}})
+        if got["status"] != "ok":
+            return {"ic_consistent": "not_reported",
+                    "ic_detail": {"reason": f"the solve at t_final = {t0} crashed: "
+                                            f"{got.get('reason')}: {got.get('error')}"}}
+        got_t = got["result"].get("t_final")
+        if got_t is None or abs(float(got_t) - t0) > 1e-9 * max(1.0, abs(t0)):
+            return {"ic_consistent": "not_reported",
+                    "ic_detail": {"reason": f"the solver ignored override['params']"
+                                            f"['t_final'] = {t0} (returned {got_t}), so "
+                                            f"its initial state could not be read"}}
+        at_zero = ladder.primary_of(got["result"], primary)
+        axes = ladder.axes_of(got["result"], axis_names)
+    declared = _initial_field(spec, axes, axis_names, primary)
+    if declared is None or np.shape(declared) != np.shape(at_zero):
+        return {"ic_consistent": "not_reported",
+                "ic_detail": {"reason": "the declared initial condition could not be "
+                                        "evaluated on the solver's grid"}}
+    ok, detail = residual.ic_consistency(at_zero, declared)
+    return {"ic_consistent": ok, "ic_detail": {**detail, "source": source, "t0": t0}}
 
 
 def _initial_field(spec, axes, axis_names, primary):
@@ -539,8 +836,8 @@ def _initial_field(spec, axes, axis_names, primary):
         return None
 
 
-def _run_d1(spec, verification, runs, axis_names, periodic, m, primary, mask,
-            theoretical, initial_field, d2, solve):
+def _run_d1(spec, verification, runs, axis_names, exclusive, m, primary,
+            theoretical, initial_field, d2, solve, *, wraps=False, mask_error=None):
     """D1, end to end: validate the operator, difference at two stencil orders on
     the top two grids, then read the slope."""
     out = {"outcome": "unavailable", "operator_validated": False,
@@ -557,6 +854,16 @@ def _run_d1(spec, verification, runs, axis_names, periodic, m, primary, mask,
     out.update({"operator_validated": bool(validated), "validation_route": route,
                 "validation": detail})
 
+    if mask_error:
+        # §5e: never quietly difference across a hole. A mask that does not
+        # evaluate is not "no mask".
+        out.update({"outcome": "unavailable",
+                    "reason": f"the declared domain_mask could not be evaluated "
+                              f"({mask_error}), and D1 must not difference across "
+                              f"the excluded region unmasked",
+                    "domain_mask_error": mask_error})
+        return out
+
     if not ladder.uniform_axes(runs[-1]["axes"]):
         # A graded mesh is the right answer for a boundary layer and the wrong input
         # for a fixed-h stencil. See ladder.is_uniform.
@@ -570,6 +877,20 @@ def _run_d1(spec, verification, runs, axis_names, periodic, m, primary, mask,
                     "spacing_ratio": max(ratios)})
         return out
 
+    # F3 (0): drop the duplicated wrap node before choosing the stencil pair. The
+    # spectral member of the §5b pair needs an endpoint-*exclusive* periodic axis,
+    # and `problem.md` mandates an endpoint-inclusive `np.linspace` -- so on every
+    # pipeline plan the "spectral" pair silently degraded to FD8 + FD6, and the
+    # residual on a resolved spectral field was the kernel's own FD8 truncation on
+    # near-Nyquist modes (9.2e-2 at N=127 on the KS spectral plan, where the harness
+    # measures the field at 2e-3). D2 learned this trim in errata I5
+    # (`invariants.duplicated_endpoint`); D1 never did.
+    nd = len(runs[-1]["axes"])
+    duplicated = invariants.duplicated_endpoint([wraps] * nd, exclusive, nd)
+    periodic = [bool(e) or bool(d) for e, d in zip(exclusive or [False] * nd, duplicated,
+                                                   strict=False)]
+    out["duplicated_endpoint_trimmed"] = duplicated
+
     time_dependent = bool(spec.get("time_dependent", True))
     meta = m.get("plan") or {}
     pair, choice, pair_name = residual.stencil_pair(meta.get("scheme_family"),
@@ -582,6 +903,16 @@ def _run_d1(spec, verification, runs, axis_names, periodic, m, primary, mask,
     for run in runs[-2:] if len(runs) >= 2 else runs:
         result = run["result"]
         snaps = result.get("snapshots")
+        if snaps:
+            # §7.2: the snapshot contract is "the last K states, ending at t_final",
+            # strictly increasing in t. Duplicate times reach Fornberg's weights as
+            # a division by zero and come back as NaN medians; states from elsewhere
+            # in the run form the residual at the wrong instant and report clean.
+            problem = _snapshot_contract(snaps, result.get("t_final"),
+                                         result.get("fields") or {})
+            if problem is not None:
+                out.update({"outcome": "unavailable", "reason": problem})
+                return out
         derivs, snap_order = residual.time_derivatives(
             snaps, list((result.get("fields") or {}))) if snaps else (None, 0)
         if time_dependent and derivs is None:
@@ -592,8 +923,16 @@ def _run_d1(spec, verification, runs, axis_names, periodic, m, primary, mask,
             return out
         fields = residual.snapshot_fields(snaps) or {
             k: np.asarray(v, dtype=float) for k, v in (result.get("fields") or {}).items()}
-        hs = [float(a[1] - a[0]) for a in run["axes"]]
-        coords = dict(zip(axis_names, np.meshgrid(*run["axes"], indexing="ij"), strict=False))
+        axes = list(run["axes"])
+        mask = run.get("mask")
+        if any(duplicated):
+            fields = {k: _trim(v, duplicated) for k, v in fields.items()}
+            derivs = ({k: tuple(None if d is None else _trim(d, duplicated) for d in pair_)
+                       for k, pair_ in derivs.items()} if derivs else derivs)
+            axes = [a[:-1] if dup else a for a, dup in zip(axes, duplicated, strict=False)]
+            mask = _trim(mask, duplicated) if mask is not None else None
+        hs = [float(a[1] - a[0]) for a in axes]
+        coords = dict(zip(axis_names, np.meshgrid(*axes, indexing="ij"), strict=False))
         t_final = result.get("t_final")
         medians = []
         for stencil in pair:
@@ -615,7 +954,8 @@ def _run_d1(spec, verification, runs, axis_names, periodic, m, primary, mask,
         pair_medians = [medians[0][0], medians[1][0]]
         out.setdefault("per_level", []).append(
             {"N": run["N"], "median": medians[0][0], "median_other": medians[1][0],
-             "snapshot_order": snap_order, "stats": medians[0][1]})
+             "snapshot_order": snap_order, "stats": medians[0][1],
+             "stats_other": medians[1][1]})
 
     if pair_medians and not residual.insensitive(*pair_medians):
         out.update({"outcome": "unresolved",
@@ -644,6 +984,44 @@ def _run_d1(spec, verification, runs, axis_names, periodic, m, primary, mask,
                          "satisfied by having eliminated the phenomenon"
                          if nontrivial is False else out.get("reason"))
     return out
+
+
+def _trim(arr, duplicated):
+    """Drop the repeated wrap node along each duplicated axis."""
+    arr = np.asarray(arr)
+    sl = [slice(0, -1) if (i < len(duplicated) and duplicated[i]) else slice(None)
+          for i in range(arr.ndim)]
+    return arr[tuple(sl)]
+
+
+def _snapshot_contract(snaps, t_final, fields):
+    """``None`` when the snapshots honour §5c, else the reason they do not."""
+    try:
+        times = [float(s["t"]) for s in snaps]
+    except (KeyError, TypeError, ValueError):
+        return "a snapshot is missing its 't'"
+    for name, value in fields.items():
+        want = np.shape(value)
+        got = [np.shape(s["fields"][name]) for s in snaps if name in (s.get("fields") or {})]
+        if any(g != want for g in got):
+            # Measured on the KS ETDRK4 plan: `fields` carries the N-point
+            # endpoint-inclusive array and the snapshots the N-1 internal nodes,
+            # so the wrap-node trim dropped a real point and the spectral
+            # residual measured the wrong period.
+            return (f"snapshot field {name!r} has shape {got[0]} but `fields[{name!r}]` "
+                    f"has shape {want}: snapshots must be the same arrays, on the same "
+                    f"grid, as the returned fields (§5c), so that the time term and "
+                    f"the spatial terms are formed on one consistent set of nodes")
+    if len(times) >= 2 and not all(b > a for a, b in zip(times, times[1:], strict=False)):
+        return (f"snapshot times are not strictly increasing: t = {times}. The time "
+                f"term cannot be formed from repeated or unordered instants")
+    if t_final is not None:
+        last, T = times[-1], float(t_final)
+        if abs(last - T) > 1e-9 * max(1.0, abs(T)):
+            return (f"the last snapshot is at t = {last}, not at t_final = {T}: the "
+                    f"snapshots are 'the last K states, ending at t_final' (§5c), and "
+                    f"a residual formed at another instant is not the final state's")
+    return None
 
 
 def _run_tier_b(spec, plan_dir, Ns, cfg, primary, metric, solve):
@@ -678,8 +1056,14 @@ def _provisional(path, converged, order_ok, d2):
 
 def _evidence(spec, m, path, tol, e_fine, d1, d2, tier_b, agent, chaotic):
     checks = m["checks"]
-    reference_outcome = _reference_outcome(spec)
+    reference_outcome, reference_detail = _reference_outcome(spec)
     m["summary"]["reference_outcome"] = reference_outcome
+    if reference_detail:
+        m.setdefault("detail", {})["reference_outcome"] = reference_detail
+        numerical = reference_detail.get("analytic_numerical")
+        if numerical:
+            m["summary"]["analytic_numerical"] = ", ".join(
+                f"{k}: {v.get('label')}" for k, v in numerical.items())
     return {
         "kind": "pde", "path": path, "crashed": bool(checks.get("crashed")),
         "has_reference": bool(claimed_fields(spec)),
@@ -705,6 +1089,9 @@ def _evidence(spec, m, path, tol, e_fine, d1, d2, tier_b, agent, chaotic):
         "any_test_ran": e_fine is not None or tier_b["outcome"] is True,
         "e_fine": e_fine, "rel_err_tol": tol,
         "chaotic": chaotic,
+        "ic_consistent": d1.get("ic_consistent"),
+        "cross_plan_agreement": (m.get("agreement") or {}).get("agreement"),
+        "cross_plan_disagreement": (m.get("agreement") or {}).get("disagreement"),
         "agent_cap": _agent_cap(agent),
     }
 
@@ -717,16 +1104,28 @@ def _agent_cap(agent):
 
 
 def _reference_outcome(spec):
-    """What the shipped reference check said about the claimed closed form.
+    """``(outcome, detail)``: what the shipped reference check said about the
+    claimed closed form.
 
     Read rather than recomputed: ``gate.py`` already runs it on every spec write,
     and the A-/A ceiling reads this value, so recomputing it here would be a second
     opinion where the design wants one.
+
+    The outcome is always a bare token from ``reference.OUTCOMES``. A check that
+    raised is ``unavailable`` with the exception in ``detail`` -- §7.5: the string
+    ``"unavailable (ValueError)"`` matched nothing in ``tier_of`` and priced a
+    Path-A plan whose check threw *below* "the check could not run".
     """
     if not claimed_fields(spec):
-        return None
+        return None, None
     try:
         from ..reference import check_reference
-        return check_reference(spec)[0]
+        outcome, detail = check_reference(spec)
     except Exception as exc:  # noqa: BLE001
-        return f"unavailable ({type(exc).__name__})"
+        return "unavailable", {"reason": f"the reference check raised "
+                                         f"{type(exc).__name__}: {exc}"}
+    keep = {k: detail[k] for k in ("reason", "median", "max", "frac_above_tol",
+                                   "excluded_overlaps", "analytic_numerical",
+                                   "demoted_from")
+            if isinstance(detail, dict) and k in detail}
+    return outcome, keep or None

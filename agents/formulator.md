@@ -156,6 +156,8 @@ Rules:
 - Every sentence in `problem.md` containing *must*, *required*, *needed*, *mandatory* or *hard gate* gets an entry. These are the difficulty of the problem stated out loud, and they are what a relaxed spec quietly loses.
 - Every scoring rule in the Solver contract — tolerance, resolution, order floor, per-field requirement, structural gate, stability criterion — gets an entry.
 - A requirement about *how* the problem is scored must map to a field in `evaluation_thresholds`, never to `implementation_notes` alone. Prose is not a threshold.
+- **A stated grading resolution is a requirement, not an ambiguity.** When the contract says the harness calls the solver at `N = 64` and `N = 128` and grades accuracy "at the finer grid", that is `kind: evaluation`, `status: mapped`, and it maps to **`evaluation_thresholds.graded_N: 128`** (the grid the accuracy statement names) beside `grid_N` (the base of the ladder). The kernel reads `graded_N` to know which ladder level it is certifying: the top-level GCI measures the *order*, and the pair difference at the graded level is the error at the grid the problem is actually scored on. Do **not** ledger "ladder 64/127/253 vs the stated 64/128" as an ambiguity — the ladder's endpoint arithmetic is the solver's, and the kernel matches `graded_N` to a level within one node of it.
+- **A periodic domain's endpoint convention is not an ambiguity either.** `problem.md` now states that both `np.linspace(a, b, N)` and `np.linspace(a, b, N, endpoint=False)` are accepted and scored identically on a periodic domain. Do not ledger it; the solver chooses.
 - Do not weaken a stated value to something more convenient to solve. If `eps = 1e-3` makes the problem hard, the spec still says `1e-3`.
 
 ---
@@ -406,6 +408,47 @@ requires a `requirements` ledger entry naming `chaotic` in its `spec_path` and q
 has no closed-form solution" is exactly the shape. `chaotic_T_ref` must be declared here rather than
 chosen by the evaluator at scoring time, for the same reason. Both are `check-spec` errors when
 absent. Do not set `chaotic` because a problem is merely stiff, sensitive or hard.
+
+**The waiver waives the order, not the accuracy.** Tier C's *order* is measured at `chaotic_T_ref`;
+the *accuracy* the plan is certified on is still at `t_final`: the kernel forms the relative
+difference between its two finest full-`T` solves (`estimated_rel_error_T` in the metrics block)
+and `converged` requires it to clear `rel_l2_err_max`. Measured on KS: an FD4 plan whose ladder at
+`t = 5` gave a GCI of 1.5e-5 differed from its own next grid by 7% at `t = 50`, which is what the
+harness measured too. So `chaotic_T_ref` does not buy a pass at a horizon nobody resolved.
+
+### 3c-3. `unshadowable` — only when the statement says so
+
+On a horizon past what *any* resolution shadows (KS at `T = 500`, say, where `e^{λT}` of round-off
+alone is O(1)), the full-`T` pair difference is O(1) for every plan, correct ones included, and the
+honest deliverable is a statistic of the field, not the field. Declare it:
+
+```json
+"chaotic": true,
+"chaotic_T_ref": 5.0,
+"unshadowable": true
+```
+
+The kernel then reports `converged: unshadowable` (a skip, capped at 8 like self-convergence) when the
+reference-horizon ladder converges and the full-`T` pair difference does not, and its feedback says
+*do not refine* rather than sending the solver after a grid that is not the problem.
+
+**Declared, never inferred.** "The full-`T` differences do not shrink at these grids" is not the fact
+"cannot shrink at any grid" — an under-resolved scheme on a coarse ladder shows exactly the same
+signature, and there refinement is the whole answer. So the flag needs `chaotic: true` and a
+`requirements` entry naming `unshadowable` in its `spec_path`, quoting the clause of `problem.md`
+that establishes the horizon is past any shadowing time. Without the declaration the kernel scores
+the non-shrinking pattern as "not accurate enough at `t_final`" (7) and *notes* the pattern, so you
+can add the flag on the next cycle if the statement supports it.
+
+### 3c-4. `structural_facts` — declare the layer, shock or kink
+
+`verification.structural_facts` is a dict naming the non-smooth features the problem is *about*:
+`{"layer": "internal layer of width ~2 nu at x = pi"}`, `{"shock": "entropy shock at x = 0.5 t"}`,
+`{"kink": "at the strike S = K"}`. Two consumers read it. The two-level ladder saving (§7a) is
+refused on a problem that declares one, because a smooth MMS probe's order is not the real problem's.
+And the reference check demotes a closed form validated *off* a declared `layer` or `shock` to
+`analytic_unvalidated` (A⁻, 9): a formula accepted everywhere except where the problem is hard is
+A⁻ evidence, not A. Declare what the statement names; do not invent features it does not.
 
 ### 3d. Set the provenance you expect
 

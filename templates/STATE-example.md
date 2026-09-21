@@ -85,6 +85,41 @@ plans:
 until a plan has been evaluated at least once. The conductor uses `est_err` to break score ties in
 Phase 3, and carries `provenance` into REPORT.md.
 
+## running — Path B (no closed form) additions
+
+`path: B` is recorded in Phase 1 when the spec's closed-form field is null. The winner early-exit
+then waits for two evaluated plans of different `scheme_family`, and the agreement gate
+(`cli.py compare`) records its outcome per plan: `agreement_cap: 8` on both plans of a pair that
+disagree at full `T` (the conductor ranks on `min(score, agreement_cap)` until a refine cycle or a
+third family breaks the tie), `agreed_with: <plan>` on a pair of different families that agree.
+`single_family_pool: true` records that the second break could not be earned. In the example
+below the spectral and FD4 plans disagreed by 7.5% at the graded grid, so the FD4 plan's 10 does
+not make it the winner: both carry `agreement_cap: 8` until a third family or a refine cycle
+settles which one is wrong.
+
+```yaml
+phase: running
+problem_type: pde
+path: B
+plans:
+  1-spectral-etdrk4:
+    one-sentence: Fourier pseudospectral, ETDRK4 in time.
+    iter: 1
+    score: 9
+    provenance: manufactured_partial
+    est_err: 1.4e-10
+    agreement_cap: 8
+    state: await_solver
+  3-fd4-imex-cnab2:
+    one-sentence: 4th-order central FD, IMEX CNAB2 in time.
+    iter: 1
+    score: 10
+    provenance: manufactured
+    est_err: 1.5e-05
+    agreement_cap: 8
+    state: await_solver
+```
+
 Plan state values:
 - `await_evaluator` — solver has written and run code, waiting for evaluator review
 - `await_solver`    — evaluator has returned a score < 10, waiting for solver to refine

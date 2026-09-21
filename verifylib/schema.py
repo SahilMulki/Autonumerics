@@ -410,6 +410,68 @@ def check_chaotic(spec) -> list[Finding]:
     return out
 
 
+def check_unshadowable(spec) -> list[Finding]:
+    """``unshadowable: true``: the reporting horizon is past what any resolution
+    shadows, so the kernel reports ``converged: unshadowable`` (capped at 8) when
+    the reference-horizon ladder converges and the full-``T`` pair difference
+    does not, instead of sending the solver off to refine.
+
+    Declared, never inferred (findings F1 [rev2]): "the full-T differences do not
+    shrink at these grids" is not the fact "cannot shrink at any grid" -- an
+    under-resolved scheme on a coarse ladder shows the same signature, and there
+    refinement is the whole answer. So the flag is a self-relaxation vector with
+    the same gate as ``chaotic``: it needs ``chaotic: true`` (and so a
+    ``chaotic_T_ref``), and a ledger entry naming it with a quote.
+    """
+    out = []
+    flag = spec.get("unshadowable")
+    if flag is None:
+        return out
+    if not isinstance(flag, bool):
+        out.append(error("chaotic", "unshadowable",
+                         f"must be true or false, got {type(flag).__name__}"))
+        return out
+    if not flag:
+        return out
+    if spec.get("chaotic") is not True:
+        out.append(error(
+            "chaotic", "unshadowable",
+            "declared without chaotic: true. An unshadowable horizon is a chaotic "
+            "problem's horizon; the reference-horizon ladder it presupposes only "
+            "exists under the chaotic flag"))
+    reqs = [r for r in (spec.get("requirements") or []) if isinstance(r, dict)]
+    if not any("unshadowable" in (r.get("spec_path") or "")
+               and (r.get("quote") or "").strip() for r in reqs):
+        out.append(error(
+            "chaotic", "requirements",
+            "unshadowable: true loosens what `converged` means at t_final, so it needs "
+            "a requirements ledger entry naming 'unshadowable' in its spec_path and "
+            "quoting the clause of problem.md that establishes the horizon is past "
+            "any shadowing time. An inference may loosen a test only when a person "
+            "has signed it"))
+    return out
+
+
+def check_graded_n(spec) -> list[Finding]:
+    """``evaluation_thresholds.graded_N``: the resolution the statement grades at.
+
+    Findings F4: a stated grading resolution is a *requirement* (``kind:
+    evaluation``), not an ambiguity, and the kernel reads this key to know which
+    ladder level it is certifying when the ladder is not built from it.
+    """
+    thresholds = spec.get("evaluation_thresholds") or {}
+    if not isinstance(thresholds, dict) or "graded_N" not in thresholds:
+        return []
+    value = thresholds.get("graded_N")
+    if value is None:
+        return []
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0 \
+            or int(value) != value:
+        return [error("threshold", "evaluation_thresholds.graded_N",
+                      f"must be a positive integer resolution, got {value!r}")]
+    return []
+
+
 # --- requirements ledger shape (§5) ------------------------------------------
 
 LEDGER_KINDS = frozenset({
@@ -499,6 +561,8 @@ def check_spec(spec) -> list[Finding]:
         *check_operator_declaration(spec),
         *check_invariant_names(spec),
         *check_chaotic(spec),
+        *check_unshadowable(spec),
+        *check_graded_n(spec),
         *check_ledger(spec),
         *check_operator_ledgered(spec),
     ]

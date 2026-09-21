@@ -35,9 +35,16 @@ from __future__ import annotations
 #: ``faulty_probe`` -- an MMS probe whose own source term does not match its exact
 #:                     solution. The formulator's defect, so it is skipped rather
 #:                     than failed (manual §5).
+#: ``unshadowable`` -- ``converged`` only: the spec declares the reporting horizon
+#:                     past what any resolution shadows (``unshadowable: true``
+#:                     beside ``chaotic``), the ``chaotic_T_ref`` ladder converged
+#:                     and the full-``T`` pair difference did not. Pointwise
+#:                     accuracy at ``T`` is not attainable at any resolution, so the
+#:                     verdict is neither "refine" nor a pass. Caps at 8, as
+#:                     ``self_convergence`` is capped (findings F1 [rev2]).
 SKIPS = frozenset({
     "not_run", "unavailable", "unresolved", "not_reported", "waived_chaotic",
-    "faulty_probe",
+    "faulty_probe", "unshadowable",
 })
 
 #: Sources a configured value can have, in descending authority.
@@ -154,10 +161,27 @@ BLOCK_KEYS = (
     # the JSON: the block is what the conductor ranks on and what REPORT.md quotes,
     # and an error measured at t = 5 must not be read as the error at t = 50.
     "error_horizon",
+    # ...and on the same problem `estimated_rel_error_T` is the accuracy statistic
+    # at the *requested* horizon: the relative difference between the two finest
+    # full-T solves. It is what `converged` reads there, and the number REPORT.md
+    # must quote as "the error at t = T" (findings F1).
+    "estimated_rel_error_T",
+    # The ladder level `problem.md` names (`evaluation_thresholds.graded_N`), and the
+    # pair-difference estimate at that level -- the top-level GCI measures the order,
+    # this measures the grid the problem is graded on (findings F4).
+    "graded_N", "estimated_rel_error_graded",
     "observed_order", "order_floor", "invariants_ok", "constraints_ok",
     "d1_outcome", "d1_slope", "operator_validated", "reference_outcome",
+    # A closed form that discretizes a quadrature or series inside the expression
+    # (findings F5): named with its node count so a reader sees what "exact" rests
+    # on. A flag, never a cap.
+    "analytic_numerical",
     "order_check", "asymptotic_source", "mc_se_rel", "resolved",
-    "resolution_evidence", "agent_cap", "wall_time_s",
+    "resolution_evidence", "agent_cap",
+    # The solver the score belongs to. benchmark/verify.py recomputes it before
+    # importing, so a file edited after scoring is graded as UNVERIFIED rather than
+    # as the plan (findings F6).
+    "solver_sha256", "wall_time_s",
 )
 
 

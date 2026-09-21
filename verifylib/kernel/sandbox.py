@@ -236,9 +236,15 @@ def _dump_pde(res, out):
     if isinstance(snaps, (list, tuple)) and snaps:
         times, keys = [], []
         for i, snap in enumerate(snaps):
-            if not isinstance(snap, dict) or "fields" not in snap:
-                raise ValueError("each snapshot must be {'t': float, 'fields': {name: array}}")
-            times.append(float(snap["t"]))
+            if (not isinstance(snap, dict) or "fields" not in snap or "t" not in snap
+                    or not isinstance(snap["fields"], dict)):
+                raise ValueError(f"snapshot {i} must be {{'t': float, 'fields': {{name: "
+                                 f"array}}}}; got keys {sorted(snap) if isinstance(snap, dict) else type(snap).__name__}")
+            try:
+                times.append(float(snap["t"]))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"snapshot {i}: 't' must be a float, got "
+                                 f"{snap['t']!r}") from exc
             for name, value in snap["fields"].items():
                 arrays[f"snap__{i}__{name}"] = np.asarray(value, dtype=float)
                 keys.append([i, name])

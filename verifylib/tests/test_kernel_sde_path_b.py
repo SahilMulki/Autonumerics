@@ -75,12 +75,6 @@ def test_an_honest_sde_with_no_surrogate_still_measures(tmp_path):
     assert m["score"] >= 8, m["certification"]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "manual §23 / rubric_sde give 9 for 'orders, Dynkin, constraints and a stable "
-    "Richardson moment with no surrogate', but the SDE driver hardcodes "
-    "operator_validated=False, so a clean Dynkin never counts as a circularity break "
-    "and §4c's ceiling caps at 8 self_convergence. The 9 row is unreachable. Measured: "
-    "the honest solver scores 8 on sde_spec_no_surrogate.json"))
 def test_an_honest_sde_with_no_surrogate_reaches_nine_through_dynkin(tmp_path):
     """Dynkin is D1's SDE counterpart (§4b) and is built from the spec's own drift
     and diffusion; §4c prices one circularity break at 9."""
@@ -111,11 +105,6 @@ def test_a_sign_flipped_drift_is_caught_by_dynkin(tmp_path):
     assert m["score"] < 9
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "rubric_sde tests failed(resolved) before dynkin_ok, so a wrong drift whose "
-    "exploded variance widens the CI is scored 6 'MC-inconclusive: not a solver bug' "
-    "while Dynkin sits at z ~ 1500. The message is false and the feedback it drives "
-    "(raise num_paths) is wrong"))
 def test_a_dynkin_failure_is_never_reported_as_mc_inconclusive(tmp_path):
     m = _run(tmp_path, "sde_wrong_drift.py")
     assert m["checks"]["dynkin_ok"] is False
@@ -132,16 +121,14 @@ def test_a_solver_that_ignores_the_crn_increments_is_detected(tmp_path):
     assert m["checks"]["richardson_stable"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "rubric_sde's surrogate row (surrogate and moments_ok and resolved and "
-    "constraints_ok -> 10) never consults orders_ok, so a solver that violates the "
-    "CRN contract and whose order study therefore measured nothing still certifies "
-    "at 10. Manual §7's rule for `override` -- a solver that ignores its inputs "
-    "cannot be certified -- has no §18 counterpart in the rubric. Decide whether it "
-    "should; this records the current behaviour either way"))
 def test_a_solver_that_ignores_the_crn_increments_does_not_certify(tmp_path):
+    """Manual §7's rule for ``override`` extended to §18's ``dW`` (findings §7.6,
+    decided 2026-09-20): a solver that ignores its inputs is not certified above
+    Tier C however well its moments match the surrogate."""
     m = _run(tmp_path, "sde_ignores_crn.py")
     assert m["score"] < 10, m["certification"]
+    assert m["score"] == 8
+    assert "increments" in m["certification"]["reason"]
 
 
 def test_paths_outside_a_declared_support_are_a_gate_violation(tmp_path):

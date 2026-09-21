@@ -57,8 +57,19 @@ experiment for anything that claims to score without a formula.
    Feynman–Kac quadrature; a transcendental root-find; a stationary density `∝ exp(-2V/σ²)`. The
    repo already leans on this — `_stefan_1d`'s `brentq`, `_heston_call`'s characteristic-function
    quadrature, `mittag_leffler_series` — it just never named it as the no-closed-form route it is.
-   None of these can be written in the restricted expression namespace, so the pipeline genuinely
-   has no formula while the harness has machine-precision truth.
+   ~~None of these can be written in the restricted expression namespace, so the pipeline genuinely
+   has no formula while the harness has machine-precision truth.~~ **False, measured 2026-09-19:**
+   the `pde_burgers_viscous_1d` formulator wrote the Cole–Hopf quadrature as a 2,010-character
+   nested-lambda expression over `np.linspace(…, 4001)` and `np.sum`, it passed the expression gate,
+   evaluated in the restricted namespace, agrees with the harness's own `_burgers_viscous_1d` to
+   2.2e-14, and put the problem on Path A with provenance `analytic`
+   (`benchmark/tests/test_leakage_ncf.py::test_staged_workspace_specs_take_the_route_the_problem_allows`
+   reports it). A quadrature program *is* expressible. The kernel now flags such a formula
+   `analytic_numerical` (with its node count) rather than demoting it — the formulator did
+   something genuinely strong, and the residual check remains the ceiling — so a Route-S problem
+   sits on the boundary of "no closed form" and the `closed_form: False` flag must not be read as
+   "Path B" in any report. The experimental fix is on the benchmark side (§2.2: `ν = ν(x)` kills
+   Cole–Hopf while keeping the operator and the layer), still undone.
 5. **Published benchmark values** (F) — see §3 for the rule that governs them. Where to look:
    Schäfer–Turek DFG flow around a cylinder (drag, lift, Strouhal); Ghia et al. and Botella–Peyret
    for the lid-driven cavity (the latter spectral, ~1e-8); de Vahl Davis and Le Quéré for natural
@@ -97,7 +108,7 @@ benchmark's own resolutions, and a deliberately broken one is caught by the gate
 
 | Slug | Route | Relationship | What a solver has to get right | Measured |
 |---|---|---|---|---|
-| `pde_kuramoto_sivashinsky` | R | existing P15, `SELF_ONLY` -> graded | chaotic, stiff, fourth-order | ETDRK4 vs IMEX-SBDF3 agree to **1.2e-09**; a correct solve is 30% off at N=64 and 6.6e-05 at N=128 |
+| `pde_kuramoto_sivashinsky` | R | existing P15, `SELF_ONLY` -> graded | chaotic, stiff, fourth-order | ETDRK4 vs IMEX-SBDF3 agree to **1.2e-09**; a correct solve is 30% off at N=64 and 6.6e-05 at N=128. **Graded at N=128 alone since 2026-09-20** (findings §11.2): the 64/128 order gate measured garbage → resolved and could not reject anything, so it is off, and the 1% accuracy gate stays at the grid that exposed the 7.2e-02 FD4 OVERCLAIM |
 | `pde_burgers_viscous_1d` | S | pair with P11 `burgers_inviscid` (exact) | an internal layer of width `~2 nu` at Re = 100 | Cole-Hopf quadrature converged to **5.6e-16**; spectral 8.8e-03 -> 1.1e-04, conservative FD2 4.8e-02 -> 8.0e-03 |
 | `pde_cahn_hilliard_2d_coarsening` | R + I | pair with P20 `cahn_hilliard_2d` (**MMS**) | coarsening dynamics, not just stability | agreement **5.9e-10**; ETDRK4 stays inside 1% even at dt = 2e-3, while the first-order stabilized IMEX is 5.8e-02 at dt = 1e-3 |
 | `pde_schrodinger_eigen_2d` | S + F | pair with P19 `poisson_lshape` (masked domain) | an eigen*problem*: a number and a mode, from the right end of the spectrum | `lambda_1 = -8.442746362964` to **1e-11**; FD2 is 1.19e-03 at N=64 and 2.93e-04 at N=128 |

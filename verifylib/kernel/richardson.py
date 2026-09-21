@@ -85,14 +85,23 @@ def guards(d10, d21, u_ref, order, theoretical_order, *, scheme_family=None):
     """
     floor = ROUNDOFF_FLOOR * (rms(u_ref) + 1e-30)
     spectral = is_spectral(scheme_family)
+    finite = bool(np.isfinite(d10) and np.isfinite(d21))
     out = {
-        "shrinking": bool(d21 < d10 * 0.95),
+        "shrinking": bool(finite and d21 < d10 * 0.95),
         "p_finite": bool(np.isfinite(order) and order > 0),
         "p_sane": bool(order >= float(theoretical_order) if spectral
                        else order < float(theoretical_order) + 1.0),
         "p_sane_branch": "spectral" if spectral else "algebraic",
-        "coarse_resolved": bool(d10 < COARSE_RESOLVED_FRACTION * (rms(u_ref) + 1e-30)),
-        "not_at_roundoff": bool(d21 > floor),
+        "coarse_resolved": bool(finite
+                                and d10 < COARSE_RESOLVED_FRACTION * (rms(u_ref) + 1e-30)),
+        # Round-off is a *small positive* difference, never an absent one. `d21 > floor`
+        # alone reads NaN as False and exactly-zero as False, and both then landed in
+        # the "converged to machine precision" branch below: a solver that ignores `N`
+        # returns the same array at every level (d10 = d21 = 0) and a NaN in the
+        # field makes every difference NaN. Neither is machine-precision agreement.
+        "not_at_roundoff": bool(finite and d21 > floor),
+        "identical_levels": bool(finite and d10 <= 0.0 and d21 <= 0.0),
+        "finite_differences": finite,
         "roundoff_floor": float(floor),
     }
     out["asymptotic"] = all(out[k] for k in ("shrinking", "p_finite", "p_sane",
@@ -127,6 +136,28 @@ def from_ladder(fields, axes, theoretical_order, *, restricted=None,
     order = observed_order(d10, d21)
     checks = guards(d10, d21, u1, order, theoretical_order,
                     scheme_family=scheme_family)
+
+    # Identical fields on grids that did not change size are a solver that ignored
+    # `N`, not machine-precision convergence (the driver names that case before the
+    # ladder; this is the guard behind it). Identical *restricted* values on grids
+    # that did change -- an exactly representable field under a spectral scheme --
+    # are the manual's round-off case and fall through to it below.
+    same_grid = all(len(a) == len(b) for lo, hi in zip(axes, axes[1:], strict=False)
+                    for a, b in zip(lo, hi, strict=False))
+    checks["identical_levels"] = bool(checks["identical_levels"] and same_grid)
+    if checks["identical_levels"] or not checks["finite_differences"]:
+        # No difference at all, or no finite one: nothing here is a convergence
+        # measurement. Reported as not converged with the reason named, so the
+        # caller can say "the field did not change with N" rather than "round-off".
+        reason = ("the fields are identical at every ladder level (d10 = d21 = 0) on a "
+                  "grid that did not change size: the solver did not change its answer "
+                  "with N, which is not machine-precision convergence"
+                  if checks["identical_levels"] else
+                  "the ladder differences are not finite: the field contains NaN or Inf")
+        return {"d10": d10, "d21": d21, "observed_order": float("nan"),
+                "e_est": float("nan"), "gci": float("nan"), "fs": FS_MEASURED,
+                "u_star": u2_on_1, "levels": 3, "order_source": "ladder",
+                "reason": reason, **checks, "asymptotic": False}
 
     if not checks["not_at_roundoff"]:
         # Converged to machine precision. Manual §4 says so explicitly: treat as

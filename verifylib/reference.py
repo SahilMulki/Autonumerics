@@ -58,8 +58,80 @@ IC_WRONG_TOL = 1e-3
 
 #: outcomes, in the order of §4g. The blind-evaluator ranker maps `validated` and
 #: `validated_off_singularity` to provenance `analytic`, and `quoted` /
-#: `unavailable` to `analytic_unvalidated` (§14 C4).
-OUTCOMES = ("validated", "validated_off_singularity", "quoted", "unavailable", "failed")
+#: `unavailable` / `unvalidated_at_feature` to `analytic_unvalidated` (§14 C4).
+#:
+#: ``unvalidated_at_feature`` (findings F5 (2)): the median residual passed but
+#: the set above tolerance is either more than :data:`OFF_SINGULARITY_MAX_FRAC` of
+#: the domain or the problem declares a ``layer`` / ``shock`` in
+#: ``verification.structural_facts``. A closed form accepted everywhere except
+#: where the problem is hard is A- evidence, not A. Measured on
+#: ``pde_burgers_viscous_1d``: median 7e-9, max 2.2 over 14.9% of the domain at the
+#: layer the problem exists to test.
+OUTCOMES = ("validated", "validated_off_singularity", "unvalidated_at_feature", "quoted",
+            "unavailable", "failed")
+
+#: Above this fraction of the domain **at the finest probe**, "off a localized
+#: singularity" is no longer localized. Measured 2026-09-20 on the two staged
+#: cases: the fraction above tol shrinks with the probe on both -- Black-Scholes'
+#: kink 23% -> 12% -> 8.5% at N = 257/513/1025, Burgers' layer 14.9% -> 7.3% ->
+#: 5.4% -- so it is the same stencil-footprint effect on both and a fixed-level
+#: fraction cannot tell an exact formula at a kink from one at a layer (the
+#: Burgers formula agrees with the harness's own to 2.2e-14, [rev2]). The
+#: fraction rule therefore fires only on a gross, non-shrinking set; the declared
+#: feature rule (``FEATURE_KEYS``) is what carries "waived exactly where the
+#: problem is hard".
+OFF_SINGULARITY_MAX_FRAC = 0.10
+
+#: ``structural_facts`` keys that name a feature the residual check must not be
+#: waived at.
+FEATURE_KEYS = ("layer", "shock")
+
+#: Constructs that make a closed form a *numerical* closed form (findings F5 (1)).
+#: A quadrature or a series written as an expression is a legitimate route to a
+#: reference -- the harness's own ``_heston_call`` and Mittag-Leffler series are
+#: exactly that -- and it is flagged, never demoted: the formulator's Cole-Hopf
+#: quadrature on 4001 nodes agrees with the harness's own to 2.2e-14. What is
+#: recorded is that "exact" rests on a discretization, and how many nodes it has.
+NUMERICAL_CONSTRUCTORS = ("linspace", "arange", "geomspace", "logspace")
+NUMERICAL_REDUCERS = ("sum", "mean", "trapz", "trapezoid", "cumsum", "dot", "prod")
+
+
+def numerical_closed_form(expr):
+    """``(flag, detail)``: does this expression discretize something?
+
+    Flags a ``lambda``, or a constructed axis (``np.linspace`` and friends)
+    reduced over (``np.sum`` / ``mean`` / ``trapezoid`` ...). ``detail["nodes"]``
+    lists the literal node counts of the constructed axes.
+    """
+    import ast
+    if not isinstance(expr, str):
+        return False, {}
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError:
+        return False, {}
+    lambdas, constructors, reducers, nodes = 0, [], [], []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Lambda):
+            lambdas += 1
+        elif isinstance(node, ast.Call):
+            name = (node.func.attr if isinstance(node.func, ast.Attribute)
+                    else node.func.id if isinstance(node.func, ast.Name) else None)
+            if name in NUMERICAL_CONSTRUCTORS:
+                constructors.append(name)
+                for arg in node.args[2:3] if name != "arange" else ():
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, (int, float)):
+                        nodes.append(int(arg.value))
+            elif name in NUMERICAL_REDUCERS:
+                reducers.append(name)
+    flag = bool(lambdas or (constructors and reducers))
+    if not flag:
+        return False, {}
+    return True, {"lambdas": lambdas, "constructors": constructors, "reducers": reducers,
+                  "nodes": nodes,
+                  "label": (f"{constructors[0]}({max(nodes)})" if constructors and nodes
+                            else "lambda" if lambdas else constructors[0] if constructors
+                            else "reduction")}
 
 
 # --- what operator to check against (§4d) ------------------------------------
@@ -265,6 +337,18 @@ def check_operator_residual(spec, operator, tol=TOL, exprs=None, stencil=None):
         trace.append(st)
         if st["median"] < tol:
             outcome = "validated" if st["max"] < tol else "validated_off_singularity"
+            if outcome == "validated_off_singularity":
+                # Keep probing so the fraction above tol is reported at the finest
+                # level, where a localized singularity has shrunk to its footprint
+                # and a region the formula is wrong in has not.
+                for finer in PROBE_N[PROBE_N.index(N) + 1:]:
+                    scaled, mask = residual_field(spec, operator, N=finer, exprs=exprs,
+                                                  stencil=stencil)
+                    fine_st = _stats(scaled, mask)
+                    fine_st["N"] = finer
+                    trace.append(fine_st)
+                return outcome, {"trace": trace, **st, "frac_above_tol_finest": trace[-1][
+                    "frac_above_tol"], "finest_N": trace[-1]["N"]}
             return outcome, {"trace": trace, **st}
     # The median never fell below tol: a wrong formula, unless it is still
     # converging -- which is under-resolution of the *probe*, not of the formula.
@@ -563,6 +647,11 @@ def check_reference(spec):
                                  f"helper. Declare verification.operator.equations "
                                  f"and write the term out"}
             detail.update(sub)
+            if outcome == "validated_off_singularity":
+                outcome, why = _demote_off_singularity(spec, sub)
+                if why:
+                    detail["demoted_from"] = "validated_off_singularity"
+                    detail["reason"] = why
             ic_outcome, ic_detail = check_initial_condition(spec)
             bc_outcome, bc_detail = check_boundary_conditions(spec)
             detail["tests"] = {"residual": outcome, "initial_condition": ic_outcome,
@@ -574,10 +663,48 @@ def check_reference(spec):
             if spec.get("source_term") is not None:
                 detail["used_declared_source"] = True
 
+    if not is_sde:
+        flagged, numerical = _numerical_fields(spec)
+        if flagged:
+            detail["analytic_numerical"] = numerical
     if outcome == "unavailable" and _quote_route(spec):
         return "quoted", {**detail, "reason": "validation could not run; accepted on the "
                                               "verbatim quote from problem.md"}
     return outcome, detail
+
+
+def _numerical_fields(spec):
+    """The F5 (1) flag over every claimed field: ``(any, {field: detail})``."""
+    out = {}
+    for name, expr in (claimed_fields(spec) or {}).items():
+        flag, sub = numerical_closed_form(expr)
+        if flag:
+            out[name] = sub
+    return bool(out), out
+
+
+def _demote_off_singularity(spec, stats):
+    """``(outcome, reason)``. ``validated_off_singularity`` survives only when the
+    set above tolerance is small *and* the problem declares no layer or shock."""
+    frac = float(stats.get("frac_above_tol_finest", stats.get("frac_above_tol")) or 0.0)
+    facts = ((spec.get("verification") or {}).get("structural_facts") or {})
+    declared = [k for k in (facts if isinstance(facts, dict) else [])
+                if any(key in str(k).lower() for key in FEATURE_KEYS)]
+    if frac > OFF_SINGULARITY_MAX_FRAC:
+        return "unvalidated_at_feature", (
+            f"the residual is above tolerance over {frac:.1%} of the domain at the finest "
+            f"probe, more than {OFF_SINGULARITY_MAX_FRAC:.0%}: that is not a localized "
+            f"singularity but the "
+            f"region the problem is hard in, and a closed form accepted everywhere "
+            f"except there is A- evidence (analytic_unvalidated), not A")
+    if declared:
+        return "unvalidated_at_feature", (
+            f"the residual is above tolerance over {frac:.1%} of the domain at the finest "
+            f"probe and the spec declares {declared} in verification.structural_facts: "
+            f"the check was waived "
+            f"exactly at the feature the problem exists to test, which is A- evidence "
+            f"(analytic_unvalidated), not A")
+    return "validated_off_singularity", None
 
 
 def reference_findings(spec, name="") -> list[Finding]:
@@ -611,5 +738,20 @@ def reference_findings(spec, name="") -> list[Finding]:
             "reference", path,
             f"validated off a localized singularity: median {detail['median']:.2e} "
             f"passes, max {detail['max']:.2e} does not, over "
-            f"{detail['frac_above_tol']:.1%} of the domain"))
+            f"{detail['frac_above_tol']:.1%} of the domain at N={detail.get('N')}"
+            + (f" ({detail['frac_above_tol_finest']:.1%} at N={detail['finest_N']})"
+               if "frac_above_tol_finest" in detail else "")))
+    if outcome == "unvalidated_at_feature":
+        extra.append(warning(
+            "reference", path,
+            f"reference check unvalidated_at_feature: {detail.get('reason', '')}. The "
+            f"closed form is priced as analytic_unvalidated (9), not analytic"))
+    numerical = detail.get("analytic_numerical")
+    if numerical:
+        labels = ", ".join(f"{k}: {v.get('label')}" for k, v in numerical.items())
+        extra.append(warning(
+            "reference", path,
+            f"the closed form is a numerical closed form ({labels}): it discretizes a "
+            f"quadrature or series inside the expression. Recorded, not capped -- the "
+            f"residual check is the ceiling -- so a reader can see what 'exact' rests on"))
     return extra

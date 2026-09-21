@@ -567,7 +567,14 @@ existing analytic rubric in `project_manual.md` applies unchanged (with the metr
 Define:
 
 - `verified` — MMS **or** degenerate-limit passed at design order (Tier B evidence present)
-- `converged` — `asymptotic` guards all pass **and** `gci < rel_l2_err_max`
+- `converged` — `asymptotic` guards all pass **and** `gci < rel_l2_err_max` — **and**, on a
+  `chaotic` problem whose ladder ran at `chaotic_T_ref`, the relative difference between the two
+  finest full-`T` solves (`estimated_rel_error_T`) is below `rel_l2_err_max`; **and**, when the
+  spec names `evaluation_thresholds.graded_N`, the pair difference at that ladder level
+  (`estimated_rel_error_graded`) is too. The waiver waives the *order*, never the accuracy at the
+  horizon the problem asks about (findings F1/F4). A spec that also declares `unshadowable: true`
+  makes the failing full-`T` difference `converged: unshadowable` — a skip capped at **8**, whose
+  feedback is "report a statistic, do not refine" — rather than a 7.
 - `order_ok` — `p >= min_spatial_order`
 - `invariants_ok` — every declared invariant within tolerance; no `gate` invariant violated
 - `constraints_ok` — no hard structural gate violated (`div u = 0`, positivity, ...)
@@ -587,6 +594,21 @@ Define:
 A 10 without a closed form is reachable, but only through the **full** battery — that is precisely
 what makes Tier B non-optional for certification. Tag it `provenance: manufactured` so the claim
 stays legible.
+
+Three more rules the code applies, recorded here (findings F2, F3, §7.3):
+
+- **The second circularity break may be cross-plan agreement.** §26's D1 is structurally
+  `unresolved` for a resolved spectral solver (nothing is left for a finite-difference stencil to
+  converge on), and `unresolved` must never count against a plan. So when `cli.py compare` has
+  recorded that this plan agrees at full `T`, within `rel_l2_err_max`, with an independently
+  written plan of a **different `scheme_family`** — and both solver files still hash to what was
+  compared — that agreement is the second break and Tier B + agreement certifies **10**. A D1 that
+  *ran* and came back `slow` or `stalled` is a measurement about this solver and is not overruled.
+- **Disagreement caps both plans at 8.** Two plans that each converge to a different answer is a
+  wrong coefficient or a sign in one of them, and the difference does not say which.
+- **`ic_consistent: false` gates at 3.** A run that did not start from the declared initial
+  condition satisfies the residual, the ladder and MMS with a solution of the right equation from
+  the wrong data; only the §5f initial-state guard sees it.
 
 **Never score on plausibility alone.** "The code ran and the output looks physically reasonable" is
 not a measurement. If no test in this manual could be run, the score is capped at **2** and the
@@ -1037,15 +1059,28 @@ Define:
 - `dynkin_ok` — extrapolated Dynkin residual inside the CI of zero (§20)
 - `constraints_ok` — no gate constraint violated (§21)
 
+Rows are tested **in this order** (findings §7.6): a gate, then a Dynkin or order *failure*, then
+the certifying rows, then inconclusive. A sign-flipped drift explodes the variance and widens the
+CI, and a rubric that tested `resolved` first scored it 6 "not a solver bug" with Dynkin at
+`z ≈ 1500`.
+
 | Condition | Score |
 |---|---|
-| `surrogate` and `moments_ok` and `resolved` and `constraints_ok` | **10** |
+| A gate constraint is violated (negative paths, support breach) | **4** |
+| `dynkin_ok` is **false** — the paths do not satisfy the generator of the spec's own drift and diffusion | **3** |
+| `surrogate` and `moments_ok` and `resolved` and `constraints_ok` — and `orders_ok` is not **false** | **10** |
+| ... the same, but `orders_ok` is false: the CRN ladder read a strong order near zero, i.e. the solver does not consume the supplied `dW` (§18). A solver that ignores its inputs is not certified (§7's rule, extended) | **8** |
 | No surrogate: `orders_ok` and `dynkin_ok` and `constraints_ok` and Richardson moments stable across the ladder | **9** |
-| `orders_ok` and `constraints_ok`, but Richardson-extrapolated moments unstable, or `dynkin_ok` false | **7** |
+| `orders_ok` is **false** — estimator erratic in `dt`: orders far from expectation, or differences not shrinking (the CRN ladder is deterministic given its seed, so this is not a resolution problem) | **3** |
 | `resolved` is false — MC-inconclusive (raise `num_paths`; not a solver bug) | **6** |
-| Runs and converges, but a gate constraint is violated (negative paths, support breach) | **4** |
-| Estimator erratic in `dt` — orders far from expectation, or differences not shrinking | **3** |
+| `orders_ok` and `constraints_ok`, but Richardson-extrapolated moments unstable | **7** |
+| Anything else that ran | **3** |
 | Crash or non-finite output | **1** |
+
+The 9 row is reachable: a clean Dynkin is the SDE's D1 — the generator is built from the spec's own
+drift and diffusion and applied to the *produced* paths — and §4c prices that one circularity break
+at 9 (`operator_validated`, route `spec_generator`). Its limitation is D1's: a drift mis-transcribed
+from `problem.md` fools both, and only the requirements ledger reaches outside the spec.
 
 **The formulator's `null` is not the end of the inquiry.** Reaching this rubric at all means §15–§17
 were all attempted and all failed. If the evaluator finds that a surrogate *was* available and the

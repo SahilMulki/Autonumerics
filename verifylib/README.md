@@ -91,6 +91,20 @@ Without `--json` it prints the `<metrics>` block ready to paste, plus the rule t
 bound the score. Exit is 0 whatever the score: a low score is a measurement, not a
 tool failure.
 
+To difference two plans of the same problem at full `T` (findings F2 — the conductor runs this
+on Path B whenever two evaluated plans both score ≥ 9):
+
+```bash
+uv run python "$PLUGIN_ROOT/verifylib/cli.py" compare <plan_a> <plan_b> [--N=128] [--no-record] [--json]
+```
+
+It solves both at the graded grid (`evaluation_thresholds.graded_N`, else the top of the ladder),
+prints the relative difference against `rel_l2_err_max`, and records it with both solver hashes
+in `<workspace>/agreements.json`; exit 0 is agreement, 2 disagreement. The kernel reads the record
+back on the next `evaluate` of either plan against the *current* hashes: agreement between
+different `scheme_family` values is a circularity break, disagreement caps both plans at 8, and a
+stale entry (either file edited) is ignored.
+
 To record an evaluator's downward cap:
 
 ```bash

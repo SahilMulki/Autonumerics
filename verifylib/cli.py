@@ -7,6 +7,7 @@
     ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py hook stop
     ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py gate <workspace_dir> [--json]
     ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py evaluate <plan_dir> [--json]
+    ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py compare <plan_a> <plan_b> [--N=<int>] [--no-record] [--json]
 
 Exit codes follow the hook contract measured in ``tests/hookprobe/FINDINGS.md``:
 2 is the blocking/feedback code the agent sees on stderr, 0 is pass. Only
@@ -215,6 +216,118 @@ def _evaluate(plan_dir, as_json) -> int:
     return PASS
 
 
+def _compare(plan_a, plan_b, *, N=None, no_record=False, as_json=False) -> int:
+    """Findings F2: difference two plans' finest full-T fields on a common grid.
+
+    Solves both at the top ladder level (or ``--N``), restricts onto the common
+    grid, and reports the relative difference against the spec's
+    ``rel_l2_err_max``. Unless ``--no-record`` it writes the result to
+    ``<workspace>/agreements.json`` with both solver hashes, which the kernel
+    reads back on the next ``evaluate`` of either plan: agreement between
+    different scheme families is priced as a circularity break, disagreement
+    caps both plans at 8. Exit 0 on agreement, 2 on disagreement, 1 on a crash.
+    """
+    from verifylib import gate as _gate
+    from verifylib.kernel import agreement, ladder, plan_meta, sandbox
+    from verifylib.kernel.driver import solver_sha256
+    from verifylib.kernel.metrics import Config
+
+    plan_a, plan_b = os.path.abspath(plan_a), os.path.abspath(plan_b)
+    if agreement.workspace_of(plan_a) != agreement.workspace_of(plan_b):
+        print("compare takes two plans of the same workspace", file=sys.stderr)
+        return 1
+    spec = _gate._sibling_spec(os.path.join(plan_a, "SOLUTION.md"))
+    if spec is None:
+        print(f"no problem_spec.json above {plan_a}", file=sys.stderr)
+        return 1
+    thresholds = spec.get("evaluation_thresholds") or {}
+    cfg = Config()
+    grid_N = int(cfg.pick("grid_N", None, thresholds.get("grid_N"), 64))
+    tol = float(cfg.pick("rel_l2_err_max", None, thresholds.get("rel_l2_err_max"), 0.01))
+    metric = cfg.pick("metric", None, thresholds.get("metric"), "l2")
+    levels = int(cfg.pick("refinement_levels", None, thresholds.get("refinement_levels"), 3))
+    axis_names = list(thresholds.get("axes") or spec.get("spatial_variables") or ["x", "y", "z"])
+    primary = thresholds.get("primary_field")
+    bounds = ((spec.get("domain") or {}).get("bounds") or {})
+
+    def solve(plan, n):
+        return sandbox.run(plan, "pde", {"N": int(n)})
+
+    graded = thresholds.get("graded_N")
+    if N is None and isinstance(graded, (int, float)) and not isinstance(graded, bool) \
+            and graded > 0:
+        # F4: the grid the statement grades at is the grid the answer is judged on.
+        N = int(graded)
+    if N is None:
+        # Otherwise the ladder's top level, detected the way the driver detects it.
+        probe = solve(plan_a, grid_N)
+        if probe["status"] != "ok":
+            print(f"{os.path.basename(plan_a)} crashed at N={grid_N}: {probe.get('error')}",
+                  file=sys.stderr)
+            return 1
+        axes = ladder.axes_of(probe["result"], axis_names)
+        exclusive = (ladder.detect_periodic(axes[0], bounds[axis_names[0]])
+                     if axis_names[0] in bounds else False)
+        N = ladder.build_ladder(grid_N, exclusive, levels=levels)[-1]
+    runs = {}
+    for plan in (plan_a, plan_b):
+        got = solve(plan, N)
+        if got["status"] != "ok":
+            print(f"{os.path.basename(plan)} crashed at N={N}: {got.get('reason')}: "
+                  f"{got.get('error')}", file=sys.stderr)
+            return 1
+        runs[plan] = got["result"]
+    ua = ladder.primary_of(runs[plan_a], primary)
+    ub = ladder.primary_of(runs[plan_b], primary)
+    axes_a = ladder.axes_of(runs[plan_a], axis_names)
+    axes_b = ladder.axes_of(runs[plan_b], axis_names)
+    interpolated = False
+    if ua.shape == ub.shape and all(len(x) == len(y) and abs(float(x[-1]) - float(y[-1])) < 1e-9
+                                   for x, y in zip(axes_a, axes_b, strict=False)):
+        a_on, b_on = ua, ub
+    else:
+        # Restrict the finer onto the coarser; interpolate only if they do not nest,
+        # and say so -- an interpolated agreement is not a circularity break.
+        coarse_first = ua.size <= ub.size
+        u_c, ax_c = (ua, axes_a) if coarse_first else (ub, axes_b)
+        u_f, ax_f = (ub, axes_b) if coarse_first else (ua, axes_a)
+        f_on_c = ladder.restrict(u_f, ax_f, ax_c)
+        if f_on_c is None:
+            f_on_c, interpolated = ladder.interpolate_to(u_f, ax_f, ax_c), True
+        a_on, b_on = (u_c, f_on_c) if coarse_first else (f_on_c, u_c)
+    import numpy as np
+    diff = np.asarray(a_on, dtype=float) - np.asarray(b_on, dtype=float)
+    if metric == "l1":
+        rel = float(np.mean(np.abs(diff)) / (0.5 * (np.mean(np.abs(a_on))
+                                                    + np.mean(np.abs(b_on))) + 1e-14))
+    else:
+        rel = float(np.sqrt(np.mean(diff ** 2))
+                    / (0.5 * (ladder.rms(a_on) + ladder.rms(b_on)) + 1e-14))
+    meta_a, meta_b = plan_meta.read(plan_a), plan_meta.read(plan_b)
+    fam_a, fam_b = meta_a.get("scheme_family"), meta_b.get("scheme_family")
+    entry = {"a": os.path.basename(plan_a), "b": os.path.basename(plan_b), "N": int(N),
+             "t_final": runs[plan_a].get("t_final"), "rel_diff": rel, "tol": tol,
+             "metric": metric, "agree": bool(np.isfinite(rel) and rel < tol),
+             "family_a": fam_a, "family_b": fam_b,
+             "different_family": bool(fam_a and fam_b and fam_a != fam_b),
+             "sha_a": solver_sha256(plan_a), "sha_b": solver_sha256(plan_b),
+             "interpolated": interpolated}
+    if not no_record:
+        agreement.record(agreement.workspace_of(plan_a), entry)
+        entry["recorded_in"] = agreement.path_for(plan_a)
+    if as_json:
+        print(json.dumps(entry, indent=2, default=_jsonable))
+    else:
+        verdict = "AGREE" if entry["agree"] else "DISAGREE"
+        print(f"{verdict}: {entry['a']} vs {entry['b']} differ by {rel:.3e} at N={N} "
+              f"(tol {tol:g}, t_final {entry['t_final']}); families {fam_a} / {fam_b}"
+              f"{' -- different, counts as a circularity break' if entry['different_family'] and entry['agree'] else ''}"
+              f"{' -- interpolated, not a break' if interpolated else ''}")
+        if not no_record:
+            print(f"recorded in {entry['recorded_in']}")
+    return PASS if entry["agree"] else BLOCK
+
+
 def _jsonable(value):
     try:
         import numpy as np
@@ -234,6 +347,7 @@ def main(argv=None) -> int:
         return 1
     command, args = argv[0], argv[1:]
     as_json = "--json" in args
+    flags = [a for a in args if a.startswith("--")]
     args = [a for a in args if not a.startswith("--")]
 
     if command == "hook":
@@ -260,6 +374,13 @@ def main(argv=None) -> int:
             print("evaluate takes a plan directory", file=sys.stderr)
             return 1
         return _evaluate(args[0], as_json)
+    if command == "compare":
+        if len(args) != 2:
+            print("compare takes two plan directories", file=sys.stderr)
+            return 1
+        N = next((int(f.split("=", 1)[1]) for f in flags if f.startswith("--N=")), None)
+        return _compare(args[0], args[1], N=N, no_record="--no-record" in flags,
+                        as_json=as_json)
 
     print(f"unknown command {command!r}", file=sys.stderr)
     return 1

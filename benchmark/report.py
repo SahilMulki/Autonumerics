@@ -159,7 +159,7 @@ def compute_oneshot_verdict(rec):
         return "CONSTRAINT_VIOLATION"   # accurate-looking but broke a hard structural gate
     if vstatus == "ok":
         return "PASS" if ver.get("passed") else "FAIL"
-    if vstatus in ("nonfinite", "inconclusive"):
+    if vstatus in ("nonfinite", "inconclusive", "contract"):
         # It ran but violated the contract (NaN output, or a grid/shape mismatch):
         # the solver's fault, so a FAIL rather than a neutral CRASHED.
         return "FAIL"
@@ -292,6 +292,14 @@ def generate_report(results, config=None):
     else:
         ap("- **OVERCLAIMS / BLOW-UPS:** none — every success the pipeline reported was "
            "independently confirmed.")
+    wrong_won = [r for r in results
+                 if (r.get("harness_by_plan") or {}).get("wrong_plan_won") is True]
+    decided = [r for r in results
+               if (r.get("harness_by_plan") or {}).get("wrong_plan_won") is not None]
+    if decided:
+        ap(f"- **Wrong plan won:** {len(wrong_won)}/{len(decided)} — the winner was less "
+           f"accurate than another evaluated plan by more than the reference error "
+           f"(see *Every plan, graded*).")
     ap("")
 
     # ---- verdict distribution --------------------------------------------
@@ -469,6 +477,55 @@ def generate_report(results, config=None):
                     r["kernel"].get("provenance") or "-", r["kernel"].get("tier") or "-",
                     VERDICT_LABEL.get(r["_verdict"], r["_verdict"])]
                    for r in sorted(kerneled, key=lambda r: r["slug"])]))
+        ap("")
+
+    # ---- every plan, not only the winner (findings §11.1) ---------------------
+    by_plan = [r for r in results if (r.get("harness_by_plan") or {}).get("plans")]
+    if by_plan:
+        ap("## Every plan, graded\n")
+        wrong = [r for r in by_plan if r["harness_by_plan"].get("wrong_plan_won") is True]
+        decided = [r for r in by_plan if r["harness_by_plan"].get("wrong_plan_won") is not None]
+        ap(f"The harness grades every plan directory with a `solver.py`, not only the winner. "
+           f"**`wrong_plan_won`: {len(wrong)}/{len(decided)}** -- the conductor's winner was "
+           f"less accurate than another evaluated plan by more than the reference's own "
+           f"error. This is the number the Path-B ranking rules exist to drive to zero, and "
+           f"it is invisible in a winner-only record.\n")
+        if wrong:
+            for r in wrong:
+                h = r["harness_by_plan"]
+                ap(f"- `{r['slug']}`: winner `{h['winner']}` at {h['winner_harness_err']:.3e}, "
+                   f"best `{h['best_plan_by_harness']}` at {h['best_harness_err']:.3e}.")
+            ap("")
+        # Provenance x verdict over *plans*: ~3x the rows the winner-only table has.
+        provs, verds = {}, []
+        for r in by_plan:
+            for entry in r["harness_by_plan"]["plans"].values():
+                prov = (entry.get("kernel") or {}).get("provenance") or "-"
+                verdict = entry.get("verdict") or "-"
+                provs.setdefault(prov, {})
+                provs[prov][verdict] = provs[prov].get(verdict, 0) + 1
+                if verdict not in verds:
+                    verds.append(verdict)
+        verds = [v for v in _VERDICT_ORDER if v in verds] + [v for v in verds
+                                                            if v not in _VERDICT_ORDER]
+        ap(_table(["kernel provenance (per plan)", *verds],
+                  [[prov, *[str(provs[prov].get(v, 0) or "") for v in verds]]
+                   for prov in sorted(provs)]))
+        ap("")
+        rows = []
+        for r in sorted(by_plan, key=lambda r: r["slug"]):
+            for name, entry in sorted(r["harness_by_plan"]["plans"].items()):
+                k, h = entry.get("kernel") or {}, entry.get("harness") or {}
+                err = h.get("rel_l2_err")
+                drift = h.get("solver_drift")
+                rows.append([
+                    r["slug"], name + (" *" if entry.get("is_winner") else ""),
+                    str(k.get("score", "-")), k.get("provenance") or "-",
+                    (f"{err:.3e}" if isinstance(err, (int, float)) else "-")
+                    + (" (drifted)" if drift else ""),
+                    VERDICT_LABEL.get(entry.get("verdict"), entry.get("verdict") or "-")])
+        ap(_table(["problem", "plan (* winner)", "kernel score", "provenance",
+                   "harness rel err", "verdict"], rows))
         ap("")
 
     # ---- methodology ------------------------------------------------------

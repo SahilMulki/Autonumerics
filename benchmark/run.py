@@ -133,6 +133,10 @@ def run_conductor(slug, timeout, skip_permissions, permission_mode, model):
     # laptop sleeping mid-run no longer reports hours of "runtime" that never
     # happened (and that a 40-minute timeout appeared not to catch).
     t0 = time.monotonic()
+    # ...and the wall clock beside it (findings §8): a laptop sleeping mid-run was
+    # only detectable by diffing the log's mtime (36.7 min) against `wall_seconds`
+    # (19.4 min). One `time.time()` field makes the gap visible in the record.
+    started_at = time.time()
     timed_out = False
     returncode = None
     try:
@@ -147,6 +151,7 @@ def run_conductor(slug, timeout, skip_permissions, permission_mode, model):
     except subprocess.TimeoutExpired:
         timed_out = True
     wall = time.monotonic() - t0
+    ended_at = time.time()
 
     status = "completed" if (not timed_out and returncode == 0) else ("timeout" if timed_out else "error")
     return {
@@ -154,6 +159,9 @@ def run_conductor(slug, timeout, skip_permissions, permission_mode, model):
         "returncode": returncode,
         "timed_out": timed_out,
         "wall_seconds": round(wall, 1),
+        "wall_clock_seconds": round(ended_at - started_at, 1),
+        "started_at": _dt.datetime.fromtimestamp(started_at).isoformat(timespec="seconds"),
+        "ended_at": _dt.datetime.fromtimestamp(ended_at).isoformat(timespec="seconds"),
         "log": os.path.relpath(log_path, REPO_ROOT),
         "limit_hit": _looks_like_limit(log_path),
     }
@@ -290,7 +298,95 @@ def process(problem, args):
     if kernel is not None:
         rec["kernel"] = kernel
     rec["verdict"] = R.compute_verdict(rec)
+
+    # 6. every plan, not only the winner (findings §11.1). The single most
+    #    informative measurement in the no-closed-form findings was made by hand
+    #    three times -- verify.py on the plans the conductor did *not* pick -- and
+    #    each time it produced the finding. `wrong_plan_won` is the number F2 and F3
+    #    exist to drive to zero, and it is invisible in a winner-only record.
+    if not getattr(args, "skip_plans", False):
+        rec["harness_by_plan"] = grade_every_plan(
+            problem, workspace_dir, rec, verify, kernel,
+            rerun_kernel=not getattr(args, "skip_kernel", False))
     return rec
+
+
+def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, *,
+                     rerun_kernel=False):
+    """Harness verdict per plan directory with a ``solver.py``, beside the kernel's
+    own score for that plan (from its ``SOLUTION.md`` metrics block, and from a
+    kernel re-run when ``rerun_kernel``). Respects F6: a plan whose file drifted
+    after scoring is graded ``UNVERIFIED`` with the reason, not as the plan.
+    """
+    plans_root = os.path.join(workspace_dir, "plans")
+    if not os.path.isdir(plans_root):
+        return None
+    winner = (rec.get("pipeline") or {}).get("best_plan")
+    winner_dir = V.best_plan_dir(workspace_dir)
+    out = {"plans": {}, "winner": winner}
+    for name in sorted(os.listdir(plans_root)):
+        plan_dir = os.path.join(plans_root, name)
+        if not os.path.exists(os.path.join(plan_dir, "solver.py")):
+            continue
+        is_winner = winner_dir is not None and os.path.samefile(plan_dir, winner_dir)
+        harness = (winner_verify if is_winner and winner_verify is not None
+                   else V.verify_problem(problem, workspace_dir, plan_dir=plan_dir))
+        block = solution_metrics(plan_dir)
+        entry = {
+            "harness": {k: harness.get(k) for k in (
+                "status", "passed", "verified_score", "rel_l2_err", "observed_order",
+                "order_ok", "converged", "constraint_violation", "error", "solver_drift",
+                "score_cap") if k in harness},
+            "kernel": block,
+            "is_winner": bool(is_winner),
+        }
+        if rerun_kernel:
+            entry["kernel_rerun"] = (winner_kernel if is_winner and winner_kernel is not None
+                                     else kernel_metrics(plan_dir))
+        # The same verdict the winner gets, computed on this plan's own scores.
+        pipeline_score = (block or {}).get("score")
+        entry["verdict"] = R.compute_verdict({
+            **{k: rec[k] for k in ("has_ground_truth", "ground_truth_kind")},
+            "run": {"status": "completed"},
+            "pipeline": {"best_score": pipeline_score},
+            "verify": harness,
+        })
+        out["plans"][name] = entry
+
+    graded = {name: e for name, e in out["plans"].items()
+              if (e["harness"].get("status") == "ok"
+                  and isinstance(e["harness"].get("rel_l2_err"), (int, float))
+                  and e["harness"]["rel_l2_err"] == e["harness"]["rel_l2_err"])}
+    if winner in graded and graded:
+        best = min(graded, key=lambda n: graded[n]["harness"]["rel_l2_err"])
+        margin = float(problem.get("reference_error") or 0.0)
+        winner_err = graded[winner]["harness"]["rel_l2_err"]
+        best_err = graded[best]["harness"]["rel_l2_err"]
+        out.update({"best_plan_by_harness": best, "best_harness_err": best_err,
+                    "winner_harness_err": winner_err,
+                    "wrong_plan_won": bool(best != winner and winner_err > best_err + margin)})
+    else:
+        out["wrong_plan_won"] = None
+    return out
+
+
+def solution_metrics(plan_dir):
+    """The kernel's own block for a plan, as the conductor ranked it: ``score``,
+    ``provenance``, ``estimated_rel_error`` and the ``solver_sha256`` it scored."""
+    path = os.path.join(plan_dir, "SOLUTION.md")
+    if not os.path.exists(path):
+        return None
+    try:
+        from verifylib.review import parse_metrics
+        with open(path, encoding="utf-8") as fh:
+            block = parse_metrics(fh.read())
+    except Exception as exc:  # noqa: BLE001 -- an unreadable block is "not recorded"
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    if not block:
+        return None
+    return {k: block.get(k) for k in (
+        "score", "provenance", "estimated_rel_error", "estimated_rel_error_T",
+        "error_horizon", "d1_outcome", "reference_outcome", "solver_sha256") if k in block}
 
 
 def kernel_metrics(plan_dir, timeout_s=900):
@@ -525,6 +621,10 @@ def main(argv=None):
     ap.add_argument("--skip-kernel", dest="skip_kernel", action="store_true",
                     help="do not record the pipeline's own kernel score/provenance "
                          "(it costs one extra sandboxed solve per problem)")
+    ap.add_argument("--skip-plans", dest="skip_plans", action="store_true",
+                    help="grade only the winner; skip the per-plan harness_by_plan block "
+                         "(one harness solve per plan directory, plus a kernel re-run per "
+                         "plan unless --skip-kernel)")
     ap.add_argument("--type", dest="type_filter", choices=("pde", "sde"), default=None,
                     help="restrict to one problem type (for staggering across usage windows)")
     ap.add_argument("--tier", type=int, choices=(1, 2, 3), default=None,

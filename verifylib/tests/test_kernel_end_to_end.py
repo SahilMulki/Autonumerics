@@ -28,33 +28,12 @@ def _plans(slug):
                   if os.path.isdir(p) and os.path.exists(os.path.join(p, "solver.py")))
 
 
-def test_the_four_ks_evaluators_reconcile_onto_one_number():
-    """Phase 1's real product. Three regenerated evaluators reported observed orders
-    of 10.467, 10.925 and 0.003 for this problem and all three scored 10. The
-    kernel gives every plan the same score for the same stated reason -- and it is
-    not 10, because an observed order of ~10 on a scheme whose theoretical order is
-    4 fails the ``p_sane`` guard, which is what those evaluators were meant to
-    apply."""
-    spec = requires("pde_kuramoto_sivashinsky")
-    plans = _plans("pde_kuramoto_sivashinsky")
-    if len(plans) < 3:
-        pytest.skip("KS plans not staged")
-    results = {os.path.basename(p): run(spec, p, {}) for p in plans}
-
-    scores = {name: m["score"] for name, m in results.items()}
-    assert len(set(scores.values())) == 1, f"plans disagree: {scores}"
-    assert set(scores.values()) == {4}, scores
-    for name, m in results.items():
-        richardson = m["detail"]["richardson"]
-        # All three plans are spectral, so `p_sane` is the *lower* bound and they
-        # clear it. What catches them is that the ladder itself is not one: at
-        # t = 50 the coarse and medium solves differ by more than the whole field.
-        assert richardson["p_sane_branch"] == "spectral", name
-        assert richardson["p_sane"] is True, name
-        assert richardson["coarse_resolved"] is False, name
-        assert "asymptotic guards fail" in m["certification"]["reason"], name
-        # And the flagged reason is the same one, not three different ones.
-        assert m["provenance"] == "self_convergence", name
+# The reconciliation test that used to live here ("the four KS evaluators reconcile
+# onto one number", all 4) was written for the pre-chaotic-waiver KS artifacts, where
+# every plan was spectral and every ladder failed `coarse_resolved` at t = 50. The
+# staged plans are now the 2026-09-19 pipeline run's, under a spec that declares
+# `chaotic: true`, and the findings' acceptance check for them is per plan:
+# 9 / 10 / 7 (test_kernel_horizon.test_the_frozen_ks_plans_grade_as_the_harness_does).
 
 
 def test_a_plan_with_no_solver_is_reported_rather_than_skipped():

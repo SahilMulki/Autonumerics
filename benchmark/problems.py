@@ -1538,11 +1538,21 @@ by relative L2 error.
         "reference": reference_evaluator("pde_kuramoto_sivashinsky"),
         "reference_error": 1.245e-09,
         # Measured against that reference: a correct ETDRK4 solve is 30% off at N=64
-        # and 6.6e-05 at N=128, so both gates bite and both are clearable -- but only
-        # by a scheme that resolves the fourth-order operator. N=48 does not merely
-        # lose accuracy, it goes non-finite.
-        "grid_N": 64,
+        # and 6.6e-05 at N=128, so the 1% gate at N=128 bites and is clearable -- but
+        # only by a scheme that resolves the fourth-order operator. N=48 does not
+        # merely lose accuracy, it goes non-finite.
+        #
+        # Graded at N=128 alone, order check off (findings §11.2, decided 2026-09-20).
+        # On the earlier 64/128 ladder the coarse grid was garbage for *every* scheme
+        # -- spectral relL2 2.10, FD4 1.94 -- so p = log2(err_64 / err_128) measured
+        # garbage -> resolved, not convergence, and could not reject anything. The
+        # accuracy gate stays at the grid that did its job: N=128 is what exposed the
+        # FD4 plan at 7.2e-02 while the kernel certified it. Precedent for the waived
+        # order: pde_burgers_inviscid, whose shock makes the L2 order equally
+        # meaningless. The number to watch is `harness_by_plan.wrong_plan_won`.
+        "grid_N": 128,
         "min_order": 1.0,
+        "pde_order_check": False,
         "description": """# Kuramoto-Sivashinsky Equation (chaotic)
 
 Solve the Kuramoto-Sivashinsky equation on the periodic interval [0, 32 pi]:

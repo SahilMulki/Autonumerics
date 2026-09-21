@@ -7,9 +7,10 @@ reported. The standing rules being tested are the manual's: a skipped check is
 never a pass, a crash is a property of the code and gets a named reason, and the
 kernel must never quietly measure the wrong thing and call it a verdict.
 
-Several of these are ``xfail(strict=True)``. Each names a behaviour the plan
-states and the code does not yet enforce, measured before the test was written;
-``strict`` means the fix flips the test rather than silently passing it.
+Several of these were ``xfail(strict=True)`` when first written, each naming a
+behaviour the plan stated and the code did not yet enforce; the markers came off
+with the 2026-09-20 findings sweep (docs/no-closed-form-findings.md §7) and the
+assertions are the ones written before the fixes.
 
 Every solver here is ``canaries/kernel/honest.py`` with one thing changed, written
 beside it so the sandbox's ``sys.path`` rule lets it ``from honest import ...``.
@@ -134,36 +135,31 @@ def _run(tmp_path, solver_text, spec=None, config=None):
 
 # --- the ladder ---------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=(
-    "a solver that returns the same grid at every N makes d10 = d21 = 0, which the "
-    "ladder reads as 'converged to round-off' (order inf, converged True). Measured: "
-    "with no snapshots this scores 9 manufactured_partial. The ladder must notice "
-    "that the grid did not change with N and name it"))
 def test_a_solver_that_ignores_n_is_not_read_as_converged_to_roundoff(tmp_path):
     """Manual §7: a solver that ignores its inputs cannot be certified. Identical
     grids at three ladder levels are not machine-precision agreement."""
     m = _run(tmp_path, IGNORES_N_NO_SNAPSHOTS)
-    assert m["checks"]["converged"] is not True, m["detail"]["richardson"]
+    assert m["checks"].get("converged") is not True, m.get("detail", {}).get("richardson")
     assert m["score"] < 9
     text = json.dumps(m, default=str).lower()
     assert "n" in text and ("ignore" in text or "did not change" in text or "same grid" in text)
 
 
-def test_a_solver_that_ignores_n_with_snapshots_is_sunk_by_d1(tmp_path):
-    """The one thing that catches it today: the residual cannot fall between two
-    identical grids, so D1 reports ``stalled`` and gates. Recorded so the xfail
-    above is not mistaken for 'the kernel is blind to this'."""
+def test_a_solver_that_ignores_n_is_named_at_the_ladder_before_d1_can_see_it(tmp_path):
+    """Before §7.1 landed, the residual was the one thing that caught this (it
+    cannot fall between two identical grids, so D1 reported ``stalled`` and
+    gated at 3). The grid check now names it at the second ladder level, with
+    or without snapshots, and the crash reason says which N was asked for."""
     m = _run(tmp_path, IGNORES_N)
-    assert m["d1"]["outcome"] == "stalled"
-    assert m["d1"]["p_res"] == pytest.approx(0.0)
-    assert m["score"] == 3
+    assert m["checks"]["crashed"] is True
+    assert m["crash"]["reason"] == "bad_schema"
+    assert "ignored N" in m["crash"]["error"] and "N=65" in m["crash"]["error"]
+    assert m["crash"]["N"] == 65 and m["crash"]["level"] == 1
+    assert m["score"] == 1
 
 
 # --- snapshots ----------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=(
-    "sandbox._dump_pde checks `'fields' in snap` but reads snap['t'] unguarded; the "
-    "KeyError is reported as reason 'exception', not 'bad_schema'"))
 def test_a_snapshot_missing_its_time_is_a_contract_violation(tmp_path):
     """The contract is ``{'t': float, 'fields': {...}}``. A snapshot without ``t``
     is a schema violation and the crash reason must say so, so the solver agent is
@@ -173,11 +169,6 @@ def test_a_snapshot_missing_its_time_is_a_contract_violation(tmp_path):
     assert m["crash"]["reason"] == "bad_schema", m["crash"]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "duplicate snapshot times reach fornberg_weights outside any try/except, divide "
-    "by zero, and produce NaN medians that the stencil-insensitivity guard then "
-    "reports as 'unresolved (nan vs nan)'. Measured: score 9. D1 should be "
-    "`unavailable` with a reason naming the times"))
 def test_snapshots_with_duplicate_times_make_d1_unavailable_not_nan(tmp_path):
     m = _run(tmp_path, DUPLICATE_SNAPSHOT_TIMES)
     assert m["d1"]["outcome"] == "unavailable", m["d1"]
@@ -186,10 +177,6 @@ def test_snapshots_with_duplicate_times_make_d1_unavailable_not_nan(tmp_path):
         assert np.isfinite(level["median"])
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "snapshots whose last t is not t_final are used as if they were the final "
-    "state; the residual is formed at the wrong instant and reports clean. "
-    "Measured: score 10 with the snapshots shifted by 0.1"))
 def test_snapshots_that_end_before_t_final_are_named(tmp_path):
     """§5c: the snapshots are 'the last K states, ending at t_final'. A solver
     that returns states from somewhere else in the run is not returning what D1
@@ -215,11 +202,6 @@ def test_three_snapshots_record_a_second_order_time_term(tmp_path):
 
 # --- the field ----------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=(
-    "a NaN inside the domain makes d10 = d21 = NaN, and `not_at_roundoff` reads "
-    "NaN as 'converged to machine precision' (converged True, order inf). It is "
-    "only sunk today by the positivity gate and the nontrivial guard noticing the "
-    "NaN. The SDE driver crashes on non-finite output; the PDE driver should too"))
 def test_a_nan_in_the_field_is_a_crash_not_a_round_off_convergence(tmp_path):
     m = _run(tmp_path, NAN_IN_DOMAIN)
     assert m["checks"].get("converged") is not True
@@ -247,10 +229,6 @@ def test_a_solver_that_ignores_the_source_override_cannot_reach_tier_b_by_mms(tm
     assert mms.get("outcome") is not True
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "plan §5f names three trivial-attractor guards, all gating; residual.ic_consistency "
-    "exists but driver._run_d1 never calls it. Measured: a solver that starts from "
-    "2*sin(pi x) scores 10"))
 def test_ic_consistency_gates_a_solver_that_starts_from_the_wrong_state(tmp_path):
     """The operator is linear, so twice the solution is a solution: the residual is
     identically satisfied, the ladder converges, and MMS (which supplies its own
@@ -262,10 +240,6 @@ def test_ic_consistency_gates_a_solver_that_starts_from_the_wrong_state(tmp_path
 
 # --- the domain mask ----------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=(
-    "driver._domain_mask returns None on any exception, so D1 runs unmasked -- "
-    "plan §5e: 'never quietly difference across a hole'. Measured: an unevaluable "
-    "mask expression leaves D1 clean and the score at 10"))
 def test_an_unevaluable_domain_mask_makes_d1_unavailable_not_unmasked(tmp_path):
     spec = _spec(**{"evaluation_thresholds.domain_mask": "np.no_such_function(x)"})
     m = _run(tmp_path, "from honest import solve_pde\n", spec=spec)
@@ -273,11 +247,6 @@ def test_an_unevaluable_domain_mask_makes_d1_unavailable_not_unmasked(tmp_path):
     assert "mask" in str(m["d1"].get("reason", "")).lower()
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "driver.evaluate_pde builds the domain mask on the finest grid only, but "
-    "_run_d1 differences the top two grids; at the coarser level the mask has the "
-    "wrong shape and D1 reports 'unavailable: operands could not be broadcast "
-    "together with shapes (65,) (129,)'. Every masked-domain problem loses D1"))
 def test_an_evaluable_mask_is_applied_at_every_level_d1_reads(tmp_path):
     """The control for the case above: a mask that evaluates narrows the interior
     and D1 still runs -- on both grids the slope test needs."""

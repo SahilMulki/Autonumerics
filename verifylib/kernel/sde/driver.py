@@ -63,6 +63,8 @@ def evaluate_sde(spec, plan_dir, agent):
     m = metrics.new_metrics("sde", path, cfg)
     m["summary"] = {}
     m["plan"] = m_plan
+    from ..driver import solver_sha256
+    m["solver_sha256"] = solver_sha256(plan_dir)
 
     def solve(call, **kw):
         return sandbox.run(plan_dir, "sde", call, timeout_s=timeout_s, **kw)
@@ -170,7 +172,17 @@ def evaluate_sde(spec, plan_dir, agent):
         "d1_outcome": m["checks"]["dynkin_ok"] if isinstance(
             m["checks"]["dynkin_ok"], str) else ("clean" if m["checks"]["dynkin_ok"]
                                                  else "stalled"),
-        "operator_validated": False,
+        # Dynkin is D1's SDE counterpart (§4b): the generator is built from the
+        # spec's own drift and diffusion and applied to the *produced* paths, so a
+        # clean Dynkin is one circularity break and §4c prices it at 9. Hard-coding
+        # False here made manual §23's "orders + Dynkin + constraints -> 9" row
+        # unreachable (findings §7.6). The limitation is the same as D1's: a drift
+        # mis-transcribed from problem.md fools both, and only the ledger reaches
+        # outside the spec.
+        "operator_validated": not metrics.is_skip(m["checks"]["dynkin_ok"]),
+        "operator_validation_route": ("spec_generator"
+                                      if not metrics.is_skip(m["checks"]["dynkin_ok"])
+                                      else "none"),
         "moments_ok": m["checks"]["moments_ok"],
         "variance_ok": m["checks"]["variance_ok"],
         "resolved": m["checks"]["resolved"],
@@ -196,6 +208,11 @@ def evaluate_sde(spec, plan_dir, agent):
                          or not metrics.is_skip(m["checks"]["orders_ok"])
                          or not metrics.is_skip(m["checks"]["dynkin_ok"])),
         "e_fine": e_fine, "rel_err_tol": var_tol,
+        # PDE-side gates with no SDE counterpart yet: no declared initial field
+        # to start from, and `cli.py compare` differences spatial fields.
+        "ic_consistent": None,
+        "cross_plan_agreement": None,
+        "cross_plan_disagreement": None,
         "agent_cap": _agent_cap(agent),
     }
     m["evidence"] = {k: v for k, v in evidence.items() if k != "agent_cap"}
@@ -368,8 +385,10 @@ def _agent_cap(agent):
 
 
 def _reference_outcome(spec):
+    """A bare token from ``reference.OUTCOMES``; a check that raised is
+    ``unavailable`` (§7.5: ``tier_of`` matches the exact string only)."""
     try:
         from ...reference import check_reference
         return check_reference(spec)[0]
-    except Exception as exc:  # noqa: BLE001
-        return f"unavailable ({type(exc).__name__})"
+    except Exception:  # noqa: BLE001
+        return "unavailable"

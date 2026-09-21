@@ -67,7 +67,15 @@ def tier_of(evidence):  # noqa: D401
             return "A"
         if outcome == "quoted":
             return "A_quoted"
-        if outcome == "unavailable":
+        if outcome == "unvalidated_at_feature":
+            # Findings F5 (2): a closed form accepted everywhere except at the
+            # declared layer or shock is A- evidence.
+            return "A_unavailable"
+        if isinstance(outcome, str) and outcome.split(" ", 1)[0] == "unavailable":
+            # The drivers now return the bare token and carry an exception in
+            # `detail` (§7.5); a metrics file written before that carries
+            # "unavailable (ValueError)", and that is still "the check could not
+            # run", not Tier C.
             return "A_unavailable"
     if passed(evidence.get("surrogate_ok")):
         return "A_prime"
@@ -92,9 +100,31 @@ def d1_is_break(evidence):
             and bool(evidence.get("operator_validated")))
 
 
+def agreement_is_break(evidence):
+    """Cross-plan agreement as the second circularity break (findings F2 (3)).
+
+    Two independently written plans of different ``scheme_family`` agreeing at
+    full ``T`` within ``tol`` is the evidence class the harness itself uses to
+    certify a Route-R reference. It is recorded by ``cli.py compare`` and read
+    back by the driver against the current solver hashes, never asserted by an
+    agent. It substitutes for D1 only where D1 could not run or was
+    ``unresolved`` -- a D1 that ran and came back ``slow`` or ``stalled`` is a
+    measurement about *this* solver, and agreement does not overrule it.
+
+    What it does not break: both plans read the same formulator's operator, so a
+    mis-transcribed equation passes unanimously. MMS, the degenerate limit and D1
+    share that limitation; the harness is the only spec-independent check.
+    """
+    return (evidence.get("cross_plan_agreement") is True
+            and evidence.get("d1_outcome") not in ("slow", "stalled"))
+
+
 def gates_clean(evidence):
-    """D2 clean, and D1 not stalled with a validated operator."""
+    """D2 clean, D1 not stalled with a validated operator, and the run started
+    from the declared initial condition (§5f's third gating guard)."""
     if evidence.get("gate_violation"):
+        return False
+    if evidence.get("ic_consistent") is False:
         return False
     return not (evidence.get("d1_outcome") == "stalled"
                 and evidence.get("operator_validated"))
@@ -114,6 +144,10 @@ def ceiling(evidence):
         return 1, "none", "the solver crashed"
     if not gates_clean(evidence):
         why = ("a gate:true structural violation" if evidence.get("gate_violation")
+               else "the run did not start from the declared initial condition: the "
+                    "residual, the ladder and MMS are all satisfied by a solution of "
+                    "the right equation from the wrong data"
+               if evidence.get("ic_consistent") is False
                else "D1 stalled with a validated operator: the residual does not fall "
                     "under refinement and the operator it is measured against is known "
                     "to be right")
@@ -130,22 +164,49 @@ def ceiling(evidence):
         return 10, "analytic_unvalidated", "Tier A-: accepted on a verbatim quote from "\
                                            "problem.md"
     if tier == "A_unavailable":
+        if evidence.get("reference_outcome") == "unvalidated_at_feature":
+            return 9, "analytic_unvalidated", "Tier A-: the closed form passed the residual "\
+                                              "check only off the declared feature "\
+                                              "(layer/shock) or off more than a few percent "\
+                                              "of the domain; accepted everywhere except "\
+                                              "where the problem is hard"
         return 9, "analytic_unvalidated", "Tier A-: the reference check could not run, "\
                                           "which is no evidence rather than weak evidence"
     if tier == "A_prime":
         return 10, "surrogate", "Tier A': a deterministic surrogate passed its own trust guard"
+    unshadowable = evidence.get("converged") == "unshadowable"
     if tier == "B":
         if d1_is_break(evidence) and c_clean:
             return 10, "manufactured", "two independent circularity breaks: Tier B and a "\
                                        "clean D1 against a validated operator"
+        if agreement_is_break(evidence) and c_clean:
+            # F3 (1): `unresolved` is "the check, not the solver, is the limit" and
+            # must not forfeit the 10 whenever an FD plan is in the same pool. The
+            # second break then comes from cross-plan agreement, which a spectral
+            # plan can actually earn.
+            return 10, "manufactured", "two independent circularity breaks: Tier B and "\
+                                       "agreement at full T with an independently "\
+                                       f"written plan of a different scheme family (D1 "\
+                                       f"is {evidence.get('d1_outcome')})"
         if c_clean:
             return 9, "manufactured_partial", "one circularity break (Tier B); D1 is "\
                                               f"{evidence.get('d1_outcome')}"
+        if unshadowable:
+            return 8, "manufactured_partial", "the declared horizon is unshadowable: the "\
+                                              "reference-horizon ladder converged and no "\
+                                              "resolution can shadow t_final, so pointwise "\
+                                              "accuracy there is not certifiable"
         return 8, "manufactured_partial", "Tier B evidence, but self-convergence is not clean"
-    if d1_is_break(evidence) and c_clean:
-        return 9, "manufactured_partial", "one circularity break (D1 against a validated "\
-                                          "operator); no Tier-B evidence"
+    if (d1_is_break(evidence) or agreement_is_break(evidence)) and c_clean:
+        return 9, "manufactured_partial", "one circularity break (" + (
+            "D1 against a validated operator" if d1_is_break(evidence)
+            else "agreement at full T with a plan of a different scheme family") + \
+            "); no Tier-B evidence"
     if tier == "C":
+        if unshadowable:
+            return 8, "self_convergence", "the declared horizon is unshadowable: no "\
+                                          "resolution can shadow t_final, and there is no "\
+                                          "circularity break"
         return 8, "self_convergence", "self-convergence and the gates only: no circularity "\
                                       "break, so this cannot reach 9"
     return 2, "none", "no test in the manual could be run"
@@ -232,6 +293,15 @@ def rubric_pde(evidence):
 
     if v("gate_violation"):
         return 3, "a hard-gate structural constraint or gate invariant is violated"
+    if v("converged") == "unshadowable":
+        # Findings F1 [rev]: the ladder at `chaotic_T_ref` converged, the full-T
+        # pair difference did not, and the spec *declares* that no resolution can
+        # shadow t_final. The honest deliverable is a statistic, not a field; the
+        # feedback must not be "refine", and the score is capped where
+        # self-convergence is.
+        return 8, "the horizon is declared unshadowable: converged at the reference "\
+                  "horizon, and pointwise accuracy at t_final is not attainable at any "\
+                  "resolution. Report a statistic of the field, not the field; do not refine"
     if verified and converged and order_ok and invariants_ok and constraints_ok and temporal_ok:
         return 10, "Tier-B evidence, converged, order clears the floor, invariants and "\
                    "constraints hold, temporal error subdominant"
@@ -269,13 +339,36 @@ def rubric_sde(evidence):
     resolved, constraints_ok = passed(v("resolved")), passed(v("constraints_ok"))
     orders_ok, dynkin_ok = passed(v("orders_ok")), passed(v("dynkin_ok"))
 
+    # Row order (findings §7.6): gate, then a Dynkin or order *failure*, then
+    # inconclusive. A sign-flipped drift explodes the variance, widens the CI and
+    # used to land on the "MC-inconclusive -- not a solver bug" row with Dynkin at
+    # z ~ 1500; the message was false and the feedback it drove (raise num_paths)
+    # was wrong.
     if v("gate_violation"):
         return 4, "a gate constraint is violated (negative paths, support breach)"
+    if failed(v("dynkin_ok")):
+        return 3, "Dynkin fails: the paths do not satisfy the generator built from the "\
+                  "spec's own drift and diffusion. The usual cause is the wrong equation "\
+                  "integrated correctly -- a sign or a coefficient -- not too few paths"
     if surrogate and moments_ok and resolved and constraints_ok:
+        if failed(v("orders_ok")):
+            # Manual §7's rule for `override`, extended to §18's `dW`: a solver
+            # that ignores the supplied Brownian increments makes the CRN ladder
+            # pure noise (strong order ~0), so the order study measured nothing
+            # about it, and a solver that ignores its inputs is not certified
+            # above Tier C however well its moments match.
+            return 8, "the moments match the surrogate, but the CRN order study reads a "\
+                      "strong order near zero: the solver does not consume the supplied "\
+                      "Brownian increments (manual §18), so nothing about its "\
+                      "discretization was measured and it cannot be certified"
         return 10, "a surrogate reference passed its trust guard and the moments match it"
     if orders_ok and dynkin_ok and constraints_ok and passed(v("richardson_stable")):
         return 9, "no surrogate: the orders, Dynkin and the constraints all hold and the "\
                   "Richardson moments are stable across the ladder"
+    if failed(v("orders_ok")):
+        return 3, "the estimator is erratic in dt: orders far from expectation, or the "\
+                  "differences are not shrinking. The CRN ladder is deterministic given "\
+                  "its seed, so this is not a resolution problem"
     if failed(v("resolved")):
         return 6, "MC-inconclusive: the error bars are too wide to decide. Raise "\
                   "num_paths -- this is not a solver bug"
@@ -324,11 +417,33 @@ def certify(evidence):
                      "reason": "the ladder did not nest, so the order estimate rests on "
                                "interpolation and must not certify a 10 (manual §3)"})
 
+    disagreement = evidence.get("cross_plan_disagreement")
+    if isinstance(disagreement, dict):
+        # Findings F2 (2): two plans that both converge individually, to *different*
+        # answers, is a wrong coefficient or a sign error in one of them, and the
+        # difference does not say which. The cap goes on both; a third family or
+        # the next cycle breaks the tie.
+        caps.append({"source": "cross_plan_disagreement", "score": 8,
+                     "reason": f"disagrees with plan {disagreement.get('other')!r} "
+                               f"({disagreement.get('other_family')}) by "
+                               f"{disagreement.get('rel_diff')} at N={disagreement.get('N')} "
+                               f"at full T, above {disagreement.get('tol')}. Neither plan "
+                               f"may be declared a winner until a third family or a "
+                               f"refine cycle breaks the tie"})
+
     agent_cap = evidence.get("agent_cap")
     if isinstance(agent_cap, dict) and agent_cap.get("score") is not None:
         proposed = int(agent_cap["score"])
         floor_so_far = min(c["score"] for c in caps)
-        if proposed > floor_so_far:
+        if not str(agent_cap.get("reason") or "").strip():
+            # Plan §2c: a cap requires a machine-readable reason. Without one it is
+            # not auditable, so it is recorded and refused rather than applied with
+            # a placeholder.
+            caps.append({"source": "agent_cap_rejected", "score": floor_so_far,
+                         "reason": f"the agent proposed {proposed} with no reason. A cap "
+                                   f"is the agent's only authority and its justification "
+                                   f"is what makes it auditable (§2c); refused"})
+        elif proposed > floor_so_far:
             # Recorded, and refused. The asymmetry is the whole anti-drift property.
             caps.append({"source": "agent_cap_rejected", "score": floor_so_far,
                          "reason": f"the agent proposed {proposed}, above the computed "
@@ -344,4 +459,5 @@ def certify(evidence):
     return {"score": int(score), "provenance": provenance, "tier": tier_of(evidence),
             "caps": caps, "bound_by": binding[0]["source"],
             "reason": binding[0]["reason"], "d1_is_break": d1_is_break(evidence),
+            "agreement_is_break": agreement_is_break(evidence),
             "gates_clean": gates_clean(evidence)}

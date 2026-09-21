@@ -142,6 +142,8 @@ Use `id` = 1, 2, 3, 4 (sequential). Use `plan_slug` = e.g. `fd-explicit`, `crank
 - For 1D problems: always include at least one explicit and one implicit plan.
 - The harness runs each solver up a nested ladder — `N`, `2N−1`, `4N−3` (or `N, 2N, 4N` for periodic grids). It uses two levels when the problem has an analytic solution and three when it does not, so on a no-closed-form problem keep the scheme tractable at `4N−3`: that grid has ~16× the unknowns of the base grid in 2-D and ~64× in 3-D. Prefer sparse/implicit or spectral solvers over dense ones, and weigh this when you pick a scheme.
 - Tie `dt` tightly enough to the grid spacing that the **temporal error stays subdominant**. The evaluator now checks this directly by re-running with `dt_factor=0.5`; if the answer moves, the plan is penalised even when its spatial stencil is correct.
+- **On a problem with no closed form, the pool must span at least two `scheme_family` values** (`fd` and `spectral`, say — declared in the frontmatter). The conductor does not declare a winner on Path B until two plans of different families have been evaluated, and agreement between them at full `T` is the second circularity break a resolved spectral solver can earn (its operator residual is structurally `unresolved` against finite-difference stencils). A pool of one family cannot be certified this way.
+- **Write the sign of an implicit operator's symbol out, and check it.** Both Cahn–Hilliard cycles caught a plan whose implicit-symbol formula was not negative-semidefinite (the `-lap(lap u)` sign), corrected by the solvers at the cost of a cycle each. For a stiff linear part `L`, state its Fourier symbol with the sign that makes `exp(L dt)` decay, and say so in the plan.
 
 ## File Permissions
 

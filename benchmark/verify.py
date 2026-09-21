@@ -695,15 +695,23 @@ def _functional_errs(problem, result):
     if not truth:
         return {}, None
     got = result.get("functionals")
+    # A missing dict or a missing name is a *failure*: the contract told the solver
+    # to return this number, and a solution without the number is not a solution
+    # to the problem as posed (findings §7.7). A value that is present but not a
+    # real number stays `inconclusive` -- that is a type slip, not a refusal.
     if not isinstance(got, dict):
-        return None, {"status": "inconclusive",
+        return None, {"status": "contract", "passed": False, "verified_score": 1,
+                      "rel_l2_err": float("inf"), "primary_err": float("inf"),
                       "error": "solver returned no 'functionals' dict; this problem is "
-                               f"scored on {sorted(truth)}"}
+                               f"scored on {sorted(truth)}, and a solver told to return "
+                               f"them and not doing so has failed"}
     errs = {}
     for name, ref in truth.items():
         if name not in got:
-            return None, {"status": "inconclusive",
-                          "error": f"solver's 'functionals' is missing {name!r}"}
+            return None, {"status": "contract", "passed": False, "verified_score": 1,
+                          "rel_l2_err": float("inf"), "primary_err": float("inf"),
+                          "error": f"solver's 'functionals' is missing {name!r}; this "
+                                   f"problem is scored on it"}
         try:
             val = float(got[name])
         except (TypeError, ValueError):
@@ -953,8 +961,10 @@ def verify_pde_reference(problem, plan_dir, sandbox=False, timeout_s=120, mem_mb
 def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
                    timeout_s=120, mem_mb=4096):
     """Independently verify one solved problem. Returns a result dict with a
-    ``status`` field: no_ground_truth | ok | inconclusive | nonfinite | error |
-    crashed.
+    ``status`` field: no_ground_truth | ok | inconclusive | nonfinite | contract |
+    error | crashed. ``contract`` is a solver that ran but did not return what the
+    problem scores on (a declared functional); like ``nonfinite`` it is a failure
+    of that solver, never an inconclusive.
 
     Dispatch is on ``ground_truth_kind`` (default ``exact``): ``reference`` compares
     against a discretization-free MC reference within an SE-aware tolerance (SDE) or
@@ -983,6 +993,17 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
         plan_dir = best_plan_dir(workspace_dir)
     if plan_dir is None or not os.path.isdir(plan_dir):
         return {"status": "error", "error": f"no plan directory under {workspace_dir}"}
+
+    # Findings F6: the kernel records the hash of the solver.py it scored in the
+    # plan's metrics block. A file edited after scoring -- a refine cycle cut short
+    # mid-edit -- is not the plan that earned the score, and grading it as if it
+    # were is how a wrong 10 or a wrong FAIL ships with neither layer knowing.
+    drift = solver_drift(plan_dir)
+    if drift:
+        return {"status": "error", "error": "solver.py changed after scoring: "
+                                            f"scored {drift['scored'][:12]}, on disk "
+                                            f"{drift['on_disk'][:12]}",
+                "solver_drift": drift, "plan_dir": os.path.relpath(plan_dir, REPO_ROOT)}
 
     # SDE is a single run, so it is pre-executed here (sandboxed) and injected. PDE
     # may need two runs (the N/2N order check), so verify_pde orchestrates its own
@@ -1020,6 +1041,42 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
     out.update(ledger_audit(workspace_dir, plan_dir, out))
     out.pop("_run_result", None)
     return out
+
+
+def solver_sha256(plan_dir):
+    import hashlib
+    try:
+        with open(os.path.join(plan_dir, "solver.py"), "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def scored_solver_sha256(plan_dir):
+    """The ``solver_sha256`` the kernel wrote into the plan's ``<metrics>`` block,
+    or ``None`` when the plan predates it or has no SOLUTION.md."""
+    path = os.path.join(plan_dir, "SOLUTION.md")
+    if not os.path.exists(path):
+        return None
+    try:
+        from verifylib.review import parse_metrics
+        with open(path, encoding="utf-8") as fh:
+            value = parse_metrics(fh.read()).get("solver_sha256")
+    except Exception:  # noqa: BLE001 -- an unreadable block is "not recorded"
+        return None
+    return str(value).strip() if isinstance(value, str) and value.strip() else None
+
+
+def solver_drift(plan_dir):
+    """``None`` when the file on disk is the one the kernel scored (or no score
+    recorded a hash), else ``{"scored": ..., "on_disk": ...}``."""
+    scored = scored_solver_sha256(plan_dir)
+    if scored is None:
+        return None
+    on_disk = solver_sha256(plan_dir)
+    if on_disk == scored:
+        return None
+    return {"scored": scored, "on_disk": on_disk}
 
 
 def ledger_audit(workspace_dir, plan_dir, out):
@@ -1083,6 +1140,8 @@ def _fmt(out, problem=None):
         lines.append(f"  rel {metric} error : {out['rel_l2_err']:.3e}  (field '{pfld}', "
                      f"gate < {_pde_l2_tol(problem or {}):g})")
         lines.append(f"  verdict      : {'PASS' if out.get('passed') else 'FAIL'}")
+        if out.get("error"):
+            lines.append(f"  contract     : {out['error']}")
         if out.get("field_errs"):
             per = "  ".join(f"{k}={v:.2e}" for k, v in out["field_errs"].items())
             lines.append(f"  per-field    : {per}")

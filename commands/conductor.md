@@ -30,7 +30,7 @@ Before you start:
 If `STATE.phase == init`:
 
 1. Dispatch `formulator` with argument `workspace/{problem_slug}`. Wait for return.
-2. Verify `workspace/{problem_slug}/problem_spec.json` exists. Read only two fields: `equation_type` and `requirements`.
+2. Verify `workspace/{problem_slug}/problem_spec.json` exists. Read only `equation_type` and `requirements` here (and, in step 4b, whether the closed-form field is null).
 3. **Requirements gate — check this before anything else.**
 
    `requirements` is the formulator's ledger of every constraint in `problem.md` and where each one landed in the spec. Everything downstream reads only `problem_spec.json`, so a constraint that did not make it across is a constraint the pipeline will not solve for. Enforce it:
@@ -64,7 +64,11 @@ If `STATE.phase == init`:
 4. **Determine problem type**:
    - If `equation_type == "SDE"`: `problem_type = "sde"`
    - Otherwise (any PDE family string: "heat", "wave", "poisson", etc.): `problem_type = "pde"`
-5. Record `problem_type` in STATE.md.
+4b. **Determine the path.** Read one more field: `analytic_solution` (PDE) or
+   `analytic_moments.has_analytic_solution` (SDE). If it is `null` / `false` the problem is on
+   **Path B** — no closed form, and every 10 rests on the kernel's own estimate. Record
+   `path: A` or `path: B` in STATE.md. Path B changes the exit rules in Phase 2.
+5. Record `problem_type` and `path` in STATE.md.
 6. Dispatch the appropriate plan-creator:
    - SDE: `plan-creator-sde` with argument `workspace/{problem_slug}`
    - PDE: `plan-creator-pde` with argument `workspace/{problem_slug}`
@@ -94,13 +98,27 @@ Run solver↔evaluator cycles until a plan **wins** (score 10) or every plan has
 
 **Winner early-exit**: a score of 10 is the maximum — the moment any plan reaches 10 it is the winner and no other plan can beat it. Stop the loop immediately, launch no further cycles, and go to Phase 3.
 
+**On Path B the early-exit is gated** (a 10 there rests on the kernel's *estimate*, and the strongest cheap evidence about the *answer* is whether an independently written plan of a different method family agrees with it — the standard the harness itself uses to certify a reference). Two rules, both mandatory on Path B:
+
+1. **The winner early-exit does not fire until at least two plans of different `scheme_family` have been evaluated.** Read `scheme_family` from each plan's `SOLUTION.md` frontmatter. If a plan reaches 10 and no evaluated plan of another family exists yet, keep the pool running — dispatch the highest-ranked unevaluated plan of a *different* family next (an implemented-but-unevaluated plan costs one evaluator pass; the Cahn–Hilliard log measured that at seconds of kernel time). Only if no such plan exists in the pool may the 10 stand alone; record `single_family_pool: true` in STATE.md and say so in REPORT.md.
+2. **The agreement gate.** Whenever two evaluated plans both score ≥ 9, compare them:
+
+   ```bash
+   uv run python "${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py" compare workspace/{problem_slug}/plans/{A} workspace/{problem_slug}/plans/{B}
+   ```
+
+   It solves both at the graded grid (`evaluation_thresholds.graded_N`, else the top of the ladder), reports the relative difference against `rel_l2_err_max`, and records the result with both solver hashes in `workspace/{problem_slug}/agreements.json`. Exit 0 is agreement, exit 2 is disagreement.
+   - **Disagreement (exit 2):** neither plan may be declared a winner. The difference does not say which one is wrong, so **cap both at 8** — write `agreement_cap: 8` under each plan in STATE.md and treat `min(score, agreement_cap)` as the plan's score for every ranking and exit decision. The kernel applies the same cap itself on the next evaluation of either plan (it reads `agreements.json` against the current solver hashes). A third family, or a refine cycle that changes one solver, breaks the tie: re-run `compare` after any solver changes, since a stale comparison is ignored.
+   - **Agreement (exit 0) between different families:** this is the second circularity break a plan whose D1 is `unresolved` or `unavailable` can earn. If the higher-ranked of the two is below 10, dispatch its evaluator **once more** so the kernel prices the recorded agreement in (its `cross_plan_agreement` check reads the record); do not raise the score yourself. Agreement within one family is recorded but is not a break.
+   - State what the gate does **not** establish, in REPORT.md: both plans read the same formulator's operator, so a mis-transcribed equation passes unanimously. The harness is the only spec-independent check.
+
 **Plateau early-stop**: a plan is *plateaued* when it has completed at least 2 cycles (`iter >= 2`) and its most recent evaluator score did **not** improve on its previous score. Mark a plateaued plan `state: stopped` — it is terminal and gets no further cycles. A plan whose score has stopped rising across a full refine cycle is very unlikely to ever cross the passing bar, and cycling every such plan to max_iter is exactly how a genuinely-unpassable problem (e.g. a shock no conservative scheme resolves to <1% L2) burns an entire usage budget for zero score gain.
 
 A plan is **eligible** for a new cycle iff `score < 10` AND `iter < max_iter` AND `state != stopped`.
 
 **Fill the pool**:
 
-First check for a winner: if any plan already has `score == 10`, launch no cycles — go straight to Phase 3. Otherwise take the **eligible** plans, sort them by `(score asc, iter asc)`, take up to `parallelism` of them, and start one cycle for each — all cycles run in parallel with `run_in_background: true`. If no plan is eligible, go straight to Phase 3.
+First check for a winner: if any plan already has `score == 10` (on Path B: *and* the early-exit gate above is satisfied), launch no cycles — go straight to Phase 3. Otherwise take the **eligible** plans, sort them by `(score asc, iter asc)`, take up to `parallelism` of them, and start one cycle for each — all cycles run in parallel with `run_in_background: true`. If no plan is eligible, go straight to Phase 3.
 
 **One cycle for a single plan**:
 
@@ -115,15 +133,23 @@ First check for a winner: if any plan already has `score == 10`, launch no cycle
    that score, record `grading_violation: {id}-{plan_slug}` in STATE.md, and set the plan
    `state: stopped` — a self-graded result is not evidence, and re-running the evaluator on a
    solver it has already rewritten does not recover one.
+3c. **Keep the scored file.** The kernel writes the hash of the `solver.py` it scored into the
+   `<metrics>` block (`solver_sha256`), and the benchmark harness refuses to grade a file whose
+   hash no longer matches ("solver.py changed after scoring", rendered `UNVERIFIED`). So a plan's
+   score belongs to *that* file. Before dispatching the solver for a new cycle, copy the scored
+   `solver.py` to `solver.scored.py` beside it; if you have to kill a solver mid-cycle (the winner
+   exit fired, a timeout, a limit), **restore `solver.py` from `solver.scored.py`** before Phase 3
+   so the file on disk is the one the score in STATE.md describes. The Cahn–Hilliard run left
+   plan 1's file mid-edit with a 9 that belonged to the earlier version.
 4. Read the new score from the `<review score=X>` block at the end of SOLUTION.md, and `provenance` + `estimated_rel_error` from the `<metrics>` block just above it.
 5. Write the new score, `provenance` and `est_err` to STATE.md and increment `iter`. Then set the plan's state by the early-stop rules:
    - new score `== 10` → winner (leave it; the refill/exit check below finalizes on it).
    - else if `iter >= 2` **and** new score `<=` the previous score from step 0 (no improvement) → `state: stopped` (plateaued, terminal).
    - else → `state: await_solver` (still eligible).
 
-**Refill immediately**: whenever a plan finishes its cycle, first check its new score — if it is 10, stop: start no more cycles and go to Phase 3. Otherwise (having set its state in step 5) re-sort the **eligible** plans and start the next one. If no plan is eligible, go to Phase 3.
+**Refill immediately**: whenever a plan finishes its cycle, first check its new score — if it is 10 (and, on Path B, the early-exit gate is satisfied), stop: start no more cycles and go to Phase 3. Otherwise (having set its state in step 5) re-sort the **eligible** plans and start the next one. If no plan is eligible, go to Phase 3.
 
-**Exit condition**: a plan reaches `score == 10` (finalize on that winner), or no plan is eligible — every plan is a winner, at `iter >= max_iter`, or `stopped` → go to Phase 3.
+**Exit condition**: a plan reaches `score == 10` and, on Path B, the early-exit gate is satisfied (finalize on that winner), or no plan is eligible — every plan is a winner, at `iter >= max_iter`, or `stopped` → go to Phase 3. On Path B, run the agreement gate on the two highest-ranked plans before finalizing if it has not already run on them.
 
 ## Phase 3: done
 
@@ -153,6 +179,8 @@ When the loop exits:
    - Best plan recommendation and why, citing the ranking criterion that decided it
    - Any plans that did not reach score 10 — their last score and remaining errors, and whether they hit max_iter, were `stopped` (plateaued — score stopped improving), or were left unfinished because another plan already reached 10
    - **Verification gaps** — any check that could not be run: a missing verification plan, a faulty MMS probe, an untrustworthy surrogate, an MC-inconclusive result, an invariant with no trace reported. These bound what the run actually established, so they belong in the report rather than being quietly dropped.
+   - **On a chaotic problem**, quote both numbers from the block: `estimated_rel_error` is the error at `error_horizon` (the reference horizon, where the order was measured) and `estimated_rel_error_T` is the error at the requested `t_final`. The second is the one the problem asks about; never present the first as "the error".
+   - **On Path B**, the agreement gate's result for the winner: which plan it was compared against, the family, the measured difference at which grid — and, if the pool was a single family, that the second break could not be earned.
 4. **Final gate.** Run
 
    ```bash
@@ -175,7 +203,7 @@ When the loop exits:
 
 - **Run autonomously from init through Phase 3 — never pause for user input.** There is no interactive user; a pause ends the headless run with no work done.
 - Never read `problem.md` yourself. Never write solver code or evaluate results.
-- Read only `equation_type` and `requirements` from `problem_spec.json` — do not analyze the problem yourself. You check the ledger's *structure* (statuses and `spec_path`s), never whether the mathematics in it is right; that is the formulator's job and not yours to second-guess.
+- Read only `equation_type`, `requirements` and the path field (`analytic_solution` / `analytic_moments.has_analytic_solution`, for whether it is null) from `problem_spec.json` — do not analyze the problem yourself. You check the ledger's *structure* (statuses and `spec_path`s), never whether the mathematics in it is right; that is the formulator's job and not yours to second-guess.
 - STATE.md is your sole responsibility — keep it accurate after every dispatch.
 - Always use `run_in_background: true` in the solving loop.
 - When reading the score: parse the `<metrics>` block for `score`, `provenance`, `estimated_rel_error` and `observed_order`. `score` and `provenance` are **computed by the kernel**, not written by the evaluator, so they are the fields to rank on; `<review score=X>` is a transcription of the same number and `verifylib` rejects a review where the two disagree. Carrying `provenance` through to REPORT.md is not optional.

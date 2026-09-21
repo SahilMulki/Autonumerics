@@ -112,15 +112,23 @@ Requirements:
     axis_list = ", ".join(f'"{a}": <1-D array, length N>' for a in axes)
     tol = V._pde_l2_tol(problem)
 
+    t_eval = problem["t_eval"]
+    # A steady problem has no time to report the solution at. The line used to
+    # read "the time at which the solution is reported" on every problem, and the
+    # Schrödinger formulator dutifully ledgered "t_final on a steady problem" as an
+    # ambiguity (findings §8).
+    t_final_line = ("- `t_final`: float — the time at which the solution is reported"
+                    if t_eval is not None else
+                    "- `t_final`: `None` (steady problem; the key may be omitted)")
     if fields:
         field_lines = "\n".join(f"    - `{f}`: numpy array of shape `{shape}`" for f in fields)
         schema = (f"- `fields`: a dict mapping each field name to its array —\n{field_lines}\n"
                   f'- `grid`: `{{{axis_list}}}`\n'
-                  "- `t_final`: float — the time at which the solution is reported")
+                  f"{t_final_line}")
     else:
         schema = (f"- `numerical_solution`: numpy array of shape `{shape}`\n"
                   f'- `grid`: `{{{axis_list}}}`\n'
-                  "- `t_final`: float — the time at which the solution is reported")
+                  f"{t_final_line}")
     # A problem whose answer is partly a scalar quantity of interest (an eigenvalue, a
     # drag coefficient) asks for it explicitly: the harness reads the number the solver
     # reports rather than trying to recover it from the returned field, which for most
@@ -131,8 +139,8 @@ Requirements:
         schema += (f"\n- `functionals`: a dict of scalar results, containing {keys} "
                    "— each a float")
 
-    t_eval = problem["t_eval"]
-    when = ("This is a steady (time-independent) problem."
+    when = ("This is a steady (time-independent) problem; there is no time to report "
+            "the solution at."
             if t_eval is None else
             f"Report the solution at t = {t_eval:.6g} (set `t_final` accordingly).")
     grid_N = V._pde_grid_N(problem)
@@ -185,6 +193,21 @@ Requirements:
 
     libs = ("Use numpy, `scipy.sparse`, and `scipy.sparse.linalg` (and the Python standard "
             "library); no other third-party libraries.")
+    # On a periodic domain the endpoint convention is the solver's choice and the
+    # harness accepts either (its trig interpolation is tested on both), so say so
+    # rather than let every formulator log the same ambiguity (KS R14, Burgers R8;
+    # findings §8). Stated in the requirements line below.
+    periodic = bool(problem.get("periodic")) or "periodic" in problem["description"].lower()
+    grid_rule = (
+        "Use `np.linspace` for spatial grids and honor the `N` you are given. The domain "
+        "is **periodic**, and either endpoint convention is accepted and scored "
+        "identically: `np.linspace(a, b, N)` (endpoint-inclusive, the wrap node stored "
+        "twice, `u[-1] == u[0]`) or `np.linspace(a, b, N, endpoint=False)` (`N` distinct "
+        "nodes). Whichever you return, return every other array (`snapshots`) on that "
+        "same grid."
+        if periodic else
+        "Use `np.linspace` for spatial grids (include the boundary points) and honor the "
+        "`N` you are given.")
     return f"""
 
 ---
@@ -203,7 +226,7 @@ Implement, in `solver.py`, exactly this function:
 {when} {scoring}
 
 Requirements:
-- Use `np.linspace` for spatial grids (include the boundary points) and honor the `N` you are given.
+- {grid_rule}
 - Keep `solve_pde` importable — no work at module load outside `if __name__ == "__main__"`.
 - {libs}
 """

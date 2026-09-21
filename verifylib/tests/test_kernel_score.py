@@ -164,10 +164,6 @@ def test_the_provenance_order_is_total_and_matches_the_manual():
 
 # --- edges of the table: measured before the tests were written ---------------
 
-@pytest.mark.xfail(strict=True, reason=(
-    "plan §2c: 'A cap requires a machine-readable reason.' certify() accepts "
-    "{'score': 3} and substitutes 'capped by the evaluator with no reason given'. "
-    "Measured through the driver: the honest canary drops to 3 on a reason-less cap"))
 def test_an_agent_cap_without_a_reason_is_refused():
     """A downward cap is the agent's only authority and its justification is what
     makes it auditable. A cap with no reason should be recorded as rejected, not
@@ -178,11 +174,6 @@ def test_an_agent_cap_without_a_reason_is_refused():
     assert any(c["source"] == "agent_cap_rejected" for c in got["caps"])
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "driver._reference_outcome returns 'unavailable (ValueError)' when check_reference "
-    "raises, and tier_of matches only the exact string 'unavailable' -- so a Path-A "
-    "plan whose reference check threw falls through to Tier C (8, self_convergence) "
-    "instead of A- unavailable (9, analytic_unvalidated)"))
 def test_a_reference_check_that_raises_is_priced_as_a_minus_unavailable():
     """§4c: 'the check could not run' is A- at 9. An exception inside the check is
     exactly that case, and must not be priced *below* it."""

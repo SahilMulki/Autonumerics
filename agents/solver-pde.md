@@ -45,7 +45,9 @@ def solve_pde(N: int, override: dict | None = None) -> dict:
                 {"t": t_final, "fields": {"u": u_n}}]
   ```
 
-  Keep a small ring of the states you already have in hand and return the last `K >= 3` of them — for a system, every field, keyed exactly as in `fields`. The kernel forms `u_t` of your produced field by Fornberg weights over the returned `t` values, so the spacing may be uneven and an adaptive final step is fine. It then substitutes your field back into the problem's declared operator and checks that the residual **falls** under grid refinement.
+  Keep a small ring of the states you already have in hand and return the last `K >= 3` of them — for a system, every field, keyed exactly as in `fields`. The kernel forms `u_t` of your produced field by Fornberg weights over the returned `t` values, so the spacing may be uneven and an adaptive final step is fine. It then substitutes your field back into the problem's declared operator and checks that the residual **falls** under grid refinement. (`K = 3` is enough: measured on a resolved spectral KS solve, `K = 3`, `5` and `7` give the same residual to four digits — the time term is not the floor.)
+
+  **The snapshots must be the same arrays, on the same grid, as `fields`.** Strictly increasing `t`, the last one at `t_final`, every array the same shape as the field you return. A spectral solver that returns an endpoint-inclusive `fields` array of length `N` but stores its `N−1` internal nodes in the ring makes the residual `unavailable` with a reason naming the shape; states from elsewhere in the run, or repeated times, do the same.
 
   Costs nothing: the states are already in the time loop. Omitting it makes the D1 residual `unavailable` — skipped, never a failure — but it also removes one of the two circularity breaks a score of 10 needs when there is no closed form (`verification_manual.md` §26).
 

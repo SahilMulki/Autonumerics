@@ -253,12 +253,6 @@ def test_an_excited_state_is_caught_by_the_nodeless_gate():
     assert R.compute_verdict(record(prob, verify=out)) == "CONSTRAINT_VIOLATION"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "verify._functional_errs's docstring says a solver that returns no `functionals` "
-    "on a functional_truth problem 'has violated the contract, which is a failure of "
-    "that solver, not an inconclusive' -- and the code returns status 'inconclusive', "
-    "which report.py maps to UNVERIFIED. Decide which is the design; the docstring "
-    "reads as it"))
 def test_a_functional_problem_with_no_functionals_returned_is_a_failure():
     prob, runs = _eigen_runs(lambda u, g: u, 0.0)
     runs[0][1].pop("functionals")
@@ -274,7 +268,9 @@ def test_a_missing_or_nonfinite_functional_is_named():
     prob, runs = _eigen_runs(lambda u, g: u, 0.0)
     runs[0][1]["functionals"] = {"lambda_2": 0.0}
     out = V._score_pde_runs(prob, runs)
-    assert out["status"] == "inconclusive" and "lambda_1" in out["error"]
+    # A missing *name* is the same refusal as a missing dict (§7.7): a failure.
+    assert out["status"] == "contract" and "lambda_1" in out["error"]
+    assert out["passed"] is False
     runs[0][1]["functionals"] = {"lambda_1": "about minus eight"}
     out = V._score_pde_runs(prob, runs)
     assert out["status"] == "inconclusive" and "not a real number" in out["error"]

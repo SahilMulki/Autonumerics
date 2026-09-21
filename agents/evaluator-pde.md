@@ -62,6 +62,7 @@ A check that did not run is **not** a check that failed, and the metrics say whi
 | `not_reported` | The spec declared it, the solver did not return what it needs (a missing `invariant_trace`) |
 | `waived_chaotic` / `waived_spec` | The order check was waived — by the `chaotic` flag, or by the problem's own contract |
 | `faulty_probe` | The MMS source term does not match its exact solution. A **formulator** defect, skipped rather than failed |
+| `unshadowable` (`converged` only) | The spec declares the horizon past what any resolution shadows; the reference-horizon ladder converged and the full-`T` pair difference did not. Capped at 8. Feedback is **not** "refine" — a statistic of the field is the deliverable |
 
 Never write a skip up as a failure, and never write one up as a pass. Say which it was and why.
 
@@ -76,7 +77,12 @@ it, then `solver.py`.
 | `gate_violation` (score 3) | The L2 may look fine and the solution is still physically wrong. Name a structure-preserving scheme: projection / pressure-Poisson for `div u = 0`, constrained transport or a staggered Yee grid for solenoidal `B`/`E`, a positivity-preserving flux for chemotaxis |
 | `d1_outcome: stalled` | The produced field does not satisfy the equation the spec declares, and the operator has been independently validated — so the defect is in the solver, not the spec. Say which term is largest in the residual if `detail.d1` records it |
 | `d1_outcome: unavailable`, reason "no `snapshots`" | Not a defect. Tell the solver it is forfeiting one of the two circularity breaks a 10 needs, and that returning the last three states is three lines |
-| `d1_outcome: unresolved` | The kernel's stencils are the limit. Ask the plan-creator for `scheme_family` / `spatial_order` in the frontmatter; do **not** hold it against the solver |
+| `d1_outcome: unresolved` | The kernel's stencils are the limit. Ask the plan-creator for `scheme_family` / `spatial_order` in the frontmatter; do **not** hold it against the solver. On Path B it no longer forfeits the 10 by itself: the second circularity break can come from `cross_plan_agreement` (the conductor's `cli.py compare` against a plan of a different family) |
+| `d1_outcome: unavailable`, reason naming a snapshot **shape** or **time** | The snapshots are not on the returned field's grid, are not strictly increasing in `t`, or do not end at `t_final`. Quote the reason: it says exactly what to return |
+| `converged: false` with `estimated_rel_error_T` above tolerance on a chaotic problem | The ladder at `chaotic_T_ref` converged and the two finest full-`T` solves still disagree: the resolution requirement is set by the spectrum at `t_final`, not at the reference horizon. Say **refine**, and quote `estimated_rel_error_T` — unless the notes report the differences do *not* shrink, in which case report that pattern to the formulator (§3c-3, `unshadowable`) rather than sending the solver after a grid |
+| `converged: false` with `estimated_rel_error_graded` above tolerance | Accurate at the top of the ladder, not at the grid `problem.md` grades on (`graded_N`). The solver honoured `N` and the certification did not; the fix is the scheme's error constant at the graded grid, not a finer ladder |
+| `cross_plan_disagreement` cap (8) | This plan and another both converge individually, to different answers. Neither is the winner until a third family or a refine cycle breaks the tie. Name the other plan and the measured difference; do not guess which one is wrong |
+| `ic_consistent: false` (score 3) | The run did not start from the declared initial condition. The residual, ladder and MMS are all satisfied by a solution of the right equation from the wrong data — only this check sees it |
 | Order below the floor | Name what limits the rate — mesh grading near a singularity, the boundary treatment, an under-resolved term. Never "use a higher-order scheme" |
 | `temporal_ok: false` | Say it explicitly: **reduce `dt`, do not change the stencil**. This is the failure most likely to send the solver in the wrong direction, and it will chase the wrong fix for all five cycles |
 | Asymptotic guards failed | The grids are too coarse for the convergent regime, or the scheme is unstable at one of them. Quote `detail.richardson.d10` and `d21` so the non-monotonicity is visible |
