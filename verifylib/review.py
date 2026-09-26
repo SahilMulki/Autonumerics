@@ -282,9 +282,35 @@ def check_review(solution_text, spec=None, grids=()) -> list[Finding]:
                             texts=metrics_texts(solution_text))
     if not stray:
         return bound
-    return [*bound, warning(
-        "review", f"<review>.{BOUND_SECTION}",
-        f"{len(stray)} claim(s) in the {BOUND_SECTION} section trace to nothing the "
-        f"pipeline computed: {stray[:6]}. The same model writes <metrics> and "
-        f"<review>, so this catches transcription drift, not fabrication",
-    )]
+    # Two different faults wear the same shape, and only one is the review's.
+    #
+    #   * a claim on a key the block *carries* that does not match it -- transcription
+    #     drift, which is what this check exists for;
+    #   * a claim on a key the kernel computes but this block has no field for. The
+    #     number is real and the review is right to print it; what is missing is a
+    #     line in the `<metrics>` block, so a reader cannot check it. Measured on the
+    #     three `sde_double_well_langevin` reviews (2026-09-26): each reported
+    #     `variance_rel_err` correctly while the SDE block carried only
+    #     `estimated_rel_error` (the worse of the mean and the variance, unlabelled).
+    #     The block now names both, but a review written before it did is not drift.
+    #
+    # Reporting them as one finding sent a reader looking for a lie in the review
+    # instead of a gap in the contract.
+    drift = [c for c in stray if c[0] in metrics]
+    uncarried = [c for c in stray if c[0] not in metrics]
+    out = list(bound)
+    if drift:
+        out.append(warning(
+            "review", f"<review>.{BOUND_SECTION}",
+            f"{len(drift)} claim(s) in the {BOUND_SECTION} section disagree with the "
+            f"<metrics> block that records the same key: {drift[:6]}. The same model "
+            f"writes <metrics> and <review>, so this catches transcription drift, "
+            f"not fabrication"))
+    if uncarried:
+        out.append(warning(
+            "metrics", "<metrics>",
+            f"{len(uncarried)} claim(s) in the {BOUND_SECTION} section cite a quantity "
+            f"the <metrics> block does not carry, so a reader cannot check them: "
+            f"{uncarried[:6]}. This is a gap in the block's fields rather than a defect "
+            f"in the review -- add the field, or drop the claim"))
+    return out

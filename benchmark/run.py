@@ -33,6 +33,7 @@ import argparse
 import contextlib
 import datetime as _dt
 import json
+import math
 import os
 import re
 import shutil
@@ -74,9 +75,26 @@ _WORKSPACE_READERS = ("cat", "head", "tail", "less", "more", "sed", "awk", "grep
                       "cp", "python", "python3", "uv run python", "uv run python3")
 
 
+def _fence(rel):
+    """The deny rules that close one directory off, given its path relative to the
+    repo root (`workspace/<slug>`, `workspace_c2b_sonnet_backup`)."""
+    rules = [f"Read(./{rel}/**)",
+             f"Read(//Users/**/Autonumerics/{rel}/**)",
+             f"Edit(./{rel}/**)"]
+    rules += [f"Bash({cmd}:*{rel}/*)" for cmd in _WORKSPACE_READERS]
+    return rules
+
+
+def archived_workspaces():
+    """Every `workspace_*` directory at the repo root: archived runs, kept for
+    comparison, that a live run must not read from."""
+    return sorted(d for d in os.listdir(REPO_ROOT)
+                  if d.startswith("workspace_") and os.path.isdir(os.path.join(REPO_ROOT, d)))
+
+
 def isolated_settings(slug, log_dir):
     """Write a per-run settings file: the base denials plus a read-denial on every
-    other problem's workspace. Returns its path.
+    other problem's workspace and on every archived workspace. Returns its path.
 
     Found by reading a transcript, not by design: the formulator for the coarsening
     Cahn-Hilliard problem `cat`ed its manufactured-solution twin's problem_spec.json
@@ -86,20 +104,26 @@ def isolated_settings(slug, log_dir):
     one variable only if the pipeline cannot copy from the closed-form sibling. So
     each run sees exactly one workspace: its own.
 
-    The file is generated fresh each run from what is on disk, so a workspace added
-    later is covered without touching the base file, and it sits next to the
-    transcript so a run can be reproduced with the isolation it actually had."""
+    The `workspace_*` archives at the repo root get the same fence, own slug
+    included. Found the same way: the porous-medium formulator (2026-08-29) read
+    `workspace_c2b_sonnet_backup/pde_laplace_2d/problem_spec.json` with the Read tool
+    after `python3 -c` over it was denied -- the sibling rule never reached it because
+    the archive is not under `workspace/`. An archive holds a previous run's finished
+    spec, closed form and all, for most of the benchmark, and a previous run's answer
+    to the same problem is the one file a fresh run most needs to be unable to see.
+
+    The file is generated fresh each run from what is on disk, so a workspace or
+    archive added later is covered without touching the base file, and it sits next
+    to the transcript so a run can be reproduced with the isolation it actually had."""
     with open(PIPELINE_SETTINGS) as fh:
         settings = json.load(fh)
     deny = list(settings.setdefault("permissions", {}).get("deny", []))
     others = sorted(d for d in os.listdir(WORKSPACE_ROOT)
                     if d != slug and os.path.isdir(os.path.join(WORKSPACE_ROOT, d)))
     for other in others:
-        deny.append(f"Read(./workspace/{other}/**)")
-        deny.append(f"Read(//Users/**/Autonumerics/workspace/{other}/**)")
-        deny.append(f"Edit(./workspace/{other}/**)")
-        for cmd in _WORKSPACE_READERS:
-            deny.append(f"Bash({cmd}:*workspace/{other}/*)")
+        deny += _fence(f"workspace/{other}")
+    for archive in archived_workspaces():
+        deny += _fence(archive)
     settings["permissions"]["deny"] = deny
     os.makedirs(log_dir, exist_ok=True)
     path = os.path.join(log_dir, f"{slug}.settings.json")
@@ -336,10 +360,18 @@ def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, 
             "harness": {k: harness.get(k) for k in (
                 "status", "passed", "verified_score", "rel_l2_err", "observed_order",
                 "order_ok", "converged", "constraint_violation", "error", "solver_drift",
-                "score_cap") if k in harness},
+                "score_cap",
+                # SDE: there is no field error, so the moments and their standard
+                # errors are the record. Dropping them left `wrong_plan_won` with
+                # nothing to compare on every SDE.
+                "gt_kind", "worst_variance_rel_err", "worst_mean_rel_err",
+                "components") if k in harness},
             "kernel": block,
             "is_winner": bool(is_winner),
         }
+        # Computed here, where the full harness result is still in hand.
+        err, margin = plan_harness_error(problem, harness)
+        entry["harness_error"], entry["harness_error_margin"] = err, margin
         if rerun_kernel:
             entry["kernel_rerun"] = (winner_kernel if is_winner and winner_kernel is not None
                                      else kernel_metrics(plan_dir))
@@ -353,21 +385,81 @@ def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, 
         })
         out["plans"][name] = entry
 
-    graded = {name: e for name, e in out["plans"].items()
-              if (e["harness"].get("status") == "ok"
-                  and isinstance(e["harness"].get("rel_l2_err"), (int, float))
-                  and e["harness"]["rel_l2_err"] == e["harness"]["rel_l2_err"])}
-    if winner in graded and graded:
-        best = min(graded, key=lambda n: graded[n]["harness"]["rel_l2_err"])
-        margin = float(problem.get("reference_error") or 0.0)
-        winner_err = graded[winner]["harness"]["rel_l2_err"]
-        best_err = graded[best]["harness"]["rel_l2_err"]
-        out.update({"best_plan_by_harness": best, "best_harness_err": best_err,
-                    "winner_harness_err": winner_err,
-                    "wrong_plan_won": bool(best != winner and winner_err > best_err + margin)})
+    # The comparable number, per problem type. A PDE's is the relative field error;
+    # an SDE has no field, so it is the worst moment error *relative to the gate that
+    # moment is judged against* -- the mean is graded at 5% and the variance at 10%,
+    # so the raw errors are not on one scale. Until 2026-09-26 this was PDE-only and
+    # `wrong_plan_won` was silently None on every SDE, which is where the statistic
+    # is least obvious: on `sde_double_well_langevin` two plans differed by 3 points
+    # of kernel score at moment errors inside each other's Monte-Carlo noise.
+    #
+    # `margin` is the noise floor the comparison has to clear before a difference
+    # counts: the reference's own error for a PDE, and for an SDE the larger of the
+    # two plans' Monte-Carlo standard errors on the deciding moment. Calling a plan
+    # "worse" by less than that is reading noise.
+    graded = {n: e["harness_error"] for n, e in out["plans"].items()
+              if e.get("harness_error") is not None}
+    margins = {n: e.get("harness_error_margin") or 0.0 for n, e in out["plans"].items()}
+    if winner in graded:
+        best = min(graded, key=lambda n: graded[n])
+        margin = max(margins.get(winner, 0.0), margins.get(best, 0.0))
+        out.update({"best_plan_by_harness": best, "best_harness_err": graded[best],
+                    "winner_harness_err": graded[winner],
+                    "harness_error_metric": ("worst moment error / its gate"
+                                             if problem["type"] == "sde" else "rel_l2_err"),
+                    "harness_error_margin": margin,
+                    "wrong_plan_won": bool(best != winner
+                                           and graded[winner] > graded[best] + margin)})
     else:
         out["wrong_plan_won"] = None
     return out
+
+
+def plan_harness_error(problem, harness):
+    """``(error, margin)`` for one plan's harness result, or ``(None, 0.0)``.
+
+    The number `wrong_plan_won` ranks plans on. A PDE's is the relative field error
+    and its margin is the reference's own error. An SDE has no field, so the error is
+    ``max_moment(rel_err / tol)`` -- dimensionless, comparable across the mean gate
+    (5%) and the variance gate (10%), and 1.0 exactly at the pass line -- and the
+    margin is the Monte-Carlo standard error of the deciding moment on the same
+    scale, so a difference smaller than the sampling noise never reads as a wrong
+    plan. Measured on `sde_double_well_langevin`, where the winner and the
+    best-by-error plan differ by 0.013 percentage points of mean error against a
+    standard error of 0.76: without the margin that reads as `wrong_plan_won`.
+    """
+    if harness.get("status") != "ok":
+        return None, 0.0
+    if problem["type"] != "sde":
+        err = harness.get("rel_l2_err")
+        if not isinstance(err, (int, float)) or err != err:
+            return None, 0.0
+        return float(err), float(problem.get("reference_error") or 0.0)
+    comps = harness.get("components") or []
+    if not comps:
+        return None, 0.0
+    # The gates verify.py applies, so the scaling puts 1.0 exactly at the pass line.
+    MOMENTS = (("variance", 0.10), ("mean", 0.05))
+    worst, worst_se = None, 0.0
+    for c in comps:
+        for moment, tol in MOMENTS:
+            if moment == "mean" and c.get("near_zero_mean"):
+                continue           # the rubric skips it, so it cannot decide anything
+            err = c.get(f"{moment}_rel_err")
+            if not isinstance(err, (int, float)) or err != err:
+                continue
+            scaled = float(err) / tol
+            if worst is None or scaled > worst:
+                worst = scaled
+                # Sampling noise on the same scale: the empirical standard error of
+                # this moment, relative to the truth it is compared against. The
+                # reference's own SE is added when the truth is itself a Monte-Carlo
+                # estimate (`ground_truth_kind: reference`).
+                ref = abs(float(c.get(f"exact_{moment}") or 0.0)) or 1.0
+                se = float(c.get(f"empirical_se_{moment}") or 0.0)
+                ref_se = float(c.get(f"reference_se_{moment}") or 0.0)
+                worst_se = (math.hypot(se, ref_se) / ref) / tol
+    return worst, worst_se
 
 
 def solution_metrics(plan_dir):

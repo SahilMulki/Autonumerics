@@ -281,6 +281,62 @@ def gl_reference_moments(T, sigma):
     return _gl_ref_cached(float(sigma))
 
 
+def _cheb(N):
+    """Trefethen's Chebyshev differentiation matrix on [-1, 1] (N+1 Lobatto nodes)."""
+    x = np.cos(np.pi * np.arange(N + 1) / N)
+    c = np.hstack([2.0, np.ones(N - 1), 2.0]) * (-1.0) ** np.arange(N + 1)
+    X = np.tile(x, (N + 1, 1)).T
+    dX = X - X.T
+    D = np.outer(c, 1.0 / c) / (dX + np.eye(N + 1))
+    return D - np.diag(D.sum(axis=1)), x
+
+
+@lru_cache(maxsize=None)
+def _kolmogorov_1d(drift_coeffs, sigma, x0, T, L=4.0, N=192):
+    """E[X_T] and E[X_T^2] for ``dX = b(X) dt + sigma dW`` with polynomial drift
+    ``b(x) = sum c_j x^j`` (``drift_coeffs`` lowest power first), by the backward
+    Kolmogorov equation ``u_t + b u_x + sigma^2/2 u_xx = 0`` on [-L, L].
+
+    The no-closed-form route S for a scalar diffusion: ``u(x, 0) = E[f(X_T) | X_0 = x]``
+    is the solution of a *linear* PDE with smooth terminal data, so it is computed to
+    machine precision by Chebyshev collocation and a dense matrix exponential, with
+    homogeneous Neumann ends (eliminated) at a distance the process cannot reach. The
+    two directions are validated in validate_ground_truth.py: a 4th-order finite
+    difference discretization agrees to 1e-10, the t -> infinity limit reproduces the
+    stationary quadrature of exp(-2V/sigma^2), and a weak-order-2 Monte Carlo agrees
+    within its standard error."""
+    D, xi = _cheb(N)
+    x = L * xi
+    D1 = D / L
+    A = np.diag(np.polyval(drift_coeffs[::-1], x)) @ D1 + 0.5 * sigma ** 2 * (D1 @ D1)
+    B = D1[[0, N], :]
+    M = -np.linalg.solve(B[:, [0, N]], B[:, 1:N])        # boundary values from interior
+    A_int = A[1:N, 1:N] + A[1:N, [0, N]] @ M
+    E = expm(T * A_int)
+    # Barycentric Chebyshev interpolation of the interior solution to x0.
+    w = (-1.0) ** np.arange(N + 1)
+    w[0] *= 0.5
+    w[-1] *= 0.5
+    out = []
+    for f in (x[1:N], x[1:N] ** 2):
+        u = np.empty(N + 1)
+        u[1:N] = E @ f
+        u[[0, N]] = M @ u[1:N]
+        d = x0 / L - xi
+        if np.any(np.abs(d) < 1e-14):
+            out.append(float(u[np.argmin(np.abs(d))]))
+        else:
+            out.append(float(np.sum(w * u / d) / np.sum(w / d)))
+    return out[0], out[1]
+
+
+def double_well_moments(T, k, sigma, X0):
+    """Terminal moments of ``dX = k (X - X^3) dt + sigma dW`` -- no closed form for
+    the transient or its moments; route S via ``_kolmogorov_1d``."""
+    m1, m2 = _kolmogorov_1d((0.0, float(k), 0.0, -float(k)), float(sigma), float(X0), float(T))
+    return {"mean": m1, "variance": m2 - m1 ** 2}
+
+
 # =============================================================================
 # PDE ground-truth analytic solutions
 # =============================================================================
@@ -932,6 +988,54 @@ def _diag_mass_error(field="u", tol=1e-3):
     return fn
 
 
+def _diag_l2_norm_error(fields, tol=1e-3):
+    """Deviation of the fields' joint L2 norm from the reference's, relative.
+
+    KdV conserves ``int u^2`` and the nonlinear Schrodinger equation conserves
+    ``int |psi|^2`` exactly; a dissipative discretization (an upwind flux, a damped
+    time integrator) loses it at O(1) while staying smooth and plausible. Measured
+    against the reference's norm on the same nodes rather than against the initial
+    value, so the check is a statement about the equation, not about the grid."""
+    def fn(num, exact, axes, mask):
+        sel = slice(None) if mask is None else mask
+        sn = sum(float(np.sum(np.asarray(num[f])[sel] ** 2)) for f in fields)
+        se = sum(float(np.sum(np.asarray(exact[f])[sel] ** 2)) for f in fields)
+        err = abs(np.sqrt(sn) - np.sqrt(se)) / (np.sqrt(se) + 1e-300)
+        return err, bool(err <= tol)
+    return fn
+
+
+def _diag_hamiltonian_error(energy_density, tol=None):
+    """Relative error of a conserved integral ``int e(fields, x) dx`` computed the
+    same way on the numerical and the reference fields (1-D, trapezoid on the
+    returned nodes). Derivative-based densities share their discretization error
+    between the two, so what remains is the field's departure from the reference."""
+    def fn(num, exact, axes, mask):
+        x = np.asarray(axes[0], dtype=float)
+        en = float(np.trapezoid(energy_density(num, x), x))
+        ee = float(np.trapezoid(energy_density(exact, x), x))
+        rel = abs(en - ee) / (abs(ee) + 1e-14)
+        return rel, (True if tol is None else bool(rel < tol))
+    return fn
+
+
+def _kdv_energy_density(delta):
+    def density(f, x):
+        u = np.asarray(f["u"], dtype=float)
+        ux = np.gradient(u, x, edge_order=2)
+        return u ** 3 / 3.0 - delta ** 2 * ux ** 2
+    return density
+
+
+def _gp_energy_density(g):
+    def density(f, x):
+        re, im = np.asarray(f["re"], dtype=float), np.asarray(f["im"], dtype=float)
+        rx, ix = np.gradient(re, x, edge_order=2), np.gradient(im, x, edge_order=2)
+        dens = re ** 2 + im ** 2
+        return 0.5 * (rx ** 2 + ix ** 2) + 0.5 * x ** 2 * dens + 0.5 * g * dens ** 2
+    return density
+
+
 def _diag_single_signed(field="u", tol=1e-3, rel_floor=0.01):
     """The field does not change sign -- the defining property of a ground state.
 
@@ -971,8 +1075,11 @@ def _diag_single_signed(field="u", tol=1e-3, rel_floor=0.01):
 #     contract asks for) or exclusive (the convention a spectral solve uses
 #     internally) -- the mismatch that plan-no-closed-form.md errata I5 measured;
 #   * a **non-periodic** axis must nest: every requested node is a node of the
-#     reference grid, or the reference reports that it cannot be evaluated. Choose
-#     ``grid_N`` accordingly (M = 1025 admits N = 65 and N = 129 exactly).
+#     reference grid, or the reference reports that it cannot be evaluated. The
+#     verifier calls the solver at ``grid_N`` and ``2 * grid_N`` nodes, i.e. at
+#     ``N - 1`` and ``2N - 1`` intervals, so the reference grid needs
+#     ``lcm(N - 1, 2N - 1)`` intervals: ``grid_N = 65`` needs 8256 (M = 8257 nodes),
+#     which is what ``pde_gross_pitaevskii_1d`` stores.
 
 _REFERENCE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "references")
 
@@ -2324,6 +2431,123 @@ Return the eigenfunction as `numerical_solution` on the grid, and the eigenvalue
 `functionals` dict as `{"lambda_1": <float>}`.
 """,
     },
+    {
+        "id": "P32",
+        "slug": "pde_kdv_zabusky_kruskal",
+        "type": "pde",
+        "tier": 3,
+        "family": "kdv",
+        "title": "KdV soliton fission (Zabusky-Kruskal)",
+        "challenge": "Dispersive third-order operator; a cosine fissions into a train of solitons of width ~delta whose phases a second-order scheme gets wrong at any affordable grid. Three exact invariants; ground truth is a harness-owned spectral reference.",
+        "dims": 1,
+        "axes": ["x"],
+        "domain": {"x": [0.0, 2.0]},
+        "t_eval": 1.0,
+        "closed_form": False,
+        "has_ground_truth": True,
+        "ground_truth_kind": "reference",
+        "analytic": None,
+        "reference": reference_evaluator("pde_kdv_zabusky_kruskal"),
+        # ETDRK4 (dt=1e-4, M=1024) and a fully explicit RK4 on the spectral ODE
+        # (M=512, dt=5.6e-6) agree to 3.3e-10; the recorded error is the max over
+        # that, the primary's step-halving (5.6e-9) and the spatial check (3.6e-15).
+        # Measured discrimination at t = 1 (relative L2 against the reference):
+        # spectral 2.0e-03 at N=128, 2.0e-07 at N=256; FD4+RK4 2.8e-03 at N=256,
+        # 1.8e-04 at N=512 (order 3.97); FD2+RK4 7.7e-02 at N=256 and 1.9e-02 at
+        # N=512 -- a second-order scheme cannot clear the 1% gate at the graded grid.
+        # First-order upwinding of u u_x loses half the L2 invariant, which the gate
+        # below catches independently of the field error.
+        "reference_error": 5.583e-09,
+        "grid_N": 256,
+        "min_order": 1.0,
+        "diagnostics": [
+            {"name": "mass_error", "fn": _diag_mass_error("u", tol=1e-3), "gate": True},
+            {"name": "l2_norm_error", "fn": _diag_l2_norm_error(["u"], tol=1e-3), "gate": True},
+            {"name": "hamiltonian_error", "fn": _diag_hamiltonian_error(_kdv_energy_density(0.022)),
+             "gate": False},
+        ],
+        "description": """# Korteweg-de Vries Equation (Zabusky-Kruskal soliton fission)
+
+Solve the KdV equation on the periodic interval [0, 2], over t in [0, 1]:
+
+    u_t + u u_x + delta^2 u_xxx = 0,
+
+**Parameter**:  delta = 0.022.
+
+**Initial condition**:  u(x, 0) = cos(pi x)
+
+**Boundary conditions**:  periodic.
+
+This is the Zabusky-Kruskal computation. The cosine steepens under the nonlinear
+term, would break at t = 1/pi without dispersion, and instead fissions into a train
+of solitons of width comparable to delta that pass through one another. By t = 1 the
+train is fully developed and the solution is dominated by those narrow pulses. There
+is no closed form. The equation conserves the integrals of u, of u^2 and of
+u^3/3 - delta^2 u_x^2 exactly. The third-order dispersive term makes an explicit
+scheme's stability limit scale like dx^3 / delta^2. Report the numerical solution
+u(x, 1).
+""",
+    },
+    {
+        "id": "P33",
+        "slug": "pde_gross_pitaevskii_1d",
+        "type": "pde",
+        "tier": 3,
+        "family": "gross-pitaevskii",
+        "title": "Gross-Pitaevskii (trapped, non-integrable NLS)",
+        "challenge": "A trapped cubic Schrodinger equation as a real/imaginary two-field system; the error is a phase error that a second-order discretization cannot bring under 1% at the graded grid. Mass and energy are exact invariants; ground truth is a harness-owned sine-spectral reference on the Dirichlet box.",
+        "dims": 1,
+        "axes": ["x"],
+        "domain": {"x": [-10.0, 10.0]},
+        "t_eval": 2.0,
+        "closed_form": False,
+        "has_ground_truth": True,
+        "ground_truth_kind": "reference",
+        "analytic": None,
+        "reference": reference_evaluator("pde_gross_pitaevskii_1d"),
+        "fields": ["re", "im"],
+        "primary_field": "re",
+        "required_fields": ["re", "im"],
+        # A fourth-order split-step composition, ETDRK4 and a fully explicit RK4, all
+        # in the Dirichlet sine basis at N = 1025, agree to 1.2e-11; the recorded error
+        # is the max over those, the step-halving (6.0e-12) and the spatial check
+        # (1.4e-11). The stored grid has 8256 intervals so that N = 65 and N = 130
+        # are exact subsets (the nesting rule above). Measured discrimination at
+        # t = 2: FD4+RK4 8.4e-03 at N=65 and 5.3e-04 at N=130 (order 3.97); FD2+RK4
+        # 6.2e-02 and 1.5e-02 -- outside the gate at both; a sine/Fourier spectral
+        # solve is 3e-08 at N=65. At N = 129/258 the FD2 scheme would pass at the
+        # fine grid (3.7e-03), which is why the graded grid is the coarser one.
+        "reference_error": 1.375e-11,
+        "grid_N": 65,
+        "min_order": 1.0,
+        "diagnostics": [
+            {"name": "mass_error", "fn": _diag_l2_norm_error(["re", "im"], tol=1e-3), "gate": True},
+            {"name": "energy_error", "fn": _diag_hamiltonian_error(_gp_energy_density(5.0)),
+             "gate": False},
+        ],
+        "description": """# Gross-Pitaevskii Equation (trapped condensate, 1-D)
+
+Solve the Gross-Pitaevskii (cubic nonlinear Schrodinger) equation for the complex
+wavefunction psi(x, t) on x in [-10, 10], over t in [0, 2]:
+
+    i psi_t = -1/2 psi_xx + V(x) psi + g |psi|^2 psi,
+
+**Parameters**:  V(x) = x^2 / 2  (harmonic trap),   g = 5.
+
+**Initial condition**:  psi(x, 0) = pi^(-1/4) exp(-(x - 1)^2 / 2)   (a unit-norm
+Gaussian displaced from the trap centre).
+
+**Boundary conditions**:  psi(-10, t) = psi(10, t) = 0.
+
+The displaced cloud oscillates in the trap while the repulsive interaction (g = 5,
+comparable to the trap energy) breathes it and shifts its phase; the two effects do
+not separate and there is no closed form. The equation conserves the mass
+int |psi|^2 dx = 1 and the energy int ( |psi_x|^2/2 + V |psi|^2 + g |psi|^4/2 ) dx
+exactly. The dominant numerical error is a *phase* error, which a scheme that
+preserves |psi| pointwise does not reveal. Report the real and imaginary parts of
+psi(x, 2) as the fields `re` and `im`.
+""",
+    },
     # -------------------------------------------------------------------------
     # SDE -- Tier 1 (gentle parameter regimes; families in sde_manual.md)
     # -------------------------------------------------------------------------
@@ -3053,6 +3277,53 @@ independent check confirms only that every terminal state stays inside the domai
 (|X(T)| < 1 and finite), which is what a naive scheme gets wrong. Return the
 terminal states as `terminal_paths` (shape (num_paths,)) and report the empirical
 mean and variance of X(T) at T = 1.
+""",
+    },
+    {
+        "id": "S23",
+        "slug": "sde_double_well_langevin",
+        "type": "sde",
+        "tier": 3,
+        "discriminator": True,
+        "family": "double_well",
+        "title": "Double-Well Langevin Diffusion (no closed form)",
+        "challenge": "dX = k(X - X^3)dt + sigma dW started in one well; the mean at T is the fraction of paths that have not crossed the barrier, and a first-order weak scheme misprices the escape rate by O(k dt) -- outside the gate at the step given. No closed form for the transient or its moments; truth is a Kolmogorov-equation solve.",
+        "state_dimension": 1,
+        "T": 1.0,
+        # The verifier re-runs at min(dt, 0.04/T) = 0.01. Measured against the
+        # Kolmogorov truth at that step (300k paths): Euler-Maruyama -6.7% on the mean
+        # (fails the 5% gate), tamed Euler -5.6% (on the fence), stochastic Heun --
+        # weak order 2 for additive noise -- -0.02% (passes). 200k paths put the MC
+        # standard error of the mean at 0.76% of its value, so Euler's failure is 2.2
+        # sigma past the gate rather than a coin flip; the suite-wide noise-floor guard
+        # in validate_ground_truth.py checks the same number.
+        "dt": 0.01,
+        "num_paths": 200000,
+        "seed": 42,
+        "closed_form": False,
+        "has_ground_truth": True,
+        "ground_truth_kind": "exact",
+        "moments": partial(double_well_moments, k=10.0, sigma=2.0, X0=1.0),
+        "description": """# Double-Well Langevin Diffusion (no closed form)
+
+Simulate the Ito SDE
+
+    dX = k (X - X^3) dt + sigma dW,     X(0) = 1.0,     k = 10,  sigma = 2
+
+over [0, 1]. The drift is minus the gradient of the double-well potential
+V(x) = k (x^4/4 - x^2/2), whose minima are at x = +-1 with a barrier of height k/4
+between them. With sigma^2/2 = 2 the noise is strong enough that paths started in
+the right well cross to the left one on the time scale of the simulation, so the
+mean at T = 1 is set by the fraction that has crossed. Neither the transient
+distribution nor its moments have a closed form.
+
+The well curvature (V'' = 2k = 20 at the minima) is what makes the problem
+demanding: the escape rate is sensitive to the weak-order error of the time
+stepping, and a first-order weak scheme at the step you are given misprices the
+mean by several percent. Choose the scheme accordingly.
+
+Compute the empirical mean E[X(T)] and variance Var[X(T)] at T = 1 by Monte Carlo
+and compare to the reference moments.
 """,
     },
 ]

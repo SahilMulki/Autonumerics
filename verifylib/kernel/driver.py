@@ -276,6 +276,8 @@ def evaluate_pde(spec, plan_dir, agent):
     m["d2"] = d2
     metrics.record(m, "invariants_ok", d2["invariants_ok"], **{
         k: d2[k] for k in ("drifts", "outcomes", "gate_failed", "not_reported")})
+    if d2.get("not_reported"):
+        m["summary"]["invariants_not_reported"] = list(d2["not_reported"])
     metrics.record(m, "non_gate_invariants_ok", d2["non_gate_ok"])
     metrics.record(m, "constraints_ok", not d2["gate_failed"])
     m["summary"]["invariants_ok"] = d2["invariants_ok"]

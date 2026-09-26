@@ -157,6 +157,57 @@ def test_no_false_positives_on_archived_reviews():
     assert not flagged, f"{len(flagged)} of {len(paths)} reviews false-flagged: {flagged[:3]}"
 
 
+# --- drift in the review vs a gap in the block -------------------------------
+
+_BLOCK = """<metrics>
+score: 10
+provenance: surrogate
+estimated_rel_error: 9.554e-03
+</metrics>
+
+<review score=10>
+
+**Score: 10/10**
+
+### Numerical Accuracy
+- {line}
+</review>"""
+
+
+def test_a_claim_that_contradicts_a_key_the_block_carries_is_drift():
+    """What the check exists for: the block says 9.554e-03 and the review says
+    otherwise, on the same key."""
+    found = review.check_review(_BLOCK.format(line="estimated_rel_error: 4.200e-03"))
+    assert [f.path for f in found] == ["<review>.Numerical Accuracy"]
+    assert "transcription drift" in found[0].message
+
+
+def test_a_claim_on_a_key_the_block_has_no_field_for_is_reported_against_the_block():
+    """The `sde_double_well_langevin` case. The SDE block used to carry only
+    `estimated_rel_error` -- the worse of the mean and the variance, unlabelled -- so
+    an evaluator reporting `variance_rel_err` wrote a true number that nothing could
+    corroborate. That is a missing field, not a lie, and sending a reader to look for
+    drift in the review was the wrong instruction."""
+    found = review.check_review(_BLOCK.format(line="variance_rel_err: 2.320e-03"))
+    assert [f.path for f in found] == ["<metrics>"]
+    assert "does not carry" in found[0].message
+    assert "variance_rel_err" in found[0].message
+
+
+def test_the_two_faults_are_reported_separately_when_both_are_present():
+    text = _BLOCK.replace("- {line}",
+                          "- estimated_rel_error: 4.200e-03\n- variance_rel_err: 2.320e-03")
+    found = review.check_review(text)
+    assert sorted(f.path for f in found) == ["<metrics>", "<review>.Numerical Accuracy"]
+
+
+def test_the_sde_metrics_block_now_carries_both_moment_errors():
+    """The fix that closes the gap above: `mean_rel_err` and `variance_rel_err` are
+    block fields, so a review reporting them is checkable."""
+    from verifylib.kernel.metrics import BLOCK_KEYS
+    assert "mean_rel_err" in BLOCK_KEYS and "variance_rel_err" in BLOCK_KEYS
+
+
 # --- the kernel-emitted score is binding, not advisory -----------------------
 
 _MATCHING = """<metrics>

@@ -606,6 +606,17 @@ Three more rules the code applies, recorded here (findings F2, F3, §7.3):
   *ran* and came back `slow` or `stalled` is a measurement about this solver and is not overruled.
 - **Disagreement caps both plans at 8.** Two plans that each converge to a different answer is a
   wrong coefficient or a sign in one of them, and the difference does not say which.
+- **On an SDE the comparison is in moment space, and it has a third outcome.** There is no field to
+  difference, so `cli.py compare` runs both plans at the graded `(num_paths, dt, T, seed)` and
+  compares the terminal mean and variance against `mean_rel_err_max` / `variance_rel_err_max`. That
+  difference carries Monte-Carlo noise a field difference does not, so it decides on the interval,
+  not the point: **agreement** only when the difference is inside the tolerance *including* its
+  confidence interval, **disagreement** only when it is outside *excluding* it, and `inconclusive`
+  (recorded as `agree: null`, exit 3) when the interval straddles the tolerance. Inconclusive is
+  neither a break nor a cap — granting either would price sampling noise as evidence. Until
+  2026-09-26 this path did not exist: `compare` solved every plan as a PDE and exited 1 on an SDE, so
+  the agreement gate could not fire on any SDE run and the second break had to come from a clean
+  Dynkin check.
 - **`ic_consistent: false` gates at 3.** A run that did not start from the declared initial
   condition satisfies the residual, the ladder and MMS with a solution of the right equation from
   the wrong data; only the §5f initial-state guard sees it.
@@ -968,16 +979,45 @@ resid = lhs - rhs
 ```
 
 **The trapezoid path integral carries its own `O(dt)` bias**, so the residual does not go to zero at
-fixed `dt` — the meaningful test is that it *shrinks at the expected rate*. Run at two `dt`,
-Richardson-extrapolate the residual to `dt → 0`, and require the extrapolated value to sit inside the
-MC confidence interval of zero:
+fixed `dt` — the meaningful test is that it *shrinks at the expected rate*. Richardson-extrapolate
+the residual to `dt → 0` and require the extrapolated value to sit inside the MC confidence interval
+of zero:
 
 ```python
-r_extrap = r_fine + (r_fine - r_coarse) / (2**1.0 - 1)        # residual is O(dt)
+p = np.log2((r0 - r1) / (r1 - r2))                # the rate, measured off three levels
+r_extrap = r2 + (r2 - r1) / (2**p - 1)
 dynkin_ok = np.all(np.abs(r_extrap) < ci_mult * se_resid)
 ```
 
-Three things this sketch leaves out, each of which was measured to matter on a **correct** solver:
+**Measure `p`; do not assume it is 1.** The `O(dt)` bias above is the *quadrature's*; the residual as
+a whole converges at the weak order of the **scheme**. With `p = 1` hard-coded, a weak-order-2 scheme
+extrapolates through zero and reports a large residual of the opposite sign — measured on
+`sde_double_well_langevin` (2026-09-26), where it capped two correct plans at **3**: a tamed-Heun plan
+whose residual fell −0.2299 → −0.0539 extrapolated to **+0.1220** at 25.6 s.e., and a Strang-splitting
+plan −0.2095 → −0.0583 to **+0.0928** at 19.7 s.e. Both had mean and variance errors inside the graded
+tolerances and a clean strong-order study; the residual was shrinking by 4× per halving, i.e. this
+section's own criterion was being met while the implementation of it failed.
+
+Two consequences for how the ladder is built:
+
+- **Three levels, not two.** With two, fitting `p` and extrapolating with it is circular:
+  `p = log2(r0/r1)` makes `r1 + (r1 − r0)/(2^p − 1)` identically zero for any input, so the test would
+  pass everything. Measuring the rate and testing the limit need separate information.
+- **Refine *downward* from the graded `dt` — `dt`, `dt/2`, `dt/4` — not upward.** Richardson needs
+  every level inside the asymptotic range, and the coarse end is where that fails. Anchored at the
+  graded `dt` as the *finest* level, the same double-well plans returned a coarsest residual of the
+  opposite sign and 20× the magnitude, no single power law fit the three points, and the measured
+  order was junk (0.73 on one test function, sign-inconsistent differences on another). Refining
+  downward, the same plans measure 1.9–2.3 consistently across all three test functions and come out
+  clean. The graded `dt` is where the *moments* are compared; that is a separate check.
+
+When the rate cannot be read — the finer difference is inside its own MC noise, the differences do
+not share a sign, or `p` lands outside `[0.5, 4]` — fall back to `p = 1` and **record that you did**
+(`extrapolation_order_source`). A fitted exponent whose leverage `1/(2^p − 1)` is set by noise is
+worse than the assumption it replaced.
+
+Three further things the sketch leaves out, each of which was measured to matter on a **correct**
+solver:
 
 1. **The two `dt` levels must share a Brownian path**, by §18's own argument. With independent
    draws, `r_fine - r_coarse` is mostly Monte Carlo noise and the extrapolation amplifies it: on a

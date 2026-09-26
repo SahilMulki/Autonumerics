@@ -46,6 +46,7 @@ def test_isolated_settings_denies_every_sibling_workspace_and_not_its_own(tmp_pa
     for slug in ("alpha", "beta", "gamma"):
         (ws / slug).mkdir(parents=True)
     (ws / "not_a_dir.txt").write_text("")
+    monkeypatch.setattr(RUN, "REPO_ROOT", str(tmp_path))
     monkeypatch.setattr(RUN, "WORKSPACE_ROOT", str(ws))
     with open(RUN.PIPELINE_SETTINGS) as fh:
         base = json.load(fh)["permissions"]["deny"]
@@ -65,6 +66,37 @@ def test_isolated_settings_denies_every_sibling_workspace_and_not_its_own(tmp_pa
         for cmd in RUN._WORKSPACE_READERS:
             assert f"Bash({cmd}:*workspace/{other}/*)" in extra, cmd
     assert not any("not_a_dir" in d for d in extra)
+
+
+def test_isolated_settings_fences_every_archived_workspace_including_own_slug(tmp_path, monkeypatch):
+    """Found by reading a transcript: the porous-medium formulator read
+    ``workspace_c2b_sonnet_backup/pde_laplace_2d/problem_spec.json`` with the Read
+    tool. The sibling rule is scoped to ``workspace/``, so an archive beside it was
+    open -- and an archive holds a previous run's finished spec for the *same*
+    problem, which is the one file a fresh run must not see."""
+    ws = tmp_path / "workspace"
+    (ws / "beta").mkdir(parents=True)
+    for archive in ("workspace_old_backup", "workspace_oneshot"):
+        (tmp_path / archive / "beta").mkdir(parents=True)
+    (tmp_path / "workspace_notes.txt").write_text("")   # not a directory: no fence
+    (tmp_path / "workspaces_unrelated").mkdir()          # no underscore prefix: no fence
+    monkeypatch.setattr(RUN, "REPO_ROOT", str(tmp_path))
+    monkeypatch.setattr(RUN, "WORKSPACE_ROOT", str(ws))
+
+    assert RUN.archived_workspaces() == ["workspace_old_backup", "workspace_oneshot"]
+    path = RUN.isolated_settings("beta", str(tmp_path / "logs"))
+    with open(path) as fh:
+        deny = json.load(fh)["permissions"]["deny"]
+
+    for archive in ("workspace_old_backup", "workspace_oneshot"):
+        assert f"Read(./{archive}/**)" in deny
+        assert f"Read(//Users/**/Autonumerics/{archive}/**)" in deny
+        assert f"Edit(./{archive}/**)" in deny
+        for cmd in RUN._WORKSPACE_READERS:
+            assert f"Bash({cmd}:*{archive}/*)" in deny, cmd
+    assert not any("workspace_notes" in d or "workspaces_unrelated" in d for d in deny)
+    assert not any(d.startswith(("Read(./workspace/", "Edit(./workspace/")) for d in deny), \
+        "the run's live workspace stays readable; only the archived copy of it is fenced"
 
 
 def test_isolated_settings_is_threaded_into_the_conductor_command(tmp_path):

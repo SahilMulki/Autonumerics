@@ -306,6 +306,39 @@ def unit_key(slug, condition, manuals, model, rep):
     return f"{slug}|{condition}|{manuals}|{_model_tag(model)}|{rep}"
 
 
+def reps_per_problem(chosen, args):
+    """``{slug: reps}``. Uniform ``--reps`` unless ``--reps-from`` names a matching
+    file, in which case each problem gets as many attempts as the pipeline spent on
+    it (``problems.<slug>.attempts`` -- the count of distinct ``solver.py`` files it
+    wrote).
+
+    Why per problem at all: on the no-closed-form suite the pipeline never refined a
+    plan (every plan ran at ``iter: 1``), so the only thing there is to match is the
+    number of *independent* attempts, and that number differs per problem -- 2 on the
+    eigenproblem, 4 on KdV. A uniform ``--reps`` would hand the baseline more chances
+    than the pipeline had on some problems and fewer on others, and the comparison
+    would not be about structure any more. A problem absent from the file falls back
+    to ``--reps`` and is reported, because silently giving it the default is exactly
+    the error this flag exists to prevent."""
+    if not args.reps_from:
+        return {p["slug"]: args.reps for p in chosen}
+    with open(args.reps_from) as fh:
+        table = (json.load(fh).get("problems") or {})
+    out, missing = {}, []
+    for p in chosen:
+        entry = table.get(p["slug"]) or {}
+        n = entry.get("attempts")
+        if isinstance(n, int) and n > 0:
+            out[p["slug"]] = n
+        else:
+            out[p["slug"]] = args.reps
+            missing.append(p["slug"])
+    if missing:
+        print(f"note: no matched attempt count for {', '.join(missing)} in "
+              f"{os.path.relpath(args.reps_from, REPO_ROOT)}; using --reps={args.reps}")
+    return out
+
+
 def process_unit(problem, condition, manuals, model, rep, args):
     slug = problem["slug"]
     plan_dir = plan_dir_for(problem, condition, manuals, model, rep)
@@ -369,24 +402,26 @@ def _json_default(o):
     raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
 
 
-def load_prior():
-    if not os.path.exists(ONESHOT_JSON):
+def load_prior(path=None):
+    path = path or ONESHOT_JSON
+    if not os.path.exists(path):
         return {}
     try:
-        with open(ONESHOT_JSON) as fh:
+        with open(path) as fh:
             payload = json.load(fh)
         return {r["_key"]: r for r in payload.get("results", [])}
     except (json.JSONDecodeError, KeyError):
         return {}
 
 
-def write_results(records, config):
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    tmp = ONESHOT_JSON + ".tmp"
+def write_results(records, config, path=None):
+    path = path or ONESHOT_JSON
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    tmp = path + ".tmp"
     with open(tmp, "w") as fh:
         json.dump({"config": config, "results": list(records.values())}, fh, indent=2,
                   default=_json_default)
-    os.replace(tmp, ONESHOT_JSON)
+    os.replace(tmp, path)
 
 
 # --- selection / main -------------------------------------------------------
@@ -429,6 +464,10 @@ def main(argv=None):
                     help="model for the baseline (default 'haiku' -- set 'opus' for the "
                          "real baseline; kept cheap by default so an accidental run is cheap)")
     ap.add_argument("--reps", type=int, default=1, help="samples per unit (default 1)")
+    ap.add_argument("--reps-from", dest="reps_from", default=None,
+                    help="path to a matched-attempts JSON (benchmark/results/matched_attempts.json): "
+                         "give each problem as many attempts as the pipeline spent on it, instead of "
+                         "a uniform --reps. Problems missing from the file fall back to --reps.")
     ap.add_argument("--max-turns", type=int, default=30,
                     help="C1 agent turn budget (default 30; ~matched to the pipeline's "
                          "3 plans x 5 iters with headroom)")
@@ -445,6 +484,10 @@ def main(argv=None):
                     help="sandbox memory cap in MB, best-effort (default 4096)")
     ap.add_argument("--resume", action="store_true",
                     help="skip units already present in oneshot_results.json")
+    ap.add_argument("--results-json", dest="results_json", default=None,
+                    help="path to the results JSON to read/write (default: "
+                         "results/oneshot_results.json). Use a separate file to keep a sweep apart "
+                         "from the standing C0/C1 baseline -- the no-closed-form suite does.")
     ap.add_argument("--list", action="store_true", help="print the unit plan and exit")
     args = ap.parse_args(argv)
 
@@ -453,22 +496,28 @@ def main(argv=None):
     if not chosen:
         raise SystemExit("no problems match the selection")
 
+    reps = reps_per_problem(chosen, args)
     units = [(p, c, m, rep) for p in chosen for c in conds
-             for m in manuals for rep in range(1, args.reps + 1)]
+             for m in manuals for rep in range(1, reps[p["slug"]] + 1)]
 
     if args.list:
         for p, c, m, rep in units:
-            print(f"{p['id']:<4} {p['slug']:<34} {c} {m:<6} rep{rep}")
+            print(f"{p['id']:<4} {p['slug']:<34} {c} {m:<6} rep{rep}/{reps[p['slug']]}")
+        spread = (f"{min(reps.values())}-{max(reps.values())} matched rep(s)"
+                  if args.reps_from else f"{args.reps} rep(s)")
         print(f"\n{len(units)} unit(s): {len(chosen)} problem(s) x {len(conds)} condition(s) "
-              f"x {len(manuals)} manual-setting(s) x {args.reps} rep(s), model={args.model}")
+              f"x {len(manuals)} manual-setting(s) x {spread}, model={args.model}")
         return
 
-    prior = load_prior()
+    prior = load_prior(args.results_json)
     records = dict(prior)
     config = {
         "generated_at": _dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "model": args.model, "conditions": conds, "manuals": manuals, "reps": args.reps,
+        "model": args.model, "conditions": conds, "manuals": manuals,
+        "reps": reps if args.reps_from else args.reps,
+        "reps_from": (os.path.relpath(args.reps_from, REPO_ROOT) if args.reps_from else None),
         "max_turns": args.max_turns, "agent_timeout": args.agent_timeout,
+        "solver_timeout_s": args.timeout, "mem_mb": args.mem_mb,
     }
 
     t_start = time.monotonic()
@@ -491,7 +540,7 @@ def main(argv=None):
 
         records[key] = rec
         config["invocation_seconds"] = round(time.monotonic() - t_start, 1)
-        write_results(records, config)
+        write_results(records, config, args.results_json)
 
         vlabel = R.ONESHOT_VERDICT_LABEL.get(rec["verdict"], rec["verdict"])
         cost = rec["run"].get("cost_usd")

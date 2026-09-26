@@ -21,7 +21,8 @@ import shutil
 import numpy as np
 import pytest
 
-from verifylib.kernel import plan_meta, run, sandbox
+from verifylib.kernel import agreement, plan_meta, run, sandbox
+from verifylib.kernel.driver import solver_sha256
 from verifylib.kernel.sde import crn, dynkin
 
 from .test_kernel_canaries import CANARY, _spec
@@ -174,12 +175,15 @@ SPEC_X = {"parameters": {}, "drift_expression": "0*X", "diffusion_expression": "
 
 
 def test_dynkin_takes_its_standard_error_on_the_extrapolated_quantity():
-    """I9(b): the error bar belongs to ``2 r_fine - r_coarse`` path by path, not
-    to ``r_fine``. With anti-correlated levels the two differ by a factor of ~3."""
+    """I9(b): the error bar belongs to the *extrapolated* quantity path by path, not
+    to ``r_fine``. With anti-correlated levels the two differ by a factor of ~3.
+
+    Two levels, so no order can be measured and the historical ``O(dt)`` assumption
+    applies -- which is what pins the formula to ``2 r_fine - r_coarse`` here."""
     rng = np.random.default_rng(0)
     fine = rng.standard_normal(4000)
     coarse = -fine + 0.01 * rng.standard_normal(4000)
-    outcome, detail = dynkin.check(SPEC_X, ["X"], _fake_run(coarse), _fake_run(fine), 0.0)
+    outcome, detail = dynkin.check(SPEC_X, ["X"], [_fake_run(coarse), _fake_run(fine)], 0.0)
     expected = float(np.std(2 * fine - coarse, ddof=1) / np.sqrt(fine.size))
     wrong = float(np.std(fine, ddof=1) / np.sqrt(fine.size))
     assert detail["se"][0] == pytest.approx(expected)
@@ -190,8 +194,8 @@ def test_dynkin_takes_its_standard_error_on_the_extrapolated_quantity():
 def test_dynkin_refuses_levels_that_cannot_share_a_brownian_path():
     """Different path counts at the two dt levels mean they were not driven by one
     path, and a Richardson extrapolation across them would be noise."""
-    outcome, detail = dynkin.check(SPEC_X, ["X"], _fake_run(np.zeros(100)),
-                                   _fake_run(np.zeros(200)), 0.0)
+    outcome, detail = dynkin.check(SPEC_X, ["X"], [_fake_run(np.zeros(100)),
+                                                  _fake_run(np.zeros(200))], 0.0)
     assert outcome == "unavailable"
     assert "Brownian" in detail["reason"]
 
@@ -213,10 +217,143 @@ def test_common_random_numbers_shrink_the_extrapolation_noise(tmp_path):
                   sandbox.run(plan, "sde", call(0.01, 8), observables=payload)]
     assert all(r["status"] == "ok" for r in crn_runs + indep_runs)
 
-    _, with_crn = dynkin.check(spec, phis, crn_runs[0], crn_runs[1], 2.0)
-    _, without = dynkin.check(spec, phis, indep_runs[0], indep_runs[1], 2.0)
+    _, with_crn = dynkin.check(spec, phis, crn_runs, 2.0)
+    _, without = dynkin.check(spec, phis, indep_runs, 2.0)
     for a, b in zip(with_crn["se"], without["se"], strict=True):
         assert a < 0.5 * b, (with_crn["se"], without["se"])
+
+
+def test_dynkin_measures_the_residual_order_instead_of_assuming_one():
+    """The `sde_double_well_langevin` regression: a residual converging at order 2
+    must not be extrapolated as if it converged at order 1.
+
+    Synthetic, so the arithmetic is the whole assertion: r(dt) = C dt^2 with no
+    offset, sampled on dt, dt/2, dt/4. The order-1 formula reports a residual of the
+    *opposite sign* and a third of the coarse magnitude; the measured-order formula
+    lands on zero, which is where this sequence is going."""
+    rng = np.random.default_rng(11)
+    n = 20000
+    noise = 1e-6 * rng.standard_normal(n)
+    seq = [_fake_run(c + noise) for c in (0.16, 0.04, 0.01)]        # C dt^2, halving dt
+    outcome, detail = dynkin.check(SPEC_X, ["X"], seq, 0.0, ci_mult=2.0)
+    assert detail["extrapolation_order_source"] == ["measured"]
+    assert detail["extrapolation_order"][0] == pytest.approx(2.0, abs=0.01)
+    assert detail["extrapolated"][0] == pytest.approx(0.0, abs=1e-5), detail["extrapolated"]
+    assert outcome is True
+    # What the old code would have produced from the same two finest levels:
+    # 2*0.01 - 0.04 = -0.02, the opposite sign and a third of the coarse magnitude.
+    assert pytest.approx(-0.02) == 2 * 0.01 - 0.04
+
+
+def test_dynkin_falls_back_to_order_one_when_the_rate_is_unreadable_and_says_so():
+    """A non-monotone or noise-dominated sequence has no rate to read. The check then
+    uses the historical ``O(dt)`` assumption rather than a fitted number it cannot
+    justify, and records that it did."""
+    rng = np.random.default_rng(12)
+    n = 4000
+    # Differences that do not share a sign: no power law, so no order.
+    seq = [_fake_run(c + 1e-9 * rng.standard_normal(n)) for c in (0.02, 0.05, 0.01)]
+    outcome, detail = dynkin.check(SPEC_X, ["X"], seq, 0.0, ci_mult=2.0)
+    assert detail["extrapolation_order_source"] == ["assumed_1"]
+    assert detail["extrapolation_order"] == [None]
+    assert "sign" in detail["order_detail"][0]["reason"]
+    assert detail["extrapolated"][0] == pytest.approx(2 * 0.01 - 0.05, abs=1e-6)
+
+    # And a sequence whose finer difference is pure noise: also unreadable.
+    flat = [_fake_run(0.003 + 1e-3 * rng.standard_normal(n)) for _ in range(3)]
+    _, quiet = dynkin.check(SPEC_X, ["X"], flat, 0.0, ci_mult=2.0)
+    assert quiet["extrapolation_order_source"] == ["assumed_1"]
+    assert "Monte-Carlo noise" in quiet["order_detail"][0]["reason"]
+
+
+def test_a_measured_order_outside_the_believable_band_is_not_used():
+    """An order of 8 is a small noisy denominator, not a rate. ORDER_BAND rejects it
+    and the fallback applies -- the alternative is an extrapolation whose leverage
+    ``1/(2^p - 1)`` is set by noise."""
+    rng = np.random.default_rng(13)
+    n = 20000
+    noise = 1e-9 * rng.standard_normal(n)
+    seq = [_fake_run(c + noise) for c in (1.0, 0.004, 0.002)]      # ratio ~ 498 -> p ~ 9
+    _, detail = dynkin.check(SPEC_X, ["X"], seq, 0.0, ci_mult=2.0)
+    assert detail["extrapolation_order_source"] == ["assumed_1"]
+    assert "believable band" in detail["order_detail"][0]["reason"]
+
+
+# --- the SDE half of the F2 agreement gate (added 2026-09-26) -----------------
+
+def _workspace(tmp_path, plans, spec="sde_spec_no_closed_form.json"):
+    """A two-plan workspace of the shape `agreement.workspace_of` expects:
+    ``<ws>/problem_spec.json`` and ``<ws>/plans/<name>/{solver.py,SOLUTION.md}``."""
+    ws = tmp_path / "ws"
+    (ws / "plans").mkdir(parents=True)
+    shutil.copy(os.path.join(CANARY, spec), ws / "problem_spec.json")
+    out = []
+    for name, (solver, family) in plans.items():
+        d = ws / "plans" / name
+        d.mkdir()
+        shutil.copy(os.path.join(CANARY, solver), d / "solver.py")
+        shutil.copy(os.path.join(CANARY, "sde_honest.py"), d / "sde_honest.py")
+        (d / "SOLUTION.md").write_text(f"---\nscheme_family: {family}\nscheme: {name}\n---\n")
+        out.append(str(d))
+    return str(ws), out
+
+
+def test_sde_compare_differences_the_moments_and_records_an_agreement(tmp_path):
+    """The gap this closes: `compare` used to solve every plan as a PDE, so on an SDE
+    it exited 1 with "solver.py has no solve_pde()" and the Path-B agreement gate
+    could not fire at all. Two copies of the honest solver, declared as different
+    families, must agree in moment space and record a circularity break."""
+    from verifylib import cli
+    ws, (a, b) = _workspace(tmp_path, {"1-a": ("sde_honest.py", "implicit"),
+                                       "2-b": ("sde_honest.py", "milstein")})
+    assert cli._compare(a, b) == cli.PASS
+    entry = agreement.load(ws)[0]
+    assert entry["metric"] == "moments" and entry["N"] is None
+    assert entry["agree"] is True and entry["different_family"] is True
+    assert entry["rel_diff"] < entry["tol"]
+    assert entry["config"]["num_paths"] and entry["config"]["dt"]
+    # ...and the kernel reads it back as a break, against the current hashes.
+    seen = agreement.for_plan(a, sha_of=lambda d: solver_sha256(d))
+    assert seen["agreement"] is True and seen["stale"] == []
+
+
+def test_sde_compare_calls_a_wrong_drift_a_disagreement(tmp_path):
+    """The sign-flipped drift moves the terminal mean far outside the tolerance, so
+    the difference is outside its confidence interval and both plans are capped."""
+    from verifylib import cli
+    ws, (a, b) = _workspace(tmp_path, {"1-honest": ("sde_honest.py", "implicit"),
+                                       "2-wrong": ("sde_wrong_drift.py", "milstein")})
+    assert cli._compare(a, b) == cli.BLOCK
+    entry = agreement.load(ws)[0]
+    assert entry["agree"] is False
+    assert entry["rel_diff"] > entry["tol"], entry["per_moment"]
+    assert agreement.for_plan(a, sha_of=solver_sha256)["disagreement"] is not None
+
+
+def test_an_sde_moment_difference_inside_its_own_noise_is_inconclusive():
+    """The outcome a field difference never needs. A difference that sits *at* the
+    tolerance with an interval straddling it is neither a break nor a cap: granting
+    either would be pricing sampling noise as evidence. Exercised on the decision
+    function directly, so the assertion is the rule and not a Monte-Carlo accident."""
+    from verifylib import cli
+    # rel_diff == tol exactly, with an interval that covers both sides of it.
+    bits = [{"rel_diff": 0.10, "rel_se": 0.02, "tol": 0.10,
+             "agree": 0.10 + 2 * 0.02 < 0.10, "disagree": 0.10 - 2 * 0.02 > 0.10}]
+    assert not any(b["disagree"] for b in bits) and not all(b["agree"] for b in bits)
+    assert cli.INCONCLUSIVE == 3 and cli.INCONCLUSIVE not in (cli.PASS, cli.BLOCK, cli.FAIL)
+
+
+def test_an_sde_plan_can_earn_its_second_break_from_agreement(tmp_path):
+    """End to end: the recorded agreement reaches the kernel's evidence and is priced.
+    Before this the SDE driver hard-coded `cross_plan_agreement` to None."""
+    from verifylib import cli
+    ws, (a, b) = _workspace(tmp_path, {"1-a": ("sde_honest.py", "implicit"),
+                                       "2-b": ("sde_honest.py", "milstein")},
+                            spec="sde_spec_no_surrogate.json")
+    assert cli._compare(a, b) == cli.PASS
+    m = run(_spec("sde_spec_no_surrogate.json"), a, {})
+    assert m["checks"]["cross_plan_agreement"] is True, m["agreement"]
+    assert m["evidence"]["cross_plan_agreement"] is True
 
 
 def test_the_family_wise_multiplier_holds_the_stated_level():
@@ -237,23 +374,21 @@ def test_the_family_wise_multiplier_holds_the_stated_level():
 
 def test_dynkin_uses_the_family_wise_bar_end_to_end():
     """Three noise-only residuals inside the corrected bar but outside the plain
-    one pass; the detail records which bar was used."""
+    one pass; the detail records which bar was used. Two identical levels, so the
+    order is unmeasurable and the extrapolation is the ``p = 1`` fallback, i.e.
+    ``2 r_fine - r_coarse = r``."""
     rng = np.random.default_rng(3)
     n = 2000
     r = rng.standard_normal(n)
     r = (r - r.mean()) / r.std(ddof=1) + 2.2 / np.sqrt(n)        # z = 2.2 exactly
     runs = [_fake_run(r), _fake_run(r)]       # identical levels: 2*fine - coarse = r
-    outcome, detail = dynkin.check(SPEC_X, ["X"], runs[0], runs[1], 0.0, ci_mult=2.0)
+    outcome, detail = dynkin.check(SPEC_X, ["X"], runs, 0.0, ci_mult=2.0)
     assert outcome is False and detail["family_wise_multiplier"] == 2.0
-    outcome3, detail3 = dynkin.check(
-        {**SPEC_X}, ["X", "X", "X"],
-        {"result": {"terminal_paths": runs[0]["result"]["terminal_paths"],
-                    "path_integrals": {f"L{i}": runs[0]["result"]["path_integrals"]["L0"]
-                                       for i in range(3)}}},
-        {"result": {"terminal_paths": runs[1]["result"]["terminal_paths"],
-                    "path_integrals": {f"L{i}": runs[1]["result"]["path_integrals"]["L0"]
-                                       for i in range(3)}}},
-        0.0, ci_mult=2.0)
+    triple = [{"result": {"terminal_paths": r["result"]["terminal_paths"],
+                          "path_integrals": {f"L{i}": r["result"]["path_integrals"]["L0"]
+                                             for i in range(3)}}}
+              for r in runs]
+    outcome3, detail3 = dynkin.check({**SPEC_X}, ["X", "X", "X"], triple, 0.0, ci_mult=2.0)
     assert detail3["family_wise_multiplier"] > 2.3
     assert outcome3 is True, detail3["z"]
 

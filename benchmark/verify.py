@@ -278,20 +278,46 @@ def _run_and_read_sde(problem, plan_dir, injected=None):
         run_meta = {"num_paths": int(problem["num_paths"]), "dt": float(dt_verify),
                     "T": float(T), "seed": int(problem["seed"])}
     d = problem["state_dimension"]
-    if d == 1:
-        comps = [("X", _scalar(result["empirical_mean"]), _scalar(result["empirical_variance"]))]
-        return comps, run_meta, result, None
     paths = np.asarray(result["terminal_paths"], dtype=float)
     n = problem["num_paths"]
+    if d == 1:
+        # The scored moments stay the solver's own reported values -- that is the
+        # contract, and recomputing them here would silently forgive a solver whose
+        # report disagrees with its paths. The standard errors come from the paths,
+        # because the report does not carry them; a malformed `terminal_paths` costs
+        # only the error bars, so it must not change the verdict.
+        comps = [("X", _scalar(result["empirical_mean"]),
+                  _scalar(result["empirical_variance"]), *_empirical_ses(paths.ravel()))]
+        return comps, run_meta, result, None
     if paths.ndim != 2:
         return None, run_meta, result, {"status": "error",
                                         "error": f"terminal_paths ndim={paths.ndim}, expected 2"}
     if paths.shape[0] != n and paths.shape[1] == n:
         paths = paths.T  # normalize to (num_paths, d)
     labels = ["X", "Y", "Z"][:d]
-    comps = [(lab, float(paths[:, i].mean()), float(paths[:, i].var(ddof=1)))
-             for i, lab in enumerate(labels)]
+    comps = [(lab, float(paths[:, i].mean()), float(paths[:, i].var(ddof=1)),
+              *_empirical_ses(paths[:, i])) for i, lab in enumerate(labels)]
     return comps, run_meta, result, None
+
+
+def _empirical_ses(col):
+    """``(se_mean, se_variance)`` of one component's terminal sample, or ``(None,
+    None)`` if it cannot be formed.
+
+    Reporting only -- the gates are fixed relative tolerances and no verdict moves.
+    But without them a reader cannot tell a resolved 0.9% mean error from an
+    unresolved one, and neither can ``run.py``, whose ``wrong_plan_won`` would
+    otherwise rank two plans on a difference smaller than the sampling noise
+    (measured on `sde_double_well_langevin`: 0.955% against 0.941% with a standard
+    error of 0.76%)."""
+    col = np.asarray(col, dtype=float).ravel()
+    if col.size < 2 or not np.all(np.isfinite(col)):
+        return None, None
+    v = float(col.var(ddof=1))
+    se_m = float(col.std(ddof=1) / np.sqrt(col.size))
+    # se of a variance estimate, from the fourth central moment.
+    se_v = float(np.sqrt(max(float(((col - col.mean()) ** 4).mean()) - v ** 2, 0.0) / col.size))
+    return se_m, se_v
 
 
 def _score_sde_moments(problem, comps, gt, run_meta, reference):
@@ -305,7 +331,12 @@ def _score_sde_moments(problem, comps, gt, run_meta, reference):
     all_pass = True
     # Values are coerced to native Python types (float/bool) so the record is always
     # JSON-serializable — numpy scalars (np.bool_ in particular) are not.
-    for lab, em, ev in comps:
+    for comp in comps:
+        # 3-tuples are still accepted: validate_ground_truth.py and the tests build
+        # components by hand from a scheme they drive themselves, and the standard
+        # errors are reporting-only.
+        lab, em, ev = comp[0], comp[1], comp[2]
+        emp_se_m, emp_se_v = (comp[3], comp[4]) if len(comp) >= 5 else (None, None)
         suffix = "" if d == 1 else f"_{lab}"
         gm, gv = gt["mean" + suffix], gt["variance" + suffix]
         if reference:
@@ -334,6 +365,11 @@ def _score_sde_moments(problem, comps, gt, run_meta, reference):
         if reference:
             rec["reference_se_mean"] = se_m
             rec["reference_se_variance"] = se_v
+        if emp_se_m is not None:
+            rec["empirical_se_mean"] = float(emp_se_m)
+            rec["empirical_se_variance"] = float(emp_se_v)
+            rec["mean_resolved"] = bool(abs(em - xm) > 2.0 * float(emp_se_m))
+            rec["variance_resolved"] = bool(abs(ev - xv) > 2.0 * float(emp_se_v))
         components.append(rec)
 
     finite = all(np.isfinite([c["empirical_mean"], c["empirical_variance"]]).all() for c in components)

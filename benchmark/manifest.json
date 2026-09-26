@@ -1,7 +1,7 @@
 {
-  "n_total": 53,
-  "n_pde": 31,
-  "n_sde": 22,
+  "n_total": 56,
+  "n_pde": 33,
+  "n_sde": 23,
   "pass_thresholds": {
     "pde": {
       "rel_l2_err_max": 0.01
@@ -422,8 +422,8 @@
         ]
       },
       "t_eval": 50.0,
-      "grid_N": 64,
-      "order_check": true,
+      "grid_N": 128,
+      "order_check": false,
       "min_order": 1.0,
       "metric": "l2",
       "l2_tol": 0.01,
@@ -1071,6 +1071,95 @@
       ]
     },
     {
+      "id": "P32",
+      "slug": "pde_kdv_zabusky_kruskal",
+      "type": "pde",
+      "tier": 3,
+      "family": "kdv",
+      "title": "KdV soliton fission (Zabusky-Kruskal)",
+      "challenge": "Dispersive third-order operator; a cosine fissions into a train of solitons of width ~delta whose phases a second-order scheme gets wrong at any affordable grid. Three exact invariants; ground truth is a harness-owned spectral reference.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "reference",
+      "discriminator": false,
+      "closed_form": false,
+      "reference_error": 5.583e-09,
+      "dims": 1,
+      "domain": {
+        "x": [
+          0.0,
+          2.0
+        ]
+      },
+      "t_eval": 1.0,
+      "grid_N": 256,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false,
+      "diagnostics": [
+        {
+          "name": "mass_error",
+          "gate": true
+        },
+        {
+          "name": "l2_norm_error",
+          "gate": true
+        },
+        {
+          "name": "hamiltonian_error",
+          "gate": false
+        }
+      ]
+    },
+    {
+      "id": "P33",
+      "slug": "pde_gross_pitaevskii_1d",
+      "type": "pde",
+      "tier": 3,
+      "family": "gross-pitaevskii",
+      "title": "Gross-Pitaevskii (trapped, non-integrable NLS)",
+      "challenge": "A trapped cubic Schrodinger equation as a real/imaginary two-field system; the error is a phase error that a second-order discretization cannot bring under 1% at the graded grid. Mass and energy are exact invariants; ground truth is a harness-owned sine-spectral reference on the Dirichlet box.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "reference",
+      "discriminator": false,
+      "closed_form": false,
+      "reference_error": 1.375e-11,
+      "dims": 1,
+      "domain": {
+        "x": [
+          -10.0,
+          10.0
+        ]
+      },
+      "t_eval": 2.0,
+      "grid_N": 65,
+      "order_check": true,
+      "min_order": 1.0,
+      "metric": "l2",
+      "l2_tol": 0.01,
+      "masked_domain": false,
+      "fields": [
+        "re",
+        "im"
+      ],
+      "primary_field": "re",
+      "required_fields": [
+        "re",
+        "im"
+      ],
+      "diagnostics": [
+        {
+          "name": "mass_error",
+          "gate": true
+        },
+        {
+          "name": "energy_error",
+          "gate": false
+        }
+      ]
+    },
+    {
       "id": "S01",
       "slug": "sde_gbm",
       "type": "sde",
@@ -1571,6 +1660,29 @@
       "stability_check": {
         "type": "domain",
         "abs_bound": 1.0
+      }
+    },
+    {
+      "id": "S23",
+      "slug": "sde_double_well_langevin",
+      "type": "sde",
+      "tier": 3,
+      "family": "double_well",
+      "title": "Double-Well Langevin Diffusion (no closed form)",
+      "challenge": "dX = k(X - X^3)dt + sigma dW started in one well; the mean at T is the fraction of paths that have not crossed the barrier, and a first-order weak scheme misprices the escape rate by O(k dt) -- outside the gate at the step given. No closed form for the transient or its moments; truth is a Kolmogorov-equation solve.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": true,
+      "closed_form": false,
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.01,
+      "eval_dt": 0.01,
+      "num_paths": 200000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 0.2582913111201794,
+        "variance": 0.7641815728322023
       }
     }
   ]

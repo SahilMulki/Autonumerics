@@ -352,3 +352,137 @@ Both extensions at once: multi-field on a 3-D grid, with structure preservation
   3. Do we adopt any of HardNumerics' resource budget (60 s / 2 GB / 1 thread) as a gate,
      or only report wall/memory? (Their scoring leans on it; ours currently does not.)
   4. `grid_N` defaults per 3D problem given the 8× cost of `2N`.
+
+---
+
+## 11. The no-closed-form suite, C0@Opus with matched attempts  *(set up 2026-09-26, not yet run)*
+
+A separate, self-contained comparison over the 7 `closed_form: False` problems
+(`--no-closed-form`), against the pipeline results in
+`results/no_closed_form.json` (P15, P29, P30, P31) and
+`results/no_closed_form_v2.json` (P32, P33, S23). It keeps the 49-problem C0/C1
+baseline in §8 untouched: nothing here writes `results/oneshot_results.json`.
+
+### 11.1 Why this comparison needs matched *attempts*, not matched iterations
+
+Every pipeline plan on this suite ran at **`iter: 1`** — across all 7 problems, no
+plan was ever refined. `total_iters` in those records is really "plans the kernel
+scored". So there are no refinement cycles to mirror, and the only thing there is to
+match is the number of **independent attempts** the pipeline spent, which differs per
+problem: 2 on the eigenproblem, 4 on KdV. A uniform `--reps` would give the baseline
+more chances than the pipeline had on some problems and fewer on others, and the
+comparison would stop being about structure.
+
+Matched on **distinct `solver.py` files the pipeline wrote** (not plans authored —
+a plan whose solver was never written cost the pipeline nothing; not plans scored —
+the winner early-exit stops evaluation for reasons of conductor budget, not of the
+problem):
+
+| Problem | attempts | authored | kernel-scored |
+|---|---|---|---|
+| P15 `pde_kuramoto_sivashinsky` | 3 | 4 | 2 |
+| P29 `pde_burgers_viscous_1d` | 3 | 4 | 3 |
+| P30 `pde_cahn_hilliard_2d_coarsening` | 4 | 4 | 3 |
+| P31 `pde_schrodinger_eigen_2d` | 2 | 3 | 1 |
+| P32 `pde_kdv_zabusky_kruskal` | 4 | 4 | 3 |
+| P33 `pde_gross_pitaevskii_1d` | 3 | 3 | 2 |
+| S23 `sde_double_well_langevin` | 3 | 3 | 3 |
+
+Frozen in `results/matched_attempts.json` (read from `workspace/` on 2026-09-26, so
+the matching survives a workspace wipe) and consumed by `oneshot.py --reps-from`.
+**22 attempts x 2 knowledge conditions = 44 C0 units.**
+
+### 11.2 How the baseline's attempts become one answer
+
+`benchmark/baseline_select.py` runs **verifylib's kernel** over a problem's attempts
+and ranks them by the **same lexicographic rule** `conductor.md` Phase 3 step 2 gives
+the conductor (score desc, provenance, `estimated_rel_error` asc, order margin desc,
+wall time asc). Grading the best attempt by the benchmark's ground truth instead
+would hand the baseline an oracle the pipeline never had. Three cuts, all reported:
+
+- **`first`** — rep 1 only; what one completion gets you.
+- **`kernel`** — the attempt the selector picks. Matched attempts, matched selection
+  rule, no oracle. **The headline number.**
+- **`pass_at_k`** — any attempt passes; the oracle-selection upper bound. The gap
+  between `kernel` and `pass_at_k` is how much of the baseline's deficit is
+  *selection* rather than solving, and `selection_lost_a_pass` names each problem
+  where the selector had a passing attempt available and did not pick it.
+
+The one asymmetry, stated rather than hidden: the kernel cannot score a solver
+without a `problem_spec.json`, and C0 produces none — the formulator is exactly what
+C0 lacks. So each attempt is scored against **the pipeline's own spec**, copied
+beside the attempt's `solver.py` in `workspace_oneshot/_kernel_select/`. The
+baseline's solver never sees it; only the selector does. The baseline keeps its real
+handicap (no decomposition, no planner, no evaluator loop) and loses only the one
+that would make the question unanswerable.
+
+`baseline_select.py` makes **no model calls** — it is free to re-run, and it should
+be re-run after any kernel change.
+
+### 11.3 Two things measured before the run that shape how to read it
+
+- **The 10 existing KS C0@Opus units (2026-08-07) are not reusable.** Their
+  `prompt.txt` says *"calls it at **N = 64**"*; since findings §11.2 KS grades at
+  **N = 128** with `pde_order_check: False`. They answered a different question, so
+  KS is re-run like the rest. (They are still useful as free test data for the
+  selector, which is what they were used for.)
+- **A real C0 attempt defeats the convergence check by computing at its own
+  resolution.** That KS rep1 solver computes on a hard-coded internal spectral grid
+  of M = 256 and uses the requested `N` only as the grid it interpolates onto. Its
+  solution differs between `N` and `2N` by 2.2e-16, so the kernel's ladder reports
+  `estimated_rel_error: 0.0` and `observed_order: inf` and caps it at 8
+  `self_convergence`; the harness passes it at 2.1e-06. Consequences:
+  1. `estimated_rel_error: 0.0` is not a measurement, and it is the conductor's
+     *third* ranking criterion — such an attempt sorts ahead of every honestly
+     measured attempt tied with it. `baseline_select.py` flags it
+     (`n_independent_attempts`) but deliberately does **not** patch the ranking: the
+     pipeline's own conductor is fooled the same way, and hiding that would flatter
+     the pipeline.
+  2. The **order check** is what actually catches this shape (err_N ~= err_2N gives
+     observed order ~0 under any `min_order`) — and **KS is the one problem in the
+     suite with the order check off**. So this attempt shape passes on KS and fails
+     on the other six, for reasons unrelated to its numerical quality. Read KS's
+     baseline number with that in mind; it also re-opens findings §11.2, since
+     turning the order check off removed the gate that catches an N-independent
+     solver.
+
+### 11.4 The commands (inside `tmux`, lid open — §8.1)
+
+```bash
+# 0. smoke-test the plumbing cheaply first: 2 problems, haiku, its own results file
+caffeinate -is uv run python benchmark/oneshot.py \
+    --only pde_gross_pitaevskii_1d,sde_double_well_langevin --condition c0 \
+    --manuals naked --model haiku --reps 1 --timeout 300 \
+    --results-json benchmark/results/oneshot_ncf_smoke.json \
+    2>&1 | tee -a benchmark/results/logs/ncf_c0_smoke.log
+caffeinate -is uv run python benchmark/baseline_select.py \
+    --results-json benchmark/results/oneshot_ncf_smoke.json
+
+# 1. the real run: C0 @ Opus, both knowledge conditions, matched attempts (44 units).
+#    --timeout 300 matches the kernel's own solver sandbox (the default 120 s would
+#    fail a slow-but-correct solver that the pipeline side would have accepted).
+caffeinate -is uv run python benchmark/oneshot.py --no-closed-form \
+    --condition c0 --manuals both --model opus \
+    --reps-from benchmark/results/matched_attempts.json \
+    --timeout 300 --resume \
+    --results-json benchmark/results/oneshot_no_closed_form.json \
+    2>&1 | tee -a benchmark/results/logs/ncf_c0_opus.log
+
+# 2. selection + the three cuts (free, no model calls; re-run after any kernel change)
+caffeinate -is uv run python benchmark/baseline_select.py \
+    --results-json benchmark/results/oneshot_no_closed_form.json \
+    2>&1 | tee -a benchmark/results/logs/ncf_c0_select.log
+```
+
+If step 1 dies or hits a usage limit, re-run the **identical** line — `--resume`
+skips every recorded unit. Step 2 is idempotent.
+
+### 11.5 Open, for when the results are in
+
+- `compare.py` does not know about the three cuts or about the matched-attempt
+  design; it will need a section for this suite (or a small dedicated renderer).
+- The pipeline side of the comparison is `wrong_plan_won` against the baseline's
+  `selection_lost_a_pass` — the same defect measured on both sides, which is the
+  most direct statement of what the structure buys.
+- C1 is not set up here. If it is wanted, the matching question changes: C1 *does*
+  iterate, so it would be matched on turn budget against a pipeline that used none.

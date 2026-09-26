@@ -26,7 +26,10 @@ def test_every_no_closed_form_problem_has_an_independent_truth_route(ncf_problem
         assert p["has_ground_truth"] is True, p["slug"]
         routes = {"reference": p.get("reference") is not None,
                   "semi_analytic": p.get("analytic") is not None,
-                  "functional": bool(p.get("functional_truth"))}
+                  "functional": bool(p.get("functional_truth")),
+                  # an SDE's route S: exact moments from a Kolmogorov solve or a
+                  # quadrature, never a moment formula the formulator could write
+                  "moments": p["type"] == "sde" and callable(p.get("moments"))}
         assert any(routes.values()), f"{p['slug']} has no route to truth: {routes}"
         assert p.get("closed_form") is False
 
@@ -341,6 +344,91 @@ def test_cahn_hilliard_structure_gates_bite():
     prob, runs = _ch_run(lambda u: np.full_like(u, np.mean(u)))   # collapsed
     out = V._score_pde_runs(prob, runs)
     assert "nontrivial" in out["violated_constraints"]
+
+
+# --- D15: the second-wave references (KdV, Gross-Pitaevskii) and the SDE route S ---
+
+def _reference_runs(slug, perturb):
+    """Solver output built from the harness's own truth at N and 2N, perturbed."""
+    prob = problem(slug)
+    runs = []
+    for N in (prob["grid_N"], 2 * prob["grid_N"]):
+        grid = grid_for(prob, N)
+        fields = {k: perturb(v, grid["x"], N) for k, v in truth_on(prob, grid).items()}
+        runs.append((N, result_from(fields, grid, t_final=prob["t_eval"])))
+    return prob, runs
+
+
+@pytest.mark.parametrize("slug", ["pde_kdv_zabusky_kruskal", "pde_gross_pitaevskii_1d"])
+def test_the_second_wave_reference_passes_and_its_initial_condition_fails(slug):
+    prob, runs = _reference_runs(slug, lambda u, x, N: u * (1.0 + 1e-6 * np.cos(x)))
+    out = V._score_pde_runs(prob, runs)
+    assert out["status"] == "ok" and out["passed"] is True, out
+    assert out["rel_l2_err"] < V._pde_l2_tol(prob) and not out.get("violated_constraints")
+
+    def ic(u, x, N):                       # KdV: cos(pi x); GP: the real Gaussian only
+        return np.cos(np.pi * x) if slug.startswith("pde_kdv") else (
+            np.pi ** -0.25 * np.exp(-0.5 * (x - 1.0) ** 2) if np.max(np.abs(u)) > 0.1 else 0.0 * x)
+    prob, runs = _reference_runs(slug, ic)
+    out = V._score_pde_runs(prob, runs)
+    assert out["passed"] is False and out["rel_l2_err"] > 0.3
+
+
+@pytest.mark.parametrize("slug, gate", [("pde_kdv_zabusky_kruskal", "l2_norm_error"),
+                                        ("pde_gross_pitaevskii_1d", "mass_error")])
+def test_the_conservation_gate_bites_on_a_damped_field(slug, gate):
+    """A field 3% low everywhere is still under-resolved-looking and smooth; the
+    invariant it violates is what the gate is for (and the CONSTRAINT_VIOLATION
+    verdict is what the record shows, not an accuracy miss)."""
+    prob, runs = _reference_runs(slug, lambda u, x, N: 0.97 * u)
+    out = V._score_pde_runs(prob, runs)
+    assert gate in out["violated_constraints"], out["violated_constraints"]
+    assert R.compute_verdict(record(prob, verify=out)) == "CONSTRAINT_VIOLATION"
+
+
+def test_a_pure_phase_error_is_a_field_error_not_a_constraint_violation():
+    """|psi| exact, phase rotated by 0.2 rad: the mass gate cannot see it and must not
+    fire; the field metric (the reason the problem is graded on re and im) must."""
+    prob = problem("pde_gross_pitaevskii_1d")
+    grid = grid_for(prob, 2 * prob["grid_N"])
+    t = truth_on(prob, grid)
+    psi = (t["re"] + 1j * t["im"]) * np.exp(0.2j)
+    out = V._score_pde_runs(prob, [(2 * prob["grid_N"],
+                                    result_from({"re": psi.real, "im": psi.imag}, grid, t_final=2.0))])
+    assert out["passed"] is False and out["rel_l2_err"] > 0.1
+    assert not out.get("violated_constraints")
+
+
+def test_the_gross_pitaevskii_grid_is_non_periodic_and_refuses_a_grid_that_does_not_nest():
+    """The first non-periodic reference in the suite: the nesting rule is live on a
+    real artifact, not only on the synthetic one in D4."""
+    prob = problem("pde_gross_pitaevskii_1d")
+    meta = P._load_reference(prob["slug"])
+    assert meta["periodic"] == [False]
+    assert meta["grids"][0].size == 8257 and meta["grids"][0][0] == -10.0 and meta["grids"][0][-1] == 10.0
+    for N in (prob["grid_N"], 2 * prob["grid_N"]):
+        got = truth_on(prob, grid_for(prob, N))
+        assert got["re"].shape == (N,) and np.all(np.isfinite(got["im"]))
+    with pytest.raises(P.ReferenceUnavailable, match="nest"):
+        truth_on(prob, grid_for(prob, 100))
+
+
+def test_the_kolmogorov_moments_are_what_the_validator_measured():
+    """Route S for an SDE: the numbers the validator cross-checked against a second
+    discretization, the stationary quadrature and Monte Carlo, pinned so a change to
+    ``_kolmogorov_1d`` cannot silently move the answer key."""
+    prob = problem("sde_double_well_langevin")
+    gt = prob["moments"](prob["T"])
+    assert gt["mean"] == pytest.approx(0.2582913111, abs=2e-9)
+    assert gt["variance"] == pytest.approx(0.7641815728, abs=2e-9)
+    assert abs(gt["mean"]) > 0.01                       # the mean gate is live, not skipped
+    assert prob.get("closed_form") is False and prob["ground_truth_kind"] == "exact"
+
+
+def test_the_double_well_verifier_step_is_the_one_the_discrimination_was_measured_at():
+    prob = problem("sde_double_well_langevin")
+    assert V.sde_verify_dt(prob) == pytest.approx(0.01)
+    assert prob["num_paths"] == 200000
 
 
 # --- D14: the references rebuild to their stored error (slow) -------------------

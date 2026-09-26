@@ -19,6 +19,7 @@ import sys
 
 import numpy as np
 from scipy.integrate import quad, solve_ivp
+from scipy.linalg import expm
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import problems as P  # noqa: E402
@@ -960,6 +961,205 @@ check("pde_schrodinger_eigen_2d satisfies its Dirichlet condition",
       max(np.max(np.abs(_ue[0])), np.max(np.abs(_ue[-1])),
           np.max(np.abs(_ue[:, 0])), np.max(np.abs(_ue[:, -1]))) < 1e-12)
 
+# P32 KdV and P33 Gross-Pitaevskii -- the second-wave references. Beyond the artifact
+# integrity checked above, direction 2 is done with *real* solvers through the real
+# scoring path: a compact fourth-order scheme at the benchmark's own N and 2N must
+# clear every gate, the same scheme at second order must not, and the conservation
+# gate must trip on a dissipative flux independently of the field error.
+
+
+def _rk4(rhs, u, h, nsteps):
+    for _ in range(nsteps):
+        k1 = rhs(u)
+        k2 = rhs(u + 0.5 * h * k1)
+        k3 = rhs(u + 0.5 * h * k2)
+        k4 = rhs(u + h * k3)
+        u = u + (h / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+    return u
+
+
+def kdv_fd_solve(N, order, upwind=False, delta=0.022, T=1.0):
+    """Periodic central FD of the given order in space, RK4 at a dispersive-stable
+    step; ``upwind`` swaps the advection flux for first-order upwinding."""
+    xs = np.linspace(0.0, 2.0, N)          # the contract's endpoint-inclusive grid
+    n = N - 1
+    dx = 2.0 / n
+    u = np.cos(np.pi * xs[:-1])
+    r = np.roll
+    if order == 2:
+        def D1(u):
+            return (r(u, -1) - r(u, 1)) / (2 * dx)
+
+        def D3(u):
+            return (r(u, -2) - 2 * r(u, -1) + 2 * r(u, 1) - r(u, 2)) / (2 * dx ** 3)
+    else:
+        def D1(u):
+            return (-r(u, -2) + 8 * r(u, -1) - 8 * r(u, 1) + r(u, 2)) / (12 * dx)
+
+        def D3(u):
+            return (-r(u, -3) + 8 * r(u, -2) - 13 * r(u, -1) + 13 * r(u, 1)
+                    - 8 * r(u, 2) + r(u, 3)) / (8 * dx ** 3)
+
+    def adv(u):
+        if not upwind:
+            return -u * D1(u)
+        f = 0.5 * u ** 2
+        return -np.where(u > 0, (f - r(f, 1)) / dx, (r(f, -1) - f) / dx)
+
+    def rhs(u):
+        return adv(u) - delta ** 2 * D3(u)
+    h = min(0.5 * dx ** 3 / delta ** 2, 0.2 * dx)
+    nsteps = int(np.ceil(T / h))
+    u = _rk4(rhs, u, T / nsteps, nsteps)
+    return {"numerical_solution": np.append(u, u[0]), "grid": {"x": xs}, "t_final": T}
+
+
+def gp_fd_solve(N, order, g=5.0, L=10.0, T=2.0, damp=0.0):
+    """Dirichlet FD of the given order for i psi_t = -psi_xx/2 + V psi + g|psi|^2 psi,
+    RK4 in time; ``damp`` adds a small artificial dissipation -(damp) psi_xx-like
+    loss that a damped implicit integrator would introduce."""
+    xs = np.linspace(-L, L, N)
+    dx = xs[1] - xs[0]
+    p = np.pi ** -0.25 * np.exp(-0.5 * (xs - 1.0) ** 2) + 0j
+    p[0] = p[-1] = 0.0
+    Vs = 0.5 * xs ** 2
+
+    def lap(p):
+        out = np.zeros_like(p)
+        if order == 2:
+            out[1:-1] = (p[2:] - 2 * p[1:-1] + p[:-2]) / dx ** 2
+        else:
+            out[2:-2] = (-p[4:] + 16 * p[3:-1] - 30 * p[2:-2] + 16 * p[1:-3] - p[:-4]) / (12 * dx ** 2)
+            out[1] = (p[2] - 2 * p[1] + p[0]) / dx ** 2
+            out[-2] = (p[-1] - 2 * p[-2] + p[-3]) / dx ** 2
+        return out
+
+    def rhs(p):
+        out = (0.5j + damp) * lap(p) - 1j * (Vs + g * np.abs(p) ** 2) * p
+        out[0] = out[-1] = 0.0
+        return out
+    lam = (4.0 if order == 2 else 16.0 / 3.0) / dx ** 2
+    h = min(0.5 * 2.8 / (0.5 * lam), 1e-2)
+    nsteps = int(np.ceil(T / h))
+    p = _rk4(rhs, p, T / nsteps, nsteps)
+    return {"fields": {"re": p.real, "im": p.imag}, "grid": {"x": xs}, "t_final": T}
+
+
+print("\n--- second-wave references: a correct scheme passes, a wrong one is caught ---")
+for slug, solve in (("pde_kdv_zabusky_kruskal", kdv_fd_solve),
+                    ("pde_gross_pitaevskii_1d", gp_fd_solve)):
+    prob = P.by_slug(slug)
+    Ns = (prob["grid_N"], 2 * prob["grid_N"])
+    out4 = V._score_pde_runs(prob, [(N, solve(N, 4)) for N in Ns])
+    check(f"{slug}: FD4+RK4 clears both gates at N={Ns[0]}/{Ns[1]}",
+          out4.get("passed") is True,
+          f"relL2 {out4.get('rel_l2_err', float('nan')):.2e}, order {out4.get('observed_order', float('nan')):.2f}, "
+          f"violated {out4.get('violated_constraints')}")
+    out2 = V._score_pde_runs(prob, [(N, solve(N, 2)) for N in Ns])
+    check(f"{slug}: FD2+RK4 is outside the accuracy gate at N={Ns[1]}",
+          out2.get("passed") is False and out2.get("rel_l2_err", 0.0) > V._pde_l2_tol(prob),
+          f"relL2 {out2.get('rel_l2_err', float('nan')):.2e}, order {out2.get('observed_order', float('nan')):.2f}")
+
+kdv = P.by_slug("pde_kdv_zabusky_kruskal")
+outu = V._score_pde_runs(kdv, [(N, kdv_fd_solve(N, 4, upwind=True)) for N in (256, 512)])
+check("pde_kdv_zabusky_kruskal: first-order upwinding trips the L2-invariant gate",
+      "l2_norm_error" in (outu.get("violated_constraints") or []),
+      f"violated {outu.get('violated_constraints')}, relL2 {outu.get('rel_l2_err', float('nan')):.2e}")
+
+gp = P.by_slug("pde_gross_pitaevskii_1d")
+outd = V._score_pde_runs(gp, [(N, gp_fd_solve(N, 4, damp=0.02)) for N in (65, 130)])
+check("pde_gross_pitaevskii_1d: a dissipative integrator trips the mass gate",
+      "mass_error" in (outd.get("violated_constraints") or []),
+      f"violated {outd.get('violated_constraints')}, relL2 {outd.get('rel_l2_err', float('nan')):.2e}")
+# The field metric sees the phase: |psi| exact, a global phase of 0.2 rad, ~20% off.
+_r4 = gp_fd_solve(130, 4)
+_ph = (_r4["fields"]["re"] + 1j * _r4["fields"]["im"]) * np.exp(0.2j)
+_r4p = {**_r4, "fields": {"re": _ph.real, "im": _ph.imag}}
+outp = V._score_pde_runs(gp, [(130, _r4p)])
+check("pde_gross_pitaevskii_1d: a pure phase error fails the field gate with the mass gate intact",
+      outp.get("passed") is False and not (outp.get("violated_constraints") or []),
+      f"relL2 {outp.get('rel_l2_err', float('nan')):.2e}, violated {outp.get('violated_constraints')}")
+
+# S23 double-well Langevin -- route S by the Kolmogorov equation. The truth is
+# validated three ways, then the two directions are run at the verifier's exact
+# (num_paths, dt, seed).
+print("\n--- sde_double_well_langevin: the Kolmogorov truth and the two directions ---")
+dw = P.by_slug("sde_double_well_langevin")
+k_dw, s_dw, x0_dw, T_dw = 10.0, 2.0, 1.0, dw["T"]
+gt_dw = dw["moments"](T_dw)
+
+
+def _dw_drift(x):
+    return k_dw * (x - x ** 3)
+
+
+def _dw_fd_moments(N=1601, L=4.0):
+    """Independent discretization of the same backward equation: 4th-order central FD
+    with reflected (Neumann) ghost nodes, dense expm."""
+    x = np.linspace(-L, L, N)
+    h = x[1] - x[0]
+    c1 = np.array([1.0, -8.0, 0.0, 8.0, -1.0]) / (12.0 * h)
+    c2 = np.array([-1.0, 16.0, -30.0, 16.0, -1.0]) / (12.0 * h ** 2)
+    A = np.zeros((N, N))
+    bx = _dw_drift(x)
+    for i in range(N):
+        for kk, off in enumerate((-2, -1, 0, 1, 2)):
+            j = i + off
+            j = -j if j < 0 else (2 * (N - 1) - j if j >= N else j)
+            A[i, j] += bx[i] * c1[kk] + 0.5 * s_dw ** 2 * c2[kk]
+    E = expm(T_dw * A)
+    i0 = int(np.argmin(np.abs(x - x0_dw)))
+    m1 = float(E[i0] @ x)
+    return m1, float(E[i0] @ x ** 2) - m1 ** 2
+
+
+m1_fd, v_fd = _dw_fd_moments()
+check("sde_double_well_langevin Chebyshev and FD4 Kolmogorov solves agree",
+      abs(m1_fd - gt_dw["mean"]) < 1e-8 and abs(v_fd - gt_dw["variance"]) < 1e-8,
+      f"mean {gt_dw['mean']:.10f} vs {m1_fd:.10f}; var {gt_dw['variance']:.10f} vs {v_fd:.10f}")
+# Domain and resolution independence of the primary solve.
+_m_a = P._kolmogorov_1d((0.0, k_dw, 0.0, -k_dw), s_dw, x0_dw, T_dw, L=4.0, N=192)
+_m_b = P._kolmogorov_1d((0.0, k_dw, 0.0, -k_dw), s_dw, x0_dw, T_dw, L=5.0, N=256)
+check("sde_double_well_langevin Kolmogorov solve is domain- and resolution-independent",
+      abs(_m_a[0] - _m_b[0]) < 1e-9 and abs(_m_a[1] - _m_b[1]) < 1e-9,
+      f"L=4/N=192 vs L=5/N=256: d(mean) {abs(_m_a[0] - _m_b[0]):.1e}, d(m2) {abs(_m_a[1] - _m_b[1]):.1e}")
+# t -> infinity: the stationary density exp(-2V/sigma^2) by quadrature.
+_xq = np.linspace(-4.0, 4.0, 400001)
+_w = np.exp(-2.0 * k_dw * (_xq ** 4 / 4.0 - _xq ** 2 / 2.0) / s_dw ** 2)
+_m2_stat = float(np.trapezoid(_xq ** 2 * _w, _xq) / np.trapezoid(_w, _xq))
+_m_inf = P._kolmogorov_1d((0.0, k_dw, 0.0, -k_dw), s_dw, x0_dw, 20.0)
+check("sde_double_well_langevin Kolmogorov solve reaches the stationary quadrature as t -> inf",
+      abs(_m_inf[0]) < 1e-8 and abs(_m_inf[1] - _m2_stat) < 1e-8,
+      f"t=20: mean {_m_inf[0]:.1e}, E[X^2] {_m_inf[1]:.10f} vs quadrature {_m2_stat:.10f}")
+check("sde_double_well_langevin mean at T is far from the near-zero skip",
+      abs(gt_dw["mean"]) > 0.1, f"mean {gt_dw['mean']:.4f}")
+
+
+def _dw_mc(scheme, num_paths, dt, seed):
+    rng = np.random.default_rng(seed)
+    Nt = max(1, round(T_dw / dt))
+    dt = T_dw / Nt
+    X = np.full(num_paths, x0_dw)
+    sq = np.sqrt(dt)
+    for _ in range(Nt):
+        dW = rng.standard_normal(num_paths) * sq
+        if scheme == "euler":
+            X = X + _dw_drift(X) * dt + s_dw * dW
+        else:                                   # stochastic Heun, weak order 2 (additive noise)
+            Xp = X + _dw_drift(X) * dt + s_dw * dW
+            X = X + 0.5 * (_dw_drift(X) + _dw_drift(Xp)) * dt + s_dw * dW
+    return [("X", float(X.mean()), float(X.var(ddof=1)))]
+
+
+_dtv = V.sde_verify_dt(dw)
+_meta = {"num_paths": dw["num_paths"], "dt": _dtv, "T": T_dw, "seed": dw["seed"]}
+for scheme, want in (("heun", True), ("euler", False)):
+    out = V._score_sde_moments(dw, _dw_mc(scheme, dw["num_paths"], _dtv, dw["seed"]), gt_dw, _meta, reference=False)
+    c = out["components"][0]
+    check(f"sde_double_well_langevin: {scheme} at the verifier's (paths, dt, seed) {'passes' if want else 'fails the mean gate'}",
+          out["passed"] is want and (want or not c["mean_ok"]),
+          f"mean rel err {c['mean_rel_err'] * 100:.2f}% (gate 5%), variance rel err {c['variance_rel_err'] * 100:.2f}% (gate 10%)")
+
 # Every no-closed-form problem must actually be *scored*: a problem the verifier
 # cannot check independently reports SELF_ONLY and measures nothing, which is the
 # hole this suite exists to close.
@@ -968,8 +1168,9 @@ for prob in ncf:
           bool(prob["has_ground_truth"]) or prob.get("ground_truth_kind") == "stability",
           f"has_ground_truth={prob['has_ground_truth']}, "
           f"kind={prob.get('ground_truth_kind', 'exact')}")
-    check(f"{prob['slug']} has a field or functional truth",
-          V._pde_truth(prob) is not None or bool(prob.get("functional_truth")))
+    check(f"{prob['slug']} has a field, functional or moment truth",
+          (callable(prob.get("moments")) if prob["type"] == "sde" else
+           V._pde_truth(prob) is not None or bool(prob.get("functional_truth"))))
 
 
 print("\n" + "=" * 60)

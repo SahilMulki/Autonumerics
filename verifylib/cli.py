@@ -40,6 +40,13 @@ from verifylib.findings import errors, render  # noqa: E402
 
 BLOCK = 2
 PASS = 0
+#: `compare` only. A moment-space difference carries Monte-Carlo noise, so its
+#: confidence interval can straddle the tolerance: neither an agreement that could
+#: be priced as a circularity break, nor a disagreement that caps both plans at 8.
+#: Distinct from FAIL (1), which means a plan crashed and nothing was measured.
+INCONCLUSIVE = 3
+#: A plan crashed: nothing was measured.
+FAIL = 1
 
 #: `matcher` is tool-name only -- a path glob never fires -- so path filtering
 #: happens here, and the matcher must include Bash or a heredoc walks past it.
@@ -217,15 +224,33 @@ def _evaluate(plan_dir, as_json) -> int:
 
 
 def _compare(plan_a, plan_b, *, N=None, no_record=False, as_json=False) -> int:
-    """Findings F2: difference two plans' finest full-T fields on a common grid.
+    """Findings F2: difference two plans' answers and record whether they agree.
 
-    Solves both at the top ladder level (or ``--N``), restricts onto the common
-    grid, and reports the relative difference against the spec's
-    ``rel_l2_err_max``. Unless ``--no-record`` it writes the result to
-    ``<workspace>/agreements.json`` with both solver hashes, which the kernel
-    reads back on the next ``evaluate`` of either plan: agreement between
-    different scheme families is priced as a circularity break, disagreement
-    caps both plans at 8. Exit 0 on agreement, 2 on disagreement, 1 on a crash.
+    **PDE** -- solves both at the top ladder level (or ``--N``), restricts onto the
+    common grid, and reports the relative field difference against the spec's
+    ``rel_l2_err_max``.
+
+    **SDE** -- differences the *moments* at the graded ``(num_paths, dt, T, seed)``
+    against ``mean_rel_err_max`` / ``variance_rel_err_max``. There is no field to
+    difference, and until 2026-09-26 this path did not exist at all: ``compare``
+    solved every plan as a PDE and exited 1 with "solver.py has no solve_pde()", so
+    on *every* SDE Path-B run the conductor's agreement gate could not fire and the
+    second circularity break had to come from a clean Dynkin check. Found on the
+    first no-closed-form SDE (`sde_double_well_langevin`, 2026-09-26).
+
+    A moment difference carries Monte-Carlo noise that a field difference does not,
+    so the SDE path reports **three** outcomes rather than two, and the noise decides
+    which: agreement only when the difference is inside the tolerance *including* its
+    confidence interval, disagreement only when it is outside *excluding* it, and
+    ``inconclusive`` when the interval straddles the tolerance. Inconclusive records
+    ``agree: null``, which is neither a break nor a cap -- the alternative is to grant
+    a circularity break, or cap two plans at 8, on the strength of sampling noise.
+
+    Unless ``--no-record`` the result goes to ``<workspace>/agreements.json`` with
+    both solver hashes, which the kernel reads back on the next ``evaluate`` of
+    either plan: agreement between different scheme families is priced as a
+    circularity break, disagreement caps both plans at 8. Exit 0 on agreement, 2 on
+    disagreement, 3 on inconclusive, 1 on a crash.
     """
     from verifylib import gate as _gate
     from verifylib.kernel import agreement, ladder, plan_meta, sandbox
@@ -242,6 +267,9 @@ def _compare(plan_a, plan_b, *, N=None, no_record=False, as_json=False) -> int:
         return 1
     thresholds = spec.get("evaluation_thresholds") or {}
     cfg = Config()
+    if (spec.get("equation_type") or "").strip().upper() == "SDE":
+        return _compare_sde(spec, thresholds, cfg, plan_a, plan_b,
+                            no_record=no_record, as_json=as_json)
     grid_N = int(cfg.pick("grid_N", None, thresholds.get("grid_N"), 64))
     tol = float(cfg.pick("rel_l2_err_max", None, thresholds.get("rel_l2_err_max"), 0.01))
     metric = cfg.pick("metric", None, thresholds.get("metric"), "l2")
@@ -326,6 +354,117 @@ def _compare(plan_a, plan_b, *, N=None, no_record=False, as_json=False) -> int:
         if not no_record:
             print(f"recorded in {entry['recorded_in']}")
     return PASS if entry["agree"] else BLOCK
+
+
+def _compare_sde(spec, thresholds, cfg, plan_a, plan_b, *, no_record=False, as_json=False):
+    """The SDE half of ``compare``: a difference in moment space, with the
+    Monte-Carlo interval deciding between agree / disagree / inconclusive.
+
+    Both plans run at the *graded* configuration, including the same ``seed``. Two
+    schemes that consume the increments the same way then share a Brownian path and
+    the difference is nearly noise-free; two that do not (a split-step against a
+    one-stage update) do not, and the interval is what keeps that from reading as
+    disagreement. The interval is formed conservatively, as if the two runs were
+    independent -- correlation can only make the true error bar smaller, and the
+    conservative bar is the one that refuses to call a break it has not earned.
+    """
+    import numpy as np
+
+    from verifylib.kernel import agreement, plan_meta, sandbox
+    from verifylib.kernel.driver import solver_sha256
+
+    num_paths = int(cfg.pick("num_paths", None, thresholds.get("num_paths"), 50000))
+    seed = int(cfg.pick("seed", None, thresholds.get("seed"), 42))
+    dt = float(cfg.pick("dt", None, thresholds.get("dt"), 0.01))
+    T = float((spec.get("time_interval") or {}).get("T", 1.0))
+    var_tol = float(cfg.pick("variance_rel_err_max", None,
+                             thresholds.get("variance_rel_err_max"), 0.1))
+    mean_tol = float(cfg.pick("mean_rel_err_max", None,
+                              thresholds.get("mean_rel_err_max"), 0.05))
+    near_zero = float(cfg.pick("near_zero_mean_threshold", None,
+                               thresholds.get("near_zero_mean_threshold"), 0.01))
+    ci_mult = float(cfg.pick("ci_mult", None, thresholds.get("ci_mult"), 2.0))
+
+    stats = {}
+    for plan in (plan_a, plan_b):
+        got = sandbox.run(plan, "sde", {"num_paths": num_paths, "dt": dt, "T": T, "seed": seed})
+        if got["status"] != "ok":
+            print(f"{os.path.basename(plan)} crashed at dt={dt:g}: {got.get('reason')}: "
+                  f"{got.get('error')}", file=sys.stderr)
+            return FAIL
+        X = np.asarray(got["result"]["terminal_paths"], dtype=float)
+        X = X.reshape(X.shape[0], -1) if X.ndim > 1 else X.reshape(-1, 1)
+        n = X.shape[0]
+        stats[plan] = {
+            "mean": X.mean(axis=0), "variance": X.var(axis=0, ddof=1),
+            "se_mean": X.std(axis=0, ddof=1) / np.sqrt(n),
+            # se of a variance estimate, from the fourth central moment.
+            "se_variance": np.sqrt(np.maximum(
+                ((X - X.mean(axis=0)) ** 4).mean(axis=0) - X.var(axis=0, ddof=1) ** 2, 0.0) / n),
+            "num_paths": n}
+    sa, sb = stats[plan_a], stats[plan_b]
+
+    # Per moment and component: the relative difference, its interval, and the
+    # tolerance it is judged against. The worst component decides, as in the driver
+    # -- "worst" by `rel_diff / tol`, not by `rel_diff`, because the mean and the
+    # variance are judged against different tolerances and the raw difference does
+    # not say which is closer to failing.
+    per, outcome_bits = [], []
+    for name, tol_k in (("mean", mean_tol), ("variance", var_tol)):
+        for i in range(len(sa[name])):
+            a, b = float(sa[name][i]), float(sb[name][i])
+            scale = 0.5 * (abs(a) + abs(b))
+            if name == "mean" and scale < near_zero:
+                per.append({"moment": name, "component": i, "a": a, "b": b,
+                            "skipped": "both means are within the near-zero threshold"})
+                continue
+            se = float(np.hypot(sa[f"se_{name}"][i], sb[f"se_{name}"][i]))
+            d = abs(a - b) / (scale + 1e-300)
+            d_se = se / (scale + 1e-300)
+            per.append({"moment": name, "component": i, "a": a, "b": b,
+                        "rel_diff": d, "rel_se": d_se, "tol": tol_k,
+                        "agree": bool(d + ci_mult * d_se < tol_k),
+                        "disagree": bool(d - ci_mult * d_se > tol_k)})
+            outcome_bits.append(per[-1])
+    if not outcome_bits:
+        print("every declared moment was skipped as near-zero; nothing to compare",
+              file=sys.stderr)
+        return FAIL
+    worst = max(outcome_bits, key=lambda p: p["rel_diff"] / (p["tol"] or 1.0))
+    rel, worst_tol = worst["rel_diff"], worst["tol"]
+
+    if any(p["disagree"] for p in outcome_bits):
+        agree, verdict, code = False, "DISAGREE", BLOCK
+    elif all(p["agree"] for p in outcome_bits):
+        agree, verdict, code = True, "AGREE", PASS
+    else:
+        agree, verdict, code = None, "INCONCLUSIVE", INCONCLUSIVE
+
+    meta_a, meta_b = plan_meta.read(plan_a), plan_meta.read(plan_b)
+    fam_a, fam_b = meta_a.get("scheme_family"), meta_b.get("scheme_family")
+    entry = {"a": os.path.basename(plan_a), "b": os.path.basename(plan_b), "N": None,
+             "t_final": T, "rel_diff": rel, "tol": worst_tol, "metric": "moments",
+             "agree": agree, "family_a": fam_a, "family_b": fam_b,
+             "different_family": bool(fam_a and fam_b and fam_a != fam_b),
+             "sha_a": solver_sha256(plan_a), "sha_b": solver_sha256(plan_b),
+             "interpolated": False,
+             "config": {"num_paths": num_paths, "dt": dt, "T": T, "seed": seed,
+                        "ci_mult": ci_mult},
+             "per_moment": per}
+    if not no_record:
+        agreement.record(agreement.workspace_of(plan_a), entry)
+        entry["recorded_in"] = agreement.path_for(plan_a)
+    if as_json:
+        print(json.dumps(entry, indent=2, default=_jsonable))
+    else:
+        print(f"{verdict}: {entry['a']} vs {entry['b']} differ by {rel:.3e} in moment space "
+              f"(worst tol {worst_tol:g}) at num_paths={num_paths}, dt={dt:g}, seed={seed}; "
+              f"families {fam_a} / {fam_b}"
+              f"{' -- different, counts as a circularity break' if entry['different_family'] and agree else ''}"
+              f"{' -- the Monte-Carlo interval straddles the tolerance, so this is neither a break nor a cap' if agree is None else ''}")
+        if not no_record:
+            print(f"recorded in {entry['recorded_in']}")
+    return code
 
 
 def _jsonable(value):

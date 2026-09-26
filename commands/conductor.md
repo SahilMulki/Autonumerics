@@ -178,7 +178,9 @@ When the loop exits:
    - Each plan: scheme, final score, provenance, estimated error (flagging whether it was measured or estimated), observed order, iter count, and key metrics from the last Results section
    - Best plan recommendation and why, citing the ranking criterion that decided it
    - Any plans that did not reach score 10 — their last score and remaining errors, and whether they hit max_iter, were `stopped` (plateaued — score stopped improving), or were left unfinished because another plan already reached 10
-   - **Verification gaps** — any check that could not be run: a missing verification plan, a faulty MMS probe, an untrustworthy surrogate, an MC-inconclusive result, an invariant with no trace reported. These bound what the run actually established, so they belong in the report rather than being quietly dropped.
+   - **Verification gaps** — any check that could not be run: a missing verification plan, a faulty MMS probe, an untrustworthy surrogate, an MC-inconclusive result, an invariant with no trace reported, and every name in the metrics block's
+     `invariants_not_reported` — a declared invariant the kernel has no evaluator for is a
+     property the run did not establish, however clean `invariants_ok` looks beside it. These bound what the run actually established, so they belong in the report rather than being quietly dropped.
    - **On a chaotic problem**, quote both numbers from the block: `estimated_rel_error` is the error at `error_horizon` (the reference horizon, where the order was measured) and `estimated_rel_error_T` is the error at the requested `t_final`. The second is the one the problem asks about; never present the first as "the error".
    - **On Path B**, the agreement gate's result for the winner: which plan it was compared against, the family, the measured difference at which grid — and, if the pool was a single family, that the second break could not be earned.
 4. **Final gate.** Run

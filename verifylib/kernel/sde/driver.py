@@ -15,7 +15,7 @@ import time
 import numpy as np
 
 from ...operator import evaluate
-from .. import metrics, plan_meta, sandbox
+from .. import agreement, metrics, plan_meta, sandbox
 from ..invariants import SdeContext, run_declared
 from ..score import certify
 from . import constraints as C
@@ -102,6 +102,14 @@ def evaluate_sde(spec, plan_dir, agent):
         st["se_variance"] / (abs(st["variance"]) + 1e-14) for st in stats)
     m["summary"]["resolved"] = bool(resolved_detail["resolved"])
 
+    agree = (agreement.for_plan(plan_dir, sha_of=solver_sha256) if path == "B"
+             else {"agreement": None, "disagreement": None, "entries": [], "stale": []})
+    m["agreement"] = agree
+    metrics.record(m, "cross_plan_agreement",
+                   True if agree["agreement"] else (
+                       False if agree["disagreement"] else "unavailable"),
+                   entries=agree["entries"], stale=len(agree["stale"]))
+
     moments_ok, moment_detail = _compare(reference, stats, mean_tol, var_tol, near_zero,
                                          ci_mult)
     metrics.record(m, "moments_ok", moments_ok, **moment_detail)
@@ -109,6 +117,9 @@ def evaluate_sde(spec, plan_dir, agent):
     e_fine = moment_detail.get("worst_rel_error")
     m["summary"]["estimated_rel_error"] = e_fine
     m["summary"]["error_is_estimate"] = path != "A"
+    for name in ("mean", "variance"):
+        if moment_detail.get(f"{name}_rel_err") is not None:
+            m["summary"][f"{name}_rel_err"] = moment_detail[f"{name}_rel_err"]
 
     # --- §21 constraints and invariants -------------------------------------
     ctx = SdeContext(X, params=spec.get("parameters"), num_paths=num_paths,
@@ -116,6 +127,8 @@ def evaluate_sde(spec, plan_dir, agent):
                      path_integrals=result.get("path_integrals"))
     d2 = run_declared(verification, ctx)
     m["d2"] = d2
+    if d2.get("not_reported"):
+        m["summary"]["invariants_not_reported"] = list(d2["not_reported"])
     metrics.record(m, "constraints_ok", not d2["gate_failed"], **d2)
     metrics.record(m, "invariants_ok", d2["invariants_ok"])
     m["summary"]["constraints_ok"] = not d2["gate_failed"]
@@ -130,6 +143,8 @@ def evaluate_sde(spec, plan_dir, agent):
                               or (would_certify and expected_strong >= 1.0)),
                          "kernel_default")
     run_dynkin = cfg.set("run_dynkin", path == "B", "kernel_default")
+    dynkin_levels = int(cfg.pick("dynkin_levels", agent,
+                                 thresholds.get("dynkin_levels"), 3))
 
     if run_orders:
         orders, order_detail = _orders(plan_dir, solve, conv_paths, dt0, T, levels, seed,
@@ -156,7 +171,8 @@ def evaluate_sde(spec, plan_dir, agent):
         m["summary"]["estimated_rel_error"] = e_fine
 
     if run_dynkin:
-        outcome, detail = _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult)
+        outcome, detail = _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult,
+                                  levels=dynkin_levels)
     else:
         outcome, detail = "not_run", {"reason": "Dynkin adds nothing on Path A that exact "
                                                 "moments do not already do better"}
@@ -208,11 +224,15 @@ def evaluate_sde(spec, plan_dir, agent):
                          or not metrics.is_skip(m["checks"]["orders_ok"])
                          or not metrics.is_skip(m["checks"]["dynkin_ok"])),
         "e_fine": e_fine, "rel_err_tol": var_tol,
-        # PDE-side gates with no SDE counterpart yet: no declared initial field
-        # to start from, and `cli.py compare` differences spatial fields.
+        # The one PDE-side gate with no SDE counterpart: there is no declared
+        # initial *field* to check the solver reproduces at t0.
         "ic_consistent": None,
-        "cross_plan_agreement": None,
-        "cross_plan_disagreement": None,
+        # F2, as `cli.py compare`'s moment-space path records it. Path B only: on
+        # Path A the closed form settles it. Until 2026-09-26 both of these were
+        # hard-coded to None, so no SDE could earn a break from agreement -- and
+        # `compare` could not run on an SDE at all, so nothing was lost by it.
+        "cross_plan_agreement": agree["agreement"],
+        "cross_plan_disagreement": agree["disagreement"],
         "agent_cap": _agent_cap(agent),
     }
     m["evidence"] = {k: v for k, v in evidence.items() if k != "agent_cap"}
@@ -323,6 +343,18 @@ def _compare(reference, stats, mean_tol, var_tol, near_zero, ci_mult):
                                 else all(o is True for o in kind_outcomes))
         outcomes.extend(kind_outcomes)
     detail["worst_rel_error"] = worst
+    # Per kind, worst over components. `worst_rel_error` is the max over *both*
+    # kinds and is what the score reads, but it does not say which kind it came
+    # from -- so a reader of the <metrics> block cannot tell a 9.6e-03 mean error
+    # from a 9.6e-03 variance error, and an evaluator that correctly reports both
+    # numbers writes one that the block cannot corroborate (`review.py` then flags
+    # it as untraceable: measured on all three sde_double_well_langevin reviews).
+    # Reporting only; the score still reads `worst_rel_error`.
+    for name in ("mean", "variance"):
+        per_kind = [e.get("rel_error") for e in detail.get(name, [])
+                    if isinstance(e.get("rel_error"), float)]
+        if per_kind:
+            detail[f"{name}_rel_err"] = max(per_kind)
     if not outcomes:
         return "unavailable", detail
     if any(o == "unresolved" for o in outcomes):
@@ -355,16 +387,38 @@ def _orders(plan_dir, solve, num_paths, dt0, T, levels, seed, expected_strong,
                                  "dts": [p["dt"] for p in payloads]}
 
 
-def _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult):
+def _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult, levels=3):
     phis = dynkin.test_functions(spec)
     payload = dynkin.observables_payload(spec, phis)
     if payload is None:
         return "unavailable", {"reason": "the spec declares no drift/diffusion expression "
                                          "the generator can be built from"}
-    # Both levels are coarsenings of one Brownian path: §18's rule applies to any
+    # Every level is a coarsening of one Brownian path: §18's rule applies to any
     # dt-refinement comparison, and a Richardson extrapolation across independent
     # draws is mostly noise.
-    payloads = crn.ladder_spec(num_paths, dt * 2.0, T, levels=2, seed=seed)
+    #
+    # Three levels, not two: measuring the residual's convergence order and
+    # extrapolating with it need separate information, and with two levels the two
+    # steps collapse into an identity that passes everything
+    # (`dynkin.residual_order`).
+    #
+    # The ladder refines **downward** from the graded `dt` -- dt, dt/2, dt/4 -- and
+    # not upward from it. That is not a free choice. Richardson needs every level
+    # inside the asymptotic range, and the coarse end is exactly where that fails:
+    # with the ladder anchored at the graded dt as its *finest* level (dt*4, dt*2,
+    # dt), the double-well plans' coarsest residual came back with the opposite sign
+    # and 20x the magnitude, no single power law fit the three points, and the
+    # measured order was junk (0.73 on one test function, sign-inconsistent
+    # differences on another) -- so the fix did not fire and the correct plans stayed
+    # capped. Refining downward, the same plans measure 1.9-2.3 consistently across
+    # all three test functions and come out clean. The strong-order study already
+    # refines below the graded dt for the same reason; the graded dt itself is where
+    # the *moments* are compared, which is a separate check.
+    #
+    # `dynkin_levels` is the spec lever -- the ladder used to be hard-wired at
+    # `2*dt`, so a scheme mis-diagnosed by the assumed order had no `dt` it could
+    # choose to escape. Cost: the dt/4 level is 4x the steps, ~30 s per plan here.
+    payloads = crn.ladder_spec(num_paths, dt, T, levels=levels, seed=seed)
     runs = []
     for level in payloads:
         got = solve({"num_paths": num_paths, "dt": level["dt"], "T": T, "seed": seed},
@@ -374,7 +428,7 @@ def _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult):
                                              f"{got.get('reason')}: {got.get('error')}"}
         runs.append(got)
     x0 = (spec.get("parameters") or {}).get("X_0", 0.0)
-    return dynkin.check(spec, phis, runs[0], runs[1], x0, ci_mult=ci_mult)
+    return dynkin.check(spec, phis, runs, x0, ci_mult=ci_mult)
 
 
 def _agent_cap(agent):

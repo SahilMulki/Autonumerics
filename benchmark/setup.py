@@ -70,11 +70,15 @@ def contract_footer(problem):
                 "domain gets wrong."
             )
         else:
+            no_formula = (
+                "This problem has no closed-form moments; the harness's ground truth is "
+                "computed independently of any formula. "
+                if problem.get("closed_form") is False else "")
             scoring = (
-                "Scoring is independent of any self-report: the harness recomputes the terminal "
-                "mean and variance at the arguments above and compares them to its own ground "
-                "truth (variance relative error < 10%, and — unless the exact mean is within 0.01 "
-                "of zero — mean relative error < 5%)."
+                f"{no_formula}Scoring is independent of any self-report: the harness recomputes "
+                "the terminal mean and variance at the arguments above and compares them to its "
+                "own ground truth (variance relative error < 10%, and — unless the exact mean is "
+                "within 0.01 of zero — mean relative error < 5%)."
             )
         return f"""
 

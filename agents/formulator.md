@@ -369,6 +369,23 @@ converging cleanly to the *wrong* equation. See §8 of `verification_manual.md` 
 ]
 ```
 
+**A name the kernel does not recognize is not checked at all.** The registry in
+`verifylib/kernel/invariants.py` evaluates a fixed set of names (`mass_conservation`,
+`energy_conservation`, `maximum_principle`, `positivity`, `symmetry`, `divergence_free`,
+`total_variation`, `boundary_consistency`, …). Anything else — `kdv_third_invariant`,
+`gaussianity` — reports `not_reported`, which for an ungated entry caps nothing and checks
+nothing: the metrics block then lists it under `invariants_not_reported`, and a reader can see
+that a property you declared was never looked at. Both of those were declared on real runs and
+both went unchecked. So when the invariant you want is not a registry name, do one of:
+
+- **map it onto a registry name** if it is one in disguise (a conserved integral of the field is
+  `mass_conservation` with the right `tol`; a conserved quadratic is `energy_conservation`);
+- **give it an `expr`** — an entry carrying `expr` is evaluated generically whatever its name says,
+  which is how the gated SDE constraints are written (`{"name": "finite", "expr": "np.isfinite(X)",
+  "gate": true}`);
+- or **leave it, knowingly**, as a free-form note for the reader, and say in your verification plan
+  that it is a declared-but-unchecked property rather than implying it was verified.
+
 Set `gate: true` only for properties the PDE *mathematically guarantees* — a violation is then a
 definite bug. Mark `requires_trace: true` for anything needing a time history rather than the final
 snapshot; the solver returns those under `invariant_trace`.

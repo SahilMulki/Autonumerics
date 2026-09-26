@@ -80,7 +80,12 @@ wrong solution can still be scored 10/10. This benchmark closes the loop:
    `claude --settings`. Deny rules are honored even under
    `--dangerously-skip-permissions`, and passing them per-invocation (rather than
    putting them in the repo's `.claude/settings.json`) leaves ordinary development
-   sessions able to work on `benchmark/` normally.
+   sessions able to work on `benchmark/` normally. On top of that base file,
+   `run.isolated_settings` writes a per-run settings file (kept next to the
+   transcript in `results/logs/`) that also denies every *other* problem's
+   `workspace/<slug>/` and every `workspace_*` archive at the repo root, so a run
+   sees exactly one workspace — its own, live copy — and cannot crib a sibling's or
+   a previous run's `problem_spec.json`.
 
    This closes the direct paths — `Read`, `Grep`/`Glob`, and the Bash commands whose
    file arguments the harness can see (`cat`, `head`, `ls`, `sed`, ...) — plus the

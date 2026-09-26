@@ -171,11 +171,22 @@ BLOCK_KEYS = (
     # this measures the grid the problem is graded on (findings F4).
     "graded_N", "estimated_rel_error_graded",
     "observed_order", "order_floor", "invariants_ok", "constraints_ok",
+    # Declared invariants the kernel could not evaluate. `invariants_ok: true` on its
+    # own reads as "all of them held", and for an *ungated* entry whose name is not in
+    # the registry and that carries no `expr`, it means "it was never looked at" --
+    # §6's rule by design, but invisible until it reached the block. Measured on the
+    # second-wave runs: `kdv_third_invariant` (an exact invariant of the equation) and
+    # `gaussianity` were both declared, both ungated, and both silently unchecked.
+    "invariants_not_reported",
     "d1_outcome", "d1_slope", "operator_validated", "reference_outcome",
     # A closed form that discretizes a quadrature or series inside the expression
     # (findings F5): named with its node count so a reader sees what "exact" rests
     # on. A flag, never a cap.
     "analytic_numerical",
+    # SDE: `estimated_rel_error` is the worst over mean and variance and does not
+    # say which. These name both, so the block corroborates an evaluator that
+    # reports them and a reader can tell the two apart. Reporting only.
+    "mean_rel_err", "variance_rel_err",
     "order_check", "asymptotic_source", "mc_se_rel", "resolved",
     "resolution_evidence", "agent_cap",
     # The solver the score belongs to. benchmark/verify.py recomputes it before
