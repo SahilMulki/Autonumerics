@@ -150,21 +150,33 @@ def claude_command(model, condition, max_turns):
     tool ever executes and there is no iteration on results -- it stays the "naked
     one-shot" baseline); C1 grants file/run tools and a turn budget matched to the
     pipeline's ~15 solver<->evaluator cycles (with headroom)."""
-    cmd = ["claude", "-p", "--output-format", "json"]
+    # stream-json (not json): the final `result` field is EMPTY on an
+    # error_max_turns stop, so a completed solver written on the turn before a
+    # denied tool call is lost. The streamed assistant turns still carry it, and
+    # `invoke(salvage=True)` recovers it. The last event of the stream is the same
+    # result object the `json` format returns, so no metadata is given up. The
+    # model sees an identical prompt, tool set and turn budget either way -- this
+    # changes what the harness can read, never what the baseline is allowed to do.
+    cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose"]
     if model:
         cmd += ["--model", model]
     if condition == "c0":
         # Allow-list semantics: naming a tool that does not exist permits no real
-        # tool. max-turns is 2, NOT 1: on harder problems the model reflexively
-        # emits a tool_use ("let me test this"), which the NoTool allow-list denies
-        # -- and under max-turns 1 that denied attempt consumes the single turn,
-        # ending as error_max_turns with an EMPTY result (the generated code is
-        # discarded). This false-failed ~6% of units, worst on the hard problems the
-        # comparison hinges on. max-turns 2 lets the model answer on a second turn
-        # after the denial. It is a strict superset: a unit that answers directly on
-        # turn 1 ends there regardless (num_turns==1), identical to max-turns 1;
-        # only the tool-reaching units differ. Still tool-less -- no tool runs.
-        cmd += ["--max-turns", "2", "--allowed-tools", "NoTool"]
+        # tool. The cap is 2 by default, NOT 1: on harder problems the model
+        # reflexively emits a tool_use ("let me test this"), which the NoTool
+        # allow-list denies -- and under max-turns 1 that denied attempt consumes the
+        # single turn, ending as error_max_turns with an EMPTY result (the generated
+        # code is discarded). This false-failed ~6% of units. Raising the cap is a
+        # strict superset: a unit that answers directly on turn 1 ends there
+        # regardless, so only the tool-reaching units differ. Still tool-less at any
+        # cap -- no tool ever runs.
+        #
+        # 2 is not enough for Opus (measured 2026-09-27: 36/44 units produced no
+        # solver at all, because it spends both turns writing convergence studies and
+        # probing its environment). --c0-max-turns raises it PER RUN, recorded in the
+        # results config, so a suite can opt in without silently redefining the C0 of
+        # a baseline measured at a different cap. Compare only runs that share it.
+        cmd += ["--max-turns", str(max_turns), "--allowed-tools", "NoTool"]
     else:
         # C1 gets file/run tools, so it gets the same benchmark/ read-denial the
         # pipeline runs under (run.PIPELINE_SETTINGS). A baseline that read
@@ -181,8 +193,18 @@ def _looks_like_limit(text):
     return any(p in low for p in _LIMIT_PHRASES)
 
 
-def invoke(prompt, model, condition, cwd, max_turns, timeout):
-    """Run one baseline invocation. Returns a run-metadata dict (never raises)."""
+def invoke(prompt, model, condition, cwd, max_turns, timeout, salvage=False):
+    """Run one baseline invocation. Returns a run-metadata dict (never raises).
+
+    `salvage` (C0 only): when the CLI returns an empty final result -- the
+    error_max_turns stop, where the model wrote the solver and then spent its last
+    turn on a tool call the NoTool allow-list denied -- take the code from the
+    streamed assistant turns instead of discarding the completion. This recovers
+    work the model actually finished; it does not grant a retry, a tool, or an extra
+    turn, so the baseline stays the naked one-shot it is defined to be. Always
+    recorded (`salvage_used`, `code_source`) so a salvaged pass can never be
+    mistaken for a clean one.
+    """
     import subprocess
 
     cmd = claude_command(model, condition, max_turns)
@@ -204,10 +226,33 @@ def invoke(prompt, model, condition, cwd, max_turns, timeout):
     parsed = _parse_output(stdout)
     limit_hit = _looks_like_limit(stdout) or _looks_like_limit(stderr) or \
         _looks_like_limit(parsed.get("result_text", ""))
+
+    result_text = parsed.get("result_text", "") or ""
+    assistant_text = parsed.get("assistant_text", "") or ""
+    code_text, code_source, salvage_used = result_text, "result", False
+    if salvage and not result_text.strip():
+        if extract_code(assistant_text):
+            code_text, code_source, salvage_used = assistant_text, "assistant_turns", True
+        else:
+            # last Write/Edit wins: a later file body supersedes an earlier draft.
+            # Only a payload that defines the contract function counts -- these runs
+            # also write scratch experiment scripts, which are not answers.
+            for payload in reversed(parsed.get("tool_payloads") or []):
+                if defines_contract(payload):
+                    code_text, code_source, salvage_used = payload, "denied_write", True
+                    break
+
     return {
         "agent_status": status,
         "wall_s": wall,
-        "result_text": parsed.get("result_text", ""),
+        "result_text": result_text,
+        # only when it differs from result_text, so a normal response.json is not
+        # stored twice over; process_unit falls back to result_text when absent.
+        "code_text": code_text if salvage_used else "",
+        "code_source": code_source,
+        "salvage_used": salvage_used,
+        "stop_subtype": parsed.get("stop_subtype"),
+        "denied_tools": parsed.get("denied_tools") or [],
         "cost_usd": parsed.get("cost_usd"),
         "input_tokens": parsed.get("input_tokens"),
         "output_tokens": parsed.get("output_tokens"),
@@ -226,42 +271,98 @@ def _is_transient(run):
     plain re-invocation of the identical prompt then succeeds. A usage limit must
     halt the driver (not retry), and retrying a 900s runaway would only burn time,
     so both are excluded."""
+    if run.get("salvage_used") and extract_code(run.get("code_text") or ""):
+        return False   # the completion was recovered; there is nothing to re-earn
     return (run.get("agent_status") == "error"
             and not (run.get("result_text") or "").strip()
             and not run.get("limit_hit"))
 
 
-def invoke_with_retry(prompt, model, condition, cwd, max_turns, timeout, retries):
+def invoke_with_retry(prompt, model, condition, cwd, max_turns, timeout, retries,
+                      salvage=False):
     """invoke(), retrying a transient empty-error envelope up to `retries` times
     with a short backoff. Records `retries_used` for transparency so a padded
     pass-rate can never be mistaken for a first-try one."""
     attempt = 0
-    run = invoke(prompt, model, condition, cwd, max_turns, timeout)
+    run = invoke(prompt, model, condition, cwd, max_turns, timeout, salvage=salvage)
     while _is_transient(run) and attempt < retries:
         attempt += 1
         print(f"    (transient CLI error, empty output — retry {attempt}/{retries})", flush=True)
         time.sleep(2 * attempt)
-        run = invoke(prompt, model, condition, cwd, max_turns, timeout)
+        run = invoke(prompt, model, condition, cwd, max_turns, timeout, salvage=salvage)
     run["retries_used"] = attempt
+    if run.get("salvage_used"):
+        print(f"    (recovered the solver from the assistant turns after "
+              f"{run.get('stop_subtype') or 'an empty result'})", flush=True)
     return run
 
 
+def _split_stream(stdout):
+    """Split stream-json NDJSON into (result_event, assistant_text, tool_payloads).
+
+    assistant_text concatenates the `text` blocks of every assistant event, in order.
+    tool_payloads collects the file bodies of attempted Write/Edit calls -- under the
+    C0 allow-list none of them executed, but a solver the model tried to write to disk
+    is still the solver it produced. `thinking` blocks are deliberately excluded from
+    both: reasoning about a solver is not the solver. Unparseable lines are skipped --
+    a truncated stream should still yield whatever turns completed.
+    """
+    result_obj, texts, tool_payloads, n_events = None, [], [], 0
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        n_events += 1
+        if ev.get("type") == "result":
+            result_obj = ev
+        elif ev.get("type") == "assistant":
+            for block in (ev.get("message") or {}).get("content") or []:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "text":
+                    texts.append(block.get("text") or "")
+                elif block.get("type") == "tool_use":
+                    inp = block.get("input") or {}
+                    for field in ("content", "new_string", "file_text"):
+                        val = inp.get(field)
+                        if isinstance(val, str) and val.strip():
+                            tool_payloads.append(val)
+    return result_obj, "\n".join(t for t in texts if t), tool_payloads, n_events
+
+
 def _parse_output(stdout):
-    """Parse `claude -p --output-format json` output. Tolerant of leading noise."""
+    """Parse `claude -p` output, either `--output-format json` (one object) or
+    `stream-json` (NDJSON). Tolerant of leading noise."""
     stdout = (stdout or "").strip()
-    obj = None
+    obj, assistant_text, tool_payloads = None, "", []
     if stdout:
         try:
             obj = json.loads(stdout)
         except json.JSONDecodeError:
-            m = re.search(r"\{.*\}\s*$", stdout, re.S)
-            if m:
-                try:
-                    obj = json.loads(m.group(0))
-                except json.JSONDecodeError:
-                    obj = None
+            obj, assistant_text, tool_payloads, n_events = _split_stream(stdout)
+            if obj is None and n_events:
+                # A stream cut off before its result event -- the agent_timeout kill is
+                # the usual cause. Do NOT fall through to returning raw stdout as
+                # result_text: that would hand back ~100KB of NDJSON that reads as a
+                # non-empty answer and so blocks salvage on the very turns the stream
+                # did deliver. Synthesise an empty result and let salvage do its job.
+                obj = {"result": "", "subtype": "stream_truncated"}
+            if obj is None:
+                m = re.search(r"\{.*\}\s*$", stdout, re.S)
+                if m:
+                    try:
+                        obj = json.loads(m.group(0))
+                    except json.JSONDecodeError:
+                        obj = None
     if not isinstance(obj, dict):
-        return {"result_text": stdout}
+        return {"result_text": stdout, "assistant_text": assistant_text,
+                "tool_payloads": tool_payloads}
     usage = obj.get("usage") or {}
     in_tok = usage.get("input_tokens")
     if in_tok is not None:
@@ -269,23 +370,38 @@ def _parse_output(stdout):
                   (usage.get("cache_creation_input_tokens") or 0)
     return {
         "result_text": obj.get("result", "") if isinstance(obj.get("result"), str) else "",
+        "assistant_text": assistant_text,
+        "tool_payloads": tool_payloads,
         "cost_usd": obj.get("total_cost_usd") or obj.get("cost_usd"),
         "input_tokens": in_tok,
         "output_tokens": usage.get("output_tokens"),
         "num_turns": obj.get("num_turns"),
+        "stop_subtype": obj.get("subtype"),
+        "denied_tools": sorted({d.get("tool_name") for d in (obj.get("permission_denials") or [])
+                                if isinstance(d, dict) and d.get("tool_name")}),
     }
+
+
+CONTRACT_FNS = ("def solve_pde", "def solve_sde")
+
+
+def defines_contract(text):
+    return any(fn in (text or "") for fn in CONTRACT_FNS)
 
 
 def extract_code(text):
     """Pull solver.py out of a C0 response: prefer a fenced block that defines the
-    contract function, else the longest fenced block."""
+    contract function, else the longest fenced block. With no fences at all, accept
+    the text itself only if it defines the contract function -- that covers a model
+    answering in bare code, and a solver recovered from a denied Write payload, while
+    still refusing prose."""
     if not text:
         return None
     blocks = re.findall(r"```(?:python|py)?[ \t]*\n(.*?)```", text, re.S)
     if not blocks:
-        return None
+        return text.strip("\n") if defines_contract(text) else None
     for b in blocks:
-        if "def solve_sde" in b or "def solve_pde" in b:
+        if defines_contract(b):
             return b.strip("\n")
     return max(blocks, key=len).strip("\n")
 
@@ -354,14 +470,15 @@ def process_unit(problem, condition, manuals, model, rep, args):
     if os.path.exists(solver_path):
         os.remove(solver_path)
 
+    turn_cap = getattr(args, "c0_max_turns", 2) if condition == "c0" else args.max_turns
     run = invoke_with_retry(prompt, model, condition, cwd=plan_dir,
-                            max_turns=args.max_turns, timeout=args.agent_timeout,
-                            retries=args.retries)
+                            max_turns=turn_cap, timeout=args.agent_timeout,
+                            retries=args.retries, salvage=(condition == "c0"))
     with open(os.path.join(plan_dir, "response.json"), "w") as fh:
         json.dump(run, fh, indent=2)
 
     if condition == "c0":
-        code = extract_code(run["result_text"])
+        code = extract_code(run.get("code_text") or run["result_text"])
         if code:
             with open(solver_path, "w") as fh:
                 fh.write(code + "\n")
@@ -427,6 +544,10 @@ def write_results(records, config, path=None):
 # --- selection / main -------------------------------------------------------
 
 
+def oneshot_pass_local(rec):
+    return R.oneshot_passed(rec.get("verdict"))
+
+
 def select_problems(args):
     chosen = S.select(args.only)
     chosen = S.apply_suite_filter(chosen, args.only, args.no_closed_form, args.include_all)
@@ -482,8 +603,21 @@ def main(argv=None):
                     help="sandbox verification timeout in seconds (default 120)")
     ap.add_argument("--mem-mb", type=int, default=4096,
                     help="sandbox memory cap in MB, best-effort (default 4096)")
+    ap.add_argument("--c0-max-turns", dest="c0_max_turns", type=int, default=2,
+                    help="C0 turn cap (default 2). Still tool-less at any value -- the "
+                         "NoTool allow-list means no tool ever runs; a larger cap only "
+                         "lets the model answer after its denied tool attempts. Opus "
+                         "needs ~4: at 2 it spends both turns experimenting and commits "
+                         "no solver. Recorded in the results config -- compare only runs "
+                         "that share a cap.")
     ap.add_argument("--resume", action="store_true",
-                    help="skip units already present in oneshot_results.json")
+                    help="skip units already present in the results JSON")
+    ap.add_argument("--redo", default="",
+                    help="comma-separated verdicts to re-run even under --resume, e.g. "
+                         "'CRASHED' or 'CRASHED,RUN_ERROR'. The prior record is kept "
+                         "until the new one overwrites it, so a re-run that fails again "
+                         "leaves no gap. Use it to retry harness-caused failures without "
+                         "re-paying for the units that already answered.")
     ap.add_argument("--results-json", dest="results_json", default=None,
                     help="path to the results JSON to read/write (default: "
                          "results/oneshot_results.json). Use a separate file to keep a sweep apart "
@@ -511,12 +645,18 @@ def main(argv=None):
 
     prior = load_prior(args.results_json)
     records = dict(prior)
+    redo = {v.strip().upper() for v in args.redo.split(",") if v.strip()}
+    stale = {k for k, r in prior.items() if (r.get("verdict") or "").upper() in redo}
+    if stale:
+        print(f"--redo {sorted(redo)}: {len(stale)} recorded unit(s) will be re-run "
+              f"(their prior records stay until overwritten)")
     config = {
         "generated_at": _dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "model": args.model, "conditions": conds, "manuals": manuals,
         "reps": reps if args.reps_from else args.reps,
         "reps_from": (os.path.relpath(args.reps_from, REPO_ROOT) if args.reps_from else None),
-        "max_turns": args.max_turns, "agent_timeout": args.agent_timeout,
+        "max_turns": args.max_turns, "c0_max_turns": args.c0_max_turns,
+        "agent_timeout": args.agent_timeout,
         "solver_timeout_s": args.timeout, "mem_mb": args.mem_mb,
     }
 
@@ -524,7 +664,7 @@ def main(argv=None):
     for i, (problem, cond, man, rep) in enumerate(units, 1):
         key = unit_key(problem["slug"], cond, man, args.model, rep)
         label = f"{problem['slug']} [{cond}/{man}] rep{rep} ({args.model})"
-        if args.resume and key in prior:
+        if args.resume and key in prior and key not in stale:
             print(f"[{i}/{len(units)}] {label}: resume — skipping (already recorded)")
             continue
 
@@ -550,7 +690,10 @@ def main(argv=None):
               f"({R._fmt_secs(rec['run'].get('wall_s'))})", flush=True)
 
     config["invocation_seconds"] = round(time.monotonic() - t_start, 1)
-    write_results(records, config)
+    # MUST pass args.results_json: a bare call defaults to ONESHOT_JSON and
+    # overwrites the standing C0/C1 baseline with this sweep's records (it did,
+    # 2026-09-27 -- the incremental write above was path-aware and this one was not).
+    write_results(records, config, args.results_json)
 
     done = [r for r in records.values() if r.get("model") == args.model]
     counts = {}
@@ -564,7 +707,13 @@ def main(argv=None):
         f"{R.ONESHOT_VERDICT_LABEL[v]} {counts[v]}"
         for v in R._ONESHOT_VERDICT_ORDER if counts.get(v)))
     print(f"Independently-passed: {npass}/{len(checkable)} checkable unit(s).")
-    print(f"Data: {os.path.relpath(ONESHOT_JSON, REPO_ROOT)}  "
+    salvaged = [r for r in done if (r["run"] or {}).get("salvage_used")]
+    if salvaged:
+        # Stated, never silent: these units' code came from the assistant turns after
+        # an empty final result, not from the CLI's result field.
+        print(f"Salvaged from assistant turns: {len(salvaged)}/{len(done)} unit(s) "
+              f"({sum(1 for r in salvaged if oneshot_pass_local(r))} of them passing).")
+    print(f"Data: {os.path.relpath(args.results_json or ONESHOT_JSON, REPO_ROOT)}  "
           f"(render the head-to-head with: uv run python benchmark/compare.py)")
 
 

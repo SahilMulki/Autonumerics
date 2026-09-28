@@ -1,0 +1,145 @@
+{
+ "_comment": "Frozen per-problem attempt counts for the matched C0 baseline (see BASELINE_COMPARISON_PLAN.md and NO_CLOSED_FORM_CANDIDATES.md). `attempts` is the number of distinct solver.py files the pipeline actually wrote for that problem, which is the count the baseline is given as reps. Every pipeline plan on this suite ran at iter=1 -- no plan was ever refined -- so matching the number of independent attempts is the whole of the matching; there are no refinement cycles to mirror. Read from workspace/ on the date below and frozen here so the matching survives a workspace wipe.",
+ "generated_at": "2026-09-26",
+ "source_results": {
+  "pde_kuramoto_sivashinsky": "no_closed_form.json",
+  "pde_burgers_viscous_1d": "no_closed_form.json",
+  "pde_cahn_hilliard_2d_coarsening": "no_closed_form.json",
+  "pde_schrodinger_eigen_2d": "no_closed_form.json",
+  "pde_kdv_zabusky_kruskal": "no_closed_form_v2.json",
+  "pde_gross_pitaevskii_1d": "no_closed_form_v2.json",
+  "sde_double_well_langevin": "no_closed_form_v2.json"
+ },
+ "problems": {
+  "pde_kuramoto_sivashinsky": {
+   "id": "P15",
+   "type": "pde",
+   "attempts": 3,
+   "plans_with_a_solver": [
+    "1-spectral-etdrk4",
+    "2-spectral-imex-sbdf3",
+    "3-fd4-imex-cnab2"
+   ],
+   "plans_authored": 4,
+   "plans_kernel_scored": [
+    "1-spectral-etdrk4",
+    "3-fd4-imex-cnab2"
+   ],
+   "pipeline_verdict": "OVERCLAIM",
+   "pipeline_best_plan": "3-fd4-imex-cnab2",
+   "pipeline_max_iter_per_plan": 1
+  },
+  "pde_burgers_viscous_1d": {
+   "id": "P29",
+   "type": "pde",
+   "attempts": 3,
+   "plans_with_a_solver": [
+    "1-spectral-if-rk4",
+    "2-fd4-central-rk4",
+    "3-fv-muscl-ssprk3"
+   ],
+   "plans_authored": 4,
+   "plans_kernel_scored": [
+    "1-spectral-if-rk4",
+    "2-fd4-central-rk4",
+    "3-fv-muscl-ssprk3"
+   ],
+   "pipeline_verdict": "VERIFIED_PASS",
+   "pipeline_best_plan": "2-fd4-central-rk4",
+   "pipeline_max_iter_per_plan": 1
+  },
+  "pde_cahn_hilliard_2d_coarsening": {
+   "id": "P30",
+   "type": "pde",
+   "attempts": 4,
+   "plans_with_a_solver": [
+    "1-spectral-etdrk4",
+    "2-spectral-imex-bdf2",
+    "3-fd4-imex-bdf2",
+    "4-fd2-cnab2"
+   ],
+   "plans_authored": 4,
+   "plans_kernel_scored": [
+    "1-spectral-etdrk4",
+    "2-spectral-imex-bdf2",
+    "3-fd4-imex-bdf2"
+   ],
+   "pipeline_verdict": "VERIFIED_PASS",
+   "pipeline_best_plan": "3-fd4-imex-bdf2",
+   "pipeline_max_iter_per_plan": 1
+  },
+  "pde_schrodinger_eigen_2d": {
+   "id": "P31",
+   "type": "pde",
+   "attempts": 2,
+   "plans_with_a_solver": [
+    "1-fd5-shift-invert",
+    "3-q1-fem-consistent-mass"
+   ],
+   "plans_authored": 3,
+   "plans_kernel_scored": [
+    "1-fd5-shift-invert"
+   ],
+   "pipeline_verdict": "VERIFIED_PASS",
+   "pipeline_best_plan": "1-fd5-shift-invert",
+   "pipeline_max_iter_per_plan": 1
+  },
+  "pde_kdv_zabusky_kruskal": {
+   "id": "P32",
+   "type": "pde",
+   "attempts": 4,
+   "plans_with_a_solver": [
+    "1-spectral-etdrk4",
+    "2-spectral-ifrk4",
+    "3-fd4-implicit-midpoint",
+    "4-fd2-explicit-rk4"
+   ],
+   "plans_authored": 4,
+   "plans_kernel_scored": [
+    "1-spectral-etdrk4",
+    "2-spectral-ifrk4",
+    "3-fd4-implicit-midpoint"
+   ],
+   "pipeline_verdict": "VERIFIED_PASS",
+   "pipeline_best_plan": "1-spectral-etdrk4",
+   "pipeline_max_iter_per_plan": 1
+  },
+  "pde_gross_pitaevskii_1d": {
+   "id": "P33",
+   "type": "pde",
+   "attempts": 3,
+   "plans_with_a_solver": [
+    "1-fd4-strang-cn",
+    "2-fd4-yoshida4",
+    "3-fourier-spectral-yoshida4"
+   ],
+   "plans_authored": 3,
+   "plans_kernel_scored": [
+    "1-fd4-strang-cn",
+    "3-fourier-spectral-yoshida4"
+   ],
+   "pipeline_verdict": "VERIFIED_PASS",
+   "pipeline_best_plan": "3-fourier-spectral-yoshida4",
+   "pipeline_max_iter_per_plan": 1
+  },
+  "sde_double_well_langevin": {
+   "id": "S23",
+   "type": "sde",
+   "attempts": 3,
+   "plans_with_a_solver": [
+    "1-tamed-heun-drift-trapezoid",
+    "2-drift-implicit-trapezoid",
+    "3-strang-splitting-exact-flows"
+   ],
+   "plans_authored": 3,
+   "plans_kernel_scored": [
+    "1-tamed-heun-drift-trapezoid",
+    "2-drift-implicit-trapezoid",
+    "3-strang-splitting-exact-flows"
+   ],
+   "pipeline_verdict": "VERIFIED_PASS",
+   "pipeline_best_plan": "2-drift-implicit-trapezoid",
+   "pipeline_max_iter_per_plan": 1
+  }
+ }
+}

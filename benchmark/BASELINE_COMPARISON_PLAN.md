@@ -486,3 +486,189 @@ skips every recorded unit. Step 2 is idempotent.
   most direct statement of what the structure buys.
 - C1 is not set up here. If it is wanted, the matching question changes: C1 *does*
   iterate, so it would be matched on turn budget against a pipeline that used none.
+
+### 11.6 The 2026-09-27 run is void, and what it cost to learn that
+
+44/44 units completed (63 min, $22.85) and the result is **not a measurement of C0's
+solving ability**: 36 of 44 units never produced a `solver.py` at all
+(`reason: no_solve_fn`). Reproducing one invocation named the cause exactly:
+
+```
+subtype: 'error_max_turns'   num_turns: 3   result_len: 0   output_tokens: 13310
+errors: ['Reached maximum number of turns (2)']      stop_reason: 'tool_use'
+permission_denials: [{'tool_name': 'Bash', ... 'time python3 verify.py'}]
+```
+
+Opus reaches for Bash, the `NoTool` allow-list denies it, and the `--max-turns 2`
+cap ends the run before a final answer — so the CLI's `result` field is empty and the
+whole completion is discarded. The same prompt at `--max-turns 6` succeeds after
+**two** Bash denials, i.e. this model wants three turns where §11's C0 grants two.
+The `--retries 2` path re-ran the identical prompt twice per unit and mostly hit the
+same wall, so **$16.49 of the $22.85 bought nothing**.
+
+**What is in those discarded turns, measured by capturing the raw stream** (
+`sde_double_well_langevin` c0-naked rep1, the same prompt as the voided unit): 5
+assistant events carrying **2 `thinking` blocks and 3 `tool_use` blocks, and zero
+`text` blocks**. The one `Write` attempt is not a solver — it is `conv.py`, a
+weak-convergence study (`drift_flow`, `run_coupled`, a 3-level CRN ladder) written to
+*choose* a scheme, with no `solve_sde` anywhere in it. So on this unit the 13,310
+output tokens were reasoning plus an experiment the model wanted to run, and there
+was no finished solver to recover at turn 2. Do not read the earlier framing of this
+finding ("13k tokens of finished solver thrown away") as correct: on the evidence,
+Opus is spending its C0 turns doing numerical experiments before answering, and the
+denial does not stop it trying.
+
+Two defects, both fixed:
+
+1. **`oneshot.py` overwrote the standing C0/C1 baseline.** The incremental write
+   honoured `--results-json`; the final write called `write_results(records, config)`
+   with no path, defaulting to `results/oneshot_results.json` — so the 49-problem
+   Aug-7 baseline (2.1 MB) was replaced by these 44 records (117 KB). The clobbered
+   file held nothing unique and is parked at
+   `oneshot_results.json.CLOBBERED-2026-09-27`; the Aug-7 data is reconstructible
+   from the 538 per-unit dirs still in `workspace_oneshot/opus/` (each has
+   `prompt.txt`, `response.json`, `verify.json`), and `results/c0_summary.tsv`
+   survives as the per-problem summary. The two `.bak` files are Aug 3/4, i.e.
+   *pre*-max-turns-fix, so they are not substitutes. `run.py` never had this bug: it
+   rebinds a module-global `RESULTS_JSON`.
+2. **A discarded completion is now salvaged, rather than the turn cap raised.** C0
+   runs under `--output-format stream-json`, and on an empty final result
+   `invoke(salvage=True)` looks for the solver in two places, in order: the assistant
+   `text` blocks, then the file body of an attempted `Write`/`Edit` — under the
+   allow-list none of those executed, but a solver the model tried to write to disk is
+   still the solver it produced. A payload only counts if it defines `solve_pde` or
+   `solve_sde`, so the `conv.py`-shaped scratch scripts these runs also write are not
+   mistaken for submissions; `thinking` is never a source, because draft code inside
+   reasoning is not an answer. Deliberately *not* raising `--max-turns`: that would
+   redefine the C0 condition and break comparability with the Aug-7 49-problem
+   baseline measured at 2. Salvage grants no extra turn, no tool and no retry — a
+   salvaged run ends the retry loop (`_is_transient` returns False), which is where
+   the $16.49 went. Every salvaged unit is stamped `salvage_used` /
+   `code_source: assistant_turns|denied_write` / `stop_subtype` and counted in the run
+   summary, so a salvaged pass rate can never be read as a clean one. `extract_code`
+   also now accepts unfenced code that defines the contract function, which fixes a
+   latent hole: a model answering in bare code was previously scored as no solver at
+   all. Pinned by `benchmark/tests/test_oneshot_salvage.py` (19 tests).
+
+   A third defect surfaced while testing this one: when the **900s `agent_timeout`**
+   kills the CLI mid-stream there is no result event, and the parser's old fallback
+   returned the whole raw NDJSON as `result_text` — 101,331 chars on
+   `pde_gross_pitaevskii_1d` rep1 — which reads as a non-empty answer and so blocks
+   salvage on the turns the stream *did* deliver. A truncated stream now yields
+   `result_text: ""` and `stop_subtype: "stream_truncated"`, with salvage free to run.
+   Output that was never a stream still comes back verbatim, so a plain-text CLI error
+   is not silently turned into an empty result.
+
+   **Measured: salvage does not recover these units.** The three problems that
+   produced zero solvers in the voided run were re-run through the fixed harness
+   (c0/naked, 1 rep each, 2026-09-27):
+
+   | | verdict | agent_status | stop_subtype | salvaged | wall |
+   |---|---|---|---|---|---|
+   | P29 Burgers | CRASHED | error | error_max_turns | no | 229 s |
+   | P33 Gross–Pitaevskii | CRASHED | timeout | (truncated) | no | 900 s |
+   | S23 double-well | CRASHED | error | error_max_turns | no | 116 s |
+
+   3 of 3, nothing to salvage. Capturing the raw streams says why, and it is not a
+   turn-accounting problem: **Opus in C0 behaves like an agent, not a one-shot
+   responder.** On the double-well it wrote a convergence study and tried to run it;
+   on GP it emitted 249 `thinking_tokens` events and two Bash probes
+   (`ls -la && python -c "import numpy, scipy; print(...)"`) — checking its
+   environment — and never committed a solver before the 15-minute wall. Zero `text`
+   blocks in either. Salvage is still worth keeping: it is free, it ends the pointless
+   retries, it closes the unfenced-code hole, and it will catch the units where a
+   solver *was* committed first (the behaviour is stochastic — a 3-attempt probe of
+   one prompt salvaged nothing twice, then answered cleanly in 1 turn on the third).
+   But it does not make two turns a viable budget for this model, and the plan should
+   not pretend otherwise.
+
+   **The open methodological choice**, which is not a code fix:
+   - **Raise C0's cap and re-measure the Aug-7 49-problem baseline at the new cap**, so
+     C0 stays one condition. The same prompt at `--max-turns 6` succeeds after two Bash
+     denials. Costs a baseline re-run, which the clobber makes necessary anyway.
+   - **Keep the cap and report the no-solver rate as a property of the condition**, not
+     of the model. Defensible, but it is not the comparison §11 set out to make.
+   - **Give C0 a scratch sandbox** rather than denying tools outright — no longer a
+     naked one-shot; that is C1.
+
+   Also worth noting for cost accounting: a unit killed by `agent_timeout` records no
+   `cost_usd` (there is no result event to read it from), so a run's cost total
+   understates by however many units timed out.
+
+**Read nothing from the 09-27 numbers except these three, which survive the defect**
+(they come from the 8 units that did produce a solver):
+
+- **KS is the one problem where C0 beat the pipeline** — 2.26e-10 against the
+  pipeline's OVERCLAIM at 7.22e-02 — and it is the one problem with the order check
+  off. The selector raised `N-indep` and the kernel capped it at 8
+  `self_convergence`: the §11.3 shape, a solver computing on its own internal grid.
+  This sharpens findings §11.2: switching KS's order check off removed the only gate
+  that separates a converged solver from an N-independent one.
+- **Conditional on producing a solver, C0 passed 6 of 8**, and on Cahn–Hilliard and
+  KdV it beat the pipeline's error by 4 and 2 orders of magnitude. Whatever the
+  re-run says, the pipeline's case on this suite will rest on the problems where C0
+  produced nothing, and on selection — not on raw accuracy where C0 gets that far.
+- **Schrödinger is a clean C0 loss on the return contract**, not on numerics: both
+  solvers that ran omitted the `functionals` dict the problem is scored on. That is
+  the failure the formulator exists to prevent.
+
+Burgers, Gross–Pitaevskii and the double-well produced **zero** solvers across 6
+units each, so there is no evidence either way on them yet.
+
+One more matching defect found while reading the results: `baseline_select.py`
+defaults to `--manuals both`, which **pools the two knowledge conditions** and so
+selects among 6 attempts where the pipeline spent 3. Run it once per condition
+(`--manuals naked`, then `--manuals manual`) or the `kernel` cut silently gets a 2x
+attempt advantage. Pooled it read 3/7; per condition it is 2/7 and 2/7.
+
+### 11.7 Re-running the failed units (decided 2026-09-27)
+
+The Aug-7 49-problem baseline is **not** being re-measured. This suite therefore opts
+into a larger C0 turn cap on its own, and says so in its results file:
+
+- `--c0-max-turns N` sets the C0 cap (default **2**, i.e. every pre-2026-09-27 record
+  stands unchanged; a results config with `c0_max_turns: null` was measured at the
+  hard-coded 2). The condition is still tool-less at any cap — `NoTool` means no tool
+  ever executes; a larger cap only lets the model answer *after* its denied attempts.
+  The value is written into the results config, so **only runs sharing a cap are
+  comparable**. That makes this suite's C0 a different measurement from §8's, and the
+  49-problem numbers must not be quoted beside it.
+- `--redo CRASHED` re-runs recorded units with that verdict even under `--resume`,
+  leaving the prior record in place until the new one overwrites it. Verified against
+  the voided file: 36 re-run, the 8 that answered (6 PASS + 2 FAIL) untouched.
+
+`--agent-timeout` also has to go up: GP died at the 900 s wall with the model still
+thinking, and a larger cap means longer runs.
+
+```bash
+# 0. keep the voided run as evidence -- the re-run overwrites in place
+cp benchmark/results/oneshot_no_closed_form.json \
+   benchmark/results/oneshot_no_closed_form.void-turncap2-2026-09-27.json
+
+# 1. re-run ONLY the 36 units that never produced a solver
+caffeinate -is uv run python benchmark/oneshot.py --no-closed-form \
+    --condition c0 --manuals both --model opus \
+    --reps-from benchmark/results/matched_attempts.json \
+    --c0-max-turns 4 --agent-timeout 1800 --timeout 300 \
+    --resume --redo CRASHED \
+    --results-json benchmark/results/oneshot_no_closed_form.json \
+    2>&1 | tee -a benchmark/results/logs/ncf_c0_opus.log
+
+# 2. selection, ONCE PER CONDITION (see §11.6: --manuals both pools them)
+for M in naked manual; do
+  uv run python benchmark/baseline_select.py \
+      --results-json benchmark/results/oneshot_no_closed_form.json --manuals $M \
+      --out benchmark/results/ncf_selection_$M.json \
+      2>&1 | tee -a benchmark/results/logs/ncf_c0_select.log
+done
+```
+
+Re-running step 1 is safe and idempotent in the sense that matters: `--resume` skips
+every unit that has answered, and `--redo CRASHED` picks up whatever still has not. If
+a unit crashes again it is simply still CRASHED, and the count is the result.
+
+**Caveat to carry into the write-up.** The 8 units that answered in the voided run did
+so at cap 2; the re-run answers at cap 4. A mixed-cap results file is fine for "did C0
+solve this problem", which is what §11 asks, but it is not a clean measurement of the
+cap's effect, and the per-unit `run.num_turns` is the only record of which cap a unit
+actually used. If the cap's effect ever matters, re-run all 44 with `--redo` widened.
