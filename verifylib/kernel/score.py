@@ -380,11 +380,102 @@ def rubric_sde(evidence):
 
 # --- composition --------------------------------------------------------------
 
+#: Bands the certification ceiling opens up, and how wide each is. ``ceiling()``
+#: answers "what class of evidence is this", which bounds the score; within that
+#: bound the quality index (``verifylib/ranking.py``) decides where the plan lands.
+#:
+#: Only the certifying bands are widened. 3 / 2 / 1 stay single values because they
+#: are *findings* -- a gate was violated, nothing ran, it crashed -- and a finding
+#: does not have a quality.
+BANDS = {10: 1, 9: 1, 8: 2}
+
+#: The share of the *achievable* headroom a run needs to reach the top of a width-1
+#: band. One third, which on a PDE is two decades below the tolerance
+#: (``ranking.ACCURACY_DECADES`` is 6), i.e. ``estimated_rel_error <= tol / 100``.
+#:
+#: **Placement reads accuracy, not the composite quality index**, and that is a
+#: correction rather than a simplification. The first cut compared the index against
+#: 0.75, reasoning that with the certifying row's gates satisfied the other components
+#: sit at 1.0 and the bar reduces to two decades. They do not sit at 1.0 -- they are
+#: often *absent*, and the index renormalises over whatever was measured, so the
+#: effective accuracy bar moved with which checks happened to run. Measured across
+#: three frozen pools: where only accuracy and structure were measurable, accuracy
+#: carried 0.35/0.55 = 64% of the weight and the 0.75 bar demanded ~3.6 decades; the
+#: canary suite's deliberately **honest** control solver scored 9. A bar that tightens
+#: because a plan's D1 was ``unavailable`` is the exact failure the renormalisation
+#: rule exists to prevent, one level up.
+#:
+#: The other components do not belong in this decision anyway: ``order_ok``,
+#: ``invariants_ok`` and ``constraints_ok`` are already *required* by the certifying
+#: row, so pricing them again here double-counts them. The composite stays where
+#: trading accuracy against cost and structure is the point -- ranking.
+#:
+#: **A fraction, not a fixed number of decades**, because what is achievable differs
+#: by kind. A Monte Carlo estimate's accuracy is bounded by ``1/sqrt(M)``, not by its
+#: scheme: measured on the canary suite's honest SDE solver, the ceiling at 50 000
+#: paths against a 10% variance tolerance is **0.90 decades** and the solver sits at
+#: 0.896 -- already as accurate as the path count allows. A two-decade bar is
+#: unreachable there for any solver, and it scored the honest control 9.
+#: ``ranking.achievable_decades`` supplies the per-kind ceiling.
+#:
+#: Measured: `pde_heat_1d`'s FTCS lands at 2.45 decades of 6 and Crank-Nicolson at
+#: 2.59, so both reach 10; `pde_heat_2d`'s three second-order plans land at 1.99-2.00
+#: and score 9, with the fourth-order plan that would have cleared it never run.
+PLACEMENT_FRACTION = 1.0 / 3.0
+
+
+def place(band_top, fraction, decades=None):
+    """``(score, reason)`` -- where in its band a plan lands.
+
+    ``fraction`` is ``evidence["headroom_fraction"]``: how far the run got from the
+    tolerance toward the best its method and budget allow. ``decades`` is the same
+    quantity unnormalised, carried only so the reason can quote it.
+
+    ``None`` places at the **top** of the band, never the floor -- unmeasurable
+    headroom is missing information, and the rule that a skipped check never counts
+    against a plan applies here as it does inside the quality index. It is unreachable
+    in the certifying bands anyway, since they require ``converged``, which requires
+    the finite error it reads.
+    """
+    width = BANDS.get(band_top, 0)
+    if width <= 0 or fraction is None:
+        return band_top, None
+    how_far = (f"{decades:.2f} decades inside the tolerance, "
+               f"{fraction:.0%} of what is achievable here" if decades is not None
+               else f"{fraction:.0%} of the achievable headroom")
+    if width == 1:
+        if fraction >= PLACEMENT_FRACTION:
+            return band_top, None
+        return band_top - 1, (
+            f"every gate for this evidence path came back clean, so the run is "
+            f"certified; its error sits {how_far}, short of the "
+            f"{PLACEMENT_FRACTION:.0%} the top of the {band_top - 1}-{band_top} band "
+            f"needs")
+    # The Tier-C band is two wide, so it takes two bars: 6 at the tolerance line,
+    # 7 one bar in, 8 at the full bar.
+    steps = min(int(fraction // (PLACEMENT_FRACTION / width)), width)
+    placed = band_top - width + max(steps, 0)
+    if placed >= band_top:
+        return band_top, None
+    return placed, (f"self-convergence evidence placed at {placed} of the "
+                    f"{band_top - width}-{band_top} band: {how_far}")
+
+
 def certify(evidence):
     """The one function that assigns a score. Returns a dict, never a bare number.
 
     ``score = min(rubric, ceiling, every cap)``. The reasons are carried out so the
     review can say *which* rule bound the score rather than asserting the number.
+
+    ``certified`` answers a different question from ``score``: *did every gate this
+    problem's evidence path requires come back clean*, which is what the winner
+    early-exit and ``benchmark/report.py``'s ``VERIFIED_PASS`` actually mean. Today
+    it is exactly ``score >= 10``, so switching those two consumers onto it is
+    inert. They are split now because the score is about to start resolving
+    *quality* below the tolerance line -- a plan that merely squeaked under
+    ``rel_l2_err_max`` and one three decades below it both certify, and only one of
+    them should score 10. Keeping "certified" on this field means that change costs
+    no extra solver cycles and does not move the benchmark's pass rate.
     """
     kind, path = evidence.get("kind", "pde"), evidence.get("path", "B")
     rubric = {("pde", "A"): rubric_pde_analytic, ("pde", "B"): rubric_pde,
@@ -394,6 +485,8 @@ def certify(evidence):
 
     caps = [{"source": "rubric", "score": rubric_score, "reason": rubric_reason},
             {"source": "certification", "score": cap, "reason": ceiling_reason}]
+
+
 
     not_reported = list(evidence.get("not_reported_invariants") or [])
     if not_reported:
@@ -454,10 +547,37 @@ def certify(evidence):
                          "reason": agent_cap.get("reason") or "capped by the evaluator "
                                                               "with no reason given"})
 
+    # `certified` is the question the winner early-exit and VERIFIED_PASS ask: did
+    # every gate this evidence path requires come back clean. It is exactly what
+    # `score == 10` used to mean, so it reads every cap **except** the quality
+    # placement -- including `agent_cap`, which is the one authority that must be able
+    # to decertify a run that looks clean and is not.
+    certified = min(c["score"] for c in caps) >= 10
+
+    # ...and only then does quality decide where in the band the plan lands. Appended
+    # last because it may only lower the score, never raise it, and because it must not
+    # move `certified`.
+    #
+    # Only where the rubric put the run at the **top** of its band. The rows below that
+    # are already accuracy-graded -- §12's 7 is "converging, not yet accurate enough" --
+    # so placing them again demotes one shortfall twice. Measured: a plan whose graded
+    # -grid error sits above the tolerance takes 7 from the rubric and was then placed
+    # at 6 by a headroom of zero, for the same reason, stated twice.
+    if rubric_score >= cap:
+        placed, placement_reason = place(cap, evidence.get("headroom_fraction"),
+                                        evidence.get("headroom_decades"))
+        if placed < cap:
+            caps.append({"source": "quality", "score": placed,
+                         "reason": placement_reason})
+
     score = min(c["score"] for c in caps)
     binding = [c for c in caps if c["score"] == score]
     return {"score": int(score), "provenance": provenance, "tier": tier_of(evidence),
             "caps": caps, "bound_by": binding[0]["source"],
             "reason": binding[0]["reason"], "d1_is_break": d1_is_break(evidence),
             "agreement_is_break": agreement_is_break(evidence),
-            "gates_clean": gates_clean(evidence)}
+            "gates_clean": gates_clean(evidence),
+            "certified": bool(certified),
+            "headroom_decades": evidence.get("headroom_decades"),
+            "headroom_fraction": evidence.get("headroom_fraction"),
+            "quality": evidence.get("quality")}

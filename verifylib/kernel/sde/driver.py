@@ -73,6 +73,14 @@ def evaluate_sde(spec, plan_dir, agent):
     got = solve(base_call)
     if got["status"] != "ok":
         return _crashed(m, got, started)
+    # The graded run's own cost, apart from `wall_time_s` (the whole evaluation:
+    # the CRN ladder, the Dynkin ladder and the surrogate solve on top). For an SDE
+    # the graded call is a single solve at the declared (num_paths, dt, T, seed), so
+    # this is exactly the work-precision cost at the point the error is quoted.
+    if isinstance(got.get("wall_s"), (int, float)):
+        m["summary"]["solve_time_s"] = round(float(got["wall_s"]), 3)
+    if m_plan.get("scheme_family"):
+        m["summary"]["scheme_family"] = m_plan["scheme_family"]
     result = got["result"]
     X = np.asarray(result["terminal_paths"], dtype=float)
     if not np.all(np.isfinite(X)):
@@ -133,6 +141,10 @@ def evaluate_sde(spec, plan_dir, agent):
     metrics.record(m, "invariants_ok", d2["invariants_ok"])
     m["summary"]["constraints_ok"] = not d2["gate_failed"]
     m["summary"]["invariants_ok"] = d2["invariants_ok"]
+    if d2.get("max_drift") is not None:
+        m["summary"]["invariant_max_drift"] = d2["max_drift"]
+    if d2.get("worst_headroom") is not None:
+        m["summary"]["invariant_worst_headroom"] = d2["worst_headroom"]
 
     # --- Stage 2 (§24): each gate for its own reason -------------------------
     provisional = 10 if (metrics.passed(moments_ok) and resolved_detail["resolved"]
@@ -177,8 +189,24 @@ def evaluate_sde(spec, plan_dir, agent):
         outcome, detail = "not_run", {"reason": "Dynkin adds nothing on Path A that exact "
                                                 "moments do not already do better"}
     metrics.record(m, "dynkin_ok", outcome, **detail)
+    # How far the extrapolated generator residual sits from zero, in its own standard
+    # errors. `dynkin_ok` is that distance against the family-wise bar; the distance
+    # itself is what separates two plans that both clear it, and manual §20 already
+    # asks for it in the review ("Report `z` in the metrics"). The worst test
+    # function decides, the same way the pass does.
+    zs = [abs(float(z)) for z in (detail.get("z") or [])
+          if isinstance(z, (int, float)) and z == z]
+    if zs:
+        m["summary"]["dynkin_z"] = max(zs)
+        # The bar it is measured against, Bonferroni-corrected for the number of test
+        # functions (§20's third correction). Without it `dynkin_z` is a distance
+        # with no scale: 2.3 is a pass at K=3 and a failure at K=1.
+        m["summary"]["dynkin_bar"] = float(detail.get("family_wise_multiplier") or 0.0) \
+            or None
+    m["summary"]["ci_mult"] = ci_mult
 
     # --- the score ----------------------------------------------------------
+    from ..driver import _headroom_decades, _headroom_fraction, _quality
     evidence = {
         "kind": "sde", "path": path, "crashed": False,
         "has_reference": path == "A",
@@ -235,9 +263,15 @@ def evaluate_sde(spec, plan_dir, agent):
         "cross_plan_disagreement": agree["disagreement"],
         "agent_cap": _agent_cap(agent),
     }
+    # The SDE accuracy statistic is the worst moment error, graded against the
+    # variance tolerance -- the wider of the two gates, and the one `mc_se_rel`
+    # resolves against.
+    evidence["quality"] = _quality(m["summary"], var_tol)
+    evidence["headroom_decades"] = _headroom_decades(m["summary"], var_tol)
+    evidence["headroom_fraction"] = _headroom_fraction(m["summary"], var_tol)
     m["evidence"] = {k: v for k, v in evidence.items() if k != "agent_cap"}
     verdict = certify(evidence)
-    m.update({k: verdict[k] for k in ("score", "provenance")})
+    m.update({k: verdict[k] for k in ("score", "provenance", "certified")})
     m["certification"] = verdict
     m["agent_cap"] = evidence["agent_cap"]
     m["summary"].update({"score": verdict["score"], "provenance": verdict["provenance"],
@@ -254,7 +288,7 @@ def _crashed(m, got, started):
     m["crash"] = {"reason": got.get("reason"), "error": got.get("error")}
     verdict = certify({"kind": "sde", "path": m["path"], "crashed": True,
                        "any_test_ran": False})
-    m.update({k: verdict[k] for k in ("score", "provenance")})
+    m.update({k: verdict[k] for k in ("score", "provenance", "certified")})
     m["certification"] = verdict
     m["summary"] = {"score": verdict["score"], "provenance": verdict["provenance"],
                     "wall_time_s": round(time.monotonic() - started, 2)}

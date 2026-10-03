@@ -155,7 +155,14 @@ def note(metrics, text):
 #: dict is available as JSON; this is the flat view the conductor and
 #: ``review.py`` parse.
 BLOCK_KEYS = (
-    "score", "provenance", "estimated_rel_error", "error_is_estimate",
+    "score",
+    # Whether every gate this problem's evidence path requires came back clean --
+    # what the winner early-exit and `benchmark/report.py`'s VERIFIED_PASS actually
+    # mean. Today it is exactly `score == 10`; it is carried separately so that the
+    # score can start resolving quality *below* the tolerance line without moving
+    # the exit rule or the benchmark's pass rate. See `score.certify`.
+    "certified",
+    "provenance", "estimated_rel_error", "error_is_estimate",
     # error_horizon appears only on a chaotic problem, where Tier C is measured at
     # `chaotic_T_ref` rather than at t_final. It has to reach the *block*, not just
     # the JSON: the block is what the conductor ranks on and what REPORT.md quotes,
@@ -170,7 +177,24 @@ BLOCK_KEYS = (
     # pair-difference estimate at that level -- the top-level GCI measures the order,
     # this measures the grid the problem is graded on (findings F4).
     "graded_N", "estimated_rel_error_graded",
-    "observed_order", "order_floor", "invariants_ok", "constraints_ok",
+    "observed_order", "order_floor",
+    # The scheme's own declared rate (`spatial_order` from SOLUTION.md frontmatter).
+    # `order_floor` is a pass bar -- 1.0, and 0.0 on pde_kuramoto_sivashinsky -- so
+    # `observed_order - order_floor` is not a quality margin. Against the *design*
+    # order it is: a 2nd-order scheme measuring 4.0 is a ladder outside its
+    # asymptotic range, which is what `richardson.guards`' `p_sane` already says.
+    "design_order", "scheme_family",
+    "invariants_ok", "constraints_ok",
+    # The largest drift any declared invariant reported. `invariants_ok: true` says
+    # each one cleared its own tolerance, not whether it cleared by a hair or by six
+    # decades. Reporting only: drifts of different invariants are not on one scale.
+    "invariant_max_drift",
+    # The comparable form: the worst declared invariant's margin below the tolerance
+    # *it* was judged against, in decades. Raw drifts of different invariants are not
+    # on one scale -- a mass drift of 1e-8 against a 1e-8 bar is marginal and a
+    # symmetry drift of 1e-8 against 1e-4 is not -- so this, not `invariant_max_drift`,
+    # is what a ranking can read. Larger is better.
+    "invariant_worst_headroom",
     # Declared invariants the kernel could not evaluate. `invariants_ok: true` on its
     # own reads as "all of them held", and for an *ungated* entry whose name is not in
     # the registry and that carries no `expr`, it means "it was never looked at" --
@@ -187,12 +211,30 @@ BLOCK_KEYS = (
     # say which. These name both, so the block corroborates an evaluator that
     # reports them and a reader can tell the two apart. Reporting only.
     "mean_rel_err", "variance_rel_err",
+    # Roache's factor of safety on the reported error: 1.25 for a measured order,
+    # 3.0 for one imported from an MMS probe (§7a). It sets the *pass* bar, not the
+    # solver's quality, so the band placement divides it back out.
+    "error_fs",
     "order_check", "asymptotic_source", "mc_se_rel", "resolved",
+    # How far the extrapolated Dynkin residual sits from zero in its own standard
+    # errors, worst test function. `dynkin_ok` is that distance against the
+    # family-wise bar; manual §20 asks for the distance itself ("Report `z` in the
+    # metrics") because it is what separates two plans that both clear the bar.
+    "dynkin_z", "dynkin_bar", "ci_mult",
     "resolution_evidence", "agent_cap",
     # The solver the score belongs to. benchmark/verify.py recomputes it before
     # importing, so a file edited after scoring is graded as UNVERIFIED rather than
     # as the plan (findings F6).
-    "solver_sha256", "wall_time_s",
+    "solver_sha256",
+    # `wall_time_s` is the whole evaluation -- the ladder, MMS, D1, the temporal
+    # probe -- which manual §24 prices between 1.0x and 35x depending on evidence
+    # path and which Stage-2 checks ran. Two plans on one problem can differ in it by
+    # an order of magnitude for reasons that have nothing to do with their solvers,
+    # so it is an evaluation budget, not a cost. `solve_time_s` is the solver's own
+    # cost at the grid the error is quoted on, which is what a work-precision
+    # comparison ("equally accurate within the error bars, so take the cheaper one")
+    # actually needs.
+    "solve_time_s", "wall_time_s",
 )
 
 

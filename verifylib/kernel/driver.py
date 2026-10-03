@@ -94,6 +94,15 @@ def evaluate_pde(spec, plan_dir, agent):
     m = metrics.new_metrics("pde", path, cfg)
     m["summary"] = {}
     m["plan"] = plan_meta.read(plan_dir)
+    # The scheme's own declared rate, which is what an observed order should be read
+    # against. `order_floor` is a pass bar (1.0, and 0.0 on pde_kuramoto_sivashinsky),
+    # not a target, so a large `observed_order - order_floor` margin says nothing
+    # about scheme quality -- and on an algebraic scheme `p_sane` already treats
+    # `p >= theoretical_order + 1` as evidence the ladder is *not* asymptotic.
+    if m["plan"].get("spatial_order") is not None:
+        m["summary"]["design_order"] = m["plan"]["spatial_order"]
+    if m["plan"].get("scheme_family"):
+        m["summary"]["scheme_family"] = m["plan"]["scheme_family"]
     m["chaotic"] = chaotic
     m["unshadowable"] = unshadowable
     # The file this score belongs to. The guardrails review already hashes it
@@ -105,9 +114,24 @@ def evaluate_pde(spec, plan_dir, agent):
         cfg.set("graded_N", graded_N, "spec")
         m["summary"]["graded_N"] = graded_N
 
+    # Solver cost per grid, for the plain accuracy solves only. `wall_time_s` is the
+    # whole evaluation -- the ladder, MMS, D1, the temporal probe -- and manual §24
+    # prices that between 1.0x and 35x depending on evidence path and which Stage-2
+    # checks ran, so two plans on one problem can differ in it by an order of
+    # magnitude for reasons that have nothing to do with their solvers. This is the
+    # number a work-precision comparison needs. Overridden solves are excluded: an
+    # MMS run solves a different problem, and the invariant solver re-solves with a
+    # shifted IC.
+    solve_times: dict[int, float] = {}
+
     def solve(N, override=None, in_arrays=None):
-        return sandbox.run(plan_dir, "pde", {"N": N}, override=override,
-                           in_arrays=in_arrays, timeout_s=timeout_s)
+        out = sandbox.run(plan_dir, "pde", {"N": N}, override=override,
+                          in_arrays=in_arrays, timeout_s=timeout_s)
+        if override is None and in_arrays is None:
+            wall = out.get("wall_s")
+            if isinstance(wall, (int, float)):
+                solve_times[int(N)] = float(wall)
+        return out
 
     # --- Stage 1: the ladder ------------------------------------------------
     two_level = _two_level_applicable(spec, path, verification, thresholds, levels)
@@ -261,6 +285,17 @@ def evaluate_pde(spec, plan_dir, agent):
     if richardson:
         m.setdefault("detail", {})["richardson"] = {
             k: v for k, v in richardson.items() if k != "u_star"}
+        if richardson.get("fs"):
+            # Roache's factor of safety, carried so the band placement can divide it
+            # back out. `gci = fs * e_est` is the conservative *pass* bar and manual
+            # §4 is explicit that is what `converged` tests. It is not a statement
+            # that the solver is worse: §7a's two-level saving imports the order from
+            # an MMS probe and takes fs = 3.0 instead of the measured 1.25, so the
+            # same solver's error inflates 2.4x -- 0.38 decades -- purely from having
+            # been measured more cheaply. §24's cost discipline rests on that saving
+            # not moving the answer, and a plan sitting near the placement bar moved
+            # from 10 to 9 across it.
+            m["summary"]["error_fs"] = float(richardson["fs"])
         m["summary"]["asymptotic_source"] = (
             "probe" if richardson["order_source"] == "probe" else "ladder")
 
@@ -282,6 +317,10 @@ def evaluate_pde(spec, plan_dir, agent):
     metrics.record(m, "constraints_ok", not d2["gate_failed"])
     m["summary"]["invariants_ok"] = d2["invariants_ok"]
     m["summary"]["constraints_ok"] = not d2["gate_failed"]
+    if d2.get("max_drift") is not None:
+        m["summary"]["invariant_max_drift"] = d2["max_drift"]
+    if d2.get("worst_headroom") is not None:
+        m["summary"]["invariant_worst_headroom"] = d2["worst_headroom"]
 
     # --- Stage 1: D1, the operator residual ---------------------------------
     d1 = _run_d1(spec, verification, runs, axis_names, exclusive, m, primary,
@@ -343,7 +382,7 @@ def evaluate_pde(spec, plan_dir, agent):
     evidence = _evidence(spec, m, path, tol, e_fine, d1, d2, tier_b, agent, chaotic)
     m["evidence"] = {k: v for k, v in evidence.items() if k != "agent_cap"}
     verdict = certify(evidence)
-    m.update({k: verdict[k] for k in ("score", "provenance")})
+    m.update({k: verdict[k] for k in ("score", "provenance", "certified")})
     m["certification"] = verdict
     m["agent_cap"] = evidence.get("agent_cap")
     m["summary"]["score"] = verdict["score"]
@@ -351,7 +390,49 @@ def evaluate_pde(spec, plan_dir, agent):
     m["summary"]["reference_outcome"] = evidence.get("reference_outcome")
     m["summary"]["resolution_evidence"] = "not_used_as_accuracy_evidence"
     m["summary"]["wall_time_s"] = round(time.monotonic() - started, 2)
+    m["summary"]["solve_time_s"] = _graded_solve_time(solve_times, graded_N)
+    m["solve_times"] = solve_times
     return metrics.finalize(m, cfg)
+
+
+def _quality(summary, tol):
+    """The certification-side quality index, or None.
+
+    Imported lazily: ``verifylib.ranking`` reads ``kernel.score`` for the provenance
+    order and ``kernel.invariants`` for the headroom cap, so importing it at module
+    scope here would close a cycle through the driver.
+    """
+    from ..ranking import sqi_cert
+    return sqi_cert(summary, tol)
+
+
+def _headroom_decades(summary, tol):
+    from ..ranking import headroom_decades
+    return headroom_decades(summary, tol)
+
+
+def _headroom_fraction(summary, tol):
+    from ..ranking import headroom_fraction
+    return headroom_fraction(summary, tol)
+
+
+def _graded_solve_time(solve_times, graded_N):
+    """The solver's own cost at the grid the problem is graded on.
+
+    Prefers ``graded_N`` when the spec names one and it was actually solved,
+    otherwise the finest plain solve -- the same grid the reported error belongs to,
+    so error and cost are quoted at one resolution and a work-precision comparison
+    is reading one point rather than two.
+    """
+    if not solve_times:
+        return None
+    if graded_N is not None:
+        # `restrict`'s conventions put the graded level at 2N or 2N-1, so the ladder
+        # can land one node either side of what the spec named.
+        near = [n for n in solve_times if abs(n - graded_N) <= 1]
+        if near:
+            return round(solve_times[min(near, key=lambda n: abs(n - graded_N))], 3)
+    return round(solve_times[max(solve_times)], 3)
 
 
 # --- helpers ------------------------------------------------------------------
@@ -384,7 +465,7 @@ def _crashed(m, cfg, got, N, level, started):
                   "error": got.get("error"), "traceback": got.get("traceback")}
     verdict = certify({"kind": "pde", "path": m["path"], "crashed": True,
                        "any_test_ran": False})
-    m.update({k: verdict[k] for k in ("score", "provenance")})
+    m.update({k: verdict[k] for k in ("score", "provenance", "certified")})
     m["certification"] = verdict
     m["summary"] = {"score": verdict["score"], "provenance": verdict["provenance"],
                     "wall_time_s": round(time.monotonic() - started, 2)}
@@ -1094,6 +1175,14 @@ def _evidence(spec, m, path, tol, e_fine, d1, d2, tier_b, agent, chaotic):
         "ic_consistent": d1.get("ic_consistent"),
         "cross_plan_agreement": (m.get("agreement") or {}).get("agreement"),
         "cross_plan_disagreement": (m.get("agreement") or {}).get("disagreement"),
+        # Where in its certification band the plan lands. `ceiling()` says which band
+        # the evidence opens; this says whether the run earned the top of it.
+        "quality": _quality(m["summary"], tol),
+        # How far inside the tolerance it landed, which is what the band placement
+        # reads. Kept apart from `quality` because placement must not depend on which
+        # *other* checks ran -- see `score.PLACEMENT_DECADES`.
+        "headroom_decades": _headroom_decades(m["summary"], tol),
+        "headroom_fraction": _headroom_fraction(m["summary"], tol),
         "agent_cap": _agent_cap(agent),
     }
 

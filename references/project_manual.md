@@ -68,10 +68,46 @@ This is enforced by permission deny rules during benchmark runs, but treat it as
 
 ## Score Convention
 
-Score 10 = terminal condition. Both SDE and PDE evaluators use the same 1–10 scale.
+Both SDE and PDE evaluators use the same 1–10 scale, and it answers **two** questions:
+
+- **`certified`** — did every gate this problem's evidence path requires come back clean? This is the
+  terminal condition: what the winner early-exit stops on and what `benchmark/report.py` reads for
+  `VERIFIED_PASS`.
+- **`score`** — that, *and* how far inside the tolerance the run landed. The evidence tier opens a
+  **band** (`verifylib/kernel/score.py:BANDS`) and the quality index places the plan within it:
+
+  | Evidence | Band |
+  |---|---|
+  | Tier A / A⁻ quoted / A′ / Tier B with two circularity breaks | **9–10** |
+  | One circularity break (`manufactured_partial`, A⁻ unavailable) | **8–9** |
+  | Self-convergence only | **6–8** |
+  | A gate violated / nothing ran / crash | **3 / 2 / 1** — findings have no quality |
+
+  The top of a width-1 band needs **a third of the achievable accuracy headroom**. On a PDE that is
+  two decades below the tolerance (`estimated_rel_error <= rel_l2_err_max / 100`). It is a *fraction*
+  rather than a fixed number of decades because what is achievable differs by kind: a Monte Carlo
+  estimate's accuracy is bounded by `1/√M`, not by its scheme, so at 50 000 paths against a 10%
+  variance tolerance the ceiling is **0.90 decades** and no SDE solver can reach two.
+
+  Measured on `pde_heat_1d`: FTCS lands 2.45 decades inside the tolerance, Crank–Nicolson 2.59 and
+  4th-order RK4 6.67 — all three score 10. Measured on `pde_heat_2d`: all three second-order plans
+  land at 1.99–2.00 decades and score 9, and the 4th-order plan that would have cleared it never ran
+  — which is the finding, not a defect in the scale.
+
+Three rules bound placement:
+
+- It can only ever **lower** a score, and it never moves `certified`. So the loop's cost and the
+  benchmark's pass rate are exactly what they were before the score began resolving quality.
+- It applies only where the **rubric put the run at the top of its band**. The rows below that are
+  already accuracy-graded — §12's 7 is "converging, not yet accurate enough" — so placing them again
+  would demote one shortfall twice.
+- On a **chaotic** problem it does not read the full-`T` error. `converged` still gates on it, so a
+  solver wrong at `T` does not certify; but §28 waives pointwise accuracy there because trajectories
+  separate past the Lyapunov time, and grading quality on it re-imposes the penalty the waiver exists
+  to remove.
 
 **The score is computed, not assigned.** `verifylib/kernel/score.py` applies the rubrics below and
-emits `score` and `provenance` in the metrics; the evaluator transcribes them into the review and
+emits `score`, `certified` and `provenance` in the metrics; the evaluator transcribes them into the review and
 `review.py` requires the `Score: N/10` headline to match `metrics.score` **exactly**. The evaluator's
 one authority is asymmetric — it may record `agent_cap: {score, reason}` to move the score *down*,
 never up. That escape hatch exists for what no check measures: a `SOLUTION.md` describing a different
@@ -178,13 +214,17 @@ parses it to rank plans when scores tie.
 ```
 <metrics>
 score: 9
+certified: true            # every gate this evidence path requires came back clean
 provenance: analytic | analytic_unvalidated | surrogate | manufactured | manufactured_partial | self_convergence | none
 estimated_rel_error: 3.10e-03
 error_is_estimate: false
 observed_order: 1.98
 order_floor: 1.50
+design_order: 2            # the scheme's own declared rate, from SOLUTION.md frontmatter
+scheme_family: fd
 invariants_ok: true
 constraints_ok: true
+invariant_max_drift: 4.2e-12
 d1_outcome: clean | slow | stalled | unresolved | unavailable
 d1_slope: 1.98
 operator_validated: true
@@ -193,9 +233,11 @@ order_check: true | waived_spec | waived_chaotic
 asymptotic_source: ladder | probe
 mc_se_rel: 0.0041          # SDE only
 resolved: true             # SDE only
+dynkin_z: 1.4              # SDE only -- extrapolated generator residual, in its own s.e.
 resolution_evidence: not_used_as_accuracy_evidence
 agent_cap: {"score": 3, "reason": "..."}   # only when the evaluator capped downward
-wall_time_s: 12.4
+solve_time_s: 0.83         # the solver, at the graded grid
+wall_time_s: 12.4          # the whole evaluation
 </metrics>
 ```
 
@@ -204,8 +246,27 @@ that is a **skip** rather than a verdict uses the closed vocabulary `not_run`, `
 `unresolved`, `not_reported`, `waived_chaotic`, `faulty_probe` — none of which is ever truthy and
 none of which may be rendered as a pass.
 
-`estimated_rel_error` is always populated — it is the primary tiebreaker, so an evaluator with no
-true reference must still supply the Richardson estimate. Omit fields that do not apply.
+`estimated_rel_error` is always populated — an evaluator with no true reference must still supply
+the Richardson estimate. Omit fields that do not apply.
+
+**`certified` and `score` answer different questions, and only the first is a pass.** `certified` is
+"did every gate this problem's evidence path require come back clean" — the question the winner
+early-exit and `benchmark/report.py`'s `VERIFIED_PASS` have always been asking. `score` answers that
+*and* how far inside the tolerance the run landed, so a plan clearing every gate at 1.1× inside
+`rel_l2_err_max` certifies exactly as one three decades inside it does, and does not score the same.
+Rank on `score`; exit and gate on `certified`.
+
+**`solve_time_s`, not `wall_time_s`, is the cost.** `wall_time_s` is the whole evaluation — the
+ladder, MMS, D1, the temporal probe — which `verification_manual.md` §24 prices between 1.0× and 35×
+depending on evidence path and which Stage-2 checks ran. Two plans on one problem can differ in it by
+an order of magnitude for reasons that have nothing to do with their solvers.
+
+**`design_order`, not `order_floor`, is what an observed order should be read against.**
+`order_floor` is a pass bar — 1.0, and 0.0 on `pde_kuramoto_sivashinsky` — so
+`observed_order − order_floor` is not a quality margin, and on an algebraic scheme a large positive
+one is evidence the ladder is *not* asymptotic (`richardson.guards`' `p_sane`). On the SDE side
+`order_floor` carries the expected **strong** order, which is a target with a two-sided band, not a
+floor: the quantity to compare is `|observed_order − order_floor|`, and smaller is better.
 
 ## Evaluation Thresholds
 

@@ -84,7 +84,7 @@ If `STATE.phase == init`:
 
 After Phase 1 (or on resume), before entering the loop:
 
-If any plan has `state: await_evaluator`, note each such plan's current `score` (its previous score), then dispatch the appropriate evaluator for those plans in parallel (`run_in_background: true`). After each returns, read the score from `<review score=X>` and the `provenance` / `estimated_rel_error` from the `<metrics>` block in that plan's SOLUTION.md, write them to STATE.md, and increment `iter` (this completes the interrupted cycle). Then set the plan's state by the same early-stop rules used in the loop: `== 10` → winner; else `iter >= 2` and no improvement over the previous score → `state: stopped`; else `state: await_solver`.
+If any plan has `state: await_evaluator`, note each such plan's current `score` (its previous score), then dispatch the appropriate evaluator for those plans in parallel (`run_in_background: true`). After each returns, read the score from `<review score=X>` and the `provenance` / `estimated_rel_error` from the `<metrics>` block in that plan's SOLUTION.md, write them to STATE.md, and increment `iter` (this completes the interrupted cycle). Then set the plan's state by the same early-stop rules used in the loop: `certified: true` → winner; else `iter >= 2` and no improvement over the previous score → `state: stopped`; else `state: await_solver`.
 
 This handles: (a) crash recovery mid-cycle; (b) fresh plans left needing evaluation.
 
@@ -94,13 +94,15 @@ Select the correct agent pair from STATE.md `problem_type`:
 - `problem_type == "sde"` → use `solver-sde` and `evaluator-sde`
 - `problem_type == "pde"` → use `solver-pde` and `evaluator-pde`
 
-Run solver↔evaluator cycles until a plan **wins** (score 10) or every plan has **stopped** (reached max_iter or plateaued). Two independent early-stops keep a hard problem from grinding forever:
+Run solver↔evaluator cycles until a plan **wins** (`certified: true`) or every plan has **stopped** (reached max_iter or plateaued). Two independent early-stops keep a hard problem from grinding forever:
 
-**Winner early-exit**: a score of 10 is the maximum — the moment any plan reaches 10 it is the winner and no other plan can beat it. Stop the loop immediately, launch no further cycles, and go to Phase 3.
+**Winner early-exit**: the moment any plan comes back `certified: true` in its `<metrics>` block it is the winner and no other plan can beat it. Stop the loop immediately, launch no further cycles, and go to Phase 3.
 
-**On Path B the early-exit is gated** (a 10 there rests on the kernel's *estimate*, and the strongest cheap evidence about the *answer* is whether an independently written plan of a different method family agrees with it — the standard the harness itself uses to certify a reference). Two rules, both mandatory on Path B:
+`certified` — not `score == 10` — is the exit condition. It is the kernel's answer to "did every gate this problem's evidence path require come back clean", which is what the exit has always meant. The score answers a second question on top of that: *how far* inside the tolerance the plan landed. The two were one integer until the score began resolving accuracy headroom, and a plan that clears every gate at 1.1× inside the tolerance certifies exactly as a plan three decades inside it does — it simply does not score the same. Exiting on `certified` keeps the loop's cost where it was.
 
-1. **The winner early-exit does not fire until at least two plans of different `scheme_family` have been evaluated.** Read `scheme_family` from each plan's `SOLUTION.md` frontmatter. If a plan reaches 10 and no evaluated plan of another family exists yet, keep the pool running — dispatch the highest-ranked unevaluated plan of a *different* family next (an implemented-but-unevaluated plan costs one evaluator pass; the Cahn–Hilliard log measured that at seconds of kernel time). Only if no such plan exists in the pool may the 10 stand alone; record `single_family_pool: true` in STATE.md and say so in REPORT.md.
+**On Path B the early-exit is gated** (a certification there rests on the kernel's *estimate*, and the strongest cheap evidence about the *answer* is whether an independently written plan of a different method family agrees with it — the standard the harness itself uses to certify a reference). Two rules, both mandatory on Path B:
+
+1. **The winner early-exit does not fire until at least two plans of different `scheme_family` have been evaluated.** Read `scheme_family` from each plan's `SOLUTION.md` frontmatter. If a plan certifies and no evaluated plan of another family exists yet, keep the pool running — dispatch the highest-ranked unevaluated plan of a *different* family next (an implemented-but-unevaluated plan costs one evaluator pass; the Cahn–Hilliard log measured that at seconds of kernel time). Only if no such plan exists in the pool may the certification stand alone; record `single_family_pool: true` in STATE.md and say so in REPORT.md.
 2. **The agreement gate.** Whenever two evaluated plans both score ≥ 9, compare them:
 
    ```bash
@@ -114,11 +116,11 @@ Run solver↔evaluator cycles until a plan **wins** (score 10) or every plan has
 
 **Plateau early-stop**: a plan is *plateaued* when it has completed at least 2 cycles (`iter >= 2`) and its most recent evaluator score did **not** improve on its previous score. Mark a plateaued plan `state: stopped` — it is terminal and gets no further cycles. A plan whose score has stopped rising across a full refine cycle is very unlikely to ever cross the passing bar, and cycling every such plan to max_iter is exactly how a genuinely-unpassable problem (e.g. a shock no conservative scheme resolves to <1% L2) burns an entire usage budget for zero score gain.
 
-A plan is **eligible** for a new cycle iff `score < 10` AND `iter < max_iter` AND `state != stopped`.
+A plan is **eligible** for a new cycle iff it is **not** `certified` AND `iter < max_iter` AND `state != stopped`.
 
 **Fill the pool**:
 
-First check for a winner: if any plan already has `score == 10` (on Path B: *and* the early-exit gate above is satisfied), launch no cycles — go straight to Phase 3. Otherwise take the **eligible** plans, sort them by `(score asc, iter asc)`, take up to `parallelism` of them, and start one cycle for each — all cycles run in parallel with `run_in_background: true`. If no plan is eligible, go straight to Phase 3.
+First check for a winner: if any plan already has `certified: true` (on Path B: *and* the early-exit gate above is satisfied), launch no cycles — go straight to Phase 3. Otherwise take the **eligible** plans, sort them by `(score asc, iter asc)`, take up to `parallelism` of them, and start one cycle for each — all cycles run in parallel with `run_in_background: true`. If no plan is eligible, go straight to Phase 3.
 
 **One cycle for a single plan**:
 
@@ -141,22 +143,31 @@ First check for a winner: if any plan already has `score == 10` (on Path B: *and
    exit fired, a timeout, a limit), **restore `solver.py` from `solver.scored.py`** before Phase 3
    so the file on disk is the one the score in STATE.md describes. The Cahn–Hilliard run left
    plan 1's file mid-edit with a 9 that belonged to the earlier version.
-4. Read the new score from the `<review score=X>` block at the end of SOLUTION.md, and `provenance` + `estimated_rel_error` from the `<metrics>` block just above it.
-5. Write the new score, `provenance` and `est_err` to STATE.md and increment `iter`. Then set the plan's state by the early-stop rules:
-   - new score `== 10` → winner (leave it; the refill/exit check below finalizes on it).
+4. Read the new score from the `<review score=X>` block at the end of SOLUTION.md, and `certified`, `provenance` + `estimated_rel_error` from the `<metrics>` block just above it.
+5. Write the new score, `certified`, `provenance` and `est_err` to STATE.md and increment `iter`. Then set the plan's state by the early-stop rules:
+   - new metrics carry `certified: true` → winner (leave it; the refill/exit check below finalizes on it).
    - else if `iter >= 2` **and** new score `<=` the previous score from step 0 (no improvement) → `state: stopped` (plateaued, terminal).
    - else → `state: await_solver` (still eligible).
 
-**Refill immediately**: whenever a plan finishes its cycle, first check its new score — if it is 10 (and, on Path B, the early-exit gate is satisfied), stop: start no more cycles and go to Phase 3. Otherwise (having set its state in step 5) re-sort the **eligible** plans and start the next one. If no plan is eligible, go to Phase 3.
+**Refill immediately**: whenever a plan finishes its cycle, first check its new metrics — if `certified: true` (and, on Path B, the early-exit gate is satisfied), stop: start no more cycles and go to Phase 3. Otherwise (having set its state in step 5) re-sort the **eligible** plans and start the next one. If no plan is eligible, go to Phase 3.
 
-**Exit condition**: a plan reaches `score == 10` and, on Path B, the early-exit gate is satisfied (finalize on that winner), or no plan is eligible — every plan is a winner, at `iter >= max_iter`, or `stopped` → go to Phase 3. On Path B, run the agreement gate on the two highest-ranked plans before finalizing if it has not already run on them.
+**Exit condition**: a plan comes back `certified: true` and, on Path B, the early-exit gate is satisfied (finalize on that winner), or no plan is eligible — every plan is a winner, at `iter >= max_iter`, or `stopped` → go to Phase 3. On Path B, run the agreement gate on the two highest-ranked plans before finalizing if it has not already run on them.
 
 ## Phase 3: done
 
 When the loop exits:
 
 1. Read all `SOLUTION.md` files — both the `<metrics>` and `<review>` blocks.
-2. Identify the best plan. Score alone will often tie, so rank **lexicographically**:
+2. Identify the best plan. Do not rank by hand — run the ranker:
+
+   ```bash
+   uv run python "${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py" rank workspace/{problem_slug}
+   ```
+
+   It reads every plan's `<metrics>` block and applies `verifylib/ranking.py`, which is the same
+   function `benchmark/baseline_select.py` uses — one implementation, so the pipeline and the
+   baseline study cannot rank by different rules. The key is:
+
    1. `score` descending — from `<metrics>` `score:`, which the kernel computed, **not** from the
       review prose. The `<review score=X>` attribute is a transcription of it and `verifylib` rejects
       a review where the two disagree, so either reads the same number; prefer the metrics block.
@@ -165,10 +176,27 @@ When the loop exits:
       `manufactured_partial` rests on one circularity break; a 9 tagged `analytic_unvalidated` rests
       on a formula nobody could check. They are different claims and the tag is how they stay
       distinguishable.
-   3. `estimated_rel_error` ascending (from `<metrics>`)
-   3. observed order margin (`observed_order − order_floor`) descending
-   4. `wall_time_s` ascending
+   3. **`sqi` descending** — the quality index: accuracy headroom (0.35), order fidelity against the
+      scheme's *design* rate (0.25), structural margin (0.20), residual slope (0.10) and solver cost
+      (0.10), each in [0, 1] and renormalised over whichever were measurable.
+   4. `solve_time_s` ascending — the solver at the graded grid, not `wall_time_s`.
    5. fewest iterations
+
+   Keys 1 and 2 are claims about *what was established* and stay lexicographic: a weighted sum must
+   never trade a validated-analytic 9 against a self-convergence 10. Everything below them is
+   quality, and that is one number.
+
+   **Why this replaced three separate keys.** It used to rank on `estimated_rel_error`, then the
+   order margin, then `wall_time_s`. On `pde_heat_2d` three second-order plans certified at
+   1.010e-04, 1.019e-04 and 1.023e-04 against a 1% tolerance, and the winner was decided on the 0.9%
+   gap between the first two — inside the noise. On a log scale that gap is 0.0005 of a point, the
+   three tie, and the index falls through to cost, which separates them 3.8× (0.40 s / 0.81 s /
+   1.51 s) and picks the ADI scheme. That is the answer a numerical analyst would give: **equally
+   accurate within the error bars, so take the cheaper one.** The order margin was measured against
+   `order_floor`, a pass bar rather than a target — and on an SDE, where `order_floor` carries the
+   *expected strong order* and the gate is two-sided, ranking its margin descending sorted by
+   distance from the correct answer. `wall_time_s` timed the whole evaluation, which on one KdV pool
+   ran 7.9× to 12.5× the solve.
 
    Iteration count says nothing about which solution is better — use it only as the final tiebreak.
 3. Write `workspace/{problem_slug}/REPORT.md` summarizing:
@@ -177,7 +205,7 @@ When the loop exits:
    - **The provenance of the scoring**, also near the top — whether the winner was measured against a closed form (`analytic`), a derived deterministic surrogate (`surrogate`), a manufactured solution (`manufactured`), or only its own convergence behaviour (`self_convergence`). A 10 earned by self-convergence is a materially weaker claim than a 10 earned against an exact solution, and the reader must not have to dig to tell them apart.
    - Each plan: scheme, final score, provenance, estimated error (flagging whether it was measured or estimated), observed order, iter count, and key metrics from the last Results section
    - Best plan recommendation and why, citing the ranking criterion that decided it
-   - Any plans that did not reach score 10 — their last score and remaining errors, and whether they hit max_iter, were `stopped` (plateaued — score stopped improving), or were left unfinished because another plan already reached 10
+   - Any plans that did not certify — their last score and remaining errors, and whether they hit max_iter, were `stopped` (plateaued — score stopped improving), or were left unfinished because another plan already certified
    - **Verification gaps** — any check that could not be run: a missing verification plan, a faulty MMS probe, an untrustworthy surrogate, an MC-inconclusive result, an invariant with no trace reported, and every name in the metrics block's
      `invariants_not_reported` — a declared invariant the kernel has no evaluator for is a
      property the run did not establish, however clean `invariants_ok` looks beside it. These bound what the run actually established, so they belong in the report rather than being quietly dropped.
@@ -208,7 +236,7 @@ When the loop exits:
 - Read only `equation_type`, `requirements` and the path field (`analytic_solution` / `analytic_moments.has_analytic_solution`, for whether it is null) from `problem_spec.json` — do not analyze the problem yourself. You check the ledger's *structure* (statuses and `spec_path`s), never whether the mathematics in it is right; that is the formulator's job and not yours to second-guess.
 - STATE.md is your sole responsibility — keep it accurate after every dispatch.
 - Always use `run_in_background: true` in the solving loop.
-- When reading the score: parse the `<metrics>` block for `score`, `provenance`, `estimated_rel_error` and `observed_order`. `score` and `provenance` are **computed by the kernel**, not written by the evaluator, so they are the fields to rank on; `<review score=X>` is a transcription of the same number and `verifylib` rejects a review where the two disagree. Carrying `provenance` through to REPORT.md is not optional.
+- When reading the score: parse the `<metrics>` block for `score`, `certified`, `provenance`, `estimated_rel_error` and `observed_order`. `score` and `provenance` are **computed by the kernel**, not written by the evaluator, so they are the fields to rank on; `<review score=X>` is a transcription of the same number and `verifylib` rejects a review where the two disagree. Carrying `provenance` through to REPORT.md is not optional.
 - If a plan's metrics carry `agent_cap`, the evaluator lowered the score below what the checks computed and recorded a reason. Report both the capped score and the reason in REPORT.md — a cap is a finding, not a formality. A cap can only ever lower a score.
 - Do not second-guess a `provenance` tag or re-derive an error yourself. Record what the kernel computed.
 - `manufactured_partial` and `analytic_unvalidated` are real provenance values and must survive into STATE.md and REPORT.md unchanged. They mean "one circularity break" and "a closed form nobody could check" respectively, and flattening either to its neighbour destroys the distinction the tag exists for.

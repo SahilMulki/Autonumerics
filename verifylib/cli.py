@@ -8,6 +8,7 @@
     ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py gate <workspace_dir> [--json]
     ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py evaluate <plan_dir> [--json]
     ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py compare <plan_a> <plan_b> [--N=<int>] [--no-record] [--json]
+    ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py rank <workspace_dir> [--json]
 
 Exit codes follow the hook contract measured in ``tests/hookprobe/FINDINGS.md``:
 2 is the blocking/feedback code the agent sees on stderr, 0 is pass. Only
@@ -479,6 +480,79 @@ def _jsonable(value):
     return str(value)
 
 
+def _rank(workspace, *, as_json=False) -> int:
+    """Rank a workspace's plans the way `commands/conductor.md` Phase 3 does.
+
+    Reads each plan's ``<metrics>`` block -- never re-running a solver -- and applies
+    :func:`verifylib.ranking.rank_key`. The conductor used to apply the key by hand
+    from the blocks, which meant the rule lived in prose in one place and in code in
+    ``benchmark/baseline_select.py`` in another; they had already drifted. This is
+    the one implementation both read.
+    """
+    from verifylib import ranking
+    from verifylib.review import parse_metrics
+
+    plans_root = os.path.join(workspace, "plans")
+    if not os.path.isdir(plans_root):
+        print(f"no plans/ under {workspace}", file=sys.stderr)
+        return 1
+    entries = []
+    for name in sorted(os.listdir(plans_root)):
+        path = os.path.join(plans_root, name, "SOLUTION.md")
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            block = parse_metrics(fh.read())
+        if not block:
+            continue
+        entries.append({"plan": name, "kernel": {
+            "score": block.get("score"), "provenance": block.get("provenance"),
+            "certified": block.get("certified"), "summary": block}})
+    if not entries:
+        print(f"no scored plans under {plans_root}", file=sys.stderr)
+        return 1
+
+    pool = [e["kernel"]["summary"] for e in entries]
+    tol = ranking._tol_of(pool[0], {})
+    for entry in entries:
+        summary = entry["kernel"]["summary"]
+        index, parts = ranking.sqi(summary, tol, pool)
+        entry["sqi"] = index
+        entry["components"] = parts
+    entries.sort(key=lambda e: ranking.rank_key(e, pool))
+
+    if as_json:
+        print(json.dumps({"workspace": workspace, "tol": tol, "ranking": entries},
+                         indent=2, default=str))
+        return 0
+    head = ("sqi", "acc", "ord", "str", "res", "cost", "solve_s")
+    print(f"{'plan':<28}{'score':>6}{'cert':>6}  {'provenance':<22}"
+          + "".join(f"{h:>9}" for h in head))
+    def cell(value):
+        return f"{value:9.3f}" if isinstance(value, (int, float)) else f"{'-':>9}"
+
+    for entry in entries:
+        k, c, s = entry["kernel"], entry["components"], entry["kernel"]["summary"]
+        print(f"{entry['plan']:<28}{str(k['score'] or '-'):>6}"
+              f"{('yes' if k.get('certified') else 'no'):>6}  "
+              f"{str(k['provenance'] or '-'):<22}{cell(entry['sqi'])}"
+              + "".join(cell(c[n]) for n in ("accuracy", "order", "structure",
+                                             "consistency", "cost"))
+              + cell(s.get("solve_time_s")))
+    print(f"\nbest: {entries[0]['plan']}")
+    # A block written before a field existed is not a plan that lacks the property,
+    # and a ranking run on one is reading less than it looks like it is. Say which
+    # inputs were missing rather than printing a confident order over `-` columns.
+    stale = sorted({name for name, field in (("order", "design_order"),
+                                             ("structure", "invariant_worst_headroom"),
+                                             ("cost", "solve_time_s"))
+                    if all(p.get(field) is None for p in pool)})
+    if stale:
+        print(f"note: no plan's <metrics> block carries the input for {', '.join(stale)}"
+              f" -- the index is the mean of the rest. Re-run `evaluate` to refresh.")
+    return 0
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
@@ -513,6 +587,8 @@ def main(argv=None) -> int:
             print("evaluate takes a plan directory", file=sys.stderr)
             return 1
         return _evaluate(args[0], as_json)
+    if command == "rank":
+        return _rank(args[0] if args else "workspace", as_json=as_json)
     if command == "compare":
         if len(args) != 2:
             print("compare takes two plan directories", file=sys.stderr)

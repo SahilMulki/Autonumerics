@@ -98,25 +98,19 @@ derivative is the genuine case. A recorded gap is fine; a silent omission is not
 Every evaluator writes a `<metrics>` block immediately before the `<review>` block in `SOLUTION.md`.
 The conductor parses it to rank plans when scores tie.
 
-```
-<metrics>
-provenance: analytic | surrogate | manufactured | self_convergence | none
-estimated_rel_error: 3.10e-03      # measured vs reference, or Richardson/GCI estimate
-error_is_estimate: true            # true when no true reference was available
-observed_order: 1.98
-order_floor: 1.50
-invariants_ok: true
-invariant_max_drift: 4.2e-12
-constraints_ok: true
-mc_se_rel: 0.0041                  # SDE only — relative standard error of the checked moment
-resolved: true                     # SDE only — false means MC-inconclusive
-wall_time_s: 12.4
-</metrics>
-```
+The block's fields are specified **once**, in
+[project_manual.md](project_manual.md) — *The `<metrics>` Block*, and emitted by
+`verifylib/kernel/metrics.py`'s `BLOCK_KEYS`. This file used to carry a second copy; the two drifted
+(this one omitted `score` entirely and named an `invariant_max_drift` the kernel did not emit until
+the ranking work), and a schema with two homes is a schema with none.
 
-Omit fields that do not apply. `estimated_rel_error` is always populated — it is the primary
-tiebreaker, so an evaluator that cannot measure a true error must still supply the Richardson
-estimate.
+What Part I and Part II add to it is *what each field means as evidence*, which is the rest of this
+manual. Two rules that belong here rather than there:
+
+- **`estimated_rel_error` is always populated** — an evaluator that cannot measure a true error must
+  still supply the Richardson estimate, or the plan carries no accuracy claim at all.
+- **Omit fields that do not apply**, and use the closed skip vocabulary for a check that did not
+  run. A skip is never a failure and never renders as a pass.
 
 ---
 
@@ -507,10 +501,19 @@ measuring is masked by time-stepping error.*
 
 ## 11. Cross-Plan Consensus
 
-> **Moving to the ranking layer.** Consensus is a *cross-plan* comparison, so it belongs to how
-> plans are ranked against each other rather than to how one plan is scored. It is documented here
-> until [plan-blind-evaluator.md](../docs/plan-blind-evaluator.md) lands, and the kernel does not
-> compute it: nothing that can never lift a score needs to run inside the scoring path.
+> **It stayed here.** An earlier revision of
+> [plan-blind-evaluator.md](../docs/plan-blind-evaluator.md) proposed moving consensus out of the
+> scoring path, on the grounds that it "can never lift a score". That has not been true since the
+> no-closed-form work: `score.agreement_is_break` makes agreement between two plans of **different**
+> `scheme_family` a certifying *second circularity break*, lifting Tier B from 9 to 10, and
+> `conductor.md` makes it a mandatory Path-B gate whose *disagreement* caps both plans at 8. The
+> reason is §4c's: D1 is structurally `unresolved` for a resolved spectral solver, so agreement is
+> the only second break such a plan can earn.
+>
+> One thing below *is* stale. The agreement test is written here as
+> `rms(u_a - u_b) / rms(u_b) < gci_a + gci_b`; the shipped `cli.py compare` tests `rel_diff` against
+> `rel_l2_err_max` at the graded grid and records both solver hashes, so a comparison made against a
+> since-edited solver is ignored. Take the shipped form.
 
 The multi-plan architecture makes this nearly free, and it is the one check that uses information no
 single plan has. Run **only** when `provenance` is `self_convergence` (with a real reference there is

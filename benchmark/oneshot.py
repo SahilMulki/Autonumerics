@@ -78,9 +78,23 @@ _LIMIT_PHRASES = ("spend limit", "usage limit", "rate limit", "session limit",
 
 # --- prompt construction ----------------------------------------------------
 
+# Why the no-tools paragraph is explicit rather than implied: --allowed-tools NoTool
+# blocks tool EXECUTION, but the model is still handed the tool schema, so it sees
+# Bash and plans around having it. Measured 2026-09-27: Opus emitted tool_use on 36 of
+# 44 C0 units -- writing convergence studies, running `ls -la`, checking numpy's
+# version -- was refused each time, and burned its turn budget before committing a
+# solver. Saying "no tools" up front removes the surprise instead of paying extra
+# turns to absorb it. C0 was always defined as a naked one-shot; a prompt that let the
+# model believe otherwise was a defect in the condition, not a property of it.
 C0_HEADER = (
     "You are an expert in numerical methods and scientific computing. Your task is "
     "to implement a solver for the numerical problem below.\n\n"
+    "IMPORTANT -- you have NO TOOLS in this session. You cannot run code, read or "
+    "write files, inspect your environment, or test your implementation. Any tool "
+    "call will be rejected and will consume the budget you need to answer, so do not "
+    "attempt one. You get exactly one reply: write the solver directly from your own "
+    "knowledge of numerical analysis, choose your scheme and step size by reasoning "
+    "rather than by experiment, and make it correct in a single pass.\n\n"
     "The problem statement ends with a \"Solver contract\" section that specifies "
     "exactly the function to implement, the arguments it will be called with, the "
     "dict it must return, and how it will be scored. Follow that contract precisely "
@@ -107,8 +121,9 @@ C1_HEADER = (
 )
 
 C0_REMINDER = ("\n\n===== REMINDER =====\n"
-               "Respond with ONLY the contents of `solver.py` in a single "
-               "```python code block.")
+               "You have no tools: do not attempt to run or test anything. Respond "
+               "with ONLY the contents of `solver.py` in a single ```python code "
+               "block.")
 
 MANUAL_PREAMBLE = (
     "\n\n===== REFERENCE: NUMERICAL METHODS MANUAL =====\n"

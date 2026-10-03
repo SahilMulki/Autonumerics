@@ -11,8 +11,12 @@ oracle the pipeline never had -- the pipeline picks its winner with
 kernel over the baseline's attempts and ranks them by the *same* lexicographic rule
 ``commands/conductor.md`` §3 gives the conductor:
 
-    score desc, provenance (score.PROVENANCE_ORDER), estimated_rel_error asc,
-    observed-order margin desc, wall_time asc
+    score desc, provenance (score.PROVENANCE_ORDER), quality index desc,
+    solver time asc
+
+(``verifylib.ranking.rank_key`` -- the conductor's key and this one are the same
+function, deliberately. A selector that ranked by its own rule would measure the
+rule rather than the baseline.)
 
 and reports the selected attempt's harness verdict as the baseline's result. Three
 cuts come out of the same data, and the comparison should quote all three:
@@ -61,7 +65,7 @@ sys.path.insert(0, HERE)
 import problems as P  # noqa: E402
 
 sys.path.insert(0, REPO_ROOT)
-from verifylib.kernel.score import provenance_rank  # noqa: E402
+from verifylib.ranking import rank_key  # noqa: E402
 
 SPEC_FILE = "problem_spec.json"
 #: Where the selector stages each attempt for the kernel. Not under `workspace/`:
@@ -163,27 +167,6 @@ def looks_n_independent(summary):
     return bool(err == 0.0 and (order is None or order == float("inf")))
 
 
-def rank_key(entry):
-    """The conductor's lexicographic ranking (`commands/conductor.md` §3, Phase 3
-    step 2), as a sort key. An attempt the kernel could not score sorts last."""
-    m = entry.get("kernel") or {}
-    if not m:
-        return (1, 0, 0, 0.0, 0.0, 0.0)
-    summary = m.get("summary") or {}
-    err = summary.get("estimated_rel_error")
-    order = summary.get("observed_order")
-    floor = summary.get("order_floor")
-    margin = (order - floor) if isinstance(order, (int, float)) and isinstance(floor, (int, float)) else None
-    return (
-        0,
-        -(m.get("score") or 0),                                  # score descending
-        provenance_rank(m.get("provenance")),                    # provenance order
-        err if isinstance(err, (int, float)) else float("inf"),   # error ascending
-        -(margin if margin is not None else -float("inf")),      # order margin descending
-        summary.get("wall_time_s") or float("inf"),              # wall time ascending
-    )
-
-
 def select(slug, units, dry_run=False):
     """Rank one problem's attempts and return the selection block."""
     spec = pipeline_spec(slug)
@@ -224,7 +207,10 @@ def select(slug, units, dry_run=False):
         attempts.append(rec)
 
     scored = [a for a in attempts if a.get("kernel")]
-    ranked = sorted(scored, key=rank_key)
+    # The cost component is pool-relative, so the whole pool goes in: an attempt's
+    # quality index is not a property it carries alone.
+    pool = [(a["kernel"].get("summary") or {}) for a in scored]
+    ranked = sorted(scored, key=lambda a: rank_key(a, pool))
     chosen = ranked[0] if ranked else None
     first = next((a for a in sorted(attempts, key=lambda a: (a["manuals"], a["rep"]))
                   if a["rep"] == 1), None)

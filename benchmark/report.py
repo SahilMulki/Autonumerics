@@ -79,6 +79,27 @@ _ONESHOT_VERDICT_ORDER = ("PASS", "STABLE_PASS", "FAIL", "CONSTRAINT_VIOLATION",
 # --- verdict logic ----------------------------------------------------------
 
 
+def _pipeline_claimed_pass(rec):
+    """Did the pipeline claim this problem solved?
+
+    The question OVERCLAIM / UNDERCLAIM turn on is whether every gate the evidence
+    path requires came back clean -- which is what the kernel now reports directly as
+    ``certified``. It used to be spelled ``best_score >= 10``, and that spelling ties
+    the benchmark's pass rate to one integer at the moment the score starts resolving
+    *quality* below the tolerance line: a plan three decades inside the tolerance and
+    one that squeaked under it both certify, and only one of them should score 10.
+
+    Frozen results carry no ``certified``, so they fall back to the old test. The two
+    agree on every record written before the split, which is what
+    ``benchmark/tests`` pins.
+    """
+    pipeline = rec.get("pipeline") or {}
+    for source in (pipeline, rec.get("kernel") or {}):
+        if isinstance(source.get("certified"), bool):
+            return source["certified"]
+    return (pipeline.get("best_score") or 0) >= 10
+
+
 def compute_verdict(rec):
     run = rec.get("run", {})
     # The requirements gate firing is a deliberate refusal, not a crash: the pipeline
@@ -113,7 +134,7 @@ def compute_verdict(rec):
     if ver.get("constraint_violation"):
         return "CONSTRAINT_VIOLATION"
 
-    pipeline_pass = (rec.get("pipeline", {}).get("best_score") or 0) >= 10
+    pipeline_pass = _pipeline_claimed_pass(rec)
     verified_pass = bool(ver.get("passed", False))
 
     if verified_pass and pipeline_pass:

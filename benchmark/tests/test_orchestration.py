@@ -161,6 +161,15 @@ def test_kernel_metrics_never_raises_and_labels_each_failure(tmp_path, monkeypat
                    "tier": "B", "bound_by": "certification", "reason": "one break",
                    "agent_cap": None}
 
+    # A kernel that reports `certified` carries it through; one that does not (a plan
+    # scored before the field existed) omits it rather than recording None, so
+    # `report._pipeline_claimed_pass` can tell "did not certify" from "never asked".
+    certified = json.loads(good)
+    certified["certification"]["certified"] = True
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *a, **k: Proc(0, json.dumps(certified)))
+    assert RUN.kernel_metrics(str(plan))["certified"] is True
+
 
 # --- E5: the verdict on the no-closed-form shapes ---------------------------------
 

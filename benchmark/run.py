@@ -229,12 +229,19 @@ def summarize_pipeline(workspace_dir):
         # back to the highest-scoring plan, matching how verification picks a plan.
         best_plan = max(plans, key=lambda pid: (plans[pid].get("score") or -1,
                                                 -(plans[pid].get("iter") or 0)))
+    # What the winner early-exit and VERIFIED_PASS actually turn on, as the
+    # conductor recorded it. `best_score` stays beside it: the score answers "how far
+    # inside the tolerance", `certified` answers "did every gate come back clean",
+    # and only the second is a pass/fail. A STATE.md predating the split carries no
+    # `certified`, and `report._pipeline_claimed_pass` falls back to the old test.
+    certified = plans.get(best_plan, {}).get("certified") if best_plan else None
     return {
         "phase": state.get("phase"),
         "blocked_reason": state.get("blocked_reason"),
         "problem_type": state.get("problem_type"),
         "best_plan": best_plan,
         "best_score": best_score,
+        **({"certified": bool(certified)} if isinstance(certified, bool) else {}),
         "n_plans": len(plans),
         "total_iters": sum(iters) if iters else None,
         "plans": plans,
@@ -377,10 +384,13 @@ def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, 
                                      else kernel_metrics(plan_dir))
         # The same verdict the winner gets, computed on this plan's own scores.
         pipeline_score = (block or {}).get("score")
+        claimed = {"best_score": pipeline_score}
+        if isinstance((block or {}).get("certified"), bool):
+            claimed["certified"] = block["certified"]
         entry["verdict"] = R.compute_verdict({
             **{k: rec[k] for k in ("has_ground_truth", "ground_truth_kind")},
             "run": {"status": "completed"},
-            "pipeline": {"best_score": pipeline_score},
+            "pipeline": claimed,
             "verify": harness,
         })
         out["plans"][name] = entry
@@ -477,8 +487,10 @@ def solution_metrics(plan_dir):
     if not block:
         return None
     return {k: block.get(k) for k in (
-        "score", "provenance", "estimated_rel_error", "estimated_rel_error_T",
-        "error_horizon", "d1_outcome", "reference_outcome", "solver_sha256") if k in block}
+        "score", "certified", "provenance", "estimated_rel_error",
+        "estimated_rel_error_T", "error_horizon", "d1_outcome", "reference_outcome",
+        "design_order", "invariant_max_drift", "dynkin_z", "solve_time_s",
+        "solver_sha256") if k in block}
 
 
 def kernel_metrics(plan_dir, timeout_s=900):
@@ -515,6 +527,12 @@ def kernel_metrics(plan_dir, timeout_s=900):
         return {"status": "error", "error": f"kernel output is not JSON: {exc}"}
     cert = m.get("certification") or {}
     return {"status": "ok", "score": m.get("score"), "provenance": m.get("provenance"),
+            # Only when the kernel actually reported it. A plan scored before
+            # `certified` existed has no answer, and recording `None` would put a
+            # third state into a field `report._pipeline_claimed_pass` reads as a
+            # bool -- the absence is what makes it fall back to the old test.
+            **({"certified": cert["certified"]}
+               if isinstance(cert.get("certified"), bool) else {}),
             "tier": cert.get("tier"), "bound_by": cert.get("bound_by"),
             "reason": cert.get("reason"), "agent_cap": m.get("agent_cap")}
 

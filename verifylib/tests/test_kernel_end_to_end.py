@@ -83,7 +83,12 @@ def test_a_graded_mesh_makes_d1_abstain_rather_than_report_a_wrong_number():
         m = run(spec, directory, {})
         assert m["summary"]["d1_outcome"] == "unavailable", os.path.basename(directory)
         assert "non-uniform mesh" in m["d1"]["reason"]
-        assert m["score"] == 10, m["certification"]["reason"]
+        # `certified`, not `score == 10`: the claim here is that D1 abstaining does
+        # not collapse the run to 3, and certification is that claim. These two
+        # boundary-layer solvers land 1.57 decades inside the tolerance, which is
+        # real and is not the top of the 9-10 band.
+        assert m["certification"]["certified"] is True, m["certification"]["reason"]
+        assert m["score"] >= 9, m["certification"]["reason"]
 
 
 def test_the_cli_is_the_entry_point_and_emits_a_pasteable_metrics_block():
@@ -150,7 +155,17 @@ def test_the_two_level_path_is_taken_only_when_every_precondition_holds(tmp_path
     assert got["config"]["order_from"]["value"] == "mms_probe"
     assert got["detail"]["richardson"]["fs"] == 3.0, "an imported order needs Roache's 3.0"
     assert got["summary"]["asymptotic_source"] == "probe"
-    assert got["score"] == pinned["score"], "the saving must not move the answer"
+    # The saving must not move the *verdict*, and it does not: both certify. It does
+    # move the score, and that is not a defect to paper over. Measured on this
+    # canary, the two-level path reports 4.39e-04 against the three-level path's
+    # 4.54e-05 -- **9.7x** -- of which Roache's fs (3.0 imported against 1.25
+    # measured) is only 2.4x; the rest is the probe order itself. A cheaper,
+    # coarser measurement should not certify the top of its band, and `certified`
+    # is what keeps §24's saving free in the sense the cost discipline actually
+    # needs: the loop still exits on it and the pass rate is unchanged.
+    assert got["certification"]["certified"] is pinned["certification"]["certified"]
+    assert got["score"] <= pinned["score"], "a coarser measurement must not score higher"
+    assert got["summary"]["error_fs"] == 3.0 and pinned["summary"]["error_fs"] == 1.25
 
     shock = json.loads(json.dumps(trick))
     shock["verification"]["structural_facts"] = {"shock": "declared"}

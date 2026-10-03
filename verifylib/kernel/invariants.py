@@ -47,11 +47,20 @@ NEEDS = ("final", "trace", "override", "paths", "expr")
 class Invariant:
     """One registry entry: what it applies to, what it needs, what it accepts."""
 
-    __slots__ = ("name", "side", "needs", "params", "summary")
+    __slots__ = ("name", "side", "needs", "params", "summary", "default_tol")
 
-    def __init__(self, name, side, needs, params, summary):
+    def __init__(self, name, side, needs, params, summary, default_tol=1e-8):
         self.name, self.side, self.needs = name, side, needs
         self.params, self.summary = frozenset(params), summary
+        #: The bar an entry with no ``tol`` of its own is judged against. These used
+        #: to be literals at each evaluator's ``_tol`` call, which put the number
+        #: next to the code instead of next to the name it belongs to -- and made
+        #: the *effective* tolerance unrecoverable from outside this module, so a
+        #: drift could be reported but never compared against the bar it cleared.
+        #: They are not uniform and should not be: a maximum-principle overshoot is
+        #: an absolute Linf quantity, an energy drift is relative, and a support
+        #: breach is a path fraction that must be exactly zero.
+        self.default_tol = float(default_tol)
 
     def __repr__(self):
         return f"Invariant({self.name!r}, {self.side!r}, needs={self.needs!r})"
@@ -61,8 +70,8 @@ class Invariant:
 COMMON_PARAMS = ("name", "gate", "tol", "note", "expr", "requires_trace", "check")
 
 
-def _inv(name, side, needs, params, summary):
-    return Invariant(name, side, needs, (*COMMON_PARAMS, *params), summary)
+def _inv(name, side, needs, params, summary, default_tol=1e-8):
+    return Invariant(name, side, needs, (*COMMON_PARAMS, *params), summary, default_tol)
 
 
 #: The closed set. Adding a name here is the *only* way to make it gateable, and
@@ -77,13 +86,13 @@ INVARIANTS = {
         "integral(u(T)) - integral(u(0)) equals the integrated boundary flux"),
     "maximum_principle": _inv(
         "maximum_principle", "pde", "final", ("bc_values",),
-        "u(T) stays within [min, max] of the initial and boundary data"),
+        "u(T) stays within [min, max] of the initial and boundary data", default_tol=1e-10),
     "energy_decay": _inv(
         "energy_decay", "pde", "trace", (),
         "integral(u**2) is non-increasing"),
     "energy_conservation": _inv(
         "energy_conservation", "pde", "trace", (),
-        "the declared energy is constant in time"),
+        "the declared energy is constant in time", default_tol=1e-6),
     "energy_bounded": _inv(
         "energy_bounded", "pde", "trace", ("bound",),
         "the declared energy stays finite and below `bound` at every step"),
@@ -92,13 +101,13 @@ INVARIANTS = {
         "sum|du| is non-increasing (TVD)"),
     "positivity": _inv(
         "positivity", "both", "final", ("fields",),
-        "min(u) >= -tol"),
+        "min(u) >= -tol", default_tol=1e-10),
     "symmetry": _inv(
         "symmetry", "pde", "final", ("axis", "parity", "fields"),
         "||u - P u|| / ||u|| ~ 0 for the declared reflection P"),
     "translation_invariance": _inv(
         "translation_invariance", "pde", "override", ("axis", "shift_cells"),
-        "solve with the IC shifted, shift back, and recover the unshifted solution"),
+        "solve with the IC shifted, shift back, and recover the unshifted solution", default_tol=1e-4),
     "divergence_free": _inv(
         "divergence_free", "pde", "final", ("fields",),
         "||div F|| ~ 0 over the declared field tuple"),
@@ -109,20 +118,20 @@ INVARIANTS = {
     "convexity": _inv(
         "convexity", "pde", "final", (),
         "the discrete Hessian is positive semi-definite (selects the viscosity "
-        "solution of a Monge-Ampere problem)"),
+        "solution of a Monge-Ampere problem)", default_tol=1e-6),
     # --- verification_manual.md §21, SDE -------------------------------------
     "finite": _inv(
         "finite", "sde", "paths", (),
         "no NaN/Inf in terminal_paths"),
     "support": _inv(
         "support", "sde", "paths", ("bounds", "lower", "upper"),
-        "fraction of paths outside the declared support"),
+        "fraction of paths outside the declared support", default_tol=0.0),
     "martingale": _inv(
         "martingale", "sde", "paths", ("ci_mult", "reference_value_at_T"),
-        "E[M_T] = M_0 within ci_mult standard errors"),
+        "E[M_T] = M_0 within ci_mult standard errors", default_tol=0.0),
     "estimator_stability": _inv(
         "estimator_stability", "sde", "paths", ("n_batches",),
-        "batch-means scatter confirms num_paths has settled"),
+        "batch-means scatter confirms num_paths has settled", default_tol=1e-2),
     "shape": _inv(
         "shape", "sde", "expr", (),
         "terminal_paths has the declared shape"),
@@ -231,9 +240,28 @@ def integral(u, axes, periodic=None, duplicated=None):
 # Each returns ``(outcome, drift)``. ``outcome`` is True / False / a skip marker
 # from metrics.SKIPS; ``drift`` is the number the review reports, or None.
 
-def _tol(entry, default=1e-8):
+def _tol(entry, default=None):
+    """The tolerance this entry is judged against.
+
+    Its own ``tol`` if it declares one, else :attr:`Invariant.default_tol` for its
+    name. ``default`` is only for an entry with no registry name -- a spec-supplied
+    ``expr`` predicate, which has nowhere else to get one.
+    """
     tol = entry.get("tol")
-    return float(tol) if isinstance(tol, (int, float)) else default
+    if isinstance(tol, (int, float)) and not isinstance(tol, bool):
+        return float(tol)
+    if default is not None:
+        return float(default)
+    inv = INVARIANTS.get(entry.get("name"))
+    return inv.default_tol if inv is not None else 1e-8
+
+
+def effective_tol(entry):
+    """The bar :func:`_within` actually applies: the declared or registry tolerance,
+    floored at :data:`ROUNDOFF`. This is what a drift must be divided by before two
+    invariants can be compared -- a mass drift and a symmetry drift are not on one
+    scale, and their headroom is."""
+    return max(_tol(entry), ROUNDOFF)
 
 
 #: The floor below which a declared tolerance is tighter than any real scheme can be.
@@ -255,6 +283,14 @@ def _tol(entry, default=1e-8):
 #: formulator actually chose above it -- and the smallest in ``workspace/`` is
 #: exactly 1e-10 -- is left at the value they wrote.
 ROUNDOFF = 1e-10
+
+
+#: Decades of structural margin past which a drift stops being a measurement of the
+#: scheme. Nothing below the round-off floor distinguishes one correct scheme from
+#: another, so :func:`_headroom` saturates here rather than rewarding arithmetic
+#: noise -- a solver reporting 1e-16 is not a hundred times better than one
+#: reporting 1e-14.
+MAX_HEADROOM = 6.0
 
 
 def _within(value, tol):
@@ -298,7 +334,7 @@ def _maximum_principle(entry, ctx):
     if u_0 is None:
         return "not_reported", None
     bc = [float(v) for v in (entry.get("bc_values") or [])]
-    tol = _tol(entry, 1e-10)
+    tol = _tol(entry)
     lo = min([float(np.min(u_0)), *bc]) - tol
     hi = max([float(np.max(u_0)), *bc]) + tol
     over = max(0.0, float(np.max(u_T)) - hi, lo - float(np.min(u_T)))
@@ -307,7 +343,7 @@ def _maximum_principle(entry, ctx):
 
 def _positivity(entry, ctx):
     worst = min(float(np.min(f)) for f in _field(ctx, entry))
-    tol = _tol(entry, 1e-10)
+    tol = _tol(entry)
     return worst >= -tol, -min(worst, 0.0)
 
 
@@ -319,7 +355,7 @@ def _total_variation(entry, ctx):
     def tv(a):
         return float(np.sum(np.abs(np.diff(a, axis=axis))))
     growth = (tv(u_T) - tv(u_0)) / (tv(u_0) + 1e-14)
-    return _within(growth, _tol(entry, 1e-8)), growth
+    return _within(growth, _tol(entry)), growth
 
 
 def _symmetry(entry, ctx):
@@ -368,7 +404,7 @@ def _boundary_consistency(entry, ctx):
                 face = np.take(u, index, axis=axis)
                 scale = max(float(np.max(np.abs(u))), 1e-300)
                 worst = max(worst, float(np.max(np.abs(face - float(want)))) / scale)
-        return _within(worst, _tol(entry, 1e-8)), worst
+        return _within(worst, _tol(entry)), worst
     if not isinstance(faces, dict) or not faces:
         return "not_reported", None
     u, worst = ctx.primary(), 0.0
@@ -382,7 +418,7 @@ def _boundary_consistency(entry, ctx):
         face = np.take(u, index, axis=axis)
         scale = max(float(np.max(np.abs(u))), 1e-300)
         worst = max(worst, float(np.max(np.abs(face - float(want)))) / scale)
-    return _within(worst, _tol(entry, 1e-8)), worst
+    return _within(worst, _tol(entry)), worst
 
 
 def _convexity(entry, ctx):
@@ -400,7 +436,7 @@ def _convexity(entry, ctx):
     uxx, uyy = d2(u, 0, hx), d2(u, 1, hy)
     uxy = d1(d1(u, 0, hx), 1, hy)
     s = tuple(slice(4, -4) for _ in range(2))
-    tol = _tol(entry, 1e-6)
+    tol = _tol(entry)
     worst = max(-float(np.min(uxx[s])), -float(np.min(uyy[s])),
                 -float(np.min((uxx * uyy - uxy ** 2)[s])))
     return worst <= tol, max(worst, 0.0)
@@ -423,7 +459,7 @@ def _energy_decay(entry, ctx):
     if series is None:
         return "not_reported", None
     growth = float(np.max(series) - series[0]) / (abs(float(series[0])) + 1e-14)
-    return _within(growth, _tol(entry, 1e-8)), growth
+    return _within(growth, _tol(entry)), growth
 
 
 def _energy_conservation(entry, ctx):
@@ -431,7 +467,7 @@ def _energy_conservation(entry, ctx):
     if series is None:
         return "not_reported", None
     drift = float(np.max(np.abs(series - series[0]))) / (abs(float(series[0])) + 1e-14)
-    return _within(drift, _tol(entry, 1e-6)), drift
+    return _within(drift, _tol(entry)), drift
 
 
 def _energy_bounded(entry, ctx):
@@ -487,7 +523,7 @@ def _translation_invariance(entry, ctx):
         return "not_reported", None
     got = ctx.primary_of(shifted)
     drift = rms(roll(got, -shift) - base) / (rms(base) + 1e-14)
-    return _within(drift, _tol(entry, 1e-4)), drift
+    return _within(drift, _tol(entry)), drift
 
 
 # --- SDE ---------------------------------------------------------------------
@@ -511,11 +547,11 @@ def _support(entry, ctx):
     out = np.zeros(X.shape[:1], dtype=bool) if X.ndim else np.zeros((), dtype=bool)
     flat = X.reshape(X.shape[0], -1) if X.ndim > 1 else X.reshape(-1, 1)
     if lo is not None:
-        out = out | np.any(flat < float(lo) - _tol(entry, 0.0), axis=1)
+        out = out | np.any(flat < float(lo) - _tol(entry), axis=1)
     if hi is not None:
-        out = out | np.any(flat > float(hi) + _tol(entry, 0.0), axis=1)
+        out = out | np.any(flat > float(hi) + _tol(entry), axis=1)
     frac = float(np.mean(out))
-    return _within(frac, _tol(entry, 0.0)), frac
+    return _within(frac, _tol(entry)), frac
 
 
 def _martingale(entry, ctx):
@@ -527,7 +563,7 @@ def _martingale(entry, ctx):
     m = float(np.mean(flat))
     se = float(np.std(flat, ddof=1) / np.sqrt(len(flat)))
     ci = float(entry.get("ci_mult", 2.0))
-    return _within(abs(m - float(m0)), ci * se + _tol(entry, 0.0)), abs(m - float(m0))
+    return _within(abs(m - float(m0)), ci * se + _tol(entry)), abs(m - float(m0))
 
 
 def _estimator_stability(entry, ctx):
@@ -540,7 +576,7 @@ def _estimator_stability(entry, ctx):
         return "not_reported", None
     means = np.array([float(np.mean(b)) for b in np.array_split(flat, n)])
     scatter = float(np.std(means, ddof=1) / np.sqrt(n) / (abs(float(np.mean(flat))) + 1e-14))
-    return _within(scatter, _tol(entry, 1e-2)), scatter
+    return _within(scatter, _tol(entry)), scatter
 
 
 _EVALUATORS = {
@@ -719,8 +755,50 @@ def run_declared(verification, ctx):
                 gate_failed.append(name)
             else:
                 non_gate_ok = False
+    # Two numbers `invariants_ok: true` cannot say. It reports that every drift
+    # cleared its own tolerance, not whether it cleared by a hair or by six decades,
+    # and ranking two plans that both pass needs the second thing.
+    #
+    # `max_drift` is raw and is for reporting only -- a mass drift and a symmetry
+    # drift are not on one scale. `worst_headroom` is the comparable form: each drift
+    # against the bar it was actually judged against, in decades, worst entry first.
+    # Larger is better; 0.0 means something passed exactly at its tolerance.
+    numeric = [(n, v) for n, v in drifts.items()
+               if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v]
+    headroom = _headroom(declared, dict(numeric))
     return {"drifts": drifts, "outcomes": outcomes, "gate_failed": gate_failed,
             "not_reported": not_reported, "not_reported_gated": not_reported_gated,
             "non_gate_ok": non_gate_ok,
             "invariants_ok": not gate_failed and non_gate_ok,
+            "max_drift": max((v for _, v in numeric), default=None),
+            "headroom": headroom,
+            "worst_headroom": min(headroom.values(), default=None),
             "declared": len(declared)}
+
+
+def _headroom(declared, drifts):
+    """``{name: decades of room below its own tolerance}`` for every measured drift.
+
+    ``log10(tol / drift)``, so 0 is "passed exactly at the bar", 4 is "four orders of
+    magnitude inside it", and a negative value is a drift that did not clear.
+
+    A drift at or below :data:`ROUNDOFF` gets :data:`MAX_HEADROOM`, not a ratio.
+    Below that floor the number is the scheme's arithmetic rather than its fidelity
+    -- and the floor is *also* the tolerance several registry entries carry
+    (``maximum_principle`` and ``positivity`` are both 1e-10), so dividing there
+    would report an exactly-conserving scheme as having passed by nothing at all.
+    Exact conservation is the best available outcome, so it reads as the maximum.
+    """
+    out = {}
+    for entry in declared:
+        name = entry.get("name") or "?"
+        drift = drifts.get(name)
+        if drift is None:
+            continue
+        magnitude = abs(float(drift))
+        if magnitude <= ROUNDOFF:
+            out[name] = MAX_HEADROOM
+        else:
+            out[name] = float(min(np.log10(effective_tol(entry) / magnitude),
+                                  MAX_HEADROOM))
+    return out
