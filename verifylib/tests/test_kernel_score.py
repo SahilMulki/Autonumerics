@@ -85,6 +85,61 @@ def test_nothing_runnable_is_two_and_a_crash_is_one():
     assert (crash["score"], crash["provenance"]) == (1, "none")
 
 
+# --- D8b, and the edge of it (plan §11 D8b; [REV 59]) -------------------------
+
+#: An SDE plan with one circularity break and nothing else: `ceiling`'s
+#: "one circularity break ... no Tier-B evidence" row, which is the only row an
+#: SDE plan reaches through `c_clean` (the Tier-B rows are unreachable while the
+#: SDE driver hard-codes `tier_b: "unavailable"`).
+ONE_BREAK_SDE = dict(CLEAN_B, kind="sde", tier_b="unavailable", d1_outcome="clean",
+                     operator_validated=True)
+
+
+def test_a_measured_order_abstention_keeps_its_circularity_break():
+    """D8b, stated at the only place it is priced. The order study abstaining is a
+    property of the estimator, so it must not cost the break Dynkin earned."""
+    from verifylib.kernel.score import ceiling
+
+    assert ceiling({**ONE_BREAK_SDE, "order_ok": True})[0] == 9
+    assert ceiling({**ONE_BREAK_SDE, "order_ok": "unresolved"})[0] == 9
+    # §24's cost skip is taken only where the moments already matched an exact
+    # reference, so by construction it cannot change the outcome either.
+    assert ceiling({**ONE_BREAK_SDE, "order_ok": "not_run"})[0] == 9
+
+
+def test_a_ladder_that_crashed_does_not_buy_the_abstention_credit():
+    """[REV 59]. ``order_evidence`` was ``passed(order_ok) or is_skip(order_ok)``,
+    which credited all seven members of ``SKIPS``. ``_orders`` returns
+    ``"unavailable"`` both for the honest abstention *and* for **a CRN level that
+    crashed** -- ``m13``'s ``IndexError`` was recorded under that exact token -- so
+    a plan whose ladder produced no number at all collected the 9 that D8b reserves
+    for a ladder that produced numbers the estimator could not read.
+
+    ``ceiling`` already draws this distinction for the solver thirty lines above:
+    *"a crash is a property of the code"*. Same rule for the ladder.
+    """
+    from verifylib.kernel.score import ceiling
+
+    for absent in ("unavailable", "faulty_probe", "not_reported", "unshadowable",
+                   "waived_chaotic"):
+        got = ceiling({**ONE_BREAK_SDE, "order_ok": absent})
+        assert got[0] == 8, (absent, got)
+        assert got[1] == "self_convergence", (absent, got)
+    # A failure is still a failure, and lands on the same row as no evidence.
+    assert ceiling({**ONE_BREAK_SDE, "order_ok": False})[0] == 8
+
+
+def test_the_free_skip_list_is_a_strict_subset_of_the_skip_vocabulary():
+    """A new skip token must not become free evidence by being added to ``SKIPS``.
+    That is how the hole in [REV 59] opened: the credit was written against the
+    vocabulary instead of against the two outcomes D8b actually decided."""
+    from verifylib.kernel.metrics import SKIPS
+    from verifylib.kernel.score import _FREE_ORDER_SKIPS
+
+    assert set(_FREE_ORDER_SKIPS) < set(SKIPS)
+    assert "unavailable" not in _FREE_ORDER_SKIPS
+
+
 # --- the two rubrics ----------------------------------------------------------
 
 def test_the_analytic_path_does_not_require_tier_b():
@@ -250,13 +305,16 @@ def test_the_drivers_supply_every_evidence_key_certify_reads():
     sde_only = keys_of(score_mod.rubric_sde) | keys_of(score_mod.rubric_sde_analytic)
     assert shared and pde_only and sde_only, "no evidence keys found -- did score.py change?"
 
-    # Two caps are PDE-only by construction: an SDE has no spatial ladder to
-    # interpolate and declares no scalar functionals. Their absence means "no cap".
+    # Some caps belong to one kind by construction, and their absence means "no
+    # cap" rather than a forgotten key. An SDE has no spatial ladder to interpolate
+    # and declares no scalar functionals; a PDE has no scheme family whose Milstein
+    # correction needs a Levy area.
     pde_only_caps = {"interpolated", "not_reported_functionals"}
+    sde_only_caps = {"milstein_claim"}
 
     pde = inspect.getsource(driver._evidence)
     sde = inspect.getsource(sde_driver.evaluate_sde)
-    for key in sorted(shared | pde_only):
+    for key in sorted((shared | pde_only) - sde_only_caps):
         assert f'"{key}"' in pde, f"PDE evidence never sets {key!r}"
     for key in sorted((shared | sde_only) - pde_only_caps):
         assert f'"{key}"' in sde, f"SDE evidence never sets {key!r}"
@@ -279,3 +337,99 @@ def test_an_imported_order_carries_the_larger_safety_factor():
     _, gci_measured = rich.estimate(probe["d10"], probe["d10"], u1, 2.0, fs=rich.FS_MEASURED)
     assert probe["gci"] > gci_measured
     assert probe["gci"] == pytest.approx(gci_measured * 3.0 / 1.25)
+
+
+# --- the rubric-parity guard (plan §4b, criterion 8) --------------------------
+
+#: What each analytic rubric reads that its counterpart does not, **and why**.
+#:
+#: Plan §4b asked for a parity test over score *values*; [REV 32] re-worded
+#: criterion 8 because the manual gives bands (7-9, 4-5) and the code gives single
+#: values widened by ``BANDS``, so "field for field" is the only version that can
+#: hold. The divergence in Finding 1 was silent for the life of the file --
+#: ``rubric_sde_analytic`` read five fields and ``rubric_pde_analytic`` read a
+#: different five, and nothing said so -- and a table-driven test is the only thing
+#: that keeps the two from drifting again.
+#:
+#: An entry here is a decision. A new field appearing in one rubric and not the
+#: other fails this test until someone writes the sentence.
+RUBRIC_ASYMMETRY = {
+    # --- PDE only ------------------------------------------------------------
+    "e_fine": "a PDE's accuracy statistic is a single field error against the closed "
+              "form, and the rubric grades it on a continuum (1x, 5x, 20x, 50x of the "
+              "tolerance). An SDE's is two moments each against its own confidence "
+              "interval under §14's three-way outcome, so the SDE rubric reads "
+              "`moments_ok` / `variance_ok` / `resolved` instead of a number",
+    "rel_err_tol": "the tolerance `e_fine` is graded against; see `e_fine`",
+    "order_ok": "the PDE *spatial* order against its design rate. The SDE counterpart "
+                "is `orders_ok`, the CRN strong order, which is a different quantity "
+                "measured a different way -- `order_ok` is set to `orders_ok` in the "
+                "SDE driver's evidence for `ceiling()`, which reads the shared name",
+    # --- SDE only ------------------------------------------------------------
+    "moments_ok": "§14: every SDE comparison is against a confidence interval and "
+                  "returns pass / fail / inconclusive. There is no PDE counterpart "
+                  "because a field error has no Monte-Carlo width",
+    "variance_ok": "the second moment on its own, which is what separates 'the "
+                   "variance passes and the mean is marginal' from 'neither does'",
+    "resolved": "§14's third outcome, and the one row whose feedback must be 'raise "
+                "num_paths' rather than 'fix the scheme'. A PDE has no such state",
+    "constraints_ok": "D10: Path A has no surrogate, so this is part of the "
+                      "conjunction `rubric_sde`'s 8 row is guarded by. The PDE "
+                      "analytic rubric reads `gate_violation` for the same thing and "
+                      "does not need the non-gate half",
+    "dynkin_ok": "Dynkin is D1's SDE counterpart. `rubric_pde_analytic` does not read "
+                 "`d1_outcome` either -- on both paths the operator check reaches the "
+                 "score through `gates_clean()` and `ceiling()`, and the rubric row "
+                 "exists so the *reason* names the generator rather than the ceiling's "
+                 "wording. Keeping it is [REV 14] item 4's 'cosmetic once 1b lands'",
+    "orders_ok": "see `order_ok`: the same question, a different measurement",
+    "reference_evaluable": "whether any closed-form moment could be evaluated at all. "
+                           "The PDE rubric gets this for free -- `e_fine is None` *is* "
+                           "'no error could be measured' -- while an SDE's "
+                           "`moments_ok: \"unavailable\"` is reached both by 'nothing "
+                           "was evaluable' (a 2) and by 'the CI was wider than the "
+                           "tolerance' (a 6), so the two states need separate fields",
+}
+
+
+def _rubric_keys(fn):
+    import inspect
+    import re
+
+    src = inspect.getsource(fn)
+    found = set(re.findall(r"""evidence\.get\(["']([a-z_0-9]+)["']""", src))
+    found |= set(re.findall(r"""\bv\(["']([a-z_0-9]+)["']\)""", src))
+    return found - {"kind", "path"}
+
+
+def test_the_two_analytic_rubrics_read_the_same_fields_or_say_why_not():
+    """Criterion 8, as [REV 32] re-worded it. Finding 1 *was* this test failing: the
+    SDE analytic rubric read neither `dynkin_ok` nor `orders_ok` nor
+    `invariants_ok`, the PDE one read two of the three, and nothing anywhere
+    recorded the divergence as a decision."""
+    from verifylib.kernel import score as score_mod
+
+    pde = _rubric_keys(score_mod.rubric_pde_analytic)
+    sde = _rubric_keys(score_mod.rubric_sde_analytic)
+    assert pde and sde, "no evidence keys found -- did score.py change shape?"
+    unexplained = (pde ^ sde) - set(RUBRIC_ASYMMETRY)
+    assert unexplained == set(), (
+        f"these fields are read by one analytic rubric and not the other, with no "
+        f"recorded reason: {sorted(unexplained)}. Add the field to the other rubric, "
+        f"or a sentence to RUBRIC_ASYMMETRY saying why the two paths differ")
+    # ...and the table may not go stale either: an entry for a field both rubrics
+    # now read is a reason nobody needs, and it hides the next real divergence.
+    stale = sorted(k for k in RUBRIC_ASYMMETRY if k in (pde & sde))
+    assert stale == [], f"both rubrics now read these; drop them from the table: {stale}"
+
+
+def test_the_three_fields_finding_one_was_about_are_read_on_both_paths():
+    """The specific regression, named. `grep` over `score.py` used to confirm that
+    **neither** SDE rubric read `invariants_ok` at all, which is why 1a's invariants
+    row was a new judgement rather than a transcription."""
+    from verifylib.kernel import score as score_mod
+
+    sde = _rubric_keys(score_mod.rubric_sde_analytic)
+    for field in ("dynkin_ok", "orders_ok", "invariants_ok"):
+        assert field in sde, field
+    assert "invariants_ok" in _rubric_keys(score_mod.rubric_pde_analytic)

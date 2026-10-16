@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "Agent pipeline that designs, implements, and independently verifies numerical solvers for SDEs and PDEs."
 requires-python = ">=3.13"
 dependencies = [
-    "numpy>=1.26.0",
+    # 2.0 is a floor, not a preference: `np.trapezoid` is a numpy-2 name (1.x spells
+    # it `np.trapz`) and 15 call sites across `verifylib/` and `benchmark/` use it.
+    # The old `>=1.26.0` was satisfiable by a numpy that cannot run the suite --
+    # measured on 1.26.4: 5 failures, all `np.trapezoid`, all PDE-side.
+    # `test_project_metadata.py` holds this floor to the APIs actually called.
+    "numpy>=2.0.0",
     "scipy>=1.17.1",
 ]
 

@@ -497,9 +497,41 @@ def check_boundary_conditions(spec, rtol=1e-8, N=257):
 
 # --- SDE: the claimed moments against the declared moment ODE ----------------
 
+def _evaluable(expr, params, T):
+    """Whether the evaluator can actually turn ``expr`` into a finite number.
+
+    [REV 58]. The presence of an expression field is not the same question as
+    whether there is a usable expression in it. ``evaluate`` runs with no
+    builtins and a fixed safe namespace, so a spec-authored quadrature
+    (``scipy.integrate.quad(...)``, the shape ``sde_quintic_random_ic`` carries)
+    is refused *by design*; probing it here asks the same thing the comparison
+    loop would ask, early enough that the refusal can be answered with the
+    literal the spec declared rather than surfacing as a raise two frames up.
+
+    Probed at both ends of the comparison grid -- an expression that is singular
+    exactly at ``T`` is no more usable across the curve than one that fails
+    everywhere, and a ``nan`` compared against a claim is not evidence either
+    way. A non-string (``None``, or a list the caller handles elsewhere) is not
+    evaluable, which is what makes this a strict widening of the ``is None``
+    test it replaces.
+    """
+    if not isinstance(expr, str):
+        return False
+    try:
+        return all(np.isfinite(float(evaluate(expr, {**params, "t": t})))
+                   for t in (0.05 * T, T))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _moment_observables(spec):
     """``(name, from_expr, claimed, at_T_only)`` pairs, matched by *declared*
     quantity, never guessed.
+
+    A ``{kind}_value_at_T`` literal is read where no expression exists, and is
+    compared at ``T`` only -- the same treatment ``covariance_value_at_T`` already
+    gets. A spec whose variance is a quadrature the evaluator refuses still has a
+    number it committed to, and the ledger can still check it.
 
     The one trap here: ``cross_from`` is a **covariance** (``"mxy - m1x*m1y"``)
     while ``cross_moment.expression`` is the raw ``E[XY]``. Pairing those two by
@@ -510,6 +542,8 @@ def _moment_observables(spec):
     am = spec.get("analytic_moments") or {}
     verification = spec.get("verification") or {}
     mo = verification.get("moment_ode") or {}
+    params = dict(spec.get("parameters") or {})
+    T = float((spec.get("time_interval") or {}).get("T") or 1.0)
     out = []
 
     def add(name, from_expr, claimed, at_T=False):
@@ -522,6 +556,25 @@ def _moment_observables(spec):
                 and len(from_expr) == len(claimed):
             for i, (f, c) in enumerate(zip(from_expr, claimed, strict=True)):
                 add(f"{kind}[{i}]", f, c)
+        elif am.get(f"{kind}_value_at_T") is not None \
+                and not _evaluable(claimed, params, T):
+            # [REV 17]: the other half of Finding 6. Without this the moments become
+            # gradeable in the driver while `reference_outcome` stays `"unavailable"`
+            # -> `tier_of` returns `A_unavailable` -> `ceiling()` returns **9** with
+            # provenance `analytic_unvalidated`, so the plan can never reach 10 on
+            # that spec and a score-level check reads as satisfied. A literal is
+            # checkable at `T` only, which `at_T` already expresses -- it is how
+            # `cross_moment.covariance_value_at_T` is handled one call below.
+            #
+            # [REV 58]: keyed on the *evaluator*, not on the field being absent.
+            # `claimed is None` covered only half the shape Finding 6 describes:
+            # `sde_quintic_random_ic` declares a `variance_expression` of
+            # `scipy.integrate.quad(...)` **beside** `variance_value_at_T`, so the
+            # expression is present, the fallback did not fire, and the comparison
+            # loop below raised `NameError` -- which `driver._reference_outcome`'s
+            # except turns into `"unavailable"`, landing on exactly the 9 this
+            # branch exists to prevent, on a spec that does commit to a number.
+            add(kind, from_expr, am.get(f"{kind}_value_at_T"), at_T=True)
         else:
             add(kind, from_expr, claimed)
         for comp in ("X", "Y", "Z"):
@@ -585,9 +638,24 @@ def check_moment_ode_consistency(spec, *, rtol=1e-6, n_points=12):
         w = 0.0
         for t in times:
             ns = {**params, "t": t, **dict(zip(state, sol.sol(t), strict=True))}
-            integrated = float(evaluate(from_expr, ns))
-            want = float(evaluate(claimed, {**params, "t": t})) if isinstance(claimed, str) \
-                else float(claimed)
+            try:
+                integrated = float(evaluate(from_expr, ns))
+                want = float(evaluate(claimed, {**params, "t": t})) \
+                    if isinstance(claimed, str) else float(claimed)
+            except Exception as exc:  # noqa: BLE001
+                # [REV 58]: an expression the evaluator refuses is `unavailable`
+                # *and says which one*. Before this the raise travelled up to
+                # `driver._reference_outcome`'s bare except, which produced the
+                # right token with no reason attached -- indistinguishable in the
+                # metrics from "this spec claims nothing", which is the one
+                # distinction §4b's no-reference row turns on. `_evaluable`
+                # front-runs the common case (a literal stands in for a refused
+                # expression); this covers the rest, including a `*_from` the
+                # spec got wrong and an expression singular mid-grid.
+                return "unavailable", {
+                    "reason": f"the moment ODE comparison for {name!r} could not be "
+                              f"evaluated at t={t:.4g}: {type(exc).__name__}: {exc}",
+                    "failed_observable": name}
             w = max(w, abs(integrated - want) / max(abs(integrated), abs(want), 1e-8))
         per[name] = w
         worst = max(worst, w)

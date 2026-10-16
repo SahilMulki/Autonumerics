@@ -39,6 +39,7 @@ from __future__ import annotations
 import math
 
 from .kernel.invariants import MAX_HEADROOM
+from .kernel.metrics import is_skip
 from .kernel.score import provenance_rank
 
 #: Decades below the tolerance at which a **PDE**'s accuracy saturates. 1e-2 -> 1e-8
@@ -234,9 +235,11 @@ def order(summary):
     declared order is expected and only falling short counts.
 
     Returns None where the check was waived (`order_check: waived_spec` /
-    `waived_chaotic`), where the order is non-finite (a run at the round-off floor,
-    which `richardson` reports as `inf` and which the score already credits), where
-    the scheme is spectral (see below), or where no design order was declared. That last case is most plans today: measured
+    `waived_chaotic`), where an SDE order study **abstained**
+    (`order_check: unavailable`), where the order is non-finite (a run at the
+    round-off floor, which `richardson` reports as `inf` and which the score already
+    credits), where the scheme is spectral (see below), or where no design order was
+    declared. That last case is most plans today: measured
     across `workspace/`, 22 of 104 declare `spatial_order` and 25 declare
     `scheme_family` -- both landed with the no-closed-form work, so the fields are
     present on the newer pools only. Inferring a design order from a plan's *slug*
@@ -246,16 +249,46 @@ def order(summary):
     # `order_check` is a three-valued string, not a bool: `driver._order_verdict`
     # returns "true", "waived_spec" or "waived_chaotic". Testing it for
     # stringhood reads a *passing* check as a waived one.
-    if str(summary.get("order_check") or "").startswith("waived"):
+    state = str(summary.get("order_check") or "")
+    if state.startswith("waived") or is_skip(state):
+        # A skip token is the SDE abstention and its neighbours: `"unresolved"` is
+        # `crn.abstention` (the estimator's own error bar admits more than the band,
+        # or both pathwise differences are at the roundoff scale), `"unavailable"` is
+        # a ladder that crashed, `"not_run"` is §24's cost skip. Ranking a plan on an
+        # estimate the kernel just declined to gate on would reintroduce the defect
+        # one layer up, where no score-based acceptance criterion can see it.
+        #
+        # [REV 59]: matched against the vocabulary rather than against the one
+        # literal `"unavailable"`. The abstention's token changed in that revision,
+        # and an exact-string test here would have gone on ranking plans on the very
+        # estimate `guards` had declined to read -- silently, because this moves
+        # ranks and not scores.
         return None
     observed = _num(summary.get("observed_order"))
     design = _num(summary.get("design_order"))
     if observed is None or design is None or design <= 0.0:
         return None
     if summary.get("kind") == "sde" or summary.get("scheme_family") in _SDE_FAMILIES:
-        # `order_floor` carries the expected strong order, a target with the
-        # two-sided band `strong_ok` applies. Distance from it is the measurement.
+        # `order_floor` carries the expected strong order, and the band around it is
+        # **the same band `crn.guards` applied** -- read off `order_band`, which the
+        # SDE driver copies from the guard's own `strong_band`, rather than re-derived
+        # here. One rule, three call sites (plan §11 D12): a second derivation is how
+        # this branch came to carry a two-sided penalty after `guards` stopped
+        # applying one, and it is invisible to every acceptance criterion because it
+        # moves ranks rather than scores.
+        #
+        # Two-sided when the band is absent, which is what every pre-D12 metrics file
+        # and every PDE summary carries: a missing field must not silently change how
+        # an existing artifact ranks.
         target = _num(summary.get("order_floor")) or design
+        if str(summary.get("order_band") or "").startswith("one-sided"):
+            # Only a shortfall counts. Measured: a correct additive-noise
+            # Euler-Maruyama has strong order 1 and a defaulted floor of 0.5, so the
+            # two-sided distance scored it 0.028 -- last in its pool, on a right
+            # answer. `expected_orders`' own rule is that an inference must never
+            # make a test stricter, and §19's is that an order above the theoretical
+            # one is noise rather than a bonus.
+            return _clip01(1.0 - max(0.0, target - observed) / max(target, 0.5))
         return _clip01(1.0 - abs(observed - target) / max(target, 0.5))
     if summary.get("scheme_family") == "spectral":
         # Not measurable, and not for want of numbers. A spectral method's error is

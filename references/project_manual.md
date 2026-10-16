@@ -120,12 +120,52 @@ are the *analytic* path — when there is no closed form, the kernel uses the co
 in `verification_manual.md` (§12 for PDE, §23 for SDE), under the certification ceiling in §26.
 
 **SDE, analytic path** (`evaluator-sde`, `analytic_moments.has_analytic_solution == true`):
+
+Rows in the order they are applied. The order decides what a sign-flipped drift scores: such a
+solver explodes the variance, widens the CI, and would otherwise land on the MC-inconclusive row
+with a Dynkin `z` of ~1500 and feedback telling the author to raise `num_paths`.
+
+- **1**: the solver crashed, or returned non-finite output
+- **4**: a `gate: true` structural constraint is violated (negative paths, support breach)
+- **3**: Dynkin fails — the paths do not satisfy the generator built from the spec's own drift and
+  diffusion. Exact terminal moments cannot separate this from a correct solve, because two
+  processes can share two moments, so the usual cause is the wrong equation integrated correctly
+- **2**: no moment could be measured against the closed form — the spec claims an analytic
+  solution and neither a declared expression nor a `*_value_at_T` was evaluable for either moment
+- **8**: the moments match, the MC is resolved and the constraints hold, but the observed **strong
+  order** does not clear its floor. Same score and same row as the no-closed-form rubric
+  (`verification_manual.md` §23) gives the identical state — scoring it 7 here and 8 there would
+  open a cross-path divergence. The reason branches on the measured order: near zero is a solver
+  that does not consume the supplied Brownian increments (§18), below the floor is a scheme
+  converging more slowly than it claims
+- **5**: as above, but a declared non-gate **invariant** drifts materially — the terminal
+  distribution is right and a structural property the spec states of the *process* is not
+- **6**: MC-inconclusive — error bars too wide to decide; raise `num_paths`. Not a solver bug
+- **9**: all of the 10 row's conditions hold **and `dynkin_ok` never reached a verdict** — the
+  budget refused the ladder, the generator could not be built, the observables run crashed, or the
+  extrapolation abstained. Everything measurable passed and nothing establishes that the paths came
+  from this SDE; the 3 row above says why exact moments cannot stand in. Uncertified, not suspect
 - **10**: `variance_rel_err < 10%` AND (`|exact_mean| < 0.01` OR `mean_rel_err < 5%`), **and the
-  estimates are MC-resolved** (§14)
-- **7–9**: variance passes, mean slightly above threshold
-- **6**: MC-inconclusive — error bars too wide to decide; raise `num_paths`
-- **4–5**: variance fails, code ran cleanly
-- **1–3**: non-finite outputs or crash
+  estimates are MC-resolved** (§14), **and `dynkin_ok` is `True`**. An order study that
+  *abstained* — `orders_ok: "unresolved"`, because its own error bar admits more than the band — is
+  reported in the reason and is **not** counted against the plan: an unmeasurable strong order on
+  heavy-tailed multiplicative noise is a property of the estimator, not of the solver. The two
+  abstentions are priced differently on purpose, and `verification_manual.md` §23 gives the
+  argument: the order study measures the *scheme*, and something else can measure that; Dynkin
+  measures the *equation*, and nothing else can
+- **8**: the variance passes, the mean is slightly above threshold
+- **4**: the variance fails, the code ran cleanly
+
+Until 2026-10-15 this rubric read only the two moment thresholds and the MC resolution, and **not**
+`dynkin_ok`, `orders_ok` or `invariants_ok`. Since 21 of the 23 SDE problems are on this path, that
+meant a solver which drew from the exact terminal law and never integrated the SDE at all scored
+**10, certified, provenance `analytic`**. The rows above are what closed it; see
+`docs/plan-sde-verification-gaps.md` §3 Phase 1.
+
+The **9** row is the second half of that fix, added later the same day. The first pass added a cap
+for a Dynkin that *fails* and left a Dynkin that never ran reading as nothing at all, so the 10 row
+still fell back to moment evidence alone wherever the check could not produce a verdict — which is
+the original hole reached through a different door. See `docs/plan-sde-verification-gaps.md` §13a.
 
 **PDE, analytic path** (`evaluator-pde`, `analytic_solution != null`):
 - **10**: `relative_L2_error < 1%` AND observed order ≥ floor AND no structural gate violated
@@ -307,7 +347,21 @@ def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42,
 {"type": "domain", "abs_bound": 1.0}    additionally |X(T)| < abs_bound for every path
 null                                    not a stability problem
 ```
-A spec with `has_analytic_solution: false` and `stability_check: null` has no scoreable criterion at all and is a formulator error.
+Where `stability_check` is non-null it **replaces** moment scoring rather than adding to it, which
+is how `benchmark/verify.py`'s `verify_sde_stability` grades it. A non-`null` value that is not an
+object of this shape is a **schema error** (`schema.check_stability_check`): prose there reads as a
+declared criterion and measures nothing, which is worse than leaving it `null`.
+
+*Corrected 2026-10-15.* This paragraph used to read: "A spec with `has_analytic_solution: false`
+and `stability_check: null` has no scoreable criterion at all and is a formulator error." That is
+no longer true and enforcing it would hard-fail 2 of the 7 live SDE specs.
+`verification_manual.md` §15–17's surrogate tier gives a Path-B problem a real reference — a moment
+ODE, a Kolmogorov solve or a stationary density — so a spec can be `has_analytic_solution: false`,
+`stability_check: null`, and still be scored against ground truth. `sde_ginzburg_landau_s6` is
+deliberately in that state and its own `implementation_notes` say why: setting `stability_check`
+non-null would tell the evaluator to drop the moment tolerances `problem.md` actually scores on, so
+finiteness is carried as a gated `verification.constraints` entry instead.
+`sde_double_well_langevin` is the same.
 
 ## Requirements Ledger
 

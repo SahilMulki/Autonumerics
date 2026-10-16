@@ -935,10 +935,47 @@ def weak_order(Xs, phis, floor_mult=2.0):
 Guards, mirroring §4:
 
 ```python
-strong_ok = (s1 < s0) and np.isfinite(so) and abs(so - expected_strong_order) < 0.4
-w, n_ok   = weak_order(Xs, phis)
-weak_ok   = (w is None) or (0.5 * expected_weak_order <= w <= expected_weak_order + 0.75)
+# The strong order carries its own error bar, and abstains rather than guessing.
+abstain  = (s0 <= roundoff_floor) or (s1 <= roundoff_floor) or (ci_mult * se_order > 0.4)
+two_sided = scheme_family_declared and expected_strong_order_came_from_the_spec
+if abstain:
+    orders_ok = "unresolved"                  # a skip, not a failure (see below)
+elif two_sided:
+    orders_ok = (s1 < s0) and abs(so - expected_strong_order) < 0.4
+else:
+    orders_ok = (s1 < s0) and so >= min(declared_candidates) - 0.4
+w, n_ok  = weak_order(Xs, phis)
+weak_ok  = (w is None) or (0.5 * expected_weak_order <= w <= expected_weak_order + 0.75)
 ```
+
+**Three amendments, 2026-10-15** (`docs/plan-sde-verification-gaps.md` §3 Phase 1, §11 D2 and D8).
+The guard above used to be the one line `strong_ok = (s1 < s0) and np.isfinite(so) and abs(so -
+expected_strong_order) < 0.4`, and every one of these is a measured false verdict it produced.
+
+1. **The strong order gets the error bar the weak order already has.** `s0` and `s1` are sample
+   means, so the jackknife standard error of each is `std(ddof=1)/sqrt(M)` — one pass, no
+   resampling — and `log2(s0/s1)` propagates them by the delta method, covariance included (the two
+   differences share the middle level's paths). Where the two-standard-error interval is wider than
+   the 0.4 band, the estimate cannot decide what the band asks and the verdict is `"unavailable"`.
+   Measured on `sde_ginzburg_landau_s6/2-tamed-milstein`: the estimate returned **0.220 and 2.730**
+   for the same scheme against the same spec at 50 000 paths — a factor of 12.4 — and `orders_ok`
+   was `True` at both ends. At σ = 6 the pathwise differences are violently heavy-tailed.
+2. **A roundoff floor, measured against the terminal values and not against the differences' own
+   standard error.** An exactly-integrating scheme has `s0` and `s1` at machine epsilon but
+   *well-determined*, so no error bar catches it: `sde_bm_with_drift` returned a confident 2.27 from
+   `s0 = 9.4e-15` against a declared floor of 1.0, reported as a pass. The scale the differences
+   have to be compared against is the state, not themselves.
+3. **An abstention is a skip, not a failure.** Returning `None` from the estimator and leaving the
+   guard alone gives `orders_ok: False` — a verdict of failure — because the `is None` forgiveness
+   one line below belongs to the *weak* order. That is live today on `dX = dW`, where
+   Euler–Maruyama is exact.
+
+**And the band is one-sided whenever the floor came from the kernel default.** The existing rule
+was "one-sided when the plan does not declare its `scheme_family`", on the stated grounds that an
+inference must never make a test stricter. A floor nobody declared is also an inference: the
+default is 0.5, which is Euler–Maruyama's order under *multiplicative* noise and wrong by a factor
+of two under additive noise. Measured on the OU canary with the family declared and the floor
+defaulted: `orders_ok: False` at observed 0.9863 against 0.5, on a correct solver.
 
 `weak_ok` is **true when the estimate is unavailable** (`w is None`) — an indeterminate weak order is
 not evidence of a defect. An order far *above* the theoretical one is noise, not a bonus; that is
@@ -958,6 +995,34 @@ frontmatter selects which applies. The plan chooses among the values the formula
 set its own. Where the plan declares no family, the band widens to a one-sided bar at
 `min(declared) - 0.4`: an order below the least of the declared expectations is a defect, an order
 above the greatest is noise.
+
+**A spec declares a floor for every scheme family it admits**, and the schema enforces it rather
+than recommending it. `verification.expected_strong_order` alone is not enough wherever a Milstein
+plan is possible: without `expected_strong_order_milstein` such a plan is judged against
+Euler-Maruyama's floor, and a correct Milstein solver measuring 1.0 against 0.5 is a two-sided miss
+of 0.5. A spec says a Milstein plan is **impossible** by declaring `milstein_eligible: false` with a
+reason, and the two reasons mean different things: `zero_diffusion_derivative` means the correction
+vanishes identically, so the Euler floor *is* the right one and the plan is correct; `levy_area`
+means the scheme cannot be built from the supplied increments at all, and §23's cap applies. Silence
+is not an exemption. Added 2026-10-15; before it the `_milstein` key appeared only as prose inside
+the error message for the missing base floor, and one live spec's floor had to be corrected by hand.
+
+### The abstention has its own token
+
+`orders_ok` is three-valued, and the third value is **`"unresolved"`** — not `"unavailable"`.
+Both are skips, so `passed()` and `failed()` refuse both and no rubric row fires on either. They
+differ in what §4c's circularity-break accounting may credit:
+
+| token | what produced it | counts as evidence? |
+|---|---|---|
+| `"unresolved"` | the ladder ran, produced numbers, and the estimator's own bar admits more than the band | **yes** — an abstention costs nothing, because the limit is the check's |
+| `"not_run"` | §24's cost rule, taken only where an exact reference already settled the question | **yes** — by construction it cannot change the outcome |
+| `"unavailable"` | **a CRN level crashed**, or the ladder had fewer than three levels | **no** — a crash is a property of the code |
+
+Added 2026-10-15. One token carried both meanings, and the scoring credit was written against the
+whole skip vocabulary, so a plan whose ladder produced no number at all collected the
+circularity-break 9 that the abstention rule reserves for a ladder that produced numbers nobody
+could read. The same distinction the scoring rubric already draws for a crashed *solver*.
 
 ---
 
@@ -1019,6 +1084,53 @@ not share a sign, or `p` lands outside `[0.5, 4]` — fall back to `p = 1` and *
 (`extrapolation_order_source`). A fitted exponent whose leverage `1/(2^p − 1)` is set by noise is
 worse than the assumption it replaced.
 
+**And where `p` falls *below* the band, the fallback is not a verdict.** The paragraph above has a
+mirror image, found live on 2026-10-15 when the Dynkin check was first enabled on Path A. A
+full-truncation Milstein on `sde_cir_feller_violated` — `2·kappa·theta = 1.0` against `sigma² = 4`,
+so zero is attainable and `sqrt(X)` is non-Lipschitz exactly where the paths spend their time —
+produced a residual of 0.0316 → 0.0263 → 0.0207, shrinking monotonically and 11 s.e. clear of its
+own noise, from which the ladder read a rate of **−0.05**. At `p = 1` that extrapolates to +0.0164
+against a 0.0032 s.e.: **z = 5.1**, and under 1b a hard **3**. The solver is correct. It converges to
+the exact noncentral-chi-squared transition law, at order ≈ 0.2 — `E[tanh(X_T)]` errs by 0.0161 /
+0.0103 / 0.0061 at `Nt = 200 / 800 / 12800` — which is the known rate for a truncated scheme on a
+Feller-violated CIR, and three levels spanning a 4× `dt` range cannot locate the limit of it.
+
+So when `p < 0.5` **and the residual is shrinking across the levels**, report `dynkin_ok` as
+`"unresolved"` — a skip, with the measured rate and the sequence in the reason — and not `False`.
+Record the `z` anyway: an abstention is not silence, and a reviewer needs the number that could not
+be resolved.
+
+Two things that rule must not do, and does not:
+
+- **Extrapolating at the measured low `p` is not the alternative.** At `p = 0.07`, `2^p − 1 = 0.05`
+  multiplies the correction and its noise by ~22, so as `p → 0` every solver passes. The lower edge
+  of `[0.5, 4]` exists to stop exactly that.
+- **It must not reopen the hole 1b closes.** It cannot, and the reason is structural rather than a
+  tuned threshold: the three failure modes land in three different branches. A solver that never
+  integrates the SDE has a residual that does not depend on `dt` at all, so its differences between
+  levels are Monte-Carlo noise and the *first* guard catches it — measured on
+  `sde_fabricated_sampler`, which still fails at 3. `sde_ginzburg_landau_s6` plans 1 and 2 read
+  clean rates of 1.20 and 1.36 and still fail at z = 3.24 and 3.14, because a *resolved* failure is
+  a verdict. And a residual that **grows** under refinement is a diverging scheme, which is
+  evidence: the abstention requires shrinkage, so that case keeps its hard verdict too.
+
+| residual vs `dt` | rate read | outcome |
+|---|---|---|
+| `dt`-independent (differences are noise) | none | **`False`** — fabrication, wrong equation |
+| clean power law in `[0.5, 4]`, limit outside the CI | 1.20 / 1.36 | **`False`** — a resolved violation |
+| shrinking, rate below the band | −0.05 / 0.07 | **`"unresolved"`** — the ladder cannot reach it |
+| growing under refinement | below the band | **`False`** — a diverging scheme |
+
+**And an `"unresolved"` does not certify.** Added 2026-10-15, after the rule above shipped: the
+abstention is the right verdict about the *check*, and it was priced as though it were a verdict
+about the *solver*. Both SDE rubrics read `failed(dynkin_ok)` and ignored a `dynkin_ok` that was a
+skip, so the plan above went from a wrong **3** to a certified **10** on moment evidence alone —
+which is the state §20 exists on Path A to refuse, since two processes can share two moments. §23's
+*"a 10 requires generator evidence"* is the fix: `"unresolved"` lands on **9**, not called wrong and
+not called verified. The same plan is independently measured to have a real distributional defect
+(full truncation leaves 12% of its paths exactly at zero, which the standardized KS test of §21
+catches at 48× its bar), so the 10 was not a near miss.
+
 Three further things the sketch leaves out, each of which was measured to matter on a **correct**
 solver:
 
@@ -1063,9 +1175,52 @@ def estimator_stability(X, n_batches=20):
     return float(np.std(means, ddof=1) / np.sqrt(n_batches) / (abs(np.mean(X)) + 1e-14))
 ```
 
+**A declared `expr` is a single evaluable expression, never a sentence.** Added 2026-10-15; the
+schema refuses the rest. `sde_bm_with_drift` carried
+`{"name": "gaussianity", "expr": "X ~ Normal(X_0 + mu*T, sigma**2*T)"}`, which is prose: `~` is not
+Python, so the evaluator reported `not_reported` with `SyntaxError: invalid syntax` on every run,
+for ever. The spec read as declaring a distributional check and nothing could evaluate one — §9's
+failure shape one field over, and the field has two legitimate uses that are both expressions (a
+boolean predicate, and the `martingale` *process* itself). A distributional claim has a
+machine-readable home in `verification.terminal_law`; a sentence belongs in `note`.
+
+**A `tol` on an entry nothing can evaluate is flagged.** An ungated entry that is neither a
+registry name (§27) nor carries an `expr` is legal — a free-form diagnostic for the reader — but a
+tolerance on it says a comparison was intended, and what happens instead is `not_reported` on every
+run. Three live specs carry one: `sde_gbm_2d_high_corr`'s `component_symmetry` (0.05),
+`pde_kdv_zabusky_kruskal`'s `kdv_third_invariant` (0.001), `pde_stefan_1d_similarity`'s
+`enthalpy_balance` (0.02). A **warning**, so the knowingly-unchecked note stays legal: give it an
+`expr`, map it onto a registry name, or drop the `tol`. Added 2026-10-15.
+
+**Headroom is measured against the bar that was applied, not against the declared tolerance.** For
+`martingale` those differ by `ci_mult × SE`, which is most of the bar and sometimes all of it:
+`sde_gbm_2d_high_corr` declares no `tol` at all, so its **passing** martingale reported −6.75
+decades of headroom against the round-off floor — a number that reads as a six-decade failure on a
+plan that scored 10, in a field the ranking uses. Corrected 2026-10-15; measured on that plan, the
+bar moves from `1e-10` to `2.744e-3` and the headroom from **−6.747 to +0.692**, which is the
+difference between a structure score of 0.0 and 0.231. Any invariant whose
+evaluator compares against something other than the declared tolerance has to report that
+something; the registry already names which entries take a `ci_mult`.
+
 Positivity violations are counted, not judged: report `neg_fraction` and the most negative value.
-A bare `np.maximum(X, 0)` clip hides the defect without fixing the scheme — flag it if you see it in
-`solver.py`.
+A bare `np.maximum(X, 0)` clip hides the defect without fixing the scheme.
+
+**That flag is now scanned for rather than left to the reader** (`leakage.state_clip_scan`, added
+2026-10-15). It was promised here and in `agents/solver-sde.md` and implemented in neither, which is
+worse than promising nothing: the solver agents are told the check exists. The scan is narrow by
+construction, because the obvious version false-positives on endorsed code —
+`agents/solver-sde.md` *instructs* the solver to write `np.sqrt(np.maximum(X, 0.0))` for CIR, and
+`sde_cir_feller_violated` is live. The distinction is the whole check:
+
+* **full truncation clips inside the coefficient** and keeps the scheme honest;
+* **clipping the state after the update** — `X = np.maximum(X, 0)`, `X[:] = np.clip(...)`,
+  `np.clip(..., out=X)` as a *statement* — hides the excursion.
+
+So only an assignment whose target name also appears in the clip's arguments matches, and a clip
+appearing as a sub-expression of another call never does. It is a **warning**, not an error: a
+reflecting scheme legitimately maps the state back into its support, so the scan names the line and
+the reviewer decides. Measured over all 93 solvers in `workspace/`: two hits, both the real pattern,
+none on the endorsed sub-expression.
 
 ---
 
@@ -1073,14 +1228,33 @@ A bare `np.maximum(X, 0)` clip hides the defect without fixing the scheme — fl
 
 > Moving to the ranking layer with §11, and for the same reason.
 
-Same rules as §11, with one addition specific to Monte Carlo: sibling plans must be run with
-**independent seeds**, and agreement is tested against the *combined* standard error:
+Same rules as §11, with one addition specific to Monte Carlo: agreement is tested against the
+*combined* standard error:
 
 ```python
 agree = abs(m_a - m_b) < ci_mult * np.sqrt(se_a**2 + se_b**2)
 ```
 
-Two plans agreeing on a shared seed proves nothing — they saw the same noise.
+**Run both seedings** (amended 2026-10-15; `cli.py compare` implements it). This section used to
+require independent seeds only, and the code used the shared graded seed only. Each is right about
+a different question, and the two questions are not the same:
+
+* **Shared seed, to *detect* disagreement.** Under common random numbers two schemes that consume
+  the increments the same way share a Brownian path, so their difference is nearly noise-free and a
+  real discrepancy shows at a fraction of the paths. This is the sensitive test, and it is the one
+  that may **cap** both plans.
+* **Independent seeds, to *earn* the circularity break.** "Two plans agreeing on a shared seed
+  proves nothing — they saw the same noise" is the right objection to using the shared comparison
+  as evidence *for* a plan: two solvers with the same bug driven by the same noise agree
+  beautifully. So only the independent-seed comparison may set `cross_plan_agreement`, which is
+  what `score.agreement_is_break` reads for a 10.
+
+Four solves per comparison instead of two. Accepted: the alternative is a circularity break that
+was not earned, and `compare` is not on the per-cycle path.
+
+The interval is formed conservatively in both — as if the two runs were independent — because
+correlation can only make the true error bar smaller, and the conservative bar is the one that
+refuses to call a break it has not earned.
 
 ---
 
@@ -1111,7 +1285,8 @@ CI, and a rubric that tested `resolved` first scored it 6 "not a solver bug" wit
 |---|---|
 | A gate constraint is violated (negative paths, support breach) | **4** |
 | `dynkin_ok` is **false** — the paths do not satisfy the generator of the spec's own drift and diffusion | **3** |
-| `surrogate` and `moments_ok` and `resolved` and `constraints_ok` — and `orders_ok` is not **false** | **10** |
+| `surrogate` and `moments_ok` and `resolved` and `constraints_ok` — and `orders_ok` is not **false** — **and `dynkin_ok` is `True`** | **10** |
+| ... the same, but `dynkin_ok` never reached a verdict (a skip, not a failure): everything measurable passed and nothing establishes the paths came from this SDE | **9** |
 | ... the same, but `orders_ok` is false: the CRN ladder read a strong order near zero, i.e. the solver does not consume the supplied `dW` (§18). A solver that ignores its inputs is not certified (§7's rule, extended) | **8** |
 | No surrogate: `orders_ok` and `dynkin_ok` and `constraints_ok` and Richardson moments stable across the ladder | **9** |
 | `orders_ok` is **false** — estimator erratic in `dt`: orders far from expectation, or differences not shrinking (the CRN ladder is deterministic given its seed, so this is not a resolution problem) | **3** |
@@ -1124,6 +1299,32 @@ The 9 row is reachable: a clean Dynkin is the SDE's D1 — the generator is buil
 drift and diffusion and applied to the *produced* paths — and §4c prices that one circularity break
 at 9 (`operator_validated`, route `spec_generator`). Its limitation is D1's: a drift mis-transcribed
 from `problem.md` fools both, and only the requirements ledger reaches outside the spec.
+
+### A 10 requires generator evidence, on both paths
+
+Added 2026-10-15, and it applies equally to the analytic rubric in `project_manual.md`. Both rubrics
+read a *failing* Dynkin — the 3 row above — and read one that **never reached a verdict** as nothing
+at all, so the 10 rows fell through to moment evidence alone. That is the hole §20 exists to close,
+reached from the other side: the whole argument for running Dynkin on a problem that already has
+exact moments is that **two processes can share two moments**, so a plan certified on moments alone
+is certified on evidence that provably cannot distinguish it from a sampler that never integrated
+anything.
+
+`dynkin_ok is True` is therefore a condition of a 10 wherever it is a condition of anything. The
+three ways it can be a skip instead all land on 9 — provenance unchanged, uncertified rather than
+suspect — with a reason that names which:
+
+| skip | what it means | why it is still not evidence |
+|---|---|---|
+| `"unavailable"` from the memory budget | the finest increment array exceeds the cap | the refusal is correct: running it at fewer paths widens the residual's interval and could turn a real inconsistency into a pass. But a check that did not run measured nothing |
+| `"unavailable"` from a build or run failure | the generator could not be built from the declared drift and diffusion, or the observables run crashed | a property of the spec or the code |
+| `"unresolved"` | the residual is shrinking but its convergence rate is outside the band any extrapolation on it needs (see §20) | the abstention is a correct statement about *the check*. It is still silent about the solver |
+
+The last row is the one with teeth, and it is deliberate. §19's rule that "an abstention costs
+nothing" is a decision about **the order study**, where the measurement is of the scheme; it does
+not extend to the one check in this manual that measures the *equation*, because nothing substitutes
+for that check. A solver whose generator residual cannot be resolved is not called wrong — a Dynkin
+failure is the 3 above — and it is not called verified either.
 
 **The formulator's `null` is not the end of the inquiry.** Reaching this rubric at all means §15–§17
 were all attempted and all failed. If the evaluator finds that a surrogate *was* available and the
@@ -1174,11 +1375,34 @@ would_certify = provisional >= (10 if analytic is not None else 9)
 # --- conditionally, and only for a reason ---
 run_temporal   = (not order_ok) or would_certify   # attribute a low order, or confirm a pass
 run_mms        = would_certify and analytic is None        # Tier B is what lifts 9 -> 10
-run_crn_ladder = (analytic is None) or (not overall_pass) or (
-                     would_certify and expected_strong_order >= 1.0)   # SDE, see below
-run_dynkin     = analytic is None                          # SDE, Path B only
+run_crn_ladder = (analytic is None) or (not overall_pass) or would_certify   # SDE
+run_dynkin     = (analytic is None) or would_certify                        # SDE
 run_consensus  = analytic is None
 ```
+
+**Both SDE gates widened on 2026-10-15** (`docs/plan-sde-verification-gaps.md` §3 Phase 1). They
+used to read `would_certify and expected_strong_order >= 1.0` and `analytic is None`, and the two
+clauses together left the Path-A *scheme* unexamined on the 21 of 23 SDE problems that carry
+ground-truth moments.
+
+* **`expected_strong_order >= 1.0` is gone.** Measuring a floor of 0.5 and getting 0.0 is exactly
+  how a solver that ignores `dW` is caught, and the condition exempted every Euler–Maruyama plan in
+  the set from the only check that would catch it. The clause was there because a 0.5 floor against
+  a 0.5 measurement discriminates little — but a 0.5 floor against a *zero* measurement
+  discriminates completely.
+* **`run_dynkin` now fires on a certifying Path-A plan too.** The paragraph below said Dynkin "adds
+  nothing on Path A that exact moments do not already do better"; that is false for the one thing
+  Dynkin is for. Exact *terminal moments* do not establish that the paths came from the SDE — two
+  processes can share two moments — and a solver that samples the exact terminal law and never
+  integrates anything scored 10, certified, provenance `analytic`. Dynkin is the only check in this
+  manual that rejects it.
+
+Three things had to land first, or widening these gates would have hard-failed correct solvers:
+the strong-order band goes **one-sided** whenever the floor came from the kernel default rather
+than the spec (§19); `strong_order` **abstains** rather than failing when its own error bar admits
+more than the band; and an abstention is in the skip vocabulary, so it costs nothing. Without them,
+a correct additive-noise Euler–Maruyama plan — strong order 1 against a defaulted floor of 0.5 —
+lost two points on about six of the 23 problems.
 
 Each gate has a distinct rationale — do not collapse them into one flag:
 
@@ -1194,8 +1418,24 @@ Each gate has a distinct rationale — do not collapse them into one flag:
   moment comparison cannot tell them apart. A Milstein plan with a broken correction term will pass
   the thresholds and still be mislabelled in `REPORT.md`. The strong-order check is the only thing that
   catches it — but that is a correctness-of-*claim* issue, not correctness-of-*answer*, so run it once
-  at certification rather than on every cycle.
-- **Dynkin** adds nothing on Path A that exact moments do not already do better.
+  at certification rather than on every cycle. It also catches the case this paragraph did not
+  anticipate: a solver that ignores the supplied Brownian increments entirely reads a strong order
+  of ~0 against any floor.
+- **Dynkin** is the only check here that establishes the paths came from *this* SDE, so on Path A it
+  is run **once, at certification** — not skipped. Exact moments are better evidence about the
+  terminal distribution and no evidence at all about the process that produced it: two processes can
+  share a mean and a variance, and one of them can be `rng.normal(exact_mean, exact_sd)`. That
+  solver passed every Path-A check in this manual. Dynkin costs ~7× a graded solve (the ladder
+  refines *downward* from the graded `dt` at full `num_paths`), which is why it is gated on
+  `would_certify` rather than run every cycle.
+- **Replication is conditional on the margin.** Dynkin's residual carries a seed-dependent term —
+  measured between 0.2 and 3.2 standard errors of zero for a correct solver — and this check now
+  caps a score, so a seed-driven `z` must not do it alone. Run one seed; replicate to three only
+  when `|z - bar|` falls inside ~2 standard deviations of the bar (~0.7 at the measured spread), and
+  let the **median** `z` decide. The median rather than all-must-pass, which is stricter than one
+  seed, or pooling, which is ~√k more powerful and would fail plans that pass today with no
+  measurement of what it fails; the pooled `z` is recorded beside it as a diagnostic. On the current
+  pool nothing is inside the margin, so the cost stays ~1×.
 
 ### Reuse the runs you already made
 

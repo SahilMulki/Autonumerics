@@ -80,7 +80,14 @@ def check_spec_file(path, *, with_reference=True) -> list[Finding]:
 
 
 def check_solver_text(text, *, path="") -> list[Finding]:
-    return leakage.leakage_findings(text, path=path)
+    found = leakage.leakage_findings(text, path=path)
+    if "/sde_" in path.replace(os.sep, "/") or path.startswith("sde_"):
+        # §21's clip check, scoped to the SDE side it was written for. On a PDE
+        # solver the same pattern is an index clamp -- measured:
+        # `pde_stefan_1d_similarity`'s `idx = np.clip(idx, ...)` -- and the state is
+        # a field with no support to be truncated into.
+        found.extend(leakage.state_clip_findings(text, path=path))
+    return found
 
 
 def check_solver_file(path) -> list[Finding]:

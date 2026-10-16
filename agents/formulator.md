@@ -64,11 +64,32 @@ These drive the Dynkin generator, the stationary density and the Kolmogorov solv
 
 **Milstein eligibility**: set `milstein_eligible: true` only if `state_dimension == 1` AND `noise_structure == "multiplicative"` AND `dg/dX` is computable in closed form.
 
+When it is `false`, **say which reason** in `milstein_ineligible_reason`, because the field means two
+opposite things and the kernel acts on only one of them:
+
+- `"zero_diffusion_derivative"` — additive noise, so `dg/dX = 0` and the correction vanishes
+  identically. A plan declaring `scheme_family: milstein` here is bit-identical to Euler–Maruyama and
+  is **correct**; the kernel must not cap it.
+- `"levy_area"` — more than one noise channel, and the multi-dimensional Milstein correction needs
+  the Lévy area of the channel pair, which cannot be sampled from the increments alone. A plan
+  declaring `scheme_family: milstein` here, with no `levy_area_treatment`, is claiming a scheme it
+  cannot have implemented, and the kernel caps it at 8.
+
+**Noise dimension**: `noise_dimension` is the number of independent Brownian channels the equation
+drives, and it is **required whenever `state_dimension > 1`** (`schema.check_noise_dimension`). It is
+not derivable from the state dimension in either direction — `sde_multichannel_stiff_m13` has 2
+states and **13** channels, `sde_stochastic_oscillator` has 2 states and **1** — and the CRN ladder
+builds `dW` with the shape it names: `(num_paths, Nt)` for one channel, `(num_paths, Nt, m)` for `m`.
+Get it wrong and a correct solver is handed an array of the wrong rank, and the crash is reported
+against the solver.
+
 **Write** `problem_spec.json` following `problem_spec-example-sde.json`. Key fields:
 - `equation_type: "SDE"`
 - `sde_family`, `state_dimension`, `noise_structure`, `linear`, `stiff`
 - `equation`, `parameters`, `time_interval: {T0, T}`
-- `milstein_eligible`, `diffusion_derivative`, `milstein_correction`
+- `milstein_eligible`, `milstein_ineligible_reason` (when `false`), `diffusion_derivative`,
+  `milstein_correction`
+- `noise_dimension` — **required when `state_dimension > 1`**
 - `analytic_moments: {has_analytic_solution, state_dimension, mean_expression, variance_expression}` — use `mean_X/variance_X/mean_Y/variance_Y` for 2D
 - `drift_expression`, `diffusion_expression`, `diffusion_derivative_expression`
 - `evaluation_thresholds: {variance_rel_err_max: 0.10, mean_rel_err_max: 0.05, near_zero_mean_threshold: 0.01, num_paths: 50000, seed: 42, stability_check: null, ci_mult: 2.0, dt0: 0.02, conv_levels: 3}`
@@ -84,6 +105,15 @@ These drive the Dynkin generator, the stationary density and the Kolmogorov solv
 ```
 
 `{"type": "finite"}` means every returned terminal state must be finite (no Inf/NaN). `{"type": "domain", "abs_bound": B}` additionally requires `|X(T)| < B` for every path. Leave it `null` for a normal moment-matching problem. **Never leave a stability problem with `stability_check: null`** — that produces a spec with no scoreable criterion at all, and the evaluator has nothing to grade against.
+
+Two rules the kernel now enforces. A non-`null` value must be an **object** of one of those two
+shapes — prose there is a schema error (`schema.check_stability_check`), because a declared criterion
+nothing can evaluate reads as a check that passed. And where it *is* non-null it **replaces** moment
+scoring rather than adding to it, which is how `benchmark/verify.py` grades it: do not set it on a
+problem whose moment tolerances are the real criterion. `sde_ginzburg_landau_s6` is
+`has_analytic_solution: false` with `stability_check: null` on purpose — its moments are graded
+against a §15–17 surrogate, and finiteness is carried as a gated `verification.constraints` entry
+instead.
 
 ---
 
@@ -306,13 +336,83 @@ Only after all three fail is `provenance: self_convergence` the right outcome. T
 ```json
 "expected_weak_order": 1.0,
 "expected_strong_order": 0.5,
+"expected_strong_order_milstein": 1.0,
 "dynkin_test_functions": ["X", "X**2", "np.tanh(X)"],
+"terminal_law": {"law": "normal", "mean": "mu + (X_0 - mu)*np.exp(-theta*T)",
+                 "variance": "sigma**2*(1 - np.exp(-2*theta*T))/(2*theta)"},
 "constraints": [{"name": "positivity", "expr": "X >= 0", "gate": true}]
 ```
 
 `dynkin_test_functions` should probe different parts of the state space — two polynomials and one
 bounded nonlinear function. You supply only the `φ`; the evaluator forms the generator `ℒφ` from
 `drift_expression` and `diffusion_expression`.
+
+**`expected_strong_order` is required** on any spec carrying a `verification` block
+(`schema.check_strong_order_declared`). The kernel's fallback is 0.5, which is Euler–Maruyama's order
+under *multiplicative* noise and wrong by a factor of two under additive noise — so declare the order
+the scheme family this problem expects actually has.
+
+**`expected_strong_order_milstein` is required too, wherever a Milstein plan is possible**, and the
+same check enforces it rather than suggesting it. A plan cannot lower its own bar, so the spec
+declares both values and the plan declares only which family it is — and without the second value a
+correct Milstein solver measuring 1.0 is judged against Euler–Maruyama's 0.5, a two-sided miss of
+0.5. You say a Milstein plan is **impossible** by declaring `milstein_eligible: false` with a
+reason, and the two reasons are not interchangeable:
+
+* `zero_diffusion_derivative` — `dg/dX = 0`, so the correction vanishes identically and a
+  "Milstein" plan is bit-identical to Euler–Maruyama. It is **correct**, and the base floor is the
+  right one for it. Three live specs are this.
+* `levy_area` — multi-channel non-commuting noise, so the scheme cannot be built from the supplied
+  increments at all, and the kernel caps a plan that claims it anyway at 8 unless the plan declares
+  a `levy_area_treatment`.
+
+Silence is not an exemption: a spec that says nothing about Milstein eligibility must declare the
+floor.
+
+**`terminal_law`** — declare it wherever the terminal distribution is known in closed form, which is
+~16 of the 23 SDE problems (every Gaussian-law and lognormal-law family, plus CIR's noncentral χ²).
+It is the reference for *both* distributional tiers, and declaring it once is deliberate: the
+standardized third and fourth moments follow from the law analytically, so separate
+`skewness_value_at_T` fields would be a second source of truth for the same fact. Three laws are
+implemented:
+
+```json
+{"law": "normal",           "mean": <expr>, "variance": <expr>}
+{"law": "lognormal",        "log_mean": <expr>, "log_variance": <expr>}
+{"law": "noncentral_chi2",  "df": <expr>, "nc": <expr>, "scale": <expr>}
+```
+
+A list, one entry per component, on a vector problem. The KS test standardizes both sides before
+comparing, so it measures **shape** only — the mean and the variance keep their own checks, and an
+un-standardized test at 50 000 paths resolves the scheme's own `O(dt)` bias and rejects correct
+solvers.
+
+**`initial_condition`** — only where the initial state is *random*. The Dynkin identity needs
+`E[φ(X_0)]`, and with no `X_0` parameter the kernel used to read a default of `0.0` and fail a
+correct solver. Declare the law:
+
+```json
+"initial_condition": {"law": "normal", "mean": 0.0, "variance": "sigma_bar**2"}
+```
+
+**`verification.generator`** — the machine-readable generator, needed for Dynkin on a **vector**
+problem. `drift_expression` and `diffusion_matrix_expression` stay prose (they are read by the solver
+agent, and on a vector problem the useful content genuinely is prose); the generator goes in its own
+evaluated field, one drift expression per component and one row of the diffusion matrix per
+component, each written in terms of the `(num_paths, d)` array `X`:
+
+```json
+"generator": {
+  "drift": ["mu1*X[:, 0]", "mu2*X[:, 1]"],
+  "diffusion_matrix": [["sigma1*X[:, 0]", "0.0*X[:, 0]"],
+                       ["sigma2*X[:, 1]*rho_chol_10", "sigma2*X[:, 1]*rho_chol_11"]]
+}
+```
+
+`G` is the diffusion matrix against **independent** channels, so a correlation lives in `G` (as the
+Cholesky factor of the correlation matrix) rather than in the increments. Check it before shipping:
+pick a `φ` whose `ℒφ` you know in closed form — `φ = XY` on 2-D GBM gives
+`(μ₁ + μ₂ + ρσ₁σ₂)XY` — and confirm the kernel reproduces it.
 
 ### 3b. PDE — supply a manufactured solution or a degenerate limit
 
@@ -382,9 +482,18 @@ both went unchecked. So when the invariant you want is not a registry name, do o
   `mass_conservation` with the right `tol`; a conserved quadratic is `energy_conservation`);
 - **give it an `expr`** — an entry carrying `expr` is evaluated generically whatever its name says,
   which is how the gated SDE constraints are written (`{"name": "finite", "expr": "np.isfinite(X)",
-  "gate": true}`);
+  "gate": true}`). **It has to be one evaluable Python expression**, and `check-spec` errors
+  otherwise. A sentence there is not a check: `{"name": "gaussianity", "expr": "X ~ Normal(X_0 +
+  mu*T, sigma**2*T)"}` was live on `sde_bm_with_drift` and reported `not_reported` with
+  `SyntaxError: invalid syntax` on every run, for ever, while the spec read as though it declared a
+  distributional check. A distributional claim goes in `verification.terminal_law`, which is
+  machine-readable and drives both distributional tiers; a sentence goes in `note`;
 - or **leave it, knowingly**, as a free-form note for the reader, and say in your verification plan
-  that it is a declared-but-unchecked property rather than implying it was verified.
+  that it is a declared-but-unchecked property rather than implying it was verified. **Then do not
+  give it a `tol`** — `check-spec` warns, because a tolerance on an entry nothing evaluates reads as
+  a comparison that happened. Three live specs carry one today, and each note describes a check
+  worth having: `sde_gbm_2d_high_corr`'s `component_symmetry` is a Cholesky-bug detector on the one
+  live two-noise plan, and it has never run.
 
 Set `gate: true` only for properties the PDE *mathematically guarantees* — a violation is then a
 definite bug. Mark `requires_trace: true` for anything needing a time history rather than the final

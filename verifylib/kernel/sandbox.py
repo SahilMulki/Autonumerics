@@ -187,6 +187,55 @@ def _crn_increments(crn):
     return dW
 
 
+def _generator_nd(item, phi, np, evaluate):
+    """``L phi = sum_i f_i d_i phi + 0.5 sum_ij (G G^T)_ij d_ij phi`` on a
+    ``(num_paths, d)`` state.
+
+    Only expressions cross the process boundary, so every derivative is a central
+    difference -- the scalar branch's reasoning, one dimension up. ``h = 1e-4 * (1 +
+    |X|)`` per coordinate balances truncation against cancellation for the second
+    derivative at ``eps^(1/4)``.
+
+    The noise dimension never appears: ``G G^T`` is ``d x d`` whatever ``m`` is, so
+    ``sde_multichannel_stiff_m13``'s 13 channels cost exactly what 2 cost.
+    """
+    params = item.get("params") or {}
+    drift, matrix = item["drift"], item["diffusion_matrix"]
+    d = int(item.get("state_dimension") or len(drift))
+
+    def ev(expr, X):
+        return np.asarray(evaluate(expr, {**params, "X": X}), dtype=float) \
+            * np.ones(len(X))
+
+    def generator(X):
+        X = np.asarray(X, dtype=float).reshape(len(X), -1)
+        f = np.stack([ev(e, X) for e in drift], axis=1)                    # (M, d)
+        G = np.stack([np.stack([ev(e, X) for e in row], axis=1)
+                      for row in matrix], axis=1)                          # (M, d, m)
+        A = np.einsum("nim,njm->nij", G, G)                                # (M, d, d)
+        h = 1e-4 * (1.0 + np.abs(X))
+        mid = phi(X)
+        out = np.zeros(len(X), dtype=float)
+        steps = []
+        for i in range(d):
+            step = np.zeros_like(X)
+            step[:, i] = h[:, i]
+            steps.append(step)
+            up, down = phi(X + step), phi(X - step)
+            out += f[:, i] * (up - down) / (2.0 * h[:, i])
+            out += 0.5 * A[:, i, i] * (up - 2.0 * mid + down) / h[:, i] ** 2
+        for i in range(d):
+            for j in range(i + 1, d):
+                mixed = (phi(X + steps[i] + steps[j]) - phi(X + steps[i] - steps[j])
+                         - phi(X - steps[i] + steps[j]) + phi(X - steps[i] - steps[j]))
+                # 0.5 * (A_ij + A_ji) * d_ij, and A is symmetric, so the 0.5 and the
+                # double count cancel.
+                out += A[:, i, j] * mixed / (4.0 * h[:, i] * h[:, j])
+        return out
+
+    return generator
+
+
 def _dump_pde(res, out):
     import numpy as np
     arrays, scalars = {}, {}
@@ -366,6 +415,8 @@ def _make_observables(payload):
         def phi(Y):
             return np.asarray(evaluate(expr, {**params, "X": Y}), dtype=float)
 
+        if item.get("kind") == "generator_nd":
+            return _generator_nd(item, phi, np, evaluate)
         if item.get("kind") != "generator":
             return lambda X: phi(np.asarray(X, dtype=float))
 

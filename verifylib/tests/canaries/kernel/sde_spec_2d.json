@@ -1,0 +1,151 @@
+{
+  "id": "canary_gbm_2d",
+  "equation_type": "SDE",
+  "sde_family": "gbm_2d_correlated",
+  "state_dimension": 2,
+  "noise_dimension": 2,
+  "noise_structure": "multiplicative",
+  "equation": "dX = mu1*X dt + sigma1*X dW1;  dY = mu2*Y dt + sigma2*Y dW2;  corr(dW1, dW2) = rho dt",
+  "parameters": {
+    "X_0": 1.0,
+    "Y_0": 1.0,
+    "mu1": 0.1,
+    "sigma1": 0.3,
+    "mu2": 0.1,
+    "sigma2": 0.3,
+    "rho": 0.9
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "drift_expression": [
+    "mu1 * X",
+    "mu2 * Y"
+  ],
+  "diffusion_expression": [
+    "sigma1 * X",
+    "sigma2 * Y"
+  ],
+  "milstein_eligible": false,
+  "milstein_ineligible_reason": "levy_area",
+  "milstein_ineligible_note": "Two components driven by two correlated channels: the multi-dimensional Milstein correction needs the Levy area of (W1, W2), which cannot be sampled exactly from the increments alone.",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 2,
+    "mean_X": "X_0 * np.exp(mu1 * t)",
+    "mean_Y": "Y_0 * np.exp(mu2 * t)",
+    "variance_X": "X_0**2 * np.exp(2*mu1*t) * (np.exp(sigma1**2 * t) - 1)",
+    "variance_Y": "Y_0**2 * np.exp(2*mu2*t) * (np.exp(sigma2**2 * t) - 1)"
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.1,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 20000,
+    "seed": 42,
+    "dt": 0.004,
+    "dt0": 0.02,
+    "conv_levels": 3,
+    "ci_mult": 2.0,
+    "conv_num_paths": 5000,
+    "stability_check": null,
+    "dynkin_levels": 2
+  },
+  "verification": {
+    "expected_provenance": "analytic",
+    "expected_strong_order": 0.5,
+    "expected_weak_order": 1.0,
+    "generator": {
+      "drift": [
+        "mu1*X[:, 0]",
+        "mu2*X[:, 1]"
+      ],
+      "diffusion_matrix": [
+        [
+          "sigma1*X[:, 0]",
+          "0.0*X[:, 0]"
+        ],
+        [
+          "sigma2*X[:, 1]*0.9",
+          "sigma2*X[:, 1]*0.43588989435406728"
+        ]
+      ],
+      "note": "G against INDEPENDENT channels, so the correlation lives in G: diag(sigma_i X_i) @ chol([[1, rho], [rho, 1]]). Verified against the exact generator of phi = X*Y, whose L phi = (mu1 + mu2 + rho*sigma1*sigma2)*X*Y."
+    },
+    "cross_moment": {
+      "expression": "X_0*Y_0*np.exp((mu1 + mu2 + rho*sigma1*sigma2)*t)",
+      "value_at_T": 1.3244536039,
+      "correlation_of_terminal": "(np.exp(rho*sigma1*sigma2*t) - 1) / np.sqrt((np.exp(sigma1**2*t) - 1)*(np.exp(sigma2**2*t) - 1))",
+      "correlation_value_at_T": 0.8959016543,
+      "covariance_value_at_T": 0.1030508458,
+      "tol": 0.05,
+      "gate": false,
+      "note": "The only terminal statistic rho appears in. A solver using independent increments passes both per-component moment checks."
+    },
+    "terminal_law": [
+      {
+        "law": "lognormal",
+        "log_mean": "np.log(X_0) + (mu1 - sigma1**2/2)*T",
+        "log_variance": "sigma1**2*T"
+      },
+      {
+        "law": "lognormal",
+        "log_mean": "np.log(Y_0) + (mu2 - sigma2**2/2)*T",
+        "log_variance": "sigma2**2*T"
+      }
+    ],
+    "dynkin_test_functions": [
+      "X[:, 0]",
+      "X[:, 0]*X[:, 1]"
+    ],
+    "constraints": [
+      {
+        "name": "finite",
+        "expr": "np.isfinite(X)",
+        "gate": true
+      },
+      {
+        "name": "shape",
+        "expr": "X.shape == (num_paths, 2)",
+        "gate": true
+      }
+    ],
+    "moment_ode": {
+      "state": [
+        "m1x",
+        "m1y",
+        "m2x",
+        "m2y"
+      ],
+      "rhs": [
+        "mu1*m1x",
+        "mu2*m1y",
+        "(2*mu1 + sigma1**2)*m2x",
+        "(2*mu2 + sigma2**2)*m2y"
+      ],
+      "initial": [
+        "X_0",
+        "Y_0",
+        "X_0**2",
+        "Y_0**2"
+      ],
+      "closes_exactly": true,
+      "mean_X_from": "m1x",
+      "mean_Y_from": "m1y",
+      "variance_X_from": "m2x - m1x**2",
+      "variance_Y_from": "m2y - m1y**2",
+      "cross_from": "X_0*Y_0*np.exp((mu1 + mu2 + rho*sigma1*sigma2)*t) - m1x*m1y",
+      "note": "Each marginal's moments close exactly; the cross term is stated in closed form because the covariance ODE needs rho, which the marginal system does not carry."
+    }
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "kind": "equation",
+      "quote": "dX = mu1*X dt + sigma1*X dW1; dY = mu2*Y dt + sigma2*Y dW2; corr(dW1, dW2) = rho dt",
+      "status": "mapped",
+      "spec_path": "equation, parameters"
+    }
+  ]
+}

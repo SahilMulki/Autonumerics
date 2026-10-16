@@ -127,8 +127,11 @@ INVARIANTS = {
         "support", "sde", "paths", ("bounds", "lower", "upper"),
         "fraction of paths outside the declared support", default_tol=0.0),
     "martingale": _inv(
+        # `expr` arrives through COMMON_PARAMS and is the martingale *process* here,
+        # not a predicate: `_martingale` evaluates it rather than `_from_expr`.
         "martingale", "sde", "paths", ("ci_mult", "reference_value_at_T"),
-        "E[M_T] = M_0 within ci_mult standard errors", default_tol=0.0),
+        "E[M_T] = M_0 within ci_mult standard errors, M given by `expr` where the "
+        "spec declares one", default_tol=0.0),
     "estimator_stability": _inv(
         "estimator_stability", "sde", "paths", ("n_batches",),
         "batch-means scatter confirms num_paths has settled", default_tol=1e-2),
@@ -555,15 +558,102 @@ def _support(entry, ctx):
 
 
 def _martingale(entry, ctx):
+    """``E[M_T] = M_0`` within ``ci_mult`` standard errors, where **the spec says
+    what M is**.
+
+    ``expr`` is the martingale *process*, per path, evaluated in the spec's own
+    namespace -- not a boolean predicate, which is why this evaluator reads it here
+    rather than letting :func:`evaluate_invariant` route it to :func:`_from_expr`.
+
+    It used to be read by nothing. The registry listed ``("ci_mult",
+    "reference_value_at_T")`` and a declared ``expr`` was silently ignored, so the
+    kernel always measured ``|E[X_T] - X_0|`` -- and on two live Path-A plans that
+    is not zero and is not supposed to be:
+
+    * ``sde_gbm_2d_high_corr`` declares ``expr: "np.exp(-mu1*T) * X[..., 0]"``. With
+      it ignored the kernel measured ``|E[X_T] - X_0| = e^(mu1*T) - 1 = 0.10517``;
+      the plan reported **0.10475**, 0.27 standard errors away. The discount the
+      spec asked for never happened.
+    * ``sde_bm_with_drift`` declared the martingale in prose only. The kernel
+      measured ``mu*T = 0.5``; the plan reported **0.50258**, 1.92 standard errors
+      away, on a solver that is pathwise exact.
+
+    Both carried ``invariants_ok: False`` on an artifact of this function. Silently
+    ignoring a declared key is the fails-open shape §6's `not_reported` rule exists
+    to refuse, in a new direction -- declared, *read*, and discarded by the
+    evaluator that claims to use it -- so an ``expr`` that will not evaluate now
+    reports ``not_reported`` with its reason rather than falling back to a different
+    check.
+
+    Every component decides, worst first: ``sde_gbm_2d_high_corr``'s own note says
+    "Same for Y with mu2", which the column-0 reduction never tested.
+    """
+    stats, reason = _martingale_stats(entry, ctx)
+    if stats is None:
+        return "not_reported", reason
+    ci, tol = float(entry.get("ci_mult", 2.0)), _tol(entry)
+    ok = all(_within(drift, ci * se + tol) for drift, se in stats)
+    return bool(ok), max(drift for drift, _ in stats)
+
+
+def _martingale_stats(entry, ctx):
+    """``([(drift, se), ...], reason)`` per component, or ``(None, reason)``.
+
+    Split out in [REV 64] so :func:`_martingale_bar` reads the *same* numbers the
+    verdict was taken on rather than a second derivation of them.
+    """
     X = ctx.paths()
+    if X is None:
+        return None, None
+    values, reason = _martingale_process(entry, ctx, X)
+    if values is None:
+        return None, reason
     m0 = entry.get("reference_value_at_T", ctx.initial_value())
-    if X is None or m0 is None:
-        return "not_reported", None
-    flat = np.asarray(X, dtype=float).reshape(len(X), -1)[:, 0]
-    m = float(np.mean(flat))
-    se = float(np.std(flat, ddof=1) / np.sqrt(len(flat)))
-    ci = float(entry.get("ci_mult", 2.0))
-    return _within(abs(m - float(m0)), ci * se + _tol(entry)), abs(m - float(m0))
+    if m0 is None:
+        return None, None
+    reference = m0 if isinstance(m0, (list, tuple)) else [m0] * values.shape[1]
+    out = []
+    for i in range(values.shape[1]):
+        column = values[:, i]
+        drift = abs(float(np.mean(column)) - float(reference[min(i, len(reference) - 1)]))
+        out.append((drift, float(np.std(column, ddof=1) / np.sqrt(len(column)))))
+    return out, None
+
+
+def _martingale_bar(entry, ctx):
+    """``ci_mult * se + tol`` for the component whose drift :func:`_martingale`
+    reported, or ``None`` when it reported nothing.
+
+    [REV 64]. This is a **statistical** bar, and ``_headroom`` was dividing by the
+    declared tolerance alone. The two are not close: ``sde_gbm_2d_high_corr``
+    declares no ``tol`` for its martingale, so ``effective_tol`` floors at
+    ``ROUNDOFF`` and a drift of 5.6e-4 that **passed** -- it is inside
+    ``2 * se`` -- was reported at ``-6.75`` decades of headroom, a number that
+    reads as a six-decade failure on a plan that scored 10. ``worst_headroom`` is
+    a ranking anchor, so the wrong number there moves ranks silently.
+    """
+    stats, _ = _martingale_stats(entry, ctx)
+    if not stats:
+        return None
+    _, se = max(stats, key=lambda pair: pair[0])
+    return float(entry.get("ci_mult", 2.0)) * se + _tol(entry)
+
+
+def _martingale_process(entry, ctx, X):
+    """``(values as (M, components), reason)``: the declared martingale, per path."""
+    expr = entry.get("expr")
+    if not isinstance(expr, str) or not expr.strip():
+        return np.asarray(X, dtype=float).reshape(len(X), -1), None
+    try:
+        value = evaluate(expr, ctx.expr_namespace())
+    except Exception as exc:  # noqa: BLE001 -- the spec's defect, reported not absorbed
+        return None, (f"the declared martingale expression {expr!r} did not evaluate: "
+                      f"{type(exc).__name__}: {exc}")
+    values = np.asarray(value, dtype=float)
+    if values.ndim == 0 or len(values) != len(X):
+        return None, (f"the declared martingale expression {expr!r} returned shape "
+                      f"{values.shape}, not one value per path")
+    return values.reshape(len(values), -1), None
 
 
 def _estimator_stability(entry, ctx):
@@ -695,12 +785,16 @@ class SdeContext:
     """Everything an SDE constraint can read."""
 
     def __init__(self, terminal_paths, *, params=None, num_paths=None, x0=None,
-                 path_integrals=None):
+                 path_integrals=None, T=None):
         self._paths = terminal_paths
         self.params = dict(params or {})
         self.num_paths = num_paths if num_paths is not None else (
             len(terminal_paths) if terminal_paths is not None else None)
         self.x0 = x0
+        # The horizon the paths were produced at. It lives in `time_interval`, not in
+        # `parameters`, so a declared expression in `T` -- which is how a discounted
+        # martingale is written -- raised NameError and reported `not_reported`.
+        self.T = T
         self.path_integrals = path_integrals or {}
         self.axes, self.periodic, self.mask = [], [], None
         self.duplicated, self.endpoint_exclusive = [], []
@@ -725,7 +819,10 @@ class SdeContext:
         raise KeyError(name)
 
     def expr_namespace(self):
-        return {"X": self.paths(), "num_paths": self.num_paths, **self.params}
+        ns = {"X": self.paths(), "num_paths": self.num_paths, **self.params}
+        if self.T is not None:
+            ns["T"] = self.T
+        return ns
 
 
 def run_declared(verification, ctx):
@@ -765,8 +862,10 @@ def run_declared(verification, ctx):
     # Larger is better; 0.0 means something passed exactly at its tolerance.
     numeric = [(n, v) for n, v in drifts.items()
                if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v]
-    headroom = _headroom(declared, dict(numeric))
+    bars = {(e.get("name") or "?"): effective_bar(e, ctx) for e in declared}
+    headroom = _headroom(declared, dict(numeric), bars)
     return {"drifts": drifts, "outcomes": outcomes, "gate_failed": gate_failed,
+            "bars": bars,
             "not_reported": not_reported, "not_reported_gated": not_reported_gated,
             "non_gate_ok": non_gate_ok,
             "invariants_ok": not gate_failed and non_gate_ok,
@@ -776,10 +875,38 @@ def run_declared(verification, ctx):
             "declared": len(declared)}
 
 
-def _headroom(declared, drifts):
-    """``{name: decades of room below its own tolerance}`` for every measured drift.
+#: Invariants whose bar is **not** the declared tolerance alone.
+#:
+#: [REV 64]. ``effective_tol`` answers "what did the formulator declare"; headroom
+#: needs "what was this drift actually judged against", and for a statistical
+#: invariant those differ by whatever ``ci_mult * se`` comes to. One entry today,
+#: held to its evaluator by ``test_kernel_invariants``' parity assertion: an
+#: evaluator that compares against anything other than ``_tol(entry)`` and is
+#: missing from this table reports headroom against a bar it never applied.
+_STATISTICAL_BAR = {"martingale": _martingale_bar}
 
-    ``log10(tol / drift)``, so 0 is "passed exactly at the bar", 4 is "four orders of
+
+def effective_bar(entry, ctx):
+    """The bar the check actually applied, for comparing one drift against another.
+
+    :func:`effective_tol` where the evaluator compares against the declared
+    tolerance, and the evaluator's own statistical bar where it does not.
+    """
+    fn = _STATISTICAL_BAR.get(entry.get("name"))
+    if fn is None:
+        return effective_tol(entry)
+    try:
+        bar = fn(entry, ctx)
+    except Exception:  # noqa: BLE001 -- a diagnostic must never kill the run
+        bar = None
+    return effective_tol(entry) if bar is None else max(float(bar), ROUNDOFF)
+
+
+def _headroom(declared, drifts, bars=None):
+    """``{name: decades of room below the bar it was judged against}`` for every
+    measured drift.
+
+    ``log10(bar / drift)``, so 0 is "passed exactly at the bar", 4 is "four orders of
     magnitude inside it", and a negative value is a drift that did not clear.
 
     A drift at or below :data:`ROUNDOFF` gets :data:`MAX_HEADROOM`, not a ratio.
@@ -788,6 +915,10 @@ def _headroom(declared, drifts):
     (``maximum_principle`` and ``positivity`` are both 1e-10), so dividing there
     would report an exactly-conserving scheme as having passed by nothing at all.
     Exact conservation is the best available outcome, so it reads as the maximum.
+
+    ``bars`` is :func:`effective_bar` per entry ([REV 64]); without it the bar falls
+    back to the declared tolerance, which is wrong for any invariant whose evaluator
+    adds a statistical term -- and reads as a failure on a check that passed.
     """
     out = {}
     for entry in declared:
@@ -796,9 +927,11 @@ def _headroom(declared, drifts):
         if drift is None:
             continue
         magnitude = abs(float(drift))
+        bar = (bars or {}).get(name)
+        if bar is None:
+            bar = effective_tol(entry)
         if magnitude <= ROUNDOFF:
             out[name] = MAX_HEADROOM
         else:
-            out[name] = float(min(np.log10(effective_tol(entry) / magnitude),
-                                  MAX_HEADROOM))
+            out[name] = float(min(np.log10(bar / magnitude), MAX_HEADROOM))
     return out

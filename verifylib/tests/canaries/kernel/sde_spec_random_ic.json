@@ -1,0 +1,65 @@
+{
+  "id": "canary_quintic_random_ic",
+  "equation_type": "SDE",
+  "sde_family": "quintic_random_ic",
+  "state_dimension": 1,
+  "noise_structure": "none",
+  "equation": "dX = -X**5 dt,  X(0) = xi ~ Normal(0, sigma_bar**2)",
+  "parameters": {
+    "sigma_bar": 0.3333333333333333
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "drift_expression": "-X**5",
+  "diffusion_expression": "0.0 * X",
+  "initial_condition": {
+    "law": "normal",
+    "mean": 0.0,
+    "variance": "sigma_bar**2",
+    "note": "There is no X_0: the initial state is random. The Dynkin identity needs E[phi(X_0)], which the kernel used to form as phi(0.0) from a default -- so for phi = X**2 it used 0 where it needed sigma_bar**2 = 0.1111, and the residual carried that offset at every level."
+  },
+  "analytic_moments": {
+    "has_analytic_solution": false
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.1,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 20000,
+    "seed": 42,
+    "dt": 0.002,
+    "dt0": 0.02,
+    "conv_levels": 3,
+    "ci_mult": 2.0,
+    "conv_num_paths": 8000,
+    "dynkin_levels": 3,
+    "stability_check": null
+  },
+  "verification": {
+    "expected_provenance": "self_convergence",
+    "expected_strong_order": 1.0,
+    "expected_weak_order": 1.0,
+    "dynkin_test_functions": [
+      "X",
+      "X**2"
+    ],
+    "constraints": [
+      {
+        "name": "finite",
+        "expr": "np.isfinite(X)",
+        "gate": true
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "kind": "equation",
+      "quote": "dX = -X**5 dt, X(0) ~ Normal(0, sigma_bar**2)",
+      "status": "mapped",
+      "spec_path": "equation, parameters, initial_condition"
+    }
+  ]
+}

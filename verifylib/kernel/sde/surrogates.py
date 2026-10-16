@@ -63,6 +63,11 @@ def kolmogorov(spec, *, widen=1.5):
     The far-field boundary is artificial, so the answer has to be shown insensitive
     to it. Where it is not, the caller demotes the provenance to
     ``self_convergence`` and says so.
+
+    **Which** boundary is artificial is a property of the spec, not of the interval
+    (plan §11 D7). A boundary coinciding with a support the spec *gates* on is the
+    state space's own edge, and widening across it measures a different problem.
+    :func:`declared_support` reads those, and :func:`_widen` holds them.
     """
     kol = (spec.get("verification") or {}).get("kolmogorov") or {}
     bounds = kol.get("bounds")
@@ -79,8 +84,10 @@ def kolmogorov(spec, *, widen=1.5):
 
     payoffs = kol.get("payoffs") or ["x", "x**2"]
     Nx, Nt = int(kol.get("Nx", 4001)), int(kol.get("Nt", 4000))
+    support = declared_support(spec)
+    wide, pinned = _widen(bounds, widen, support)
     got = {}
-    for label, span in (("base", bounds), ("wide", _widen(bounds, widen))):
+    for label, span in (("base", bounds), ("wide", wide)):
         got[label] = [_solve_backward(spec, params, T, span, Nx, Nt, phi, float(x0))
                       for phi in payoffs]
         if any(v is None for v in got[label]):
@@ -92,14 +99,95 @@ def kolmogorov(spec, *, widen=1.5):
     out = {"mean": m1}
     if m2 is not None:
         out["variance"] = m2 - m1 * m1
-    return out, {"route": "kolmogorov", "truncation_shift": shifts,
-                 "bounds": list(bounds), "widened": _widen(bounds, widen)}
+    detail = {"route": "kolmogorov", "truncation_shift": shifts,
+              "bounds": list(bounds), "widened": wide, "pinned": pinned,
+              "declared_support": list(support)}
+    if len(pinned) == 2:
+        # Nothing artificial was widened, so the guard measured nothing. It passes
+        # -- correctly, there is no truncation to be insensitive to -- and says so,
+        # because a guard that reads as evidence without having run is the shape
+        # §6's `not_reported` rule exists to refuse.
+        detail["truncation_guard"] = ("vacuous: both boundaries are a support the spec "
+                                      "gates on, so neither is artificial")
+    return out, detail
 
 
-def _widen(bounds, factor):
+#: How close a declared boundary has to be to count as the same boundary. Relative,
+#: because the quantity is a state value: a spec gating ``X >= 0`` and bounds of
+#: ``[0, 24]`` is the case this exists for, and an exact match is the only one that
+#: occurs -- the tolerance is here so that ``[1e-16, 24]`` is not read as a
+#: different boundary than ``[0, 24]``.
+PIN_RTOL = 1e-9
+
+
+def declared_support(spec):
+    """``(lower, upper)`` the spec fixes through a **gated** constraint; ``None``
+    on a side nothing declares.
+
+    Read from the registry names only -- ``positivity`` (lower bound 0) and
+    ``support`` (its declared ``bounds`` / ``lower`` / ``upper``) -- never inferred
+    from an ``expr`` or from ``x0``. Two reasons, both plan §11 D7's:
+
+    * **A gate is a claim the formulator made and the kernel enforces.** An ungated
+      ``support`` entry is a diagnostic ("reported, not gated" in
+      ``sde_ginzburg_landau_s6``'s own words) and does not fix the state space.
+      ``sde_ornstein_uhlenbeck``'s ``|X| < 12`` is exactly that, and reading it
+      would re-measure a guard that works today.
+    * **Inferring would re-measure three working specs.** The rejected alternative
+      -- widen away from ``x0`` only -- is spec-independent and moves the widened
+      domain on ``sde_bm_with_drift`` (``[-4, 7]``, ``X_0 = 0``), where the current
+      rule is fine. A spec needing a support no gated constraint declares should
+      declare it, which is plan §4b's declared-and-never-read rule applied rather
+      than excepted.
+
+    Measured across the four live specs declaring ``kolmogorov.bounds``: this pins
+    exactly ``sde_ginzburg_landau_s6``'s ``lo = 0`` (gated ``positivity``), and
+    ``sde_double_well_langevin``'s gated ``support`` of ``[-8, 8]`` pins nothing,
+    because its bounds are ``[-3, 3]`` and neither end coincides.
+    """
+    v = spec.get("verification") or {}
+    lo = hi = None
+    for entry in [*(v.get("constraints") or []), *(v.get("invariants") or [])]:
+        if not (isinstance(entry, dict) and entry.get("gate")):
+            continue
+        if entry.get("name") == "positivity":
+            lo = 0.0 if lo is None else max(lo, 0.0)
+        elif entry.get("name") == "support":
+            fallback = entry.get("bounds") or [None, None]
+            low, high = entry.get("lower", fallback[0]), entry.get("upper", fallback[1])
+            if isinstance(low, (int, float)):
+                lo = float(low) if lo is None else max(lo, float(low))
+            if isinstance(high, (int, float)):
+                hi = float(high) if hi is None else min(hi, float(high))
+    return lo, hi
+
+
+def _widen(bounds, factor, support=(None, None)):
+    """``(widened bounds, names of the sides held)``.
+
+    The *span* grows by ``factor`` either way. What changes is the anchor: with
+    nothing declared it is the midpoint, as before; with a boundary pinned by a
+    declared support the span grows away from that boundary, which is the far-field
+    widening a formulator checking a one-sided domain would do by hand. Measured on
+    ``sde_ginzburg_landau_s6``: ``[0, 24]`` at 1.5x becomes ``[0, 36]``, reproducing
+    the spec's own recorded 0.36% shift to three figures, where symmetric widening
+    produced ``[-6, 30]`` -- an artificial boundary at ``x = -6``, across the point
+    where ``g(x) = sigma*x`` degenerates, over a region the process never visits.
+    """
     lo, hi = float(bounds[0]), float(bounds[1])
-    mid, half = 0.5 * (lo + hi), 0.5 * (hi - lo) * float(factor)
-    return [mid - half, mid + half]
+    span = (hi - lo) * float(factor)
+    pinned = [name for name, edge, declared in (("lower", lo, support[0]),
+                                                ("upper", hi, support[1]))
+              if isinstance(declared, (int, float))
+              and abs(edge - float(declared)) <= PIN_RTOL * max(1.0, abs(float(declared)))]
+    if len(pinned) == 2:
+        return [lo, hi], pinned
+    if pinned == ["lower"]:
+        return [lo, lo + span], pinned
+    if pinned == ["upper"]:
+        return [hi - span, hi], pinned
+    mid, half = 0.5 * (lo + hi), 0.5 * span
+    return [mid - half, mid + half], pinned
 
 
 def _solve_backward(spec, params, T, bounds, Nx, Nt, phi, x0):

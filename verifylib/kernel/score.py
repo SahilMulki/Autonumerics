@@ -148,15 +148,32 @@ def ceiling(evidence):
                     "residual, the ladder and MMS are all satisfied by a solution of "
                     "the right equation from the wrong data"
                if evidence.get("ic_consistent") is False
-               else "D1 stalled with a validated operator: the residual does not fall "
-                    "under refinement and the operator it is measured against is known "
-                    "to be right")
+               else _d1_stalled_reason(evidence))
         return 3, _fallback_tag(evidence), why
     if not evidence.get("any_test_ran"):
         return 2, "none", "no test in the manual could be run"
 
     tier = tier_of(evidence)
-    c_clean = passed(evidence.get("converged")) and passed(evidence.get("order_ok"))
+    # An **abstained** order study must not cost a circularity break. `order_ok` is
+    # three-valued on the SDE side since plan §11 D8: `"unavailable"` means the
+    # estimator could not measure this plan, which is a property of the estimator and
+    # not of the solver, and D8b decides it costs nothing. Without this a Path-B
+    # plan with a clean Dynkin, stable Richardson moments and an abstaining order
+    # study fell from the one-break 9 to Tier C's 8 -- the abstention costing exactly
+    # the point D8b says it must not.
+    #
+    # PDE-side waivers never reach here as skips: `driver._order_verdict` returns a
+    # bool for `waived_spec` and `waived_chaotic` alike (vacuously true), so this
+    # changes nothing on that path.
+    #
+    # [REV 59]: this was `passed(...) or is_skip(...)`, which credited **all seven**
+    # members of `SKIPS` -- including the `"unavailable"` that `_orders` returns when
+    # a CRN level *crashed*. A ladder that produced no number could therefore buy
+    # the circularity-break 9 that D8b reserves for a ladder that produced a number
+    # the estimator could not read, and the two differ in exactly the way `ceiling`
+    # already insists on thirty lines above: "a crash is a property of the code".
+    order_evidence = _order_abstention_is_free(evidence.get("order_ok"))
+    c_clean = passed(evidence.get("converged")) and order_evidence
     if tier == "A":
         return 10, "analytic", "Tier A: the closed form was validated against the "\
                                "spec's own operator, IC and BC"
@@ -212,6 +229,48 @@ def ceiling(evidence):
     return 2, "none", "no test in the manual could be run"
 
 
+#: Order-study outcomes that cost no circularity break (plan §11 D8b).
+#:
+#: Deliberately an allow-list and not ``is_skip``. D8b's decision is about the
+#: **measured** abstention -- a ladder that ran, produced numbers, and whose own
+#: error bar admits more than the band -- and about §24's cost skip, which is only
+#: taken where the moments already matched an exact reference and so cannot change
+#: the outcome. Everything else in :data:`metrics.SKIPS` is a property of the code
+#: or the configuration rather than of the estimator: a crashed CRN level, a
+#: ``faulty_probe``, a ladder with fewer than three levels. Those are the absence
+#: of evidence, and the absence of evidence must not read as clean evidence.
+_FREE_ORDER_SKIPS = ("unresolved", "not_run")
+
+
+def _order_abstention_is_free(order_ok) -> bool:
+    """Whether ``order_ok`` leaves a circularity break intact."""
+    return passed(order_ok) or (isinstance(order_ok, str)
+                                and order_ok in _FREE_ORDER_SKIPS)
+
+
+def _d1_stalled_reason(evidence):
+    """Why a stalled operator check caps at 3, in the vocabulary of the kind it ran on.
+
+    [REV 15]: forcing Dynkin on Path A (plan §3 1b) caps the fabrication canary at 3
+    correctly and surfaced it as *"D1 stalled with a validated operator: the residual
+    does not fall under refinement"* -- PDE vocabulary naming neither Dynkin nor the
+    order study, on an SDE. Acceptance criterion 1 asks for a reason that names one
+    of them, and a reason a reader cannot act on is the half of a cap that matters.
+
+    Same rule either way: the operator check ran, it did not come back clean, and
+    the operator it was measured against is the spec's own.
+    """
+    if evidence.get("kind") == "sde":
+        return ("the Dynkin check stalled: the paths do not satisfy the generator "
+                "built from the spec's own drift and diffusion, so nothing "
+                "establishes that they came from this SDE rather than from some "
+                "other process with the same two terminal moments. Exact moments "
+                "cannot separate those (manual §24's own argument), and the order "
+                "study measures the scheme rather than the equation")
+    return ("D1 stalled with a validated operator: the residual does not fall under "
+            "refinement and the operator it is measured against is known to be right")
+
+
 def _fallback_tag(evidence):
     """A gate violation does not change what evidence was gathered (§4c: "tag
     unchanged"), so the tag still names the tier that was reached."""
@@ -260,21 +319,166 @@ def rubric_pde_analytic(evidence):
     return 2, f"the code ran but the error is {err:.3e}, at least 50x the tolerance"
 
 
+#: Why a 10 needs ``dynkin_ok is True`` and not merely "Dynkin did not fail".
+#:
+#: [REV 60]. Plan §3 1b's whole argument is that **exact terminal moments do not
+#: establish that the paths came from this SDE** -- two processes can share two
+#: moments -- and that Dynkin is the only check in the manual that does. Both SDE
+#: rubrics encoded half of it: a *failing* Dynkin caps at 3, and a Dynkin that
+#: never produced a verdict was read as nothing at all, so the 10 rows fell back
+#: to moment evidence alone. That is Finding 1's hole reached through a different
+#: door, and ``_dynkin``'s own ``DYNKIN_MAX_BYTES`` docstring says the quiet part:
+#: "it does not certify today, so the ladder is not run there; the guard is here
+#: because 'it does not certify' is luck rather than design."
+#:
+#: Three doors were open. A plan whose increment array exceeds the 12 GB budget
+#: (the refusal is deliberate and right -- running it at fewer paths could turn a
+#: real inconsistency into a pass); a plan whose generator cannot be built or whose
+#: observables run crashed; and a plan where the extrapolation ladder abstained
+#: (``"unresolved"``, [REV 56]). The abstention is a correct verdict about *the
+#: check* and it is still not evidence about the solver, so it does not buy a
+#: certification either -- which is the distinction D8b draws for the order study,
+#: applied to the one check that cannot be substituted. ``9`` rather than ``8``:
+#: everything that could be measured passed, and the plan is uncertified rather
+#: than suspect.
+_NO_GENERATOR_EVIDENCE = {
+    "unresolved": "the generator check ran and could not reach a verdict: the "
+                  "residual's own convergence rate is outside the band any "
+                  "extrapolation on it would need, so the leftover is the scheme's "
+                  "bias rather than evidence about the generator",
+    "unavailable": "the generator check could not run -- the ladder exceeded its "
+                   "memory budget, the generator could not be built from the "
+                   "declared drift and diffusion, or the observables run crashed",
+    "not_run": "the generator check was skipped under manual §24's cost rule",
+}
+
+
+def _generator_evidence_gap(evidence, *, reference="the exact moments"):
+    """``None`` when something establishes the paths came from *this* SDE.
+
+    Otherwise the sentence that says what is missing. Only ``dynkin_ok is True``
+    closes the gap; ``failed(dynkin_ok)`` never reaches here, because both rubrics
+    cap it at 3 several rows earlier.
+
+    ``reference`` names what the moments were compared against, since the two
+    rubrics reach this from different evidence -- a closed form on Path A, a
+    surrogate on Path B -- and a reason that names the wrong one is worse than a
+    generic one.
+    """
+    outcome = evidence.get("dynkin_ok")
+    if passed(outcome):
+        return None
+    why = _NO_GENERATOR_EVIDENCE.get(outcome if isinstance(outcome, str) else "",
+                                     f"the generator check reported {outcome!r}")
+    return (f"every checked moment is within tolerance of {reference} and the Monte "
+            f"Carlo is resolved, but {why}. Exact terminal moments cannot separate a "
+            f"correct solve from a process that shares them (manual §24's own "
+            f"argument), so this is everything measurable here passing without the one "
+            f"check that distinguishes this SDE -- uncertified, not suspect")
+
+
 def rubric_sde_analytic(evidence):
-    """``project_manual.md``'s analytic SDE rubric, plus §14's mandatory CI logic."""
+    """``project_manual.md``'s analytic SDE rubric, plus §14's mandatory CI logic.
+
+    Until plan §3 1a this read exactly five fields -- ``crashed``,
+    ``gate_violation``, ``resolved``, ``moments_ok``, ``variance_ok`` -- and **not**
+    ``dynkin_ok``, ``orders_ok`` or ``invariants_ok``. So on Path A, where 21 of the
+    23 SDE problems live, the only thing measured was whether two terminal moments
+    landed inside their tolerances, and a solver that drew from the exact terminal
+    law and never integrated the SDE at all scored **10, certified, provenance
+    analytic**.
+
+    **Row order is `rubric_sde`'s** (findings §7.6): gate, then a Dynkin or order
+    *failure*, then inconclusive. The order is not cosmetic -- it decides what a
+    sign-flipped drift scores, because such a solver explodes the variance, widens
+    the CI, and would otherwise land on the "MC-inconclusive, not a solver bug" row
+    with a Dynkin z of ~1500.
+
+    Three of the four new rows are transcriptions: the Dynkin row from Path B, the
+    orders row from Path B (**8**, not the PDE side's 7 -- scoring the same defect 7
+    here and 8 there would open a new cross-path divergence in a change whose purpose
+    is closing one), and the no-reference row from the PDE analytic rubric. The
+    invariants row is **not** a transcription -- neither SDE rubric read
+    ``invariants_ok`` -- which is why it is here only after ``_martingale`` stopped
+    discarding a declared ``expr`` and reporting ``|E[X_T] - X_0|`` instead: it was
+    failing two live, pathwise-correct plans on an artifact of the evaluator.
+    """
     if evidence.get("crashed"):
         return 1, "the solver crashed or returned non-finite output"
     if evidence.get("gate_violation"):
         return 4, "a gate constraint is violated"
+    if failed(evidence.get("dynkin_ok")):
+        return 3, "Dynkin fails: the paths do not satisfy the generator built from the "\
+                  "spec's own drift and diffusion. Exact terminal moments cannot "\
+                  "separate this from a correct solve -- two processes can share two "\
+                  "moments -- so the usual cause is the wrong equation integrated "\
+                  "correctly, a sign or a coefficient, not too few paths"
+    if evidence.get("reference_evaluable") is False:
+        return 2, "no moment could be measured against the closed form: the spec "\
+                  "claims an analytic solution and no declared expression or "\
+                  "*_value_at_T for either moment was evaluable"
+    # D10: Path A has no surrogate, so the conjunction `rubric_sde`'s 8 row is
+    # guarded by becomes `moments_ok and resolved and constraints_ok` -- the same
+    # conjunction this rubric's own 10 row already requires, with the closed form in
+    # the surrogate's place. A plan failing one of those conjuncts is handled by an
+    # existing row below and must *not* fall through to Path B's unguarded 3: that
+    # row exists because a Path-B plan with no surrogate and no order evidence has
+    # nothing left, and a Path-A plan always has the closed form.
+    if (passed(evidence.get("moments_ok")) and passed(evidence.get("resolved"))
+            and passed(evidence.get("constraints_ok"))):
+        if failed(evidence.get("orders_ok")):
+            return 8, _orders_fail_reason(evidence)
+        if failed(evidence.get("invariants_ok")):
+            return 5, "the moments match the closed form and the MC is resolved, but a "\
+                      "declared non-gate invariant drifts materially: the terminal "\
+                      "distribution is right and a structural property the spec states "\
+                      "of the *process* is not"
     if failed(evidence.get("resolved")):
         return 6, "MC-inconclusive: the error bars are too wide to decide. Raise "\
                   "num_paths -- this is not a solver bug"
     if passed(evidence.get("moments_ok")) and passed(evidence.get("resolved")):
-        return 10, "every checked moment is within tolerance of the exact moments, and "\
-                   "the estimates are MC-resolved"
+        gap = _generator_evidence_gap(evidence)
+        if gap is not None:
+            # [REV 60]. The row above this one is the whole reason plan §3 1b forced
+            # Dynkin onto Path A; without this the forcing only ever changed the
+            # score of a plan Dynkin *failed*.
+            return 9, gap
+        reason = "every checked moment is within tolerance of the exact moments, and "\
+                 "the estimates are MC-resolved"
+        if is_skip(evidence.get("orders_ok")):
+            # [REV 44]'s row, and D8b's answer to it: the abstention is **reported**
+            # and does not cap. An unmeasurable strong order on heavy-tailed
+            # multiplicative noise is a property of the kernel's estimator, not of
+            # the solver, and charging it to the solver is the false hard-fail this
+            # repo keeps rediscovering.
+            reason += (f" (the order study reported {evidence['orders_ok']!r} and is "
+                       f"not counted against the plan either way)")
+        return 10, reason
     if passed(evidence.get("variance_ok")):
         return 8, "the variance passes; the mean is slightly above threshold"
     return 4, "the variance check fails, though the code ran cleanly"
+
+
+def _orders_fail_reason(evidence):
+    """D1 item 2: the row fires on two different defects and they need different
+    feedback. ``rubric_sde``'s wording *asserts* "a strong order near zero" without
+    reading the number -- true for a solver that ignores the supplied increments,
+    false for one converging more slowly than its scheme claims."""
+    order, floor = evidence.get("observed_order"), evidence.get("order_floor")
+    near_zero = isinstance(order, (int, float)) and abs(float(order)) < 0.25
+    if near_zero:
+        return ("the moments match the closed form, but the CRN order study reads a "
+                f"strong order of {float(order):.3f}: the solver does not consume the "
+                "supplied Brownian increments (manual §18), so nothing about its "
+                "discretization was measured and it cannot be certified however well "
+                "its moments match")
+    measured = (f"{float(order):.3f}" if isinstance(order, (int, float)) else "unknown")
+    bar = (f"{float(floor):g}" if isinstance(floor, (int, float)) else "its floor")
+    return (f"the moments match the closed form, but the observed strong order "
+            f"{measured} does not clear {bar}: accurate at this dt, and not "
+            f"converging at the rate the scheme claims. Euler-Maruyama and Milstein "
+            f"have the same weak order, so the moment comparison cannot tell them "
+            f"apart (manual §24)")
 
 
 def rubric_pde(evidence):
@@ -350,6 +554,27 @@ def rubric_sde(evidence):
         return 3, "Dynkin fails: the paths do not satisfy the generator built from the "\
                   "spec's own drift and diffusion. The usual cause is the wrong equation "\
                   "integrated correctly -- a sign or a coefficient -- not too few paths"
+    if passed(v("stability_ok")) or failed(v("stability_ok")):
+        # D5. Where the spec declares a stability criterion, `project_manual.md` is
+        # explicit that "the moment tolerances do not apply; the criterion is
+        # evaluation_thresholds.stability_check", and `benchmark/verify.py`'s
+        # `verify_sde_stability` scores it that way. The kernel layering it as an
+        # extra gate on top of moment scoring would have graded a different problem
+        # than the oracle does. These are the blow-up and domain-escape problems --
+        # `sde_fene_blowup`, `sde_quintic_drift_noise` -- where there is no
+        # closed-form moment to compare against and staying finite *is* the question.
+        #
+        # The rubric proposes 10 and `ceiling()` bounds it: with no reference and no
+        # circularity break this is Tier C at 8, and a clean Dynkin earns the 9 §4c
+        # puts on one break.
+        if failed(v("stability_ok")):
+            return 3, "the declared stability criterion fails: a terminal state is "\
+                      "non-finite, or the paths left the declared domain. For this "\
+                      "problem that *is* the criterion -- there are no closed-form "\
+                      "moments and the moment tolerances do not apply"
+        return 10, "the declared stability criterion holds: every terminal state is "\
+                   "finite and inside the declared domain, which is this problem's "\
+                   "whole criterion (project_manual.md's SDE stability rubric)"
     if surrogate and moments_ok and resolved and constraints_ok:
         if failed(v("orders_ok")):
             # Manual §7's rule for `override`, extended to §18's `dW`: a solver
@@ -361,10 +586,31 @@ def rubric_sde(evidence):
                       "strong order near zero: the solver does not consume the supplied "\
                       "Brownian increments (manual §18), so nothing about its "\
                       "discretization was measured and it cannot be certified"
+        gap = _generator_evidence_gap(evidence, reference="the surrogate")
+        if gap is not None:
+            # [REV 60], the Path-B half. A surrogate is an independently computed
+            # reference, but it is still compared through moments, so a sampler that
+            # draws from the right terminal law matches it exactly as it matches a
+            # closed form. `run_dynkin` is unconditional on this path, so a skip here
+            # means the check genuinely could not produce a verdict.
+            return 9, gap
         return 10, "a surrogate reference passed its trust guard and the moments match it"
     if orders_ok and dynkin_ok and constraints_ok and passed(v("richardson_stable")):
         return 9, "no surrogate: the orders, Dynkin and the constraints all hold and the "\
                   "Richardson moments are stable across the ladder"
+    if (is_skip(v("orders_ok")) and dynkin_ok and constraints_ok
+            and passed(v("richardson_stable"))):
+        # D8b on Path B. An order study that *abstained* is not an order study that
+        # failed, and the rows below both assert "orders far from expectation" --
+        # which is not what happened. The evidence that remains is Dynkin, the
+        # constraints and a stable Richardson moment, and `ceiling()` already prices
+        # the missing order study: with no circularity break this is Tier C at 8, and
+        # with a clean Dynkin it is the one break §4c puts at 9.
+        return 9, (f"no surrogate: Dynkin and the constraints hold and the Richardson "
+                   f"moments are stable. The order study reported "
+                   f"{v('orders_ok')!r} -- its own error bar admits more than the "
+                   f"band, so it is not evidence either way and is not counted "
+                   f"against the plan")
     if failed(v("orders_ok")):
         return 3, "the estimator is erratic in dt: orders far from expectation, or the "\
                   "differences are not shrinking. The CRN ladder is deterministic given "\
@@ -374,6 +620,10 @@ def rubric_sde(evidence):
                   "num_paths -- this is not a solver bug"
     if orders_ok and constraints_ok:
         return 7, "the Richardson-extrapolated moments are unstable, or Dynkin failed"
+    if is_skip(v("orders_ok")):
+        return 7, (f"the order study reported {v('orders_ok')!r} and one of Dynkin, "
+                   f"the constraints or the Richardson stability did not hold. The "
+                   f"order study is not what is missing")
     return 3, "the estimator is erratic in dt: orders far from expectation, or the "\
               "differences are not shrinking"
 
@@ -523,6 +773,21 @@ def certify(evidence):
                                f"at full T, above {disagreement.get('tol')}. Neither plan "
                                f"may be declared a winner until a third family or a "
                                f"refine cycle breaks the tie"})
+
+    milstein = evidence.get("milstein_claim")
+    if isinstance(milstein, dict):
+        # 2d. The plan declares a scheme the spec says cannot be implemented from the
+        # increments alone, and declares no Levy-area treatment. The strong-order
+        # study would eventually catch a wrong correction, but the *claim* is a
+        # SOLUTION.md-versus-reality mismatch -- the class `agent_cap` exists for --
+        # and a plan whose stated scheme is not the one it can have run must not
+        # certify on moment agreement.
+        caps.append({"source": "milstein_claim", "score": 8,
+                     "reason": f"the plan declares scheme_family "
+                               f"{milstein.get('family')!r} on a spec declaring "
+                               f"milstein_eligible: false for the Levy-area reason, "
+                               f"and no levy_area_treatment. "
+                               f"{milstein.get('note')}"})
 
     agent_cap = evidence.get("agent_cap")
     if isinstance(agent_cap, dict) and agent_cap.get("score") is not None:

@@ -99,8 +99,13 @@ def for_plan(plan_dir, *, sha_of):
         live.append(view)
         if view["agree"] is True and view["different_family"] and not view["interpolated"]:
             agreement = True
-        if view["agree"] is False and (disagreement is None
-                                       or (view["rel_diff"] or 0) > (disagreement["rel_diff"] or 0)):
-            disagreement = view
+        # D6: a disagreement under *either* seeding caps both plans. `cli.compare`
+        # already folds the shared-seed verdict into `agree`, so this reads the
+        # recorded field for an entry written before D6 and the new field for one
+        # written after.
+        if (view["agree"] is False or entry.get("agree_shared_seed") is False) and (
+                disagreement is None
+                or (view["rel_diff"] or 0) > (disagreement["rel_diff"] or 0)):
+            disagreement = {**view, "agree": False}
     return {"agreement": agreement, "disagreement": disagreement, "entries": live,
             "stale": stale}

@@ -73,6 +73,19 @@ you — you select among the values the formulator set, you do not set your own.
 convergence guard widens to a one-sided band spanning every declared order, which is safe but
 weaker.
 
+Two things about that band, since 2026-10-15:
+
+- It is **also** one-sided whenever the spec declares no `expected_strong_order` at all, whatever
+  you put here. The kernel's fallback is 0.5, which is Euler–Maruyama's order under *multiplicative*
+  noise and wrong by a factor of two under additive noise — so a two-sided band around a floor
+  nobody declared would fail a correct additive-noise plan measuring 1.0. Declaring
+  `scheme_family` buys the sharper check only on a spec that declared the floor.
+- The order study now runs on **every certifying plan**, not only where the spec declares a floor
+  of 1.0 or more. Measuring a floor of 0.5 and getting 0.0 is how a solver that ignores `dW` is
+  caught, so the check applies to you whatever your scheme. If the estimator cannot measure your
+  plan's strong order — heavy-tailed multiplicative noise, or a scheme that integrates the problem
+  exactly — it reports `"unresolved"` and that costs you nothing.
+
 ## SDE Reference
 
 (Copy the equation and parameters from problem_spec.json for solver convenience)

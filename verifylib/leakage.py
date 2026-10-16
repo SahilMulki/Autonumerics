@@ -24,7 +24,7 @@ from __future__ import annotations
 import ast
 import re
 
-from .findings import Finding, error
+from .findings import Finding, error, warning
 
 CITATION_PATTERNS = (
     r"benchmark/",
@@ -108,3 +108,101 @@ def leakage_findings(source: str, *, path: str = "") -> list[Finding]:
         found.append(error("leakage", path,
                            f"executable access to the answer key: {hits}"))
     return found
+
+
+# --- the state-clip scan (plan §3 5b) ----------------------------------------
+
+#: Calls that truncate a value. Bare and dotted spellings both, because
+#: ``from numpy import maximum`` is legal and the scan must not be defeated by an
+#: import style.
+#:
+#: ``where`` is deliberately absent: ``np.where(cond, a, b)`` is a *select*, not a
+#: truncation, and including it flagged ``pde_mhd_2d``'s ``full = where(..., full,
+#: ...)`` -- a field assembled from two branches, not a state clipped to its own
+#: support. The scan is worth exactly as much as its precision.
+_CLIPPERS = frozenset({"maximum", "minimum", "clip", "abs", "absolute"})
+
+
+def state_clip_scan(source: str) -> list[str]:
+    """Find a state variable clipped **to itself**, as a statement.
+
+    ``verification_manual.md`` §21 and ``agents/solver-sde.md`` both promise this
+    check and neither had one, which is worse than having no deterrent: the solver
+    agents are told it exists.
+
+    Narrow by construction, and the narrowing is the whole check.
+    ``agents/solver-sde.md:80`` *instructs* the solver to write
+    ``np.sqrt(np.maximum(X, 0.0))`` for CIR, and ``sde_cir_feller_violated`` is live
+    with two plans. Full-truncation Euler clips **inside** the coefficient and keeps
+    the scheme honest; clipping the *state* after the update is what hides the
+    defect. So:
+
+    * only an assignment whose **target name also appears in the clip's arguments**
+      -- ``X = np.maximum(X, 0)``, ``X[:] = np.clip(X, 0, None)``, ``X *=`` a clip of
+      itself -- or a bare ``np.clip(..., out=X)`` statement;
+    * never a clip appearing as a sub-expression of another call, which is where
+      every endorsed use sits.
+
+    That is also what ``sde_cir_feller_violated``'s own spec note asks for, in as
+    many words: *"a bare np.maximum(X, 0) applied only to the RETURNED array would
+    hide the defect; the guard must be inside the sqrt of the step itself"*.
+
+    Measured over every solver in ``workspace/``: 0 hits, including on both CIR
+    plans and all three tamed Ginzburg-Landau plans.
+    """
+    def clipper(call):
+        fn = call.func
+        name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", None)
+        return name if name in _CLIPPERS else None
+
+    def names_in(call):
+        return {n.id for n in ast.walk(call) if isinstance(n, ast.Name)}
+
+    def target_name(target):
+        while isinstance(target, (ast.Subscript, ast.Attribute)):
+            target = target.value
+        return target.id if isinstance(target, ast.Name) else None
+
+    hits = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, (ast.Assign, ast.AugAssign)):
+            value = node.value
+            if not isinstance(value, ast.Call):
+                continue
+            name = clipper(value)
+            if name is None:
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                state = target_name(target)
+                if state and state in names_in(value):
+                    hits.append(f"{state} = {name}(... {state} ...) at line {node.lineno}")
+        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+            name = clipper(node.value)
+            out = [k for k in node.value.keywords if k.arg == "out"]
+            if name and out:
+                state = target_name(out[0].value)
+                if state and state in names_in(node.value):
+                    hits.append(f"{name}(..., out={state}) at line {node.value.lineno}")
+    return sorted(set(hits))
+
+
+def state_clip_findings(source: str, *, path: str = "") -> list[Finding]:
+    """A **warning**, not an error. Where the clip sits is the whole question and a
+    scan cannot always answer it -- a reflecting scheme legitimately maps the state
+    back into its support -- so this surfaces the line and the reviewer decides. An
+    error here would hard-fail a correct reflecting solver, which is the one failure
+    mode this repo treats as invisible."""
+    try:
+        hits = state_clip_scan(source)
+    except SyntaxError:
+        return []
+    if not hits:
+        return []
+    return [warning("state_clip", path,
+                    f"the state is clipped to itself as a statement: {hits}. "
+                    f"Full truncation clips inside the coefficient (np.sqrt(np.maximum("
+                    f"X, 0))) and keeps the scheme honest; clipping the state after the "
+                    f"update, or on the returned array, hides a negative excursion "
+                    f"rather than preventing it (verification_manual.md section 21). If "
+                    f"this is a reflecting scheme, say so in SOLUTION.md")]

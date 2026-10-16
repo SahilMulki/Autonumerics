@@ -361,11 +361,24 @@ def _compare_sde(spec, thresholds, cfg, plan_a, plan_b, *, no_record=False, as_j
     """The SDE half of ``compare``: a difference in moment space, with the
     Monte-Carlo interval deciding between agree / disagree / inconclusive.
 
-    Both plans run at the *graded* configuration, including the same ``seed``. Two
-    schemes that consume the increments the same way then share a Brownian path and
-    the difference is nearly noise-free; two that do not (a split-step against a
-    one-stage update) do not, and the interval is what keeps that from reading as
-    disagreement. The interval is formed conservatively, as if the two runs were
+    **Both seedings run** (plan §10 D6). ``verification_manual.md`` §22 says the
+    comparison must use independent seeds and the code used the same ``seed`` for
+    both plans, and each is right about a different question:
+
+    * **Shared seed, for detecting disagreement.** Two schemes that consume the
+      increments the same way share a Brownian path, so the difference is nearly
+      noise-free and a real discrepancy shows at a fraction of the paths. This is
+      the sensitive test, and it is what may *cap* both plans.
+    * **Independent seeds, for earning the circularity break.** Agreement under a
+      shared path is partly an artifact of the shared path -- two solvers with the
+      same bug driven by the same noise agree beautifully. Only the independent-seed
+      comparison may set ``cross_plan_agreement``, which is the field
+      ``score.agreement_is_break`` reads for a 10.
+
+    Four solves instead of two, accepted: ``compare`` is already the slowest CLI
+    path on an SDE and the alternative is a break that was not earned.
+
+    The interval is formed conservatively in both, as if the two runs were
     independent -- correlation can only make the true error bar smaller, and the
     conservative bar is the one that refuses to call a break it has not earned.
     """
@@ -386,60 +399,86 @@ def _compare_sde(spec, thresholds, cfg, plan_a, plan_b, *, no_record=False, as_j
                                thresholds.get("near_zero_mean_threshold"), 0.01))
     ci_mult = float(cfg.pick("ci_mult", None, thresholds.get("ci_mult"), 2.0))
 
-    stats = {}
-    for plan in (plan_a, plan_b):
-        got = sandbox.run(plan, "sde", {"num_paths": num_paths, "dt": dt, "T": T, "seed": seed})
+    def moments_of(plan, plan_seed):
+        got = sandbox.run(plan, "sde", {"num_paths": num_paths, "dt": dt, "T": T,
+                                        "seed": int(plan_seed)})
         if got["status"] != "ok":
             print(f"{os.path.basename(plan)} crashed at dt={dt:g}: {got.get('reason')}: "
                   f"{got.get('error')}", file=sys.stderr)
-            return FAIL
+            return None
         X = np.asarray(got["result"]["terminal_paths"], dtype=float)
         X = X.reshape(X.shape[0], -1) if X.ndim > 1 else X.reshape(-1, 1)
         n = X.shape[0]
-        stats[plan] = {
+        return {
             "mean": X.mean(axis=0), "variance": X.var(axis=0, ddof=1),
             "se_mean": X.std(axis=0, ddof=1) / np.sqrt(n),
             # se of a variance estimate, from the fourth central moment.
             "se_variance": np.sqrt(np.maximum(
                 ((X - X.mean(axis=0)) ** 4).mean(axis=0) - X.var(axis=0, ddof=1) ** 2, 0.0) / n),
             "num_paths": n}
-    sa, sb = stats[plan_a], stats[plan_b]
 
-    # Per moment and component: the relative difference, its interval, and the
-    # tolerance it is judged against. The worst component decides, as in the driver
-    # -- "worst" by `rel_diff / tol`, not by `rel_diff`, because the mean and the
-    # variance are judged against different tolerances and the raw difference does
-    # not say which is closer to failing.
-    per, outcome_bits = [], []
-    for name, tol_k in (("mean", mean_tol), ("variance", var_tol)):
-        for i in range(len(sa[name])):
-            a, b = float(sa[name][i]), float(sb[name][i])
-            scale = 0.5 * (abs(a) + abs(b))
-            if name == "mean" and scale < near_zero:
-                per.append({"moment": name, "component": i, "a": a, "b": b,
-                            "skipped": "both means are within the near-zero threshold"})
-                continue
-            se = float(np.hypot(sa[f"se_{name}"][i], sb[f"se_{name}"][i]))
-            d = abs(a - b) / (scale + 1e-300)
-            d_se = se / (scale + 1e-300)
-            per.append({"moment": name, "component": i, "a": a, "b": b,
-                        "rel_diff": d, "rel_se": d_se, "tol": tol_k,
-                        "agree": bool(d + ci_mult * d_se < tol_k),
-                        "disagree": bool(d - ci_mult * d_se > tol_k)})
-            outcome_bits.append(per[-1])
-    if not outcome_bits:
+    def compare_pair(sa, sb):
+        """``(per-moment rows, agree, worst row)`` -- §14's three-way outcome.
+
+        Per moment and component: the relative difference, its interval, and the
+        tolerance it is judged against. The worst component decides, as in the
+        driver -- "worst" by ``rel_diff / tol``, not by ``rel_diff``, because the
+        mean and the variance are judged against different tolerances and the raw
+        difference does not say which is closer to failing.
+        """
+        rows, bits = [], []
+        for name, tol_k in (("mean", mean_tol), ("variance", var_tol)):
+            for i in range(len(sa[name])):
+                a, b = float(sa[name][i]), float(sb[name][i])
+                scale = 0.5 * (abs(a) + abs(b))
+                if name == "mean" and scale < near_zero:
+                    rows.append({"moment": name, "component": i, "a": a, "b": b,
+                                 "skipped": "both means are within the near-zero threshold"})
+                    continue
+                se = float(np.hypot(sa[f"se_{name}"][i], sb[f"se_{name}"][i]))
+                d = abs(a - b) / (scale + 1e-300)
+                d_se = se / (scale + 1e-300)
+                rows.append({"moment": name, "component": i, "a": a, "b": b,
+                             "rel_diff": d, "rel_se": d_se, "tol": tol_k,
+                             "agree": bool(d + ci_mult * d_se < tol_k),
+                             "disagree": bool(d - ci_mult * d_se > tol_k)})
+                bits.append(rows[-1])
+        if not bits:
+            return rows, "empty", None
+        if any(p["disagree"] for p in bits):
+            outcome = False
+        elif all(p["agree"] for p in bits):
+            outcome = True
+        else:
+            outcome = None
+        return rows, outcome, max(bits, key=lambda p: p["rel_diff"] / (p["tol"] or 1.0))
+
+    # An independent seed for plan B, derived from the graded one so the comparison
+    # is reproducible: a SeedSequence child, not `seed + 1`.
+    seed_b = int(np.random.SeedSequence(seed).generate_state(1, dtype=np.uint32)[0])
+    runs = {("a", seed): moments_of(plan_a, seed), ("b", seed): moments_of(plan_b, seed),
+            ("b", seed_b): moments_of(plan_b, seed_b)}
+    if any(v is None for v in runs.values()):
+        return FAIL
+    sa, sb = runs[("a", seed)], runs[("b", seed)]
+    per, shared, worst_shared = compare_pair(sa, sb)
+    indep_per, agree, worst = compare_pair(sa, runs[("b", seed_b)])
+    if shared == "empty" or agree == "empty":
         print("every declared moment was skipped as near-zero; nothing to compare",
               file=sys.stderr)
         return FAIL
-    worst = max(outcome_bits, key=lambda p: p["rel_diff"] / (p["tol"] or 1.0))
     rel, worst_tol = worst["rel_diff"], worst["tol"]
 
-    if any(p["disagree"] for p in outcome_bits):
-        agree, verdict, code = False, "DISAGREE", BLOCK
-    elif all(p["agree"] for p in outcome_bits):
-        agree, verdict, code = True, "AGREE", PASS
+    # D6: the **shared-seed** comparison is the sensitive one and is what may cap;
+    # the **independent-seed** one is the only one that may grant the break. A
+    # disagreement under either is a disagreement.
+    if shared is False or agree is False:
+        verdict, code = "DISAGREE", BLOCK
+        agree = False
+    elif agree is True:
+        verdict, code = "AGREE", PASS
     else:
-        agree, verdict, code = None, "INCONCLUSIVE", INCONCLUSIVE
+        verdict, code = "INCONCLUSIVE", INCONCLUSIVE
 
     meta_a, meta_b = plan_meta.read(plan_a), plan_meta.read(plan_b)
     fam_a, fam_b = meta_a.get("scheme_family"), meta_b.get("scheme_family")
@@ -450,8 +489,15 @@ def _compare_sde(spec, thresholds, cfg, plan_a, plan_b, *, no_record=False, as_j
              "sha_a": solver_sha256(plan_a), "sha_b": solver_sha256(plan_b),
              "interpolated": False,
              "config": {"num_paths": num_paths, "dt": dt, "T": T, "seed": seed,
-                        "ci_mult": ci_mult},
-             "per_moment": per}
+                        "seed_b_independent": seed_b, "ci_mult": ci_mult},
+             # `agree` is the independent-seed verdict, because that is the field
+             # `agreement.for_plan` reads for the circularity break. The shared-seed
+             # verdict is recorded beside it: it is the sensitive detector, and a
+             # disagreement there has already been folded into `agree` above.
+             "agree_shared_seed": shared,
+             "rel_diff_shared_seed": (worst_shared or {}).get("rel_diff"),
+             "seeding": "both (D6): shared seed detects, independent seed earns the break",
+             "per_moment": per, "per_moment_independent": indep_per}
     if not no_record:
         agreement.record(agreement.workspace_of(plan_a), entry)
         entry["recorded_in"] = agreement.path_for(plan_a)
@@ -459,8 +505,10 @@ def _compare_sde(spec, thresholds, cfg, plan_a, plan_b, *, no_record=False, as_j
         print(json.dumps(entry, indent=2, default=_jsonable))
     else:
         print(f"{verdict}: {entry['a']} vs {entry['b']} differ by {rel:.3e} in moment space "
-              f"(worst tol {worst_tol:g}) at num_paths={num_paths}, dt={dt:g}, seed={seed}; "
-              f"families {fam_a} / {fam_b}"
+              f"on independent seeds and "
+              f"{(worst_shared or {}).get('rel_diff', float('nan')):.3e} on the shared "
+              f"seed (worst tol {worst_tol:g}) at num_paths={num_paths}, dt={dt:g}, "
+              f"seeds {seed} / {seed_b}; families {fam_a} / {fam_b}"
               f"{' -- different, counts as a circularity break' if entry['different_family'] and agree else ''}"
               f"{' -- the Monte-Carlo interval straddles the tolerance, so this is neither a break nor a cap' if agree is None else ''}")
         if not no_record:

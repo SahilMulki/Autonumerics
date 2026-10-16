@@ -328,3 +328,36 @@ def test_rank_command_reports_json_and_refuses_an_empty_workspace(tmp_path, caps
     payload = json.loads(capsys.readouterr().out)
     assert payload["ranking"][0]["plan"] == "1-only"
     assert payload["ranking"][0]["components"]["cost"] is None    # a pool of one
+
+
+def test_the_sde_order_band_follows_the_band_the_guard_applied():
+    """[REV 34] / [REV 43] / D12. `order_margin`'s SDE branch carried a two-sided
+    distance from the floor, the same shape `crn.guards` had -- so a correct
+    additive-noise Euler-Maruyama, whose strong order is 1 against a defaulted floor
+    of 0.5, scored `1 - |0.986 - 0.5|/0.5 = 0.028`: last in its pool, on a right
+    answer. The branch is unreachable today (`design_order` is set only by the PDE
+    driver), which is why no score-based acceptance criterion can see it and why
+    this is asserted by calling `order` directly.
+
+    The band is not re-derived here. `crn.guards` computes it once and the SDE
+    driver copies it into `summary["order_band"]`, so there is one rule and three
+    call sites.
+    """
+    em = {"kind": "sde", "observed_order": 0.986, "order_floor": 0.5, "design_order": 0.5}
+    assert RK.order(em) == pytest.approx(0.028, abs=0.01)          # two-sided, the default
+    one_sided = {**em, "order_band": "one-sided (scheme family undeclared in the plan)"}
+    assert RK.order(one_sided) > 0.9
+    # One-sided still penalises a genuine shortfall, which is the defect the band exists
+    # for: an order near zero is a solver that ignores its increments.
+    assert RK.order({**one_sided, "observed_order": 0.1}) == pytest.approx(0.2, abs=0.01)
+
+
+def test_an_abstained_sde_order_is_not_ranked_on():
+    """D8's abstention, one layer up. `crn.guards` returns `orders_ok: "unresolved"`
+    when the estimate's own error bar admits more than the band; ranking a plan on a
+    number the kernel just declined to gate on would reintroduce the defect where no
+    criterion looks."""
+    abstained = {"kind": "sde", "observed_order": 2.73, "order_floor": 1.0,
+                 "design_order": 1.0, "order_check": "unresolved"}
+    assert RK.order(abstained) is None
+    assert RK.order({**abstained, "order_check": "true"}) is not None
