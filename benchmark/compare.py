@@ -28,8 +28,8 @@ Examples
 
     # name several pipeline configs explicitly (path=label)
     uv run python benchmark/compare.py \
-        --pipeline results/pipeline_opus_sonnet.json=C2a:opus+sonnet \
-        --pipeline results/pipeline_sonnet.json=C2b:sonnet
+        --pipeline results/results.json=C2a:opus+sonnet \
+        --pipeline results/pipeline/pipeline_sonnet.json=C2b:sonnet
 """
 
 from __future__ import annotations

@@ -1400,7 +1400,7 @@ both, and let only the independent-seed comparison grant `agreement_is_break`.
 > *an order estimate that is not stable across the ladder is `unavailable`, not a pass.*
 > **[REV 35b] — closed. The seed spread was re-run at the full path count and the failure is real.**
 > 11 runs at `M = 50000`, the configuration these plans are graded at
-> ([`benchmark/results/sde_dynkin_seed_study_2026-10-04.json`](../benchmark/results/sde_dynkin_seed_study_2026-10-04.json)):
+> ([`benchmark/results/studies/sde_dynkin_seed_study_2026-10-04.json`](../benchmark/results/studies/sde_dynkin_seed_study_2026-10-04.json)):
 >
 > | Plan | seeds 42 / 7 / 101 / 2024 | mean | sd | failed |
 > |---|---|---|---|---|
@@ -2143,7 +2143,7 @@ merely absent from disk, **6 of the 12 are wrong**.*
 
 All 12 live plans re-evaluated at their declared `evaluation_thresholds`, 33.5 minutes wall,
 exit 0. Full metrics written to each `<plan>/_eval_metrics.json`; consolidated summary in
-[`benchmark/results/sde_baseline_2026-10-04.json`](../benchmark/results/sde_baseline_2026-10-04.json). `Rec.` is what `STATE.md` records;
+[`benchmark/results/studies/sde_baseline_2026-10-04.json`](../benchmark/results/studies/sde_baseline_2026-10-04.json). `Rec.` is what `STATE.md` records;
 ⚠ marks a divergence.
 
 | Plan | P | Rec. | **Now** | Prov. | `orders_ok` | order / floor | `dynkin_ok` (z/bar) | s |
@@ -2313,8 +2313,8 @@ evades. It is the single best end-to-end test of Phase 2 + Phase 3 together.
 >   canaries at reduced `num_paths` is not an optimisation; on these numbers it is the difference
 >   between a suite someone runs and one they skip.
 > * Full detail, including all 15 durations:
->   `benchmark/results/sde_suite_baseline_2026-10-14.json`. That path is gitignored
->   ([`.gitignore:23`](../.gitignore#L23)) and the gitignore is deliberately left alone, so **the
+>   `benchmark/results/studies/sde_suite_baseline_2026-10-14.json`. That path is gitignored
+>   ([`.gitignore:27`](../.gitignore#L27)) and deliberately stays that way, so **the
 >   numbers above are the durable record** — read them here, not from the file.
 
 > **[REV 45] — nothing in the plan writes the corrected scores back, and the baseline itself
@@ -2577,7 +2577,7 @@ does not drift across the ladder:
   estimate is already tight to 1.1x across 11 runs. That plan is the control; plans 1 and 2 are the
   cases.
 * The measurement is one re-run of the study already on disk as
-  [`sde_dynkin_seed_study_2026-10-04.json`](../benchmark/results/sde_dynkin_seed_study_2026-10-04.json).
+  [`sde_dynkin_seed_study_2026-10-04.json`](../benchmark/results/studies/sde_dynkin_seed_study_2026-10-04.json).
 
 **What this does not settle, and `REPORT.md` should say so:** where the order study abstains and no
 surrogate exists, Dynkin is the only remaining evidence that the paths came from the SDE. That is

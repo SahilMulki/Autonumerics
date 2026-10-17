@@ -1,6 +1,8 @@
 """Autonumerics benchmark problem set.
 
-37 curated problems: 15 PDE (5 per tier) + 22 SDE (5 tier-1, 5 tier-2, 12 tier-3).
+56 curated problems: 33 PDE (5 tier-1, 5 tier-2, 23 tier-3) + 23 SDE (5 tier-1,
+5 tier-2, 13 tier-3). 49 carry a closed form and run as the main benchmark; the
+other 7 have none and run as their own suite (``--no-closed-form``).
 The SDE tier 3 is weighted toward hard cases from a numerical-SDE literature review
 (Feller-violated log-Heston, many-channel stiffness, superlinear/tamed drift, and
 blow-up/domain stability), on top of the five classical tier-3 stress regimes.
@@ -135,7 +137,7 @@ def oscillator_moments(T, X0, Y0, sigma):
 
 
 # =============================================================================
-# Tier-3 "hard SDE" ground truth (from benchmark/hard_sde_candidates_from_lit.md)
+# Tier-3 "hard SDE" ground truth (from benchmark/design/hard_sde_candidates_from_lit.md)
 # =============================================================================
 
 
@@ -2987,7 +2989,7 @@ Monte Carlo simulation and compare to the known analytic per-component moments.
     },
     # -------------------------------------------------------------------------
     # SDE -- Tier 3 "hard SDE" additions (from the deep-literature review;
-    # see benchmark/hard_sde_candidates_from_lit.md). These push past the classical
+    # see benchmark/design/hard_sde_candidates_from_lit.md). These push past the classical
     # families above: a Feller-violated coupled 2-D affine system, a stiff
     # many-channel linear system, a superlinear noise-free quintic, two
     # superlinear problems scored against a discretization-free reference, and two

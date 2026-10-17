@@ -34,12 +34,12 @@ flowchart TD
 
         SOLVER --> EVAL
 
-        EVAL["<b>evaluator</b> — VERIFY<br/>import the solver, re-run it up a nested grid / dt ladder<br/>measure error vs. the exact solution — or, when there is none,<br/>vs. a derived surrogate, a manufactured solution, or its own convergence<br/><i>→ evaluate.py, &lt;metrics&gt;, &lt;review score=n&gt;</i>"]
+        EVAL["<b>evaluator</b> + <b>verifylib kernel</b> — VERIFY<br/>the kernel re-runs the solver up a nested grid / dt ladder and <b>emits the score</b><br/>vs. the exact solution — or, when there is none,<br/>vs. a derived surrogate, a manufactured solution, or its own convergence<br/>the agent selects the checks and diagnoses; it may only cap the score downward<br/><i>→ &lt;metrics&gt;, &lt;review score=n&gt;</i>"]
 
-        EVAL -->|"score &lt; 10 — CFL violated, halve dt · BC not re-imposed · missing √ guard"| SOLVER
-        EVAL -->|"score = 10 — plan done, leaves the pool"| PICK
+        EVAL -->|"not certified — CFL violated, halve dt · BC not re-imposed · missing √ guard"| SOLVER
+        EVAL -->|"certified — plan done, leaves the pool"| PICK
 
-        PICK["<b>conductor</b> — SELECT<br/>highest score, then fewest iterations<br/><i>→ REPORT.md, STATE.md</i>"]
+        PICK["<b>conductor</b> — SELECT<br/>score → provenance → quality index → solver cost<br/><i>→ REPORT.md, STATE.md</i>"]
     end
 
     PICK --> OUT(["winning solver.py — with the error it achieved and the schemes it beat"])
@@ -82,14 +82,16 @@ path count and seed.
 
 | | |
 |---|---|
-| **37** | problems — 15 PDE, 22 SDE, tiered from textbook to beyond the reference manuals |
-| **35** | independently confirmed, of the 36 runs that completed |
-| **0** | overclaims — no success the pipeline reported failed its independent check |
+| **56** | problems — 33 PDE, 23 SDE, tiered from textbook to beyond the reference manuals |
+| **49** | carrying a closed form or a published reference; **7** built deliberately without one |
+| **3** | ground-truth routes — exact (48 problems), an independent reference solver (6), stability only (2) |
 
-The 36th completed run is the chaotic Kuramoto–Sivashinsky equation, which has no closed form to
-check against and is reported as self-score-only; one run errored out. Baselines (a one-shot
-completion, and a single agent with tools) are graded by the same verifier at the same
-`(dt, num_paths, seed)` — so the comparison measures the structure, not the model.
+Per-sweep verdicts are deliberately **not** duplicated here, because they date. The measured
+results, including the one recorded overclaim and what it exposed, are in
+[the root README's Results section](../README.md#results). Baselines (a one-shot completion, and a
+single agent with tools) are graded by the same verifier at the same `(dt, num_paths, seed)` — so
+the comparison measures the structure rather than the model — and that head-to-head has not been
+recorded yet.
 
 ## The ladder of evidence
 
@@ -141,13 +143,11 @@ durable ledger that lets an interrupted run resume mid-cycle rather than restart
 | `problem_spec.json` | R *(eq. type only)* | **W** | R | R | R |
 | `plans/{id}/SOLUTION.md` | R | — | **W** | **W** | **W** *(metrics + review blocks)* |
 | `plans/{id}/solver.py` | — | — | — | **W** + run | R *(import)* |
-| `plans/*/solver.py` *(siblings)* | — | — | — | — | R *(import, consensus only)* |
-| `plans/{id}/evaluate.py` | — | — | — | — | **W** + run |
+| `plans/*/solver.py` *(siblings)* | — | — | — | — | R *(import)* |
 | `STATE.md` | **W** | — | — | — | — |
 | `REPORT.md` | **W** | — | — | — | — |
 
----
-
-A designed version of this diagram, suitable for slides and social media, lives in
-[`architecture.html`](architecture.html). It predates the evidence-ladder work above and still shows
-the two-node evaluator, so regenerate it before using it anywhere.
+There is deliberately no `evaluate.py` row. The evaluator used to write one every cycle — a fresh
+numerical harness grading its own solver — and the agents are now explicitly forbidden from writing
+numerical code of any kind: the measurement lives in [`verifylib/`](../verifylib/), which emits the
+score the evaluator then transcribes and diagnoses.

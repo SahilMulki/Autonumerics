@@ -5,12 +5,12 @@ Cahn–Hilliard against the harness reference — §11.1 — and adjusted F1–F
 outran the evidence; each adjustment is marked **[rev]**). A second pass the same day re-measured
 the review's claims and folded in four corrections, marked **[rev2]**; one item (§11.2) is left as
 a recorded disagreement.
-**Inputs:** the four-problem run in `benchmark/results/no_closed_form.json` /
-`NO_CLOSED_FORM_REPORT.md` (logs under `benchmark/results/logs/`), the staged workspaces
+**Inputs:** the four-problem run in `benchmark/results/pipeline/no_closed_form.json` /
+`pipeline/NO_CLOSED_FORM_REPORT.md` (logs under `benchmark/results/logs/`), the staged workspaces
 under `workspace/`, and the test suite landed the same day (`verifylib/tests/test_kernel_contract.py`,
 `test_kernel_sde_path_b.py`, `benchmark/tests/`; 415 passing, 14 strict xfails).
 **Related:** [plan-no-closed-form.md](plan-no-closed-form.md),
-[NO_CLOSED_FORM_CANDIDATES.md](../benchmark/NO_CLOSED_FORM_CANDIDATES.md).
+[NO_CLOSED_FORM_CANDIDATES.md](../benchmark/design/NO_CLOSED_FORM_CANDIDATES.md).
 
 Every number below was measured, not inferred; the command or test that produced it is named so
 it can be re-run.

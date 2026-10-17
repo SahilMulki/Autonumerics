@@ -8,8 +8,9 @@ Two halves, one package:
   [`docs/plan-hallucination-guardrails.md`](../docs/plan-hallucination-guardrails.md).
 - the **kernel** (`verifylib/kernel/`) — grid ladders, Richardson and the GCI guards,
   the D1 operator residual, the invariant registry, MMS and degenerate-limit drivers,
-  the SDE surrogates, CRN and Dynkin — **and the scoring rubrics themselves**. Design:
-  [`docs/plan-no-closed-form.md`](../docs/plan-no-closed-form.md).
+  the SDE surrogates, CRN, Dynkin and the terminal-law shape test — **and the scoring
+  rubrics themselves**. Design: [`docs/plan-no-closed-form.md`](../docs/plan-no-closed-form.md)
+  and [`docs/plan-sde-verification-gaps.md`](../docs/plan-sde-verification-gaps.md).
 
 They share `verifylib.operator` for stencils and the restricted expression namespace,
 so the reference check and the residual gate can never disagree about what `lap_u`
@@ -19,20 +20,26 @@ on?".
 
 **The kernel emits the score.** The rubrics are decision tables with no judgement in
 them, so handing their booleans to a language model adds no information and adds a
-drift surface. The evaluator agent transcribes the score and writes the diagnosis; its
-one authority is asymmetric — `agent_cap` can lower a score, never raise it.
+drift surface. The measured shape of that drift is `workspace/pde_kuramoto_sivashinsky`:
+four independently regenerated evaluators graded the one problem, and the three whose
+plan had a `solver.py` reported observed orders of 10.467, 10.925 and 0.003 — all three
+scored 10. The evaluator agent now transcribes the score and writes the diagnosis; its
+one authority is asymmetric — `agent_cap` can lower a score, never raise it. An agent
+that cannot inflate cannot launder a 4 into a 10, and one that can deflate can still
+stop a wrong 10 from shipping.
 
 ## Modules
 
 | Module | Layer | What it does |
 |---|---|---|
 | `findings.py` | — | The one shape every guard reports in. `severity` carries the whole gate/warn split |
-| `operator.py` | 1 | Helper namespace, stencils, term splitting, restricted eval. **Shared with plan-no-closed-form's D1**, so the two can never disagree about what `lap_u` means |
+| `operator.py` | 1 | Helper namespace, stencils, term splitting, restricted eval. **Shared with the kernel's D1**, so the two can never disagree about what `lap_u` means |
 | `schema.py` | 1, 2 | Expression-not-program, the evidence rule, ledger shape, the `verification.operator` requirement |
 | `reference.py` | 1 | The analytic-reference check: PDE residual + IC + BC, SDE moment-ODE consistency, median-gated classification, five outcomes |
 | `leakage.py` | 3 | Citation scan + narrowed AST scan |
 | `audit.py` | 2 | Ledger re-audit — output-derived gate, source-derived warn |
 | `review.py` | 5 | Scoped numeric-claim binding |
+| `ranking.py` | — | The quality index (SQI) and the lexicographic key the conductor sorts plans on |
 | `gate.py` | all | Composition: the checks the hooks and the out-of-band gates both call |
 | `cli.py` | all | The single entry point, invoked by absolute path from `hooks/hooks.json`, and the home of `evaluate` |
 
@@ -47,25 +54,82 @@ one authority is asymmetric — `agent_cap` can lower a score, never raise it.
 | `residual.py` | **D1**: the slope test, the stencil-insensitivity guard, the trivial-attractor guards, operator validation |
 | `invariants.py` | **D2**: the closed registry of gateable names, and every evaluator |
 | `functionals.py` | Declared scalar quantities of interest (an eigenvalue, a drag coefficient), checked by self-convergence up the ladder. The kernel has no reference value for them on a problem with no closed form, so it asks whether the number is *resolved* to the declared tolerance, never whether it is right |
+| `agreement.py` | Cross-plan agreement, recorded in `<workspace>/agreements.json` against both solver hashes. The second circularity break Path B can earn without D1 |
 | `mms.py`, `degenerate.py` | The two Tier-B drivers. A faulty probe is skipped, never failed |
 | `temporal.py` | `dt_factor` isolation, reusing the ladder run it compares against |
-| `score.py` | The rubrics as code — manual §12/§23 under the §26 certification ceiling |
+| `score.py` | The rubrics as code — manual §12/§23 under plan §4c's certification table, which is the manual's §26 ceiling tightened and wins where the two disagree. Also the `certified` gate, and the asymmetric `agent_cap` |
 | `metrics.py` | The emitted dict: the closed skip vocabulary, and every config value with its source |
 | `plan_meta.py` | `scheme_family` / `spatial_order` from the plan's frontmatter |
-| `sde/` | `surrogates.py` (moment ODE, Kolmogorov + truncation guard, stationary density), `crn.py`, `dynkin.py`, `constraints.py`, `driver.py` |
+| `schema_bridge.py` | The one thing the kernel needs from `schema.py` (`is_sde`) without closing the import cycle |
+| `driver.py`, `sde/driver.py` | The two top-level evaluation paths `run()` dispatches to |
+
+### `kernel/sde/`
+
+| Module | What it does |
+|---|---|
+| `surrogates.py` | Moment ODE, Kolmogorov + the truncation guard, stationary density |
+| `crn.py` | Common random numbers: the shared Brownian path every refinement level is driven by, without which a strong-order study measures nothing |
+| `dynkin.py` | The generator residual — `E[φ(X_T)] − φ(x₀) − E[∫₀ᵀ Lφ]`, available for every SDE with no closed form, no surrogate and no assumptions — with its order *measured* rather than assumed, and an abstention when the rate is unreadable |
+| `laws.py` | The declared terminal law and the **standardized** KS shape test: the only check that sees a right-moments/wrong-family defect |
+| `constraints.py` | Declared support and positivity gates |
+
+## Contracts worth knowing before you read the code
+
+**Three output fields, not one.** `score` (1–10) is quality; `certified` (boolean) is
+"did every gate this problem's evidence path requires come back clean", which is what
+the conductor's winner early-exit and `benchmark/report.py`'s `VERIFIED_PASS` actually
+mean; `provenance` records what the number rests on, ordered
+`analytic > analytic_unvalidated > surrogate > manufactured > manufactured_partial >
+self_convergence > none`. `certified` is today exactly `score >= 10`, and is split out
+so that the score can start resolving quality below the tolerance line without moving
+the benchmark's pass rate.
+
+**The skip vocabulary is closed.** A check that did not run must be distinguishable
+from one that ran and passed, at every consumer, without anyone having to know which
+check it was. `metrics.SKIPS` is a fixed set of seven strings — `not_run`,
+`unavailable`, `unresolved`, `not_reported`, `waived_chaotic`, `faulty_probe`,
+`unshadowable` — and none of them is ever truthy or ever renders as a pass. "A missing
+reference reported as a solver crash" is the first thing the manual says must never
+happen; this is the positive form of that rule.
+
+**Every configured value carries its source**, one of `spec`, `plan`, `agent`,
+`inferred`, `kernel_default`, in descending authority. The evaluator selects the
+ladder's base `N`, which Stage-2 checks run, and which tolerances apply; each moves the
+outcome, so a misconfiguration should be visible directly rather than inferred from an
+odd result. `inferred` is deliberately separate from `plan`: it means the kernel read a
+free-text `scheme:` line and guessed, and that guess selects which asymptotic guard
+applies.
+
+**The sandbox is isolation, not security.** 300 s wall clock, an 8 GiB address-space
+rlimit, and an import policy at parity with the solver agents' grant — `solver-pde.md`
+grants numpy + `scipy.sparse`, `solver-sde.md` grants numpy only, so the kernel measures
+the same code the pipeline runs. `ctypes` bypasses any meta-path finder; the real
+isolation is the subprocess and the timeout. Crashes come back in a closed vocabulary
+(`no_solve_fn`, `bad_signature`, `blocked_import`, `oom`, `timeout`, `bad_schema`,
+`exception`, `leakage`) rather than as a traceback to be parsed.
 
 ## What it catches, measured
 
 | | Result |
 |---|---|
-| Tier-A claims validated | **21 of 25** — PDE 16/20, SDE 5/5 |
+| Claimed closed forms validated against the spec's own equation | **21 of 25** — PDE 16/20, SDE 5/5 |
 | Corrupted closed form vs correct | ≥ 2.5e-01 vs ≤ 4.8e-09 — seven orders |
 | False positives, expression check | 0 of 29 staged specs |
 | False positives, AST leakage scan | 0 of 137 pipeline files |
 | False positives, numeric binding | 0 of 206 archived reviews |
-| Whole-workspace gate | 2.3 s |
-| Kernel canaries caught by the named tier | **7 of 7**, with the honest control triggering none |
-| KS: evaluator-reported orders → kernel | 10.467 / 10.925 / 0.003, all scoring 10 → one score for all three, with the guard named |
+| Whole-workspace gate (re-measured 2026-10-16) | **3.9 s** over the 34 specs staged locally — 68 warnings, and 2 errors, both on specs predating the `verification.operator` requirement |
+| Kernel canaries caught by the named tier | **14 of 15** seeded defects, each by the tier that must see it — the fifteenth is documented below as correctly invisible. All **8** honest controls trigger none |
+| KS: four regenerated evaluators, one problem | the three with a `solver.py` reported orders 10.467 / 10.925 / 0.003 — and all three scored 10. The kernel now returns one score for all of them, with the binding guard named |
+| Rademacher increments on GBM | first two moments **blind**, `observed_order` 0.980 vs 0.980 **blind**, standardized KS 0.0045 vs **0.0197** against a bar of 0.0068 — **caught**, and only there |
+| Why the KS sample is standardized | an un-standardized test rejects *correct* Euler–Maruyama at the `dt` the live specs use: D = 0.00663 against a 0.00607 bar on OU, 0.00678 on GBM. It was measuring resolution, not correctness |
+
+The hook mechanism itself is measured too, in
+[`tests/hookprobe/FINDINGS.md`](tests/hookprobe/FINDINGS.md) — seven controlled runs
+that decide the enforcement model. The load-bearing one: **when a hook contradicts an
+instruction the agent stops, leaves the invalid file on disk, and escalates to the
+user**, and in a headless `claude -p` run nobody answers. That is why every guard also
+runs out-of-band, and why nothing here may be reachable only from a hook. Re-run the
+probe after a Claude Code upgrade before trusting the design.
 
 ## Running
 
@@ -74,11 +138,9 @@ uv run --extra dev python -m pytest verifylib -q
 ```
 
 `--extra dev` is required: a plain `uv run` re-syncs to the base dependencies and
-uninstalls pytest.
-
-The tests read `workspace/*/problem_spec.json` and **skip** rather than fail when a
-problem is not staged locally, so `uv run python benchmark/setup.py` first for full
-coverage.
+uninstalls pytest. The tests read `workspace/*/problem_spec.json` and **skip** rather
+than fail when a problem is not staged locally, so run
+`uv run python benchmark/setup.py` first for full coverage.
 
 To evaluate one plan (this replaces a generated `evaluate.py`):
 
@@ -88,22 +150,8 @@ uv run python "$PLUGIN_ROOT/verifylib/cli.py" evaluate <plan_dir> --json     # f
 ```
 
 Without `--json` it prints the `<metrics>` block ready to paste, plus the rule that
-bound the score. Exit is 0 whatever the score: a low score is a measurement, not a
-tool failure.
-
-To difference two plans of the same problem at full `T` (findings F2 — the conductor runs this
-on Path B whenever two evaluated plans both score ≥ 9):
-
-```bash
-uv run python "$PLUGIN_ROOT/verifylib/cli.py" compare <plan_a> <plan_b> [--N=128] [--no-record] [--json]
-```
-
-It solves both at the graded grid (`evaluation_thresholds.graded_N`, else the top of the ladder),
-prints the relative difference against `rel_l2_err_max`, and records it with both solver hashes
-in `<workspace>/agreements.json`; exit 0 is agreement, 2 disagreement. The kernel reads the record
-back on the next `evaluate` of either plan against the *current* hashes: agreement between
-different `scheme_family` values is a circularity break, disagreement caps both plans at 8, and a
-stale entry (either file edited) is ignored.
+bound the score. Exit is 0 whatever the score: a low score is a measurement, not a tool
+failure.
 
 To record an evaluator's downward cap:
 
@@ -112,27 +160,95 @@ VERIFYLIB_EVAL_CONFIG='{"agent_cap": {"score": 3, "reason": "..."}}' \
   uv run python "$PLUGIN_ROOT/verifylib/cli.py" evaluate <plan_dir>
 ```
 
+To rank the evaluated plans of a problem on the conductor's key — `score → provenance →
+sqi → solve_time_s → iterations`:
+
+```bash
+uv run python "$PLUGIN_ROOT/verifylib/cli.py" rank workspace/my_problem [--json]
+```
+
+The quality index is one weighted number: accuracy headroom 0.35, order fidelity
+against the *design* rate 0.25, structural margin 0.20, residual slope 0.10, solver
+cost 0.10. It replaced three keys that were noise and one whose sign was wrong — see
+the module docstring for the `pde_heat_2d` measurement that forced it, where three
+second-order plans certified at 1.010e-04, 1.019e-04 and 1.023e-04 and the winner was
+decided on a 0.9% margin. A plan whose `<metrics>` block predates a field is reported
+as missing input rather than silently ranked on `-` columns.
+
+To difference two plans of the same problem at full `T` (findings F2 — the conductor
+runs this on Path B whenever two evaluated plans both score ≥ 9):
+
+```bash
+uv run python "$PLUGIN_ROOT/verifylib/cli.py" compare <plan_a> <plan_b> [--N=128] [--no-record] [--json]
+```
+
+It solves both at the graded grid (`evaluation_thresholds.graded_N`, else the top of
+the ladder), prints the relative difference against `rel_l2_err_max`, and records it
+with both solver hashes in `<workspace>/agreements.json`; exit 0 is agreement, 2
+disagreement. On an SDE it differences in moment space instead. The kernel reads the
+record back on the next `evaluate` of either plan against the *current* hashes:
+agreement between different `scheme_family` values is a circularity break, disagreement
+caps both plans at 8 — the difference does not say which plan is wrong, and capping the
+higher score would be a guess dressed as a rule — and a stale entry (either file edited)
+is ignored.
+
 As a gate, from anywhere:
 
 ```bash
-uv run python "$PLUGIN_ROOT/verifylib/cli.py" check-spec workspace/my_problem/problem_spec.json
-uv run python "$PLUGIN_ROOT/verifylib/cli.py" gate workspace/my_problem
+uv run python "$PLUGIN_ROOT/verifylib/cli.py" check-spec    workspace/my_problem/problem_spec.json
+uv run python "$PLUGIN_ROOT/verifylib/cli.py" check-solver  <path to solver.py>
+uv run python "$PLUGIN_ROOT/verifylib/cli.py" check-review  <path to SOLUTION.md>
+uv run python "$PLUGIN_ROOT/verifylib/cli.py" gate          workspace/my_problem
 ```
 
-Exit 0 is clean-or-warnings; exit 2 is an error-severity finding. The same entry point
-backs the `PreToolUse`, `PostToolUse` and `Stop` hooks declared in `hooks/hooks.json`,
-which ship with the plugin so they apply to a user's own problem rather than only to
-benchmark runs.
+Exit 0 is clean-or-warnings; exit 2 is an error-severity finding. `gate` with no
+argument defaults to `workspace`. The same entry point backs the `PreToolUse`,
+`PostToolUse` and `Stop` hooks declared in [`hooks/hooks.json`](../hooks/hooks.json)
+(`cli.py hook <event>`), which ship with the plugin so they apply to a user's own
+problem rather than only to benchmark runs.
 
-`tests/canaries/` holds solvers that are wrong on purpose. Two test the guardrail
-layers — one reads the answer key, one stops at half the requested horizon. The
-`kernel/` subdirectory holds a correct reaction-diffusion solver and five copies of it
-with one seeded defect each (a trivial collapse, a phase lag, numerical viscosity, a
-wrong boundary condition, a first-order scheme claiming second order), plus a correct
-SDE solver. Each names the tier that must catch it, and the honest control must
-trigger none of them: a guard with no failing case behind it is a guard nobody knows
-is broken, and one with no passing case is a guard nobody knows is over-firing.
+## The canaries
+
+`tests/canaries/` holds solvers that are wrong on purpose, because a test that only
+asserts the kernel runs is worth very little when the kernel is the single point of
+failure for every score in the pipeline. Each defect names the tier that must catch it,
+and **the honest controls matter as much as the defects**: a guard with no failing case
+behind it is a guard nobody knows is broken, and one with no passing case is a guard
+nobody knows is over-firing.
+
+Two canaries test the guardrail layers — one reads the answer key, one stops at half the
+requested horizon. `tests/canaries/kernel/` holds 23 more: a correct FTCS
+reaction–diffusion solver and six copies with one seeded defect each (a trivial
+collapse, a phase lag, numerical viscosity, a wrong boundary condition, a first-order
+scheme claiming second order, and a solver accurate at the chaotic reference horizon and
+wrong at `t_final`), then sixteen SDE solvers — nine seeded defects (a fabricated
+sampler that draws from the exact terminal law and never integrates, a flipped drift, a dropped correlation, a clipped state, ignored CRN
+increments, a Milstein claim with no correction, Rademacher increments on additive *and*
+on multiplicative noise, and paths outside a declared support) against seven controls.
+
+Several of the defects are interesting precisely because of where they *don't* show:
+
+- **the trivial collapse** satisfies the residual exactly — `u == 0` zeroes every term
+  of `u_t - α∇²u + ku` — having eliminated the only phenomenon the problem is about.
+  That is the hole a residual-only metric has, and it is live in the release pipeline
+  (Gray–Scott's `u = 1, v = 0`).
+- **the phase lag** has the right amplitude in the wrong place, and the residual is
+  *identically zero* on a translate of a solution to a translation-invariant problem.
+- **the wrong boundary condition** lives exactly where D1 cannot compute: a stencil
+  needs ghost points, so the residual is interior-only.
+- **the fabricated sampler** passes every check in the old analytic SDE rubric *by
+  construction*, at any path count. It is the canary the whole Path-A hole existed for.
+- **Rademacher increments on additive-noise OU are invisible, and that is correct.**
+  The plan listed this under "must be caught by the distributional check". The terminal
+  state is a sum of increments, so the CLT makes the law Gaussian to within the test's
+  resolution — 0.00233 against a 0.00607 bar, with the Gaussian-increment control at
+  0.00295. A check that rejected it would be wrong. The defect is real and the terminal
+  law is not where it shows; its multiplicative-noise twin on GBM is caught, by the
+  shape check alone.
+- **the post-step Milstein correction** is a **false-positive guard** and a correction
+  to the plan that asked for it: the plan listed it as a defect the strong-order gate
+  must catch, and measured over four `dt` levels at M = 40 000, it does not and cannot.
 
 `tests/fixtures/` holds archived pipeline artifacts preserved byte-for-byte — they
-contain the two real answer-key leaks the scanners are tested against. They are
-excluded from ruff in `pyproject.toml`: reformatting them would destroy the evidence.
+contain the two real answer-key leaks the scanners are tested against. They are excluded
+from ruff in `pyproject.toml`: reformatting them would destroy the evidence.

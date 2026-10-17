@@ -6,7 +6,7 @@ the (JSON-serializable) metadata for every problem so the runner and report have
 stable record of what the benchmark contains.
 
 Usage:
-    uv run python benchmark/setup.py                 # generate all 37 workspaces
+    uv run python benchmark/setup.py                 # stage the 49-problem main suite
     uv run python benchmark/setup.py --only sde_gbm,pde_heat_1d
     uv run python benchmark/setup.py --list          # just print the inventory
 """

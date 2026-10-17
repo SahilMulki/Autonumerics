@@ -44,7 +44,7 @@ already exist on disk.
 Usage
 -----
     uv run python benchmark/baseline_select.py \\
-        --results-json benchmark/results/oneshot_no_closed_form.json
+        --results-json benchmark/results/baselines/oneshot_no_closed_form.json
     uv run python benchmark/baseline_select.py --results-json <file> --only pde_kdv_zabusky_kruskal
     uv run python benchmark/baseline_select.py --results-json <file> --dry-run
 """

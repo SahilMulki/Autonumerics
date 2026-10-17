@@ -13,7 +13,7 @@ internally, and sequential runs keep logs and cost legible).
 
 Examples
 --------
-    # full 37-problem benchmark (expensive: many Opus/Sonnet calls, hours)
+    # full 49-problem main benchmark (expensive: many Opus/Sonnet calls, hours)
     uv run python benchmark/run.py
 
     # a cheap subset, or a single smoke test
@@ -726,7 +726,7 @@ def override_agent_models(model):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--only", default="", help="comma-separated slugs or ids (default: all 37)")
+    ap.add_argument("--only", default="", help="comma-separated slugs or ids (default: the whole selected suite)")
     S.add_suite_arguments(ap)
     ap.add_argument("--skip-kernel", dest="skip_kernel", action="store_true",
                     help="do not record the pipeline's own kernel score/provenance "

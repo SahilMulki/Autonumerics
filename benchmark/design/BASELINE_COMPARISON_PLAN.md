@@ -255,6 +255,14 @@ half-written file.
 
 ### 8.4 Where results and progress land
 
+> **[rev] Paths recorded in this document predate the 2026-10-17 reorganization of
+> `benchmark/results/`,** which moved finished artifacts into `pipeline/`, `baselines/`,
+> `studies/`, `superseded/` and `snapshots/`. The commands and the run log below are left exactly
+> as they were run rather than rewritten, since they are a record of what happened;
+> [`benchmark/results/README.md`](../results/README.md) carries a name→location table that
+> resolves any of them. The live files named in the table immediately below — `results.json`,
+> `COMPARISON.md`, `logs/` — did not move; `pipeline_sonnet.json` is now in `pipeline/`.
+
 | Command | Live results file (written per unit) | Per-unit artifacts / logs |
 |---|---|---|
 | `oneshot.py` (C0/C1) | `benchmark/results/oneshot_results.json` | `workspace_oneshot/<model>/<slug>/<cond>-<manuals>/rep<N>/` — prompt.txt, response.json, verify.json, solver.py |

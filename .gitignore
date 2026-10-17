@@ -18,10 +18,16 @@ workspace_oneshot/
 workspace_c2b_sonnet_backup/
 workspace_stale_pre_c2b_backup/
 
-# Benchmark results are generated, but the headline report is committed so the
-# numbers quoted in README.md are checkable in the repo.
+# Benchmark results are generated, but three files are committed: the headline
+# report, so the numbers quoted in README.md are checkable in the repo; the
+# matched-baseline attempt counts, which are a frozen *input* rather than an
+# output; and the README that explains the directory's layout. Note that the
+# negations must name files at this level -- git does not descend into an ignored
+# subdirectory, so a file inside results/pipeline/ cannot be un-ignored.
 benchmark/results/*
+!benchmark/results/README.md
 !benchmark/results/REPORT.md
+!benchmark/results/matched_attempts.json
 
 # Secrets — never commit API keys
 .env

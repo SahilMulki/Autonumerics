@@ -572,7 +572,7 @@ def generate_report(results, config=None):
        "recorded as the problem's `reference_error`, which widens the tolerance so the answer "
        "key's own error cannot fail a correct solver); *semi-analytic exact* truth from a "
        "quadrature, series or eigen-expansion; a scalar *functional* (`functional_truth`); and "
-       "structural gates. See `benchmark/NO_CLOSED_FORM_CANDIDATES.md`.")
+       "structural gates. See `benchmark/design/NO_CLOSED_FORM_CANDIDATES.md`.")
     ap(f"- Ground truth for all {len(gt)} exact/reference problems is validated independently "
        "(SDE moments against moment-ODE integration, matrix-exponential / affine systems, and "
        "direct simulation; the Ginzburg-Landau reference anchored to the literature value "
