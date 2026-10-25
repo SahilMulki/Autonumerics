@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 50.9,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    rng = np.random.default_rng(seed)\n    Nt = max(1, int(round(T / dt)))\n    dt = T / Nt\n\n    S0 = 0.07\n    sig0 = 0.4\n    alpha = 0.8\n    rho = -0.6\n    rhobar2 = 1.0 - rho * rho\n    strikes = [0.051022538988, 0.07, 0.096035989138]\n\n    n = int(num_paths)\n    S = np.full(n, S0, dtype=np.float64)\n    sig = np.full(n, sig0, dtype=np.float64)\n    idx = np.arange(n)\n\n    drift = -0.5 * alpha * alpha * dt\n    vol = alpha * np.sqrt(dt)\n\n    for _ in range(Nt):\n        Z = rng.standard_normal(n)\n        sig_new = sig * np.exp(drift + vol * Z)\n\n        if idx.size > 0:\n            s = S[idx]\n            a0 = sig[idx]\n            a1 = sig_new[idx]\n            # correlated part: int sigma dW_sigma = (sigma_{n+1}-sigma_n)/alpha\n            shift = s + (rho / alpha) * np.sqrt(s) * (a1 - a0)\n            np.maximum(shift, 0.0, out=shift)\n            # remaining uncorrelated integrated variance\n            V = rhobar2 * 0.5 * (a0 * a0 + a1 * a1) * dt\n            V = np.maximum(V, 1e-300)\n            lam = 2.0 * shift / V  # Poisson mean for BESQ(0) transition\n            new = np.zeros_like(s)\n\n            big = lam > 1e7\n            small = ~big\n            if np.any(big):\n                sb = shift[big]\n                zb = rng.standard_normal(sb.size)\n                nb = sb + np.sqrt(sb * V[big]) * zb\n                new[big] = np.maximum(nb, 0.0)\n            if np.any(small):\n                ls = lam[small]\n                Ns = rng.poisson(ls)\n                pos = Ns > 0\n                vals = np.zeros(ls.size)\n                if np.any(pos):\n                    g = rng.gamma(Ns[pos].astype(np.float64))\n                    vals[pos] = 0.5 * V[small][pos] * g\n                new[small] = vals\n\n            S[idx] = new\n            idx = idx[new > 0.0]\n\n        sig = sig_new\n\n    terminal = np.column_stack([S, sig])\n    functionals = {}\n    for i, K in enumerate(strikes):\n        functionals[\"price_K%d\" % (i + 1)] = float(np.mean(np.maximum(S - K, 0.0)))\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(S)), float(np.mean(sig))],\n        \"empirical_variance\": [float(np.var(S, ddof=1)), float(np.var(sig, ddof=1))],\n        \"functionals\": functionals,\n    }\n\n\nif __name__ == \"__main__\":\n    out = solve_sde(num_paths=100000, dt=0.004, T=10, seed=42)\n    print(out[\"empirical_mean\"], out[\"functionals\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.1618508,
+  "input_tokens": 37161,
+  "output_tokens": 4661,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}
