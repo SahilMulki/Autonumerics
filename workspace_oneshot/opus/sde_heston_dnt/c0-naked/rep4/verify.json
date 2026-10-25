@@ -1,0 +1,95 @@
+{
+  "status": "ok",
+  "gt_kind": "exact",
+  "passed": true,
+  "verified_score": 10,
+  "worst_variance_rel_err": 0.0,
+  "worst_mean_rel_err": 0.0,
+  "components": [],
+  "run": {
+    "num_paths": 400000,
+    "dt": 0.002,
+    "T": 1.0,
+    "seed": 42,
+    "solve_s": 56.117387
+  },
+  "functional_errs": {
+    "no_touch_S75": 0.0003619720538225329,
+    "no_touch_S100": 0.00031681175081897255,
+    "no_touch_S125": 0.00012456733776744272
+  },
+  "functional_abs_errs": {
+    "no_touch_S75": 0.000302079841935754,
+    "no_touch_S100": 0.00028507649381970257,
+    "no_touch_S125": 8.32608055415518e-05
+  },
+  "functional_tol": 0.006,
+  "functional_tol_used": {
+    "no_touch_S75": 0.006,
+    "no_touch_S100": 0.006,
+    "no_touch_S125": 0.006
+  },
+  "worst_functional_rel_err": 0.0003619720538225329,
+  "functional_ok": true,
+  "functional_levels": {
+    "status": "ok",
+    "num_paths_graded": 400000,
+    "num_paths_coarse": 100000,
+    "dt": 0.002,
+    "band_factor": 3.0,
+    "values": {
+      "no_touch_S75": {
+        "graded": 0.8348412072295257,
+        "coarse": 0.8333944181306963,
+        "delta": 0.0014467890988294485,
+        "band": 0.015021704292976619,
+        "moved": true,
+        "consistent": true
+      },
+      "no_touch_S100": {
+        "graded": 0.8995442167150463,
+        "coarse": 0.8983342429807607,
+        "delta": 0.001209973734285552,
+        "band": 0.01619692727775959,
+        "moved": true,
+        "consistent": true
+      },
+      "no_touch_S125": {
+        "graded": 0.6683167149328164,
+        "coarse": 0.6684043362066706,
+        "delta": 8.762127385419927e-05,
+        "band": 0.012031199563290443,
+        "moved": true,
+        "consistent": true
+      }
+    },
+    "passed": true,
+    "worst_functional_rel_err": 0.0016614820604181283,
+    "solve_s": 12.530195,
+    "wall_s": 12.66,
+    "level_ignored": false
+  },
+  "work_precision": {
+    "axis": "paths_dt",
+    "path": "sandbox",
+    "points": [
+      {
+        "num_paths": 100000,
+        "dt": 0.002,
+        "rel_err": 0.0016614820604181283,
+        "solve_s": 12.530195,
+        "wall_s": 12.66,
+        "graded": false
+      },
+      {
+        "num_paths": 400000,
+        "dt": 0.002,
+        "rel_err": 0.0003619720538225329,
+        "solve_s": 56.117387,
+        "wall_s": 56.28,
+        "graded": true
+      }
+    ]
+  },
+  "plan_dir": "workspace_oneshot/opus/sde_heston_dnt/c0-naked/rep4"
+}
