@@ -223,7 +223,19 @@ def key_metric(rec):
         return ver.get("status", "-")
     if "worst_variance_rel_err" in ver:
         tag = " (ref)" if kind == "reference" else ""
-        return f"varErr={ver['worst_variance_rel_err']:.1%}, meanErr={ver['worst_mean_rel_err']:.1%}{tag}"
+        fe = ver.get("functional_errs") or {}
+        # A problem scored only on a price has no components, so its moment errors
+        # are both the 0.0 that "no moment is wrong" puts there -- which would print
+        # as a flawless solver. Where there is no moment, the price is the summary.
+        if fe and not ver.get("components"):
+            body = " ".join(f"{k}:{v:.1e}" for k, v in fe.items())
+            lv = (ver.get("functional_levels") or {}).get("status")
+            flag = "" if lv == "ok" else " !2-level:" + str(lv or "absent")
+            return f"funcErr[{body}]{tag}{flag}"
+        s = f"varErr={ver['worst_variance_rel_err']:.1%}, meanErr={ver['worst_mean_rel_err']:.1%}{tag}"
+        if fe:
+            s += " [" + " ".join(f"{k}:{v:.1e}" for k, v in fe.items()) + "]"
+        return s
     return ver.get("status", "-")
 
 

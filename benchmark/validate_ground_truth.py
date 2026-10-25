@@ -14,6 +14,7 @@ checked against their defining identities (IC/BC, PDE residual, reference values
     uv run python benchmark/validate_ground_truth.py
 """
 
+import json
 import os
 import sys
 
@@ -33,6 +34,7 @@ def check(name, ok, detail=""):
     print(f"  [{tag}] {name}   {detail}")
     if not ok:
         FAILS.append(name)
+    return bool(ok)
 
 
 def rel(a, b):
@@ -367,6 +369,12 @@ for prob in P.sde_problems():
     kind = prob.get("ground_truth_kind", "exact")
     if kind == "stability" or not prob["has_ground_truth"]:
         continue
+    # ``has_ground_truth`` has not implied a moment formula since step 5: a problem
+    # may be scored on a quantity of interest alone, which is the shape every
+    # problem in the externally anchored suite arrives in. Their noise floor is a
+    # property of a payoff rather than of a moment, so it is checked below instead.
+    if not callable(prob.get("moments")):
+        continue
     gt = prob["moments"](prob["T"])
     n = prob["num_paths"]
     d = prob["state_dimension"]
@@ -380,6 +388,176 @@ for prob in P.sde_problems():
         check(f"{prob['slug']}{lab} mean gate vs MC noise ({n} paths)",
               se_rel < 0.02,
               f"SE(mean)/|mean| = {se_rel:.2%} (1 sigma) -> 5% gate is {0.05/se_rel:.1f} sigma")
+
+# --- The same question for a problem scored on a number: its gate has to sit
+#     outside the sampling noise too, but the noise is the payoff's and not a
+#     moment's, so it cannot be derived from the problem dict alone. What *can* be
+#     checked here, without running anything, is that every such problem declares a
+#     gate at all and that the two-level anti-hardcoding check has a level to run
+#     at -- the measured noise floors live in plan-benchop-slv.md step 7. ---
+print("\n--- problems scored on a quantity of interest ---")
+for prob in P.sde_problems():
+    truth = prob.get("functional_truth")
+    if not truth:
+        continue
+    tols = V._functional_tols(prob)
+    n_lo = V._sde_level_paths(prob, prob["num_paths"])
+    check(f"{prob['slug']} gates every value it reports",
+          set(tols) == set(truth) and all(t > 0 for t in tols.values()),
+          f"{len(truth)} values, gates " + ", ".join(f"{k}={v:.1e}" for k, v in tols.items()))
+    check(f"{prob['slug']} has a coarser level for the two-level check",
+          2 <= n_lo < prob["num_paths"],
+          f"{prob['num_paths']} graded vs {n_lo} coarse")
+    check(f"{prob['slug']} is graded at the step it declares",
+          V.sde_verify_dt(prob) == prob["dt"],
+          f"declared dt={prob['dt']:g}, verifier dt={V.sde_verify_dt(prob):g}")
+
+
+# --- The externally anchored suite. Seven of these ten problems carry a number a
+#     third party published in 2018 and the other three are the memorization
+#     controls, whose answers this repo computed. `benchop.py` holds the
+#     derivations and `references/benchop_slv.json` the ledger they wrote, so what
+#     is left for this file is the part the ledger cannot do for itself:
+#
+#       1. the entry and the ledger still agree digit for digit -- a transcription
+#          check, and the only one that catches a value edited in `problems.py`;
+#       2. the quadrature derivations are **recomputed here, now**, rather than
+#          read back, so a ledger regenerated at the wrong settings or edited by
+#          hand does not survive;
+#       3. the gate is wider than the answer key's own uncertainty and wider than
+#          this repo's disagreement with it -- otherwise the gate grades the
+#          reference rather than the solver;
+#       4. the calibration recorded in the ledger still refers to the gate the
+#          entry currently declares, and still separates a correct scheme from a
+#          plausible wrong one.
+#
+#     Only three of the ten have a quadrature cheap enough to redo in a validator:
+#     the Heston call, its twin, and the decorrelated three-factor call. The rest
+#     -- the two SABR sets, the two barriers and the correlated three-factor call
+#     -- cost one to seven minutes apiece, and `benchop.py --all --check` is where
+#     they are recomputed. ---
+print("\n--- the externally anchored suite ---")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import benchop as B  # noqa: E402
+
+if os.path.exists(B.LEDGER):
+    with open(B.LEDGER) as _fh:
+        LEDGER = json.load(_fh)
+else:  # the derivations have not been run; nothing below can be checked
+    LEDGER = {"problems": {}, "shifted": {}, "calibration": {}}
+    check("the ledger of derivations exists", False,
+          "run: uv run python benchmark/benchop.py --all")
+
+# Recomputed now, not read back. Each is a closed-ish form: a single Lewis
+# integral, with the Hull-White factor folded into the integrand for the
+# three-factor set II. Milliseconds, and independent of everything stored.
+LIVE = {
+    "hst_eucall": lambda: [B.heston_call(s, B.LSV["K"], B.LSV["T"], B.LSV["kappa"],
+                                         B.LSV["eta"], B.LSV["sigma"], B.LSV["rho"],
+                                         B.LSV["v0"]) for s in B.LSV["spots"]],
+    "hhw_eucall2": lambda: [B.hhw2_call(s, B.HHW) for s in B.HHW["spots"]],
+    # the twin's shifted initial variance, read from the shift itself so the two
+    # cannot drift apart
+    "hst_eucall_shift": lambda: [
+        B.heston_call(s, B.LSV["K"], B.LSV["T"], B.LSV["kappa"], B.LSV["eta"],
+                      B.LSV["sigma"], B.LSV["rho"],
+                      B.SHIFTED["hst_eucall_shift"]["params"]["v0"])
+        for s in B.LSV["spots"]],
+}
+
+ANCHORED = P.benchop_problems() if LEDGER["problems"] else []
+for prob in ANCHORED:
+    key, slug = prob["benchop_key"], prob["slug"]
+    truth = prob["functional_truth"]
+    vals = np.array(list(truth.values()))
+    gate_abs = np.array([V._functional_tols(prob)[n] for n in truth]) * np.abs(vals)
+    twin = key in LEDGER["shifted"]
+    rec = LEDGER["shifted"][key] if twin else LEDGER["problems"][key]
+    stored = np.array(rec["value"] if twin else rec["published"])
+
+    check(f"{slug} transcribes the ledger digit for digit",
+          list(vals) == list(stored),
+          "published 2018" if not twin else "computed here (no published value)")
+    # A gate narrower than the answer key's own uncertainty would be measuring the
+    # key. HHWeuCallI is the only published value quoted to fewer than 15 digits.
+    ref_err = float(rec["reference_abs_err"])
+    check(f"{slug} gate is wider than the answer key's own uncertainty",
+          ref_err < gate_abs.min(),
+          f"key +-{ref_err:.1e}, tightest gate {gate_abs.min():.1e} absolute")
+
+    if twin:
+        # No third party adjudicates a twin, so what stands in for one is two
+        # method families landing in the same place, and the error rule having
+        # been validated on the published sibling it was derived from.
+        spread = max(max(abs(np.array(r["values"]) - stored)) for r in rec["routes"])
+        check(f"{slug} every route lands inside half the gate",
+              spread < 0.5 * gate_abs.min(),
+              f"widest route disagreement {spread:.2e} vs {gate_abs.min():.1e}")
+        val = rec["rule_validated_on_sibling"]
+        check(f"{slug} its error rule was validated on {val['sibling']}",
+              val["actual"] <= max(val["predicted"], 1e-12),
+              f"rule {val['rule']!r} predicted {val['predicted']:.2e}, "
+              f"the sibling's own error was {val['actual']:.2e}")
+        sib = P.by_slug(prob["shifted_twin_of"])
+        moved = np.abs(vals - np.array(list(sib["functional_truth"].values())))
+        check(f"{slug} moves off {sib['slug']} by more than the gate",
+              (moved > 4.0 * gate_abs).all(),
+              "moved " + ", ".join(f"{m / g:.1f}x" for m, g in zip(moved, gate_abs, strict=True)))
+    else:
+        fams = {r["family"] for r in rec["routes"]}
+        check(f"{slug} was re-derived by {'two' if len(fams) > 1 else 'ONE'} method "
+              f"{'families' if len(fams) > 1 else 'family'}",
+              len(fams) > 1 or key == "hhw_eucall1",   # the gap recorded in section 8
+              ", ".join(sorted(fams)))
+        # The repo's own disagreement with the key has to be small *against the
+        # gate*, not merely small: whatever is left of it is charged to the solver.
+        conf = float(rec["confirmed_abs_err"])
+        check(f"{slug} this repo's derivation sits well inside the gate",
+              conf < 0.5 * gate_abs.min(),
+              f"confirmed to {conf:.2e}, which is "
+              f"{conf / gate_abs.min():.2f} of the tightest gate")
+
+    if key in LIVE:
+        live = np.array(LIVE[key]())
+        check(f"{slug} re-derived here and now by quadrature",
+              (np.abs(live - vals) < 1e-10).all(),
+              "max |recomputed - entry| = " + f"{np.max(np.abs(live - vals)):.2e}")
+
+# --- Calibration (step 8): a gate earns its place by letting a correct scheme
+#     through and stopping a plausible wrong one. The measurement is expensive --
+#     every scheme is run at the path count and step count its entry ships with --
+#     so it lives in the ledger, written by `benchop.py --calibrate`, and what is
+#     checked here is that it still applies: same gate, and still separating. ---
+print("\n--- the externally anchored suite: gate calibration ---")
+CAL = LEDGER.get("calibration", {})
+for prob in ANCHORED:
+    key, slug = prob["benchop_key"], prob["slug"]
+    rec = CAL.get(key)
+    if not check(f"{slug} has a calibration on record", rec is not None,
+                 "" if rec else "run: uv run python benchmark/benchop.py --calibrate"):
+        continue
+    gate = np.array([V._functional_tols(prob)[n] for n in prob["functional_truth"]])
+    check(f"{slug} was calibrated against the gate it now declares",
+          np.allclose(rec["gate"], gate, rtol=0, atol=0)
+          and rec["paths"] == prob["num_paths"]
+          and rec["steps"] == round(prob["T"] / V.sde_verify_dt(prob)),
+          f"{rec['paths']:,} paths x {rec['steps']} steps, gate "
+          + "/".join(f"{g:.1e}" for g in rec["gate"]))
+    right = next(x for x in rec["schemes"] if x["role"] == "correct")
+    wrong = next(x for x in rec["schemes"] if x["role"] == "wrong")
+    check(f"{slug}: a correct scheme clears the gate",
+          max(right["gate_ratio"]) < 1.0,
+          f"{right['name']} reaches {max(right['gate_ratio']):.2f} of the "
+          f"gate at worst ({right['wall_s']:.0f}s)")
+    # The harness fails a problem when *any* reported value misses its gate, so
+    # that is the bar the wrong scheme has to clear -- `min` is recorded beside it
+    # because a scheme that misses on one value out of three is a weaker result
+    # than one that misses on all three.
+    check(f"{slug}: {rec['decision']} decided wrongly fails it",
+          max(wrong["gate_ratio"]) > 1.0,
+          f"{wrong['name']} reaches {max(wrong['gate_ratio']):.1f}x the gate "
+          f"(worst value), {min(wrong['gate_ratio']):.1f}x (best)")
+
 
 # --- S21/S22 stability stress tests: confirm the problems are well-posed, i.e. a
 #     correct scheme keeps the paths finite / in-domain (so the stability check is

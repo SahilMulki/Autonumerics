@@ -1,7 +1,12 @@
 {
-  "n_total": 56,
+  "n_total": 66,
   "n_pde": 33,
-  "n_sde": 23,
+  "n_sde": 33,
+  "n_by_suite": {
+    "main": 49,
+    "no-closed-form": 7,
+    "benchop": 10
+  },
   "pass_thresholds": {
     "pde": {
       "rel_l2_err_max": 0.01
@@ -1059,16 +1064,16 @@
       "metric": "l2",
       "l2_tol": 0.01,
       "masked_domain": false,
-      "functional_truth": {
-        "lambda_1": -8.442746362964
-      },
-      "functional_tol": 0.0005,
       "diagnostics": [
         {
           "name": "ground_state_nodeless",
           "gate": true
         }
-      ]
+      ],
+      "functional_truth": {
+        "lambda_1": -8.442746362964
+      },
+      "functional_tol": 0.0005
     },
     {
       "id": "P32",
@@ -1684,6 +1689,286 @@
         "mean": 0.2582913111201794,
         "variance": 0.7641815728322023
       }
+    },
+    {
+      "id": "B01",
+      "slug": "sde_sabr_cev_call_i",
+      "type": "sde",
+      "tier": 3,
+      "family": "sabr_cev",
+      "title": "SABR forward with CEV exponent 1/2, three strikes (set I)",
+      "challenge": "Degenerate diffusion with an attainable, absorbing origin, and a martingale property that time discretisation destroys. Scored on three option values and nothing else, so the scheme has to be right where the payoff is thin.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "benchop",
+      "state_dimension": 2,
+      "T": 2.0,
+      "dt": 0.005,
+      "eval_dt": 0.005,
+      "num_paths": 4000000,
+      "seed": 42,
+      "functional_truth": {
+        "price_K1": 0.221383196830866,
+        "price_K2": 0.193836689413803,
+        "price_K3": 0.166240814653231
+      },
+      "functional_tol": 0.004,
+      "functional_level_paths": 1000000
+    },
+    {
+      "id": "B02",
+      "slug": "sde_sabr_cev_call_ii",
+      "type": "sde",
+      "tier": 3,
+      "family": "sabr_cev",
+      "title": "SABR forward with CEV exponent 1/2, three strikes (set II)",
+      "challenge": "The hard SABR set: ten years, vol-of-vol 0.8 and a correlated volatility, so the volatility spans four orders of magnitude and absorption at zero is common rather than rare.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "benchop",
+      "state_dimension": 2,
+      "T": 10.0,
+      "dt": 0.004,
+      "eval_dt": 0.004,
+      "num_paths": 1000000,
+      "seed": 42,
+      "functional_truth": {
+        "price_K1": 0.052450313614407,
+        "price_K2": 0.046585753491306,
+        "price_K3": 0.039291470612989
+      },
+      "functional_tol": 0.01,
+      "functional_level_paths": 250000
+    },
+    {
+      "id": "B03",
+      "slug": "sde_heston_call_feller",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_feller",
+      "title": "Heston call at three spots, Feller condition violated",
+      "challenge": "2*kappa*eta is a fifth of sigma^2, so the variance sits on zero and every square root in the scheme has to say what it does there. Three option values spanning 31x, each gated at what Monte Carlo can resolve for it.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "benchop",
+      "state_dimension": 2,
+      "T": 1.0,
+      "dt": 0.002,
+      "eval_dt": 0.002,
+      "num_paths": 2000000,
+      "seed": 42,
+      "functional_truth": {
+        "price_S75": 0.908502728459621,
+        "price_S100": 9.046650119220969,
+        "price_S125": 28.514786399298796
+      },
+      "functional_tol": 0.015,
+      "functional_tol_used": {
+        "price_S75": 0.015,
+        "price_S100": 0.004,
+        "price_S125": 0.002
+      },
+      "reference_abs_err": {
+        "price_S75": 0.0,
+        "price_S100": 0.0,
+        "price_S125": 0.0
+      },
+      "functional_level_paths": 500000
+    },
+    {
+      "id": "B04",
+      "slug": "sde_heston_dnt",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_barrier",
+      "title": "Heston double-no-touch, continuously monitored",
+      "challenge": "A continuously monitored two-sided barrier under a Feller-violating variance. Checking the barrier once per step biases the value high at the Broadie-Glasserman-Kou rate O(sqrt(dt)) -- converging far too slowly to reach the gate by brute force. The fix is a named technique, not a finer step.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "benchop",
+      "state_dimension": 2,
+      "T": 1.0,
+      "dt": 0.002,
+      "eval_dt": 0.002,
+      "num_paths": 400000,
+      "seed": 42,
+      "functional_truth": {
+        "no_touch_S75": 0.83453912738759,
+        "no_touch_S100": 0.899829293208866,
+        "no_touch_S125": 0.668399975738358
+      },
+      "functional_tol": 0.006,
+      "functional_level_paths": 100000
+    },
+    {
+      "id": "B05",
+      "slug": "sde_qlsv_dnt",
+      "type": "sde",
+      "tier": 3,
+      "family": "qlsv_barrier",
+      "title": "Quadratic local-stochastic-volatility double-no-touch",
+      "challenge": "The same continuously monitored corridor, with a local volatility quadratic in S. The diffusion is superlinear, so the Lamperti transform that makes a Brownian bridge valid is no longer the logarithm, and the obvious explicit step walks the transformed variable through its boundary.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "benchop",
+      "state_dimension": 2,
+      "T": 1.0,
+      "dt": 0.002,
+      "eval_dt": 0.002,
+      "num_paths": 400000,
+      "seed": 42,
+      "functional_truth": {
+        "no_touch_S75": 0.933800903110254,
+        "no_touch_S100": 0.914799140676374,
+        "no_touch_S125": 0.592983062889906
+      },
+      "functional_tol": 0.008,
+      "functional_level_paths": 100000
+    },
+    {
+      "id": "B06",
+      "slug": "sde_hhw_call_corr",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_hull_white",
+      "title": "Heston-Hull-White call, all three factors correlated",
+      "challenge": "Three correlated factors over ten years, with the variance's Feller ratio at 0.04 and the discount factor itself stochastic and correlated with both others. The only problem in the suite with no two-dimensional reduction and no quadrature.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "benchop",
+      "state_dimension": 3,
+      "T": 10.0,
+      "dt": 0.004,
+      "eval_dt": 0.004,
+      "num_paths": 1000000,
+      "seed": 42,
+      "functional_truth": {
+        "price_S75": 37.52,
+        "price_S100": 57.41,
+        "price_S125": 78.58
+      },
+      "functional_tol": 0.003,
+      "functional_level_paths": 250000
+    },
+    {
+      "id": "B07",
+      "slug": "sde_hhw_call_zerocorr",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_hull_white",
+      "title": "Heston-Hull-White call, rate uncorrelated with asset and variance",
+      "challenge": "The same three factors and the same ten-year horizon, with the rate decorrelated. Removing two correlations removes none of the difficulty that matters -- the Feller ratio is still 0.04 and the discount factor is still path-dependent -- but it does admit an independent check, which is why it is here beside its correlated sibling.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "benchop",
+      "state_dimension": 3,
+      "T": 10.0,
+      "dt": 0.004,
+      "eval_dt": 0.004,
+      "num_paths": 1000000,
+      "seed": 42,
+      "functional_truth": {
+        "price_S75": 35.43789687628535,
+        "price_S100": 54.7280653082295,
+        "price_S125": 75.39759683499362
+      },
+      "functional_tol": 0.003,
+      "functional_level_paths": 250000
+    },
+    {
+      "id": "B08",
+      "slug": "sde_heston_call_hivar",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_feller",
+      "title": "Heston call at three spots, higher initial variance",
+      "challenge": "The Feller-violating Heston call started further from its long-run variance, so the variance path has further to travel and spends longer where the square root is delicate.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "benchop",
+      "state_dimension": 2,
+      "T": 1.0,
+      "dt": 0.002,
+      "eval_dt": 0.002,
+      "num_paths": 2000000,
+      "seed": 42,
+      "functional_truth": {
+        "price_S75": 1.3248960054854848,
+        "price_S100": 10.300169129637311,
+        "price_S125": 29.425823277859436
+      },
+      "functional_tol": 0.015,
+      "functional_tol_used": {
+        "price_S75": 0.015,
+        "price_S100": 0.004,
+        "price_S125": 0.002
+      },
+      "reference_abs_err": {
+        "price_S75": 0.0,
+        "price_S100": 0.0,
+        "price_S125": 0.0
+      },
+      "functional_level_paths": 500000
+    },
+    {
+      "id": "B09",
+      "slug": "sde_heston_dnt_hivar",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_barrier",
+      "title": "Heston double-no-touch, higher initial variance",
+      "challenge": "The same continuously monitored corridor started at a higher variance, so more paths reach the barriers and the per-step monitoring error a naive scheme makes is correspondingly larger.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "benchop",
+      "state_dimension": 2,
+      "T": 1.0,
+      "dt": 0.002,
+      "eval_dt": 0.002,
+      "num_paths": 400000,
+      "seed": 42,
+      "functional_truth": {
+        "no_touch_S75": 0.7909897214161576,
+        "no_touch_S100": 0.8600402133394556,
+        "no_touch_S125": 0.5979649199336675
+      },
+      "functional_tol": 0.006,
+      "functional_level_paths": 100000
+    },
+    {
+      "id": "B10",
+      "slug": "sde_sabr_cev_call_ii_lowvol",
+      "type": "sde",
+      "tier": 3,
+      "family": "sabr_cev",
+      "title": "SABR forward with CEV exponent 1/2, lower initial volatility",
+      "challenge": "The long-horizon SABR set started at a lower initial volatility, which moves every option value without changing the vol-of-vol, the correlation or the absorbing boundary that make it hard.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "benchop",
+      "state_dimension": 2,
+      "T": 10.0,
+      "dt": 0.004,
+      "eval_dt": 0.004,
+      "num_paths": 1000000,
+      "seed": 42,
+      "functional_truth": {
+        "price_K1": 0.04994189535579002,
+        "price_K2": 0.04334410065842167,
+        "price_K3": 0.03529611249040668
+      },
+      "functional_tol": 0.01,
+      "functional_level_paths": 250000
     }
   ]
 }

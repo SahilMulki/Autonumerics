@@ -21,7 +21,8 @@ Every problem carries a ``ground_truth_kind`` (default ``"exact"``) that tells t
 verifier how to check it:
 
 * ``exact`` -- an exact closed-form / machine-precision ground truth. SDE problems
-  expose ``moments(T) -> dict`` returning the exact terminal moments; keys are
+  expose ``moments(T) -> dict`` returning the exact terminal moments (or omit it
+  entirely and carry ``functional_truth`` instead); keys are
   ``mean``/``variance`` for scalar state, or ``mean_X``/``variance_X``/``mean_Y``/
   ``variance_Y`` (and ``_Z`` for 3-D) for vector state. PDE problems expose
   ``analytic(t, *coords) -> ndarray`` giving the exact solution at ``t_eval``.
@@ -38,6 +39,51 @@ PDE ``coords`` is ``(x,)`` for 1-D or the meshgrid ``(X, Y)`` for 2-D; steady
 problems ignore ``t``. A problem with no closed form *and* no stability check sets
 ``analytic=None``/``has_ground_truth=False`` with the default ``exact`` kind; the
 verifier reports "pipeline self-score only" for those (e.g. Kuramoto-Sivashinsky).
+
+Work-precision levels (optional)
+--------------------------------
+A problem may add ``work_precision_levels`` to have the verifier re-solve it at
+other points on the cost axis and emit an error-vs-time series beside the verdict
+(``verify.work_precision``). PDE: a list of resolutions, ``[32, 64, 128, 256]``.
+SDE: a list of ``(num_paths, dt)`` pairs, ``[(20000, 0.02), (80000, 0.005)]``.
+
+It is measurement, never grading. The levels do not enter the pass decision, a level
+that crashes or times out is recorded as skipped rather than failing the problem, and
+the seed is held fixed across an SDE sweep so only the work varies. Levels the graded
+ladder already covers are reused rather than re-solved, so declaring the problem's own
+``grid_N`` and ``2*grid_N`` costs nothing. Omitting the key costs nothing either: the
+graded ladder's own points are recorded regardless, because they are already paid for.
+
+Scalar quantities of interest (optional)
+----------------------------------------
+``functional_truth`` is ``{name: value}``: the truth is a *number* -- an eigenvalue, an
+extremum, an option price -- rather than a field or a moment. It works on **either**
+problem type and is orthogonal to ``ground_truth_kind``. A PDE problem adds it to its
+field gate or stands on it alone (no ``analytic``, no ``reference``); an SDE problem
+adds it to its terminal moments or, since ``moments`` is no longer required, stands on
+it alone too. Where a problem declares both they are independent gates, and failing
+either fails. The solver returns them in a ``functionals`` dict.
+
+An SDE problem scored this way is solved **twice**: once at ``num_paths`` and once at
+``functional_level_paths`` (default ``num_paths // 4``). The two reported values must
+differ and must agree within ``tol_abs * (1 + sqrt(n_graded/n_coarse))``. That is the
+anti-hardcoding defence the PDE side gets free from its 2-grid order check -- a
+constant has zero observed order and fails there, while a price graded from a single
+run would pass. The band is symmetric: nothing requires the finer run to be the better
+one, because these curves were measured non-monotone at this suite's path counts.
+
+Functional tolerance (optional)
+-------------------------------
+``functional_tol`` is the relative gate on every value in ``functional_truth``, and
+defaults to the problem's own field gate -- 1% for a PDE field, 5% for a sampled SDE
+moment. A problem whose reference values carry a known *absolute*
+uncertainty -- a published figure rounded to a digit, a quadrature bound, a Monte-Carlo
+standard error -- also declares ``reference_abs_err``: one number covering all of them,
+or ``{name: abs_err}`` when they differ. The gate on each value then becomes
+``max(functional_tol, 3 * abs_err_i / |ref_i|)`` -- still relative, but never asking for
+a digit the answer key does not have. It only ever loosens, it is per value because a
+fixed absolute uncertainty is a different relative one at every value, and the verifier
+records the relative error, the absolute error and the tolerance it actually used.
 
 Tiers
 -----
@@ -3328,6 +3374,648 @@ Compute the empirical mean E[X(T)] and variance Var[X(T)] at T = 1 by Monte Carl
 and compare to the reference moments.
 """,
     },
+    # =========================================================================
+    # BENCHOP-SLV -- the externally anchored suite (plan-benchop-slv.md step 7)
+    # =========================================================================
+    #
+    # Every value in `functional_truth` below was published by a third party in
+    # 2018, before this project existed, and every one of them was re-derived here
+    # before being trusted -- see `benchop.py` and `references/benchop_slv.json`,
+    # which carry the derivations, the routes, and how closely each agreed. These
+    # problems run as their own suite (`suite="benchop"`) so they cannot move the
+    # denominators the other two suites' baselines are quoted against.
+    #
+    # The statements below never name the benchmark and never quote a reference
+    # value. They do state the modelling facts a correct scheme needs -- an
+    # absorbing boundary, a violated Feller condition, continuous barrier
+    # monitoring -- because those are the problem, not the answer.
+    {
+        "id": "B01",
+        "slug": "sde_sabr_cev_call_i",
+        "type": "sde",
+        "suite": "benchop",
+        "benchop_key": "sabr_set1",
+        "tier": 3,
+        "family": "sabr_cev",
+        "title": "SABR forward with CEV exponent 1/2, three strikes (set I)",
+        "challenge": "Degenerate diffusion with an attainable, absorbing origin, and a martingale property that time discretisation destroys. Scored on three option values and nothing else, so the scheme has to be right where the payoff is thin.",
+        "state_dimension": 2,
+        "T": 2.0,
+        "dt": 0.005,
+        "num_paths": 4000000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "functional_truth": {
+            "price_K1": 0.221383196830866,
+            "price_K2": 0.193836689413803,
+            "price_K3": 0.166240814653231,
+        },
+        "functional_tol": 4e-3,
+        "description": """# SABR Forward Price, CEV Exponent 1/2 (Set I)
+
+Simulate the two-factor system (Ito) for a forward price with stochastic
+volatility:
+
+    dS     = sigma * S^(1/2) dW_S,      S(0)     = 0.5
+    dsigma = 0.4 * sigma dW_sigma,      sigma(0) = 0.5
+
+with corr(dW_S, dW_sigma) = 0, over the interval [0, 2]. S is a forward price,
+so it has no drift and no discounting is applied anywhere.
+
+Two properties of this model decide whether a scheme is right:
+
+- The exponent 1/2 makes the diffusion degenerate at the origin. S = 0 is
+  **attainable and absorbing**: a path that reaches zero stays at zero and
+  contributes nothing to the payoff. A scheme that lets S go negative, or that
+  reflects it off zero, is simulating a different process.
+- S is a true martingale, so E[S(T)] = S(0) = 0.5 exactly. A time-discretised
+  scheme does not inherit that, and how much of it each scheme loses differs.
+
+Report the **undiscounted** European call values E[(S(T) - K)^+] at the three
+strikes
+
+    K1 = 0.434061722697
+    K2 = 0.5
+    K3 = 0.575954955084
+
+as `price_K1`, `price_K2` and `price_K3` in the `functionals` dict, and the
+terminal states (S, sigma) in `terminal_paths`.
+""",
+    },
+    {
+        "id": "B02",
+        "slug": "sde_sabr_cev_call_ii",
+        "type": "sde",
+        "suite": "benchop",
+        "benchop_key": "sabr_set2",
+        "tier": 3,
+        "family": "sabr_cev",
+        "title": "SABR forward with CEV exponent 1/2, three strikes (set II)",
+        "challenge": "The hard SABR set: ten years, vol-of-vol 0.8 and a correlated volatility, so the volatility spans four orders of magnitude and absorption at zero is common rather than rare.",
+        "state_dimension": 2,
+        "T": 10.0,
+        "dt": 0.004,
+        "num_paths": 1000000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "functional_truth": {
+            "price_K1": 0.052450313614407,
+            "price_K2": 0.046585753491306,
+            "price_K3": 0.039291470612989,
+        },
+        "functional_tol": 1e-2,
+        "description": """# SABR Forward Price, CEV Exponent 1/2 (Set II)
+
+Simulate the two-factor system (Ito) for a forward price with stochastic
+volatility:
+
+    dS     = sigma * S^(1/2) dW_S,      S(0)     = 0.07
+    dsigma = 0.8 * sigma dW_sigma,      sigma(0) = 0.4
+
+with corr(dW_S, dW_sigma) = -0.6, over the interval [0, 10]. S is a forward
+price, so it has no drift and no discounting is applied anywhere.
+
+This is the long-horizon, high-vol-of-vol parameter set, and it is harder than
+it looks:
+
+- Over ten years at vol-of-vol 0.8 the volatility is lognormal with a log
+  standard deviation of about 2.5, so sigma(T) ranges over several orders of
+  magnitude between paths. The step has to be fine enough for the paths where
+  it is large.
+- The exponent 1/2 makes S = 0 **attainable and absorbing**, and at these
+  parameters a substantial fraction of paths reach it. A path absorbed at zero
+  stays there and contributes nothing to the payoff; a scheme that lets S go
+  negative, or that reflects it, is simulating a different process.
+- S is a true martingale, so E[S(T)] = S(0) = 0.07 exactly. A time-discretised
+  scheme does not inherit that.
+
+Report the **undiscounted** European call values E[(S(T) - K)^+] at the three
+strikes
+
+    K1 = 0.051022538988
+    K2 = 0.07
+    K3 = 0.096035989138
+
+as `price_K1`, `price_K2` and `price_K3` in the `functionals` dict, and the
+terminal states (S, sigma) in `terminal_paths`.
+""",
+    },
+    {
+        "id": "B03",
+        "slug": "sde_heston_call_feller",
+        "type": "sde",
+        "suite": "benchop",
+        "benchop_key": "hst_eucall",
+        "tier": 3,
+        "family": "heston_feller",
+        "title": "Heston call at three spots, Feller condition violated",
+        "challenge": "2*kappa*eta is a fifth of sigma^2, so the variance sits on zero and every square root in the scheme has to say what it does there. Three option values spanning 31x, each gated at what Monte Carlo can resolve for it.",
+        "state_dimension": 2,
+        "T": 1.0,
+        "dt": 0.002,
+        "num_paths": 2000000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "functional_truth": {
+            "price_S75": 0.908502728459621,
+            "price_S100": 9.046650119220969,
+            "price_S125": 28.514786399298796,
+        },
+        # Per value, because the three differ by 31x and a Monte-Carlo estimator's
+        # noise is a fraction of the payoff's spread rather than of its mean: at the
+        # declared path count the measured relative standard errors are 4.2e-3,
+        # 1.0e-3 and 4.6e-4. One gate across all three would either fail the deep
+        # out-of-the-money value or stop testing the in-the-money one. Each of these
+        # is about 3.5x the measured standard error of a plain estimator.
+        "functional_tol": {"price_S75": 1.5e-2, "price_S100": 4e-3, "price_S125": 2e-3},
+        "description": """# Heston Call at Three Spots, Feller Condition Violated
+
+Simulate the Heston system (Ito) with a zero interest rate:
+
+    dS = sqrt(V) * S dW1,                        S(0) = S0
+    dV = 2.58 * (0.043 - V) dt + sqrt(V) dW2,    V(0) = 0.114
+
+with corr(dW1, dW2) = -0.36, over the interval [0, 1].
+
+**The Feller condition fails here, and it is the point of the problem.**
+2*kappa*eta = 0.221880 is well below sigma^2 = 1, so the variance process
+reaches zero and spends real time near it. A scheme that takes the square root
+of a negative variance produces NaN; one that clips the variance in a way that
+changes its law produces a biased price. What a scheme does at V = 0 is the
+main thing being measured.
+
+The rate is zero, so the asset is a martingale: E[S(T)] = S0 exactly, for every
+T, and no discounting is applied anywhere.
+
+Report the European call value E[(S(T) - 100)^+] from each of the three initial
+spots
+
+    S0 = 75,   S0 = 100,   S0 = 125
+
+as `price_S75`, `price_S100` and `price_S125` in the `functionals` dict. The
+variance process does not depend on S, so one set of variance paths serves all
+three spots; simulating the three independently costs about three times as much
+for no benefit.
+
+Return the terminal states (S, V) for **S0 = 100** in `terminal_paths`.
+""",
+    },
+    {
+        "id": "B04",
+        "slug": "sde_heston_dnt",
+        "type": "sde",
+        "suite": "benchop",
+        "benchop_key": "hst_dntouch",
+        "tier": 3,
+        "family": "heston_barrier",
+        "title": "Heston double-no-touch, continuously monitored",
+        "challenge": "A continuously monitored two-sided barrier under a Feller-violating variance. Checking the barrier once per step biases the value high at the Broadie-Glasserman-Kou rate O(sqrt(dt)) -- converging far too slowly to reach the gate by brute force. The fix is a named technique, not a finer step.",
+        "state_dimension": 2,
+        "T": 1.0,
+        "dt": 0.002,
+        "num_paths": 400000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "functional_truth": {
+            "no_touch_S75": 0.834539127387590,
+            "no_touch_S100": 0.899829293208866,
+            "no_touch_S125": 0.668399975738358,
+        },
+        # Calibrated to separate the two techniques rather than to be tight: a
+        # Brownian-bridge estimator measures 2.1e-3 at worst here, while per-step
+        # monitoring at four times this step count measures 5.0e-3, 3.1e-3 and
+        # 1.4e-2 (plan-benchop-slv.md section 2d). The gate sits between them.
+        "functional_tol": 6e-3,
+        "description": """# Heston Double-No-Touch, Continuously Monitored
+
+Simulate the Heston system (Ito) with a zero interest rate:
+
+    dS = sqrt(V) * S dW1,                        S(0) = S0
+    dV = 2.58 * (0.043 - V) dt + sqrt(V) dW2,    V(0) = 0.114
+
+with corr(dW1, dW2) = -0.36, over the interval [0, 1].
+
+**The Feller condition fails**: 2*kappa*eta = 0.221880 is well below
+sigma^2 = 1, so the variance reaches zero and a scheme has to say what it does
+there.
+
+The contract pays **1 at T if S has stayed strictly inside the corridor
+(50, 150) for the whole interval**, and 0 if it ever touched or crossed either
+barrier. Monitoring is **continuous in time, not once per step**: a path that
+leaves the corridor between two time points and returns has still knocked out.
+This distinction is the problem. Deciding the barrier only at the grid points
+misses those excursions, overstates survival, and the error it makes shrinks
+only as sqrt(dt) -- so it cannot be fixed by taking more steps at any affordable
+cost.
+
+The rate is zero, so no discounting is applied and the value is exactly the
+survival probability.
+
+Report that probability from each of the three initial spots
+
+    S0 = 75,   S0 = 100,   S0 = 125
+
+as `no_touch_S75`, `no_touch_S100` and `no_touch_S125` in the `functionals`
+dict. The variance process does not depend on S, so one set of variance paths
+serves all three spots.
+
+Return the terminal states (S, V) for **S0 = 100** in `terminal_paths`, using
+the simulated value of S at T whether or not that path knocked out.
+""",
+    },
+    {
+        "id": "B05",
+        "slug": "sde_qlsv_dnt",
+        "type": "sde",
+        "suite": "benchop",
+        "benchop_key": "qlsv_dntouch",
+        "tier": 3,
+        "family": "qlsv_barrier",
+        "title": "Quadratic local-stochastic-volatility double-no-touch",
+        "challenge": "The same continuously monitored corridor, with a local volatility quadratic in S. The diffusion is superlinear, so the Lamperti transform that makes a Brownian bridge valid is no longer the logarithm, and the obvious explicit step walks the transformed variable through its boundary.",
+        "state_dimension": 2,
+        "T": 1.0,
+        "dt": 0.002,
+        "num_paths": 400000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "functional_truth": {
+            "no_touch_S75": 0.933800903110254,
+            "no_touch_S100": 0.914799140676374,
+            "no_touch_S125": 0.592983062889906,
+        },
+        # Looser than the Heston twin of this problem, and measured rather than
+        # assumed: the Lamperti chart that makes the per-step bridge exact for a
+        # linear local volatility is the logarithm, and for f(s) = 0.01 s^2 it is
+        # -100/s instead, where the bridge is only approximate. The residual shows
+        # up as a bias of about 1.5e-3 at the high spot that more paths do not
+        # remove, against 5e-4 for the Heston problem at the same settings.
+        "functional_tol": 8e-3,
+        "description": """# Quadratic Local-Stochastic-Volatility Double-No-Touch
+
+Simulate the system (Ito) with a zero interest rate:
+
+    dS = sqrt(V) * f(S) dW1,                     S(0) = S0,   f(s) = 0.01 * s^2
+    dV = 2.58 * (0.043 - V) dt + sqrt(V) dW2,    V(0) = 0.114
+
+with corr(dW1, dW2) = -0.36, over the interval [0, 1].
+
+This is the Heston variance driving a **local** volatility that is quadratic in
+the asset: f(100) = 100, so the model is calibrated to agree with
+f(s) = s at S = 100 and to differ increasingly away from it. Two consequences:
+
+- The diffusion coefficient grows faster than linearly in S. A scheme that
+  works in log space for a linear local volatility is not doing the same thing
+  here, and the obvious explicit step in the natural transformed variable can
+  overshoot that variable's boundary and return a negative asset price.
+- **The Feller condition fails** for the variance: 2*kappa*eta = 0.221880
+  against sigma^2 = 1.
+
+The contract pays **1 at T if S has stayed strictly inside the corridor
+(50, 150) for the whole interval**, and 0 if it ever touched or crossed either
+barrier. Monitoring is **continuous in time, not once per step**: a path that
+leaves the corridor between two time points and returns has still knocked out.
+Deciding the barrier only at grid points overstates survival, and that error
+shrinks only as sqrt(dt).
+
+The rate is zero, so no discounting is applied and the value is exactly the
+survival probability.
+
+Report that probability from each of the three initial spots
+
+    S0 = 75,   S0 = 100,   S0 = 125
+
+as `no_touch_S75`, `no_touch_S100` and `no_touch_S125` in the `functionals`
+dict. The variance process does not depend on S, so one set of variance paths
+serves all three spots.
+
+Return the terminal states (S, V) for **S0 = 100** in `terminal_paths`, using
+the simulated value of S at T whether or not that path knocked out.
+""",
+    },
+    {
+        "id": "B06",
+        "slug": "sde_hhw_call_corr",
+        "type": "sde",
+        "suite": "benchop",
+        "benchop_key": "hhw_eucall1",
+        "tier": 3,
+        "family": "heston_hull_white",
+        "title": "Heston-Hull-White call, all three factors correlated",
+        "challenge": "Three correlated factors over ten years, with the variance's Feller ratio at 0.04 and the discount factor itself stochastic and correlated with both others. The only problem in the suite with no two-dimensional reduction and no quadrature.",
+        "state_dimension": 3,
+        "T": 10.0,
+        "dt": 0.004,
+        "num_paths": 1000000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "functional_truth": {
+            "price_S75": 37.52,
+            "price_S100": 57.41,
+            "price_S125": 78.58,
+        },
+        # The only values in the suite not published to fifteen digits: the source
+        # quotes two decimals, so half a unit in the last place quoted is a floor on
+        # any gate built from them. The declared tolerance is looser than the rest of
+        # the suite for a different reason, recorded in plan-benchop-slv.md section 8:
+        # this repo's own derivation of these three sits 0.030-0.043 above them, so a
+        # 1e-3 gate is not something any route here has shown a correct solver can
+        # clear.
+        "reference_abs_err": 5e-3,
+        "functional_tol": 3e-3,
+        "description": """# Heston-Hull-White Call, All Three Factors Correlated
+
+Simulate the three-factor system (Ito) in which the short rate is stochastic:
+
+    dS = R * S dt + sqrt(V) * S dW1,             S(0) = S0
+    dV = 0.5 * (0.04 - V) dt + sqrt(V) dW2,      V(0) = 0.04
+    dR = 0.08 * (0.10 - R) dt + 0.09 dW3,        R(0) = 0.10
+
+over [0, 10], with the correlation matrix
+
+    corr(dW1, dW2) = -0.9
+    corr(dW1, dW3) =  0.6
+    corr(dW2, dW3) = -0.7
+
+Three things make this the hardest problem in this group:
+
+- **The Feller condition fails badly.** 2*kappa*eta = 0.04 against
+  sigma^2 = 1, a ratio of 0.04, so the variance sits on zero for a large
+  fraction of the time and every square root has to say what it does there.
+- **The discount factor is stochastic and correlated with the asset.** The
+  payoff is discounted by exp(-integral of R over [0, T]), which must be
+  accumulated along each path rather than applied at the end with a constant
+  rate. Over ten years at these parameters the discount factor varies widely
+  between paths.
+- **All three Brownian motions are correlated**, so the increments must be
+  drawn from the full 3x3 correlation structure. Note that a scheme which
+  samples the variance from its exact conditional law rather than stepping it
+  gains accuracy on V and then has no Brownian increment left to correlate W3
+  with; that trade has to be resolved, not ignored.
+
+Report the **discounted** European call value
+E[exp(-integral of R dt) * (S(T) - 100)^+] from each of the three initial spots
+
+    S0 = 75,   S0 = 100,   S0 = 125
+
+as `price_S75`, `price_S100` and `price_S125` in the `functionals` dict. The
+variance and the rate do not depend on S, so one set of (V, R) paths serves all
+three spots.
+
+Return the terminal states (S, V, R) for **S0 = 100** in `terminal_paths`.
+""",
+    },
+    {
+        "id": "B07",
+        "slug": "sde_hhw_call_zerocorr",
+        "type": "sde",
+        "suite": "benchop",
+        "benchop_key": "hhw_eucall2",
+        "tier": 3,
+        "family": "heston_hull_white",
+        "title": "Heston-Hull-White call, rate uncorrelated with asset and variance",
+        "challenge": "The same three factors and the same ten-year horizon, with the rate decorrelated. Removing two correlations removes none of the difficulty that matters -- the Feller ratio is still 0.04 and the discount factor is still path-dependent -- but it does admit an independent check, which is why it is here beside its correlated sibling.",
+        "state_dimension": 3,
+        "T": 10.0,
+        "dt": 0.004,
+        "num_paths": 1000000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "functional_truth": {
+            "price_S75": 35.437896876285350,
+            "price_S100": 54.728065308229503,
+            "price_S125": 75.397596834993621,
+        },
+        "functional_tol": 3e-3,
+        "description": """# Heston-Hull-White Call, Rate Uncorrelated
+
+Simulate the three-factor system (Ito) in which the short rate is stochastic:
+
+    dS = R * S dt + sqrt(V) * S dW1,             S(0) = S0
+    dV = 0.5 * (0.04 - V) dt + sqrt(V) dW2,      V(0) = 0.04
+    dR = 0.08 * (0.10 - R) dt + 0.09 dW3,        R(0) = 0.10
+
+over [0, 10], with the correlation matrix
+
+    corr(dW1, dW2) = -0.9
+    corr(dW1, dW3) =  0
+    corr(dW2, dW3) =  0
+
+so the rate is independent of the asset and of the variance, while the asset
+and its variance remain strongly correlated.
+
+- **The Feller condition fails badly.** 2*kappa*eta = 0.04 against
+  sigma^2 = 1, a ratio of 0.04, so the variance sits on zero for a large
+  fraction of the time and every square root has to say what it does there.
+- **The discount factor is stochastic.** The payoff is discounted by
+  exp(-integral of R over [0, T]), accumulated along each path, not applied at
+  the end with a constant rate.
+- Because the rate is independent of the other two factors, the discounted
+  asset and the discount factor each have an expectation that is available in
+  closed form from the Hull-White parameters alone. Neither is the answer, but
+  a scheme can check itself against them.
+
+Report the **discounted** European call value
+E[exp(-integral of R dt) * (S(T) - 100)^+] from each of the three initial spots
+
+    S0 = 75,   S0 = 100,   S0 = 125
+
+as `price_S75`, `price_S100` and `price_S125` in the `functionals` dict. The
+variance and the rate do not depend on S, so one set of (V, R) paths serves all
+three spots.
+
+Return the terminal states (S, V, R) for **S0 = 100** in `terminal_paths`.
+""",
+    },
+    # --- the three controls ---------------------------------------------------
+    #
+    # Each is its published sibling with the *initial* variance or volatility moved
+    # and nothing else touched -- same model, same payoff, same spot, same strikes,
+    # same horizon, same Feller ratio, same cost. Their answer keys are computed in
+    # `benchop.py` rather than published anywhere, so a solver that scores well on
+    # the sibling and badly here was recalling rather than solving. Neither the
+    # slug, the title nor the statement says any of that: a statement that warned a
+    # model off the memorized value would make the measurement come back clean for
+    # the wrong reason.
+    {
+        "id": "B08",
+        "slug": "sde_heston_call_hivar",
+        "type": "sde",
+        "suite": "benchop",
+        "benchop_key": "hst_eucall_shift",
+        "shifted_twin_of": "sde_heston_call_feller",
+        "tier": 3,
+        "family": "heston_feller",
+        "title": "Heston call at three spots, higher initial variance",
+        "challenge": "The Feller-violating Heston call started further from its long-run variance, so the variance path has further to travel and spends longer where the square root is delicate.",
+        "state_dimension": 2,
+        "T": 1.0,
+        "dt": 0.002,
+        "num_paths": 2000000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "functional_truth": {
+            "price_S75": 1.3248960054854848,
+            "price_S100": 10.300169129637311,
+            "price_S125": 29.425823277859436,
+        },
+        "functional_tol": {"price_S75": 1.5e-2, "price_S100": 4e-3, "price_S125": 2e-3},
+        "description": """# Heston Call at Three Spots, Feller Condition Violated
+
+Simulate the Heston system (Ito) with a zero interest rate:
+
+    dS = sqrt(V) * S dW1,                        S(0) = S0
+    dV = 2.58 * (0.043 - V) dt + sqrt(V) dW2,    V(0) = 0.164
+
+with corr(dW1, dW2) = -0.36, over the interval [0, 1].
+
+**The Feller condition fails here, and it is the point of the problem.**
+2*kappa*eta = 0.221880 is well below sigma^2 = 1, so the variance process
+reaches zero and spends real time near it. A scheme that takes the square root
+of a negative variance produces NaN; one that clips the variance in a way that
+changes its law produces a biased price. What a scheme does at V = 0 is the
+main thing being measured. The initial variance is well above the long-run
+level 0.043, so the variance decays toward it across the interval rather than
+sitting near it.
+
+The rate is zero, so the asset is a martingale: E[S(T)] = S0 exactly, for every
+T, and no discounting is applied anywhere.
+
+Report the European call value E[(S(T) - 100)^+] from each of the three initial
+spots
+
+    S0 = 75,   S0 = 100,   S0 = 125
+
+as `price_S75`, `price_S100` and `price_S125` in the `functionals` dict. The
+variance process does not depend on S, so one set of variance paths serves all
+three spots; simulating the three independently costs about three times as much
+for no benefit.
+
+Return the terminal states (S, V) for **S0 = 100** in `terminal_paths`.
+""",
+    },
+    {
+        "id": "B09",
+        "slug": "sde_heston_dnt_hivar",
+        "type": "sde",
+        "suite": "benchop",
+        "benchop_key": "hst_dntouch_shift",
+        "shifted_twin_of": "sde_heston_dnt",
+        "tier": 3,
+        "family": "heston_barrier",
+        "title": "Heston double-no-touch, higher initial variance",
+        "challenge": "The same continuously monitored corridor started at a higher variance, so more paths reach the barriers and the per-step monitoring error a naive scheme makes is correspondingly larger.",
+        "state_dimension": 2,
+        "T": 1.0,
+        "dt": 0.002,
+        "num_paths": 400000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "functional_truth": {
+            "no_touch_S75": 0.7909897214161576,
+            "no_touch_S100": 0.8600402133394556,
+            "no_touch_S125": 0.5979649199336675,
+        },
+        "reference_abs_err": 5.503573553111707e-06,
+        "functional_tol": 6e-3,
+        "description": """# Heston Double-No-Touch, Continuously Monitored
+
+Simulate the Heston system (Ito) with a zero interest rate:
+
+    dS = sqrt(V) * S dW1,                        S(0) = S0
+    dV = 2.58 * (0.043 - V) dt + sqrt(V) dW2,    V(0) = 0.164
+
+with corr(dW1, dW2) = -0.36, over the interval [0, 1].
+
+**The Feller condition fails**: 2*kappa*eta = 0.221880 is well below
+sigma^2 = 1, so the variance reaches zero and a scheme has to say what it does
+there. The initial variance is well above the long-run level 0.043, so the
+variance decays toward it across the interval.
+
+The contract pays **1 at T if S has stayed strictly inside the corridor
+(50, 150) for the whole interval**, and 0 if it ever touched or crossed either
+barrier. Monitoring is **continuous in time, not once per step**: a path that
+leaves the corridor between two time points and returns has still knocked out.
+This distinction is the problem. Deciding the barrier only at the grid points
+misses those excursions, overstates survival, and the error it makes shrinks
+only as sqrt(dt) -- so it cannot be fixed by taking more steps at any affordable
+cost.
+
+The rate is zero, so no discounting is applied and the value is exactly the
+survival probability.
+
+Report that probability from each of the three initial spots
+
+    S0 = 75,   S0 = 100,   S0 = 125
+
+as `no_touch_S75`, `no_touch_S100` and `no_touch_S125` in the `functionals`
+dict. The variance process does not depend on S, so one set of variance paths
+serves all three spots.
+
+Return the terminal states (S, V) for **S0 = 100** in `terminal_paths`, using
+the simulated value of S at T whether or not that path knocked out.
+""",
+    },
+    {
+        "id": "B10",
+        "slug": "sde_sabr_cev_call_ii_lowvol",
+        "type": "sde",
+        "suite": "benchop",
+        "benchop_key": "sabr_set2_shift",
+        "shifted_twin_of": "sde_sabr_cev_call_ii",
+        "tier": 3,
+        "family": "sabr_cev",
+        "title": "SABR forward with CEV exponent 1/2, lower initial volatility",
+        "challenge": "The long-horizon SABR set started at a lower initial volatility, which moves every option value without changing the vol-of-vol, the correlation or the absorbing boundary that make it hard.",
+        "state_dimension": 2,
+        "T": 10.0,
+        "dt": 0.004,
+        "num_paths": 1000000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "functional_truth": {
+            "price_K1": 0.04994189535579002,
+            "price_K2": 0.04334410065842167,
+            "price_K3": 0.03529611249040668,
+        },
+        "reference_abs_err": 6.266815320690733e-06,
+        "functional_tol": 1e-2,
+        "description": """# SABR Forward Price, CEV Exponent 1/2, Ten-Year Horizon
+
+Simulate the two-factor system (Ito) for a forward price with stochastic
+volatility:
+
+    dS     = sigma * S^(1/2) dW_S,      S(0)     = 0.07
+    dsigma = 0.8 * sigma dW_sigma,      sigma(0) = 0.34
+
+with corr(dW_S, dW_sigma) = -0.6, over the interval [0, 10]. S is a forward
+price, so it has no drift and no discounting is applied anywhere.
+
+This is the long-horizon, high-vol-of-vol parameter set, and it is harder than
+it looks:
+
+- Over ten years at vol-of-vol 0.8 the volatility is lognormal with a log
+  standard deviation of about 2.5, so sigma(T) ranges over several orders of
+  magnitude between paths. The step has to be fine enough for the paths where
+  it is large.
+- The exponent 1/2 makes S = 0 **attainable and absorbing**, and at these
+  parameters a substantial fraction of paths reach it. A path absorbed at zero
+  stays there and contributes nothing to the payoff; a scheme that lets S go
+  negative, or that reflects it, is simulating a different process.
+- S is a true martingale, so E[S(T)] = S(0) = 0.07 exactly. A time-discretised
+  scheme does not inherit that.
+
+Report the **undiscounted** European call values E[(S(T) - K)^+] at the three
+strikes
+
+    K1 = 0.051022538988
+    K2 = 0.07
+    K3 = 0.096035989138
+
+as `price_K1`, `price_K2` and `price_K3` in the `functionals` dict, and the
+terminal states (S, sigma) in `terminal_paths`.
+""",
+    },
 ]
 
 
@@ -3362,6 +4050,15 @@ def discriminator_problems():
     incoming hard PDEs with ``"discriminator": True`` to fold them in (a one-line
     change per problem, so the subset is defined in exactly one place)."""
     return [p for p in PROBLEMS if p.get("discriminator")]
+
+
+def benchop_problems():
+    """The externally anchored suite: problems whose answer key was published by a
+    third party before this project existed, plus the shifted twins that test
+    whether a solver recalled it rather than computed it. Its own suite, so its
+    problems cannot move the denominators the other two baselines are quoted
+    against (plan-benchop-slv.md §6, step 7)."""
+    return [p for p in PROBLEMS if p.get("suite") == "benchop"]
 
 
 def no_closed_form_problems():

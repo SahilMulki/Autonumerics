@@ -1,0 +1,1717 @@
+{
+  "generated": "2026-10-21",
+  "level": "full",
+  "source": {
+    "formulations": "https://it.uu.se/research/scientific_computing/project/compfin/benchop/SLV/benchop_slv_0622.pdf",
+    "reference_values": "https://it.uu.se/research/scientific_computing/project/compfin/benchop/SLV/unitTestBenchopSLV.m",
+    "paper": "https://doi.org/10.1080/00207160.2018.1544368"
+  },
+  "note": "published = the external answer key, transcribed. reference_abs_err = the uncertainty that key itself carries. confirmed_abs_err = how closely this repo's own primary route reproduced it. The `shifted` entries are not published at all: they are section 5's memorization control, computed here, and their reference_abs_err is this repo's own uncertainty rather than anyone else's. `calibration` is step 8: per problem, at the resolution its entry ships with, what a correct scheme and a plausible wrong one each reach against the gate.",
+  "problems": {
+    "sabr_set1": {
+      "title": "SABR set I, European call",
+      "labels": [
+        "K_lo",
+        "K_mid",
+        "K_hi"
+      ],
+      "published": [
+        0.221383196830866,
+        0.193836689413803,
+        0.166240814653231
+      ],
+      "reference_abs_err": 0.0,
+      "primary_route": "conditional-besq",
+      "routes": [
+        {
+          "name": "conditional-besq",
+          "family": "quadrature+sampler",
+          "values": [
+            0.22137904048808357,
+            0.1938323927243929,
+            0.1662362446413266
+          ],
+          "stderr": [
+            1.4003124133659997e-05,
+            1.4628486165692944e-05,
+            1.4643097164911611e-05
+          ],
+          "note": "exact CEV payoff given the volatility path, 1000000 clock samples",
+          "abs_diff": [
+            4.1563427824187205e-06,
+            4.296689410099308e-06,
+            4.570011904403426e-06
+          ],
+          "rel_diff": [
+            1.8774427517162083e-05,
+            2.2166543511928878e-05,
+            2.7490312255364085e-05
+          ]
+        },
+        {
+          "name": "mc-2f",
+          "family": "sampler",
+          "values": [
+            0.22137486492801936,
+            0.19381732132227733,
+            0.16620281896954262
+          ],
+          "stderr": [
+            6.775617717122674e-05,
+            6.829767824281219e-05,
+            6.811189704047635e-05
+          ],
+          "note": "two-factor absorbed CEV, 1000000 paths x 1600 steps, martingale control",
+          "abs_diff": [
+            8.3319028466311e-06,
+            1.9368091525667763e-05,
+            3.7995683688396564e-05
+          ],
+          "rel_diff": [
+            3.7635660546525444e-05,
+            9.99196363920595e-05,
+            0.0002285580936766547
+          ]
+        },
+        {
+          "name": "fd2d",
+          "family": "grid",
+          "values": [
+            0.22138002766150286,
+            0.1938331426545294,
+            0.16623840774592552
+          ],
+          "stderr": null,
+          "note": "Crank-Nicolson in (S, ln sigma), (800, 400, 200)",
+          "abs_diff": [
+            3.1691693631319406e-06,
+            3.546759273609368e-06,
+            2.4069073054910906e-06
+          ],
+          "rel_diff": [
+            1.4315311227315715e-05,
+            1.8297667404119445e-05,
+            1.4478437864442398e-05
+          ]
+        }
+      ],
+      "wall_s": 130.0,
+      "confirmed_abs_err": 4.570011904403426e-06,
+      "confirmed_rel_err": 2.7490312255364085e-05
+    },
+    "sabr_set2": {
+      "title": "SABR set II, European call",
+      "labels": [
+        "K_lo",
+        "K_mid",
+        "K_hi"
+      ],
+      "published": [
+        0.052450313614407,
+        0.046585753491306,
+        0.039291470612989
+      ],
+      "reference_abs_err": 0.0,
+      "primary_route": "mc-2f",
+      "routes": [
+        {
+          "name": "mc-2f",
+          "family": "sampler",
+          "values": [
+            0.05245339959523162,
+            0.04658920752105015,
+            0.039294995334482566
+          ],
+          "stderr": [
+            9.897534279535207e-06,
+            1.324313984370893e-05,
+            1.7443844529763714e-05
+          ],
+          "note": "two-factor absorbed CEV, 1000000 paths x 6400 steps, martingale control",
+          "abs_diff": [
+            3.0859808246158638e-06,
+            3.4540297441446044e-06,
+            3.524721493564087e-06
+          ],
+          "rel_diff": [
+            5.8836270213801154e-05,
+            7.414347703508129e-05,
+            8.970703917605166e-05
+          ]
+        },
+        {
+          "name": "mc-2f-coarse",
+          "family": "sampler",
+          "values": [
+            0.052499406257957404,
+            0.04664583837640194,
+            0.0393574038799641
+          ],
+          "stderr": [
+            9.938009022891699e-06,
+            1.3304003078460658e-05,
+            1.7539076834567425e-05
+          ],
+          "note": "the same at 1600 steps, recorded so that the step effect is visible rather than assumed -- quartering the step divides the gap by about sixteen, which is second order and not the first order an Euler scheme would give",
+          "abs_diff": [
+            4.909264355040105e-05,
+            6.008488509593596e-05,
+            6.593326697509894e-05
+          ],
+          "rel_diff": [
+            0.0009359837943259948,
+            0.0012897695237911995,
+            0.0016780554646204226
+          ]
+        },
+        {
+          "name": "mc-2f-richardson",
+          "family": "sampler",
+          "values": [
+            0.05245033248438323,
+            0.04658543213069336,
+            0.039290834764783795
+          ],
+          "stderr": [
+            9.897534279535207e-06,
+            1.324313984370893e-05,
+            1.7443844529763714e-05
+          ],
+          "note": "extrapolated at the order those two levels imply. Recorded, but not the primary: the order was inferred from the same two points it is applied to, so the confirmation this problem claims rests on a single measured level instead",
+          "abs_diff": [
+            1.8869976227409158e-08,
+            3.2136061264148585e-07,
+            6.358482052062908e-07
+          ],
+          "rel_diff": [
+            3.597686062686567e-07,
+            6.898259415326604e-06,
+            1.6182855853608383e-05
+          ]
+        },
+        {
+          "name": "fd2d",
+          "family": "grid",
+          "values": [
+            0.052450167822404976,
+            0.04658497496619427,
+            0.039289779905761754
+          ],
+          "stderr": null,
+          "note": "Crank-Nicolson in (S, ln sigma), (800, 400, 200) -- the independent second family, which the sampler alone would not have been",
+          "abs_diff": [
+            1.4579200202646803e-07,
+            7.785251117317649e-07,
+            1.6907072272476231e-06
+          ],
+          "rel_diff": [
+            2.77962116867919e-06,
+            1.67116565341603e-05,
+            4.3029879026434504e-05
+          ]
+        }
+      ],
+      "wall_s": 488.6,
+      "confirmed_abs_err": 3.524721493564087e-06,
+      "confirmed_rel_err": 8.970703917605166e-05
+    },
+    "hst_eucall": {
+      "title": "Heston, European call K=100",
+      "labels": [
+        "S75",
+        "S100",
+        "S125"
+      ],
+      "published": [
+        0.908502728459621,
+        9.046650119220969,
+        28.514786399298796
+      ],
+      "reference_abs_err": 0.0,
+      "primary_route": "heston-cf",
+      "routes": [
+        {
+          "name": "heston-cf",
+          "family": "quadrature",
+          "values": [
+            0.9085027284596237,
+            9.046650119220942,
+            28.514786399298742
+          ],
+          "stderr": null,
+          "note": "Lewis single integral of the little-trap characteristic function",
+          "abs_diff": [
+            2.6645352591003757e-15,
+            2.6645352591003757e-14,
+            5.3290705182007514e-14
+          ],
+          "rel_diff": [
+            2.9328863586553366e-15,
+            2.945328076123083e-15,
+            1.8688796905495313e-15
+          ]
+        },
+        {
+          "name": "fd2d",
+          "family": "grid",
+          "values": [
+            0.9084697470480261,
+            9.046562547641383,
+            28.514746751035602
+          ],
+          "stderr": null,
+          "note": "Crank-Nicolson (800, 320, 200)",
+          "abs_diff": [
+            3.29814115949123e-05,
+            8.757157958605433e-05,
+            3.964826319347026e-05
+          ],
+          "rel_diff": [
+            3.630304077438792e-05,
+            9.68000071098089e-06,
+            1.3904457371087038e-06
+          ]
+        },
+        {
+          "name": "fd2d-richardson",
+          "family": "grid",
+          "values": [
+            0.908507346075415,
+            9.046634476131876,
+            28.514772309353052
+          ],
+          "stderr": null,
+          "note": "two grid levels, extrapolated at order 2",
+          "abs_diff": [
+            4.61761579395592e-06,
+            1.5643089092520768e-05,
+            1.4089945743478438e-05
+          ],
+          "rel_diff": [
+            5.082665851521604e-06,
+            1.729158184119962e-06,
+            4.941276973347737e-07
+          ]
+        }
+      ],
+      "wall_s": 13.4,
+      "confirmed_abs_err": 5.3290705182007514e-14,
+      "confirmed_rel_err": 2.945328076123083e-15
+    },
+    "hst_dntouch": {
+      "title": "Heston, double-no-touch L=50 U=150",
+      "labels": [
+        "S75",
+        "S100",
+        "S125"
+      ],
+      "published": [
+        0.83453912738759,
+        0.899829293208866,
+        0.668399975738358
+      ],
+      "reference_abs_err": 0.0,
+      "primary_route": "fd2d-richardson",
+      "routes": [
+        {
+          "name": "fd2d",
+          "family": "grid",
+          "values": [
+            0.8345390721079073,
+            0.8998295525001709,
+            0.6684086544715335
+          ],
+          "stderr": null,
+          "note": "Crank-Nicolson (800, 320, 200)",
+          "abs_diff": [
+            5.527968260921057e-08,
+            2.5929130498258957e-07,
+            8.678733175560005e-06
+          ],
+          "rel_diff": [
+            6.623977330129028e-08,
+            2.881561057630556e-07,
+            1.2984340949403706e-05
+          ]
+        },
+        {
+          "name": "fd2d-richardson",
+          "family": "grid",
+          "values": [
+            0.83454080681367,
+            0.899830011503034,
+            0.6684037289452439
+          ],
+          "stderr": null,
+          "note": "two grid levels, extrapolated at order 2",
+          "abs_diff": [
+            1.6794260800923055e-06,
+            7.182941680339283e-07,
+            3.753206885948046e-06
+          ],
+          "rel_diff": [
+            2.012399448962349e-06,
+            7.982560397344164e-07,
+            5.615210984713173e-06
+          ]
+        },
+        {
+          "name": "mc-bridge",
+          "family": "sampler",
+          "values": [
+            0.8352691094980709,
+            0.9002770074092978,
+            0.669827655216215
+          ],
+          "stderr": [
+            0.0003964604484913022,
+            0.00034726857917264937,
+            0.0004470497357318125
+          ],
+          "note": "QE variance, Brownian-bridge barrier, 400000 paths x 400 steps",
+          "abs_diff": [
+            0.0007299821104809201,
+            0.00044771420043188126,
+            0.0014276794778570467
+          ],
+          "rel_diff": [
+            0.0008747128642919701,
+            0.0004975545959781941,
+            0.002135965783481574
+          ]
+        }
+      ],
+      "wall_s": 205.4,
+      "confirmed_abs_err": 3.753206885948046e-06,
+      "confirmed_rel_err": 5.615210984713173e-06
+    },
+    "qlsv_eucall": {
+      "title": "Quadratic LSV, European call K=100",
+      "labels": [
+        "S75",
+        "S100",
+        "S125"
+      ],
+      "published": [
+        0.527472759419533,
+        8.902347915743665,
+        29.15982896563373
+      ],
+      "reference_abs_err": 0.0,
+      "primary_route": "fd2d-richardson",
+      "routes": [
+        {
+          "name": "fd2d",
+          "family": "grid",
+          "values": [
+            0.5274522183726804,
+            8.902273904476715,
+            29.159779274670996
+          ],
+          "stderr": null,
+          "note": "Crank-Nicolson (800, 320, 200)",
+          "abs_diff": [
+            2.0541046852562417e-05,
+            7.401126694972504e-05,
+            4.969096273299556e-05
+          ],
+          "rel_diff": [
+            3.8942384200403426e-05,
+            8.31367945290447e-06,
+            1.7040896498933093e-06
+          ]
+        },
+        {
+          "name": "fd2d-richardson",
+          "family": "grid",
+          "values": [
+            0.5274960238717411,
+            8.902337704679889,
+            29.15980195067794
+          ],
+          "stderr": null,
+          "note": "two grid levels, extrapolated at order 2",
+          "abs_diff": [
+            2.3264452208127118e-05,
+            1.0211063775855678e-05,
+            2.7014955787052486e-05
+          ],
+          "rel_diff": [
+            4.4105504583267786e-05,
+            1.1470079435782968e-06,
+            9.264442469429749e-07
+          ]
+        },
+        {
+          "name": "mc",
+          "family": "sampler",
+          "values": [
+            0.5315857016670374,
+            8.864584306362932,
+            28.915143730322775
+          ],
+          "stderr": [
+            0.005967442922052306,
+            0.019585108451504855,
+            0.0358493770542051
+          ],
+          "note": "Bessel(3) chart, drift-implicit, 400000 paths x 400 steps -- DOES NOT AGREE; see the frozen-variance arbiter",
+          "abs_diff": [
+            0.00411294224750447,
+            0.03776360938073253,
+            0.24468523531095343
+          ],
+          "rel_diff": [
+            0.007797449582099049,
+            0.0042419830968354055,
+            0.008391175256868853
+          ]
+        }
+      ],
+      "wall_s": 42.3,
+      "confirmed_abs_err": 2.7014955787052486e-05,
+      "confirmed_rel_err": 4.4105504583267786e-05,
+      "convention": {
+        "frozen_clock": 0.114,
+        "spots": [
+          75.0,
+          100.0,
+          125.0
+        ],
+        "closed_form": [
+          2.1556368725154242,
+          13.163940059302345,
+          29.980632263018357
+        ],
+        "local_mart_mean": [
+          74.99411393968388,
+          99.69409837890659,
+          122.77285140505266
+        ],
+        "fd2d_linear_far_field": [
+          2.1614473271380765,
+          13.469703071134706,
+          32.20764716397823
+        ],
+        "mc": [
+          2.133536504453222,
+          13.100109187462982,
+          29.866655093572746
+        ],
+        "mc_stderr": [
+          0.017026472271624953,
+          0.053185850129939614,
+          0.08823267751293987
+        ]
+      }
+    },
+    "qlsv_dntouch": {
+      "title": "Quadratic LSV, double-no-touch L=50 U=150",
+      "labels": [
+        "S75",
+        "S100",
+        "S125"
+      ],
+      "published": [
+        0.933800903110254,
+        0.914799140676374,
+        0.592983062889906
+      ],
+      "reference_abs_err": 0.0,
+      "primary_route": "fd2d-richardson",
+      "routes": [
+        {
+          "name": "fd2d",
+          "family": "grid",
+          "values": [
+            0.9337999746787684,
+            0.9148004421267552,
+            0.59299814675036
+          ],
+          "stderr": null,
+          "note": "Crank-Nicolson (800, 320, 200)",
+          "abs_diff": [
+            9.284314855806386e-07,
+            1.3014503811303868e-06,
+            1.5083860454012665e-05
+          ],
+          "rel_diff": [
+            9.942499332440875e-07,
+            1.4226624438760785e-06,
+            2.543725343604486e-05
+          ]
+        },
+        {
+          "name": "fd2d-richardson",
+          "family": "grid",
+          "values": [
+            0.9338017824385417,
+            0.9147999548930584,
+            0.5929875138678211
+          ],
+          "stderr": null,
+          "note": "two grid levels, extrapolated at order 2",
+          "abs_diff": [
+            8.793282877395114e-07,
+            8.142166844082865e-07,
+            4.450977915126941e-06
+          ],
+          "rel_diff": [
+            9.41665707123105e-07,
+            8.900496821698806e-07,
+            7.506079336288422e-06
+          ]
+        },
+        {
+          "name": "mc-bridge",
+          "family": "sampler",
+          "values": [
+            0.9341939938316195,
+            0.9152897838981651,
+            0.5946866320869426
+          ],
+          "stderr": [
+            0.00027337148432472557,
+            0.0003142357605600702,
+            0.0004165996730163843
+          ],
+          "note": "QE variance, Brownian-bridge barrier, 400000 paths x 400 steps",
+          "abs_diff": [
+            0.0003930907213655077,
+            0.0004906432217910428,
+            0.0017035691970366251
+          ],
+          "rel_diff": [
+            0.00042095774383620987,
+            0.0005363398367736512,
+            0.002872880025837959
+          ]
+        }
+      ],
+      "wall_s": 10.0,
+      "confirmed_abs_err": 4.450977915126941e-06,
+      "confirmed_rel_err": 7.506079336288422e-06
+    },
+    "hhw_eucall1": {
+      "title": "Heston-Hull-White set I (full correlation), European call K=100",
+      "labels": [
+        "S75",
+        "S100",
+        "S125"
+      ],
+      "published": [
+        37.52,
+        57.41,
+        78.58
+      ],
+      "reference_abs_err": 0.005,
+      "primary_route": "mc-bias-controlled",
+      "routes": [
+        {
+          "name": "mc",
+          "family": "sampler",
+          "values": [
+            37.55614623625332,
+            57.457046469200456,
+            78.62882158358975
+          ],
+          "stderr": [
+            0.008148424892689238,
+            0.011553359693041576,
+            0.01498087668186709
+          ],
+          "note": "full-truncation Euler, 1000000 paths x 8000 steps, two control variates",
+          "abs_diff": [
+            0.03614623625331603,
+            0.04704646920045974,
+            0.0488215835897563
+          ],
+          "rel_diff": [
+            0.0009633858276470157,
+            0.0008194821320407549,
+            0.0006212978313789298
+          ]
+        },
+        {
+          "name": "mc-coarse",
+          "family": "sampler",
+          "values": [
+            37.56157198380802,
+            57.462289958047,
+            78.63360100984596
+          ],
+          "stderr": [
+            0.00814441449019327,
+            0.011545238201607166,
+            0.014964791722200579
+          ],
+          "note": "the same at 2000 steps -- quadrupling the step count moves the answer by about its own standard error, so what is left is not the step",
+          "abs_diff": [
+            0.0415719838080193,
+            0.052289958047005314,
+            0.05360100984596272
+          ],
+          "rel_diff": [
+            0.001107995304051687,
+            0.0009108162000871855,
+            0.0006821202576477822
+          ]
+        },
+        {
+          "name": "mc-bias-controlled",
+          "family": "sampler",
+          "values": [
+            37.55047706055399,
+            57.45210090498977,
+            78.62324435248074
+          ],
+          "stderr": [
+            0.00814441449019327,
+            0.011545238201607166,
+            0.014964791722200579
+          ],
+          "note": "set II, run at the same settings, has a closed form; its measured offset is subtracted here",
+          "abs_diff": [
+            0.03047706055398436,
+            0.04210090498977337,
+            0.0432443524807411
+          ],
+          "rel_diff": [
+            0.0008122883942959583,
+            0.0007333374845806196,
+            0.000550322632740406
+          ]
+        }
+      ],
+      "wall_s": 642.0,
+      "confirmed_abs_err": 0.0432443524807411,
+      "confirmed_rel_err": 0.0008122883942959583
+    },
+    "hhw_eucall2": {
+      "title": "Heston-Hull-White set II (zero rate correlation), European call K=100",
+      "labels": [
+        "S75",
+        "S100",
+        "S125"
+      ],
+      "published": [
+        35.43789687628535,
+        54.7280653082295,
+        75.39759683499362
+      ],
+      "reference_abs_err": 0.0,
+      "primary_route": "hhw-cf",
+      "routes": [
+        {
+          "name": "hhw-cf",
+          "family": "quadrature",
+          "values": [
+            35.43789687628529,
+            54.72806530822947,
+            75.39759683499356
+          ],
+          "stderr": null,
+          "note": "the Hull-White factor folded into Lewis' integrand",
+          "abs_diff": [
+            5.684341886080802e-14,
+            3.552713678800501e-14,
+            5.684341886080802e-14
+          ],
+          "rel_diff": [
+            1.604029129021113e-15,
+            6.491575499319316e-16,
+            7.53915525785376e-16
+          ]
+        },
+        {
+          "name": "mc",
+          "family": "sampler",
+          "values": [
+            35.44899179953933,
+            54.7382543612867,
+            75.40795349235879
+          ],
+          "stderr": [
+            0.008284128371457158,
+            0.01182053179013954,
+            0.015308771449546812
+          ],
+          "note": "full-truncation Euler, 1000000 paths x 2000 steps, two control variates",
+          "abs_diff": [
+            0.011094923253978095,
+            0.010189053057196418,
+            0.010356657365164779
+          ],
+          "rel_diff": [
+            0.00031308074778564794,
+            0.00018617601407635147,
+            0.00013736057646280357
+          ]
+        }
+      ],
+      "wall_s": 0.0,
+      "confirmed_abs_err": 5.684341886080802e-14,
+      "confirmed_rel_err": 1.604029129021113e-15
+    }
+  },
+  "shifted": {
+    "hst_eucall_shift": {
+      "title": "Heston, European call K=100, V0 shifted",
+      "labels": [
+        "S75",
+        "S100",
+        "S125"
+      ],
+      "of": "hst_eucall",
+      "shift": {
+        "v0": [
+          0.114,
+          0.164
+        ]
+      },
+      "value": [
+        1.3248960054854848,
+        10.300169129637311,
+        29.425823277859436
+      ],
+      "abs_err_rule": "exact",
+      "reference_abs_err": 0.0,
+      "primary_route": "heston-cf",
+      "routes": [
+        {
+          "name": "heston-cf",
+          "family": "quadrature",
+          "values": [
+            1.3248960054854848,
+            10.300169129637311,
+            29.425823277859436
+          ],
+          "stderr": null,
+          "note": "Lewis single integral, exact up to quadrature -- the same route that reproduced the published sibling to 5.3e-14"
+        },
+        {
+          "name": "fd2d",
+          "family": "grid",
+          "values": [
+            1.3248517434115126,
+            10.300077527760632,
+            29.42576603330476
+          ],
+          "stderr": null,
+          "note": "Crank-Nicolson (800, 320, 200), as corroboration"
+        }
+      ],
+      "wall_s": 11.9,
+      "rule_validated_on_sibling": {
+        "sibling": "hst_eucall",
+        "rule": "exact",
+        "predicted": 0.0,
+        "actual": 5.3290705182007514e-14
+      }
+    },
+    "hst_dntouch_shift": {
+      "title": "Heston, double-no-touch L=50 U=150, V0 shifted",
+      "labels": [
+        "S75",
+        "S100",
+        "S125"
+      ],
+      "of": "hst_dntouch",
+      "shift": {
+        "v0": [
+          0.114,
+          0.164
+        ]
+      },
+      "value": [
+        0.7909897214161576,
+        0.8600402133394556,
+        0.5979649199336675
+      ],
+      "abs_err_rule": "grid-self",
+      "reference_abs_err": 5.503573553111707e-06,
+      "primary_route": "fd2d-richardson",
+      "routes": [
+        {
+          "name": "fd2d-richardson",
+          "family": "grid",
+          "values": [
+            0.7909897214161576,
+            0.8600402133394556,
+            0.5979649199336675
+          ],
+          "stderr": null,
+          "note": "two grid levels, extrapolated at order 2"
+        },
+        {
+          "name": "fd2d",
+          "family": "grid",
+          "values": [
+            0.7909880368633603,
+            0.8600397764221894,
+            0.5979704235072206
+          ],
+          "stderr": null,
+          "note": "Crank-Nicolson (800, 320, 200)"
+        },
+        {
+          "name": "mc-bridge",
+          "family": "sampler",
+          "values": [
+            0.7919997050665382,
+            0.8604170513624113,
+            0.5993408767987535
+          ],
+          "stderr": [
+            0.00042950155615740685,
+            0.0004074663505098013,
+            0.0004421781350145913
+          ],
+          "note": "QE variance, Brownian-bridge barrier, 400000 paths x 400 steps"
+        }
+      ],
+      "wall_s": 107.2,
+      "rule_validated_on_sibling": {
+        "sibling": "hst_dntouch",
+        "rule": "grid-self",
+        "predicted": 4.925526289611959e-06,
+        "actual": 3.753206885948046e-06
+      }
+    },
+    "sabr_set2_shift": {
+      "title": "SABR set II, European call, sigma0 shifted",
+      "labels": [
+        "K_lo",
+        "K_mid",
+        "K_hi"
+      ],
+      "of": "sabr_set2",
+      "shift": {
+        "sig0": [
+          0.4,
+          0.34
+        ]
+      },
+      "value": [
+        0.04994189535579002,
+        0.04334410065842167,
+        0.03529611249040668
+      ],
+      "abs_err_rule": "family-spread",
+      "reference_abs_err": 6.266815320690733e-06,
+      "primary_route": "mc-2f",
+      "routes": [
+        {
+          "name": "mc-2f",
+          "family": "sampler",
+          "values": [
+            0.04994189535579002,
+            0.04334410065842167,
+            0.03529611249040668
+          ],
+          "stderr": [
+            9.575689826279575e-06,
+            1.274556900932176e-05,
+            1.666473356405997e-05
+          ],
+          "note": "two-factor absorbed CEV, 1000000 paths x 6400 steps, martingale control"
+        },
+        {
+          "name": "fd2d",
+          "family": "grid",
+          "values": [
+            0.04994603803347732,
+            0.04335036747374236,
+            0.035302181922502736
+          ],
+          "stderr": null,
+          "note": "Crank-Nicolson in (S, ln sigma), (800, 400, 200)"
+        }
+      ],
+      "wall_s": 421.7,
+      "rule_validated_on_sibling": {
+        "sibling": "sabr_set2",
+        "rule": "family-spread",
+        "predicted": 5.21542872081171e-06,
+        "actual": 3.524721493564087e-06
+      }
+    }
+  },
+  "calibration": {
+    "sabr_set1": {
+      "slug": "sde_sabr_cev_call_i",
+      "decision": "the CEV boundary at S = 0",
+      "labels": [
+        "price_K1",
+        "price_K2",
+        "price_K3"
+      ],
+      "paths": 4000000,
+      "steps": 400,
+      "gate": [
+        0.004,
+        0.004,
+        0.004
+      ],
+      "schemes": [
+        {
+          "name": "euler-absorbing",
+          "role": "correct",
+          "values": [
+            0.22163105516518036,
+            0.19405810562906525,
+            0.16642253426877515
+          ],
+          "rel_err": [
+            0.0011195896430375072,
+            0.0011422822786122534,
+            0.0010931107136547494
+          ],
+          "rel_stderr": [
+            0.000611838182124714,
+            0.0006876364659054333,
+            0.000780447971315791
+          ],
+          "gate_ratio": [
+            0.2798974107593768,
+            0.2855705696530633,
+            0.27327767841368733
+          ],
+          "wall_s": 69.6
+        },
+        {
+          "name": "euler-reflecting",
+          "role": "wrong",
+          "values": [
+            0.22312914825660038,
+            0.19536438764314637,
+            0.16755114797522105
+          ],
+          "rel_err": [
+            0.007886558016723704,
+            0.007881367732617627,
+            0.007882139682263494
+          ],
+          "rel_stderr": [
+            0.0006147941576389981,
+            0.0006910561816702446,
+            0.0007845060599346337
+          ],
+          "gate_ratio": [
+            1.971639504180926,
+            1.9703419331544065,
+            1.9705349205658733
+          ],
+          "wall_s": 68.9
+        },
+        {
+          "name": "lamperti-absorbing",
+          "role": "recorded",
+          "values": [
+            0.221484150866882,
+            0.19393748327820207,
+            0.16633375868209654
+          ],
+          "rel_err": [
+            0.0004560148984258167,
+            0.0005199937364999721,
+            0.0005590927177505029
+          ],
+          "rel_stderr": [
+            0.00015296391112928052,
+            0.00017615678057391913,
+            0.00020493255673856845
+          ],
+          "gate_ratio": [
+            0.11400372460645417,
+            0.129998434124993,
+            0.1397731794376257
+          ],
+          "wall_s": 90.3
+        }
+      ],
+      "separates": true,
+      "wrong_values_missed": 3
+    },
+    "sabr_set2": {
+      "slug": "sde_sabr_cev_call_ii",
+      "decision": "the CEV boundary at S = 0",
+      "labels": [
+        "price_K1",
+        "price_K2",
+        "price_K3"
+      ],
+      "paths": 1000000,
+      "steps": 2500,
+      "gate": [
+        0.01,
+        0.01,
+        0.01
+      ],
+      "schemes": [
+        {
+          "name": "lamperti-absorbing",
+          "role": "correct",
+          "values": [
+            0.05246487761587779,
+            0.04660110466970271,
+            0.03930192076812639
+          ],
+          "rel_err": [
+            0.00027767234296936544,
+            0.0003295251712429381,
+            0.0002659649785146131
+          ],
+          "rel_stderr": [
+            0.00018849161243861178,
+            0.0002839332920473371,
+            0.0004434133724894979
+          ],
+          "gate_ratio": [
+            0.027767234296936543,
+            0.03295251712429381,
+            0.026596497851461308
+          ],
+          "wall_s": 137.4
+        },
+        {
+          "name": "euler-reflecting",
+          "role": "wrong",
+          "values": [
+            9.37729754350004,
+            9.365487491554857,
+            9.350871305674795
+          ],
+          "rel_err": [
+            177.7843941685087,
+            200.03758745262493,
+            236.98730767240812
+          ],
+          "rel_stderr": [
+            39.859226762082116,
+            44.877001259593705,
+            53.20821175067254
+          ],
+          "gate_ratio": [
+            17778.43941685087,
+            20003.758745262494,
+            23698.730767240813
+          ],
+          "wall_s": 105.3
+        },
+        {
+          "name": "euler-absorbing",
+          "role": "recorded",
+          "values": [
+            0.05292310397792535,
+            0.04702312954533825,
+            0.039680415390471124
+          ],
+          "rel_err": [
+            0.0090140617078881,
+            0.00938862251340148,
+            0.00989896207533512
+          ],
+          "rel_stderr": [
+            0.0016374671451973367,
+            0.001797648160619798,
+            0.0020549895727020855
+          ],
+          "gate_ratio": [
+            0.90140617078881,
+            0.938862251340148,
+            0.989896207533512
+          ],
+          "wall_s": 106.6
+        }
+      ],
+      "separates": true,
+      "wrong_values_missed": 3
+    },
+    "hst_eucall": {
+      "slug": "sde_heston_call_feller",
+      "decision": "the variance below zero",
+      "labels": [
+        "price_S75",
+        "price_S100",
+        "price_S125"
+      ],
+      "paths": 2000000,
+      "steps": 500,
+      "gate": [
+        0.015,
+        0.004,
+        0.002
+      ],
+      "schemes": [
+        {
+          "name": "euler-truncation",
+          "role": "correct",
+          "values": [
+            0.9097983217635506,
+            9.05507710915942,
+            28.522343233679152
+          ],
+          "rel_err": [
+            0.001426075303181845,
+            0.0009315039077886796,
+            0.0002650145883800787
+          ],
+          "rel_stderr": [
+            0.002939941874417407,
+            0.0007367561514302354,
+            0.0003581559918535635
+          ],
+          "gate_ratio": [
+            0.09507168687878967,
+            0.23287597694716988,
+            0.13250729419003934
+          ],
+          "wall_s": 49.4
+        },
+        {
+          "name": "euler-reflection",
+          "role": "wrong",
+          "values": [
+            1.0929955599843282,
+            9.76572715256189,
+            28.87998152936922
+          ],
+          "rel_err": [
+            0.20307350296846918,
+            0.07948544752638706,
+            0.012807219558180032
+          ],
+          "rel_stderr": [
+            0.0031447375978089576,
+            0.00076145402229197,
+            0.0003536388498542488
+          ],
+          "gate_ratio": [
+            13.53823353123128,
+            19.871361881596766,
+            6.403609779090016
+          ],
+          "wall_s": 49.3
+        }
+      ],
+      "separates": true,
+      "wrong_values_missed": 3
+    },
+    "hst_dntouch": {
+      "slug": "sde_heston_dnt",
+      "decision": "barrier monitoring",
+      "labels": [
+        "no_touch_S75",
+        "no_touch_S100",
+        "no_touch_S125"
+      ],
+      "paths": 400000,
+      "steps": 500,
+      "gate": [
+        0.006,
+        0.006,
+        0.006
+      ],
+      "schemes": [
+        {
+          "name": "qe-bridge",
+          "role": "correct",
+          "values": [
+            0.8353106913508048,
+            0.899987023773744,
+            0.6698073093149132
+          ],
+          "rel_err": [
+            0.0009245389915151694,
+            0.0001752894310825557,
+            0.0021055260736665515
+          ],
+          "rel_stderr": [
+            0.0004752898044623336,
+            0.00038684538206515043,
+            0.000670553770493201
+          ],
+          "gate_ratio": [
+            0.1540898319191949,
+            0.029214905180425948,
+            0.35092101227775857
+          ],
+          "wall_s": 124.5
+        },
+        {
+          "name": "qe-discrete",
+          "role": "wrong",
+          "values": [
+            0.84225125,
+            0.90454875,
+            0.6828575
+          ],
+          "rel_err": [
+            0.009241175589396024,
+            0.005244835689116191,
+            0.021630049052098366
+          ],
+          "rel_stderr": [
+            0.00047083383732919907,
+            0.0003815030327859336,
+            0.0006756953818871833
+          ],
+          "gate_ratio": [
+            1.5401959315660039,
+            0.8741392815193652,
+            3.6050081753497274
+          ],
+          "wall_s": 29.6
+        }
+      ],
+      "separates": true,
+      "wrong_values_missed": 2
+    },
+    "qlsv_dntouch": {
+      "slug": "sde_qlsv_dnt",
+      "decision": "barrier monitoring",
+      "labels": [
+        "no_touch_S75",
+        "no_touch_S100",
+        "no_touch_S125"
+      ],
+      "paths": 400000,
+      "steps": 500,
+      "gate": [
+        0.008,
+        0.008,
+        0.008
+      ],
+      "schemes": [
+        {
+          "name": "qe-bridge",
+          "role": "correct",
+          "values": [
+            0.93389770285236,
+            0.9149236827081016,
+            0.5951196504960192
+          ],
+          "rel_err": [
+            0.0001036620780549185,
+            0.00013614139562433705,
+            0.0036031174241310834
+          ],
+          "rel_stderr": [
+            0.0002935201174238319,
+            0.0003445847763165557,
+            0.0007042654299841555
+          ],
+          "gate_ratio": [
+            0.012957759756864811,
+            0.01701767445304213,
+            0.4503896780163854
+          ],
+          "wall_s": 125.1
+        },
+        {
+          "name": "qe-discrete",
+          "role": "wrong",
+          "values": [
+            0.936735,
+            0.91935875,
+            0.6128075
+          ],
+          "rel_err": [
+            0.0031421011480854896,
+            0.004984273728388886,
+            0.03343170884760092
+          ],
+          "rel_stderr": [
+            0.0002894449308955308,
+            0.0003393026169963599,
+            0.0007193066044630042
+          ],
+          "gate_ratio": [
+            0.3927626435106862,
+            0.6230342160486106,
+            4.1789636059501145
+          ],
+          "wall_s": 33.4
+        }
+      ],
+      "separates": true,
+      "wrong_values_missed": 1
+    },
+    "hhw_eucall1": {
+      "slug": "sde_hhw_call_corr",
+      "decision": "the variance below zero",
+      "labels": [
+        "price_S75",
+        "price_S100",
+        "price_S125"
+      ],
+      "paths": 1000000,
+      "steps": 2500,
+      "gate": [
+        0.003,
+        0.003,
+        0.003
+      ],
+      "schemes": [
+        {
+          "name": "euler-truncation",
+          "role": "correct",
+          "values": [
+            37.55150958791714,
+            57.44251690146919,
+            78.6021350032604
+          ],
+          "rel_err": [
+            0.0008398077803074415,
+            0.0005663978656887951,
+            0.0002816874937694348
+          ],
+          "rel_stderr": [
+            0.0003097119358923726,
+            0.00030454852792427897,
+            0.00030409880574273066
+          ],
+          "gate_ratio": [
+            0.2799359267691472,
+            0.1887992885629317,
+            0.09389583125647827
+          ],
+          "wall_s": 150.7
+        },
+        {
+          "name": "euler-reflection",
+          "role": "wrong",
+          "values": [
+            46.740623101417256,
+            68.2233160471933,
+            90.51833356426677
+          ],
+          "rel_err": [
+            0.2457522148565366,
+            0.18835248296800727,
+            0.15192585345210957
+          ],
+          "rel_stderr": [
+            0.0007930269296831495,
+            0.000703422268735686,
+            0.0006516871560546616
+          ],
+          "gate_ratio": [
+            81.91740495217886,
+            62.78416098933576,
+            50.64195115070319
+          ],
+          "wall_s": 143.3
+        }
+      ],
+      "separates": true,
+      "wrong_values_missed": 3
+    },
+    "hhw_eucall2": {
+      "slug": "sde_hhw_call_zerocorr",
+      "decision": "the variance below zero",
+      "labels": [
+        "price_S75",
+        "price_S100",
+        "price_S125"
+      ],
+      "paths": 1000000,
+      "steps": 2500,
+      "gate": [
+        0.003,
+        0.003,
+        0.003
+      ],
+      "schemes": [
+        {
+          "name": "euler-truncation",
+          "role": "correct",
+          "values": [
+            35.44514203210267,
+            54.73534062294457,
+            75.40287662151579
+          ],
+          "rel_err": [
+            0.0002044465517413689,
+            0.0001329357190701272,
+            7.002592580929394e-05
+          ],
+          "rel_stderr": [
+            0.0003783883854023899,
+            0.0003648502126863314,
+            0.00035703260210354955
+          ],
+          "gate_ratio": [
+            0.0681488505804563,
+            0.04431190635670907,
+            0.023341975269764646
+          ],
+          "wall_s": 137.2
+        },
+        {
+          "name": "euler-reflection",
+          "role": "wrong",
+          "values": [
+            40.28427580697326,
+            60.50763493880655,
+            81.84963765131593
+          ],
+          "rel_err": [
+            0.13675695675752855,
+            0.10560522463248788,
+            0.08557356052663712
+          ],
+          "rel_stderr": [
+            0.0008257504600028346,
+            0.0007388275774957101,
+            0.0006860610774935366
+          ],
+          "gate_ratio": [
+            45.58565225250952,
+            35.20174154416262,
+            28.524520175545703
+          ],
+          "wall_s": 141.3
+        }
+      ],
+      "separates": true,
+      "wrong_values_missed": 3
+    },
+    "hst_eucall_shift": {
+      "slug": "sde_heston_call_hivar",
+      "decision": "the variance below zero",
+      "labels": [
+        "price_S75",
+        "price_S100",
+        "price_S125"
+      ],
+      "paths": 2000000,
+      "steps": 500,
+      "gate": [
+        0.015,
+        0.004,
+        0.002
+      ],
+      "schemes": [
+        {
+          "name": "euler-truncation",
+          "role": "correct",
+          "values": [
+            1.3267935679917384,
+            10.311094476281154,
+            29.43699651954926
+          ],
+          "rel_err": [
+            0.0014322350572400478,
+            0.0010606958493920883,
+            0.0003797087199334839
+          ],
+          "rel_stderr": [
+            0.002495940622027849,
+            0.0007301667442360567,
+            0.00037525976906628995
+          ],
+          "gate_ratio": [
+            0.09548233714933653,
+            0.2651739623480221,
+            0.18985435996674194
+          ],
+          "wall_s": 50.3
+        },
+        {
+          "name": "euler-reflection",
+          "role": "wrong",
+          "values": [
+            1.5201927820342285,
+            10.877594686245157,
+            29.744106990713238
+          ],
+          "rel_err": [
+            0.1474053629418111,
+            0.0560598131293188,
+            0.010816476053986388
+          ],
+          "rel_stderr": [
+            0.0026240395219966194,
+            0.0007479774004841656,
+            0.00037074750847383893
+          ],
+          "gate_ratio": [
+            9.82702419612074,
+            14.0149532823297,
+            5.408238026993194
+          ],
+          "wall_s": 47.7
+        }
+      ],
+      "separates": true,
+      "wrong_values_missed": 3
+    },
+    "hst_dntouch_shift": {
+      "slug": "sde_heston_dnt_hivar",
+      "decision": "barrier monitoring",
+      "labels": [
+        "no_touch_S75",
+        "no_touch_S100",
+        "no_touch_S125"
+      ],
+      "paths": 400000,
+      "steps": 500,
+      "gate": [
+        0.006,
+        0.006,
+        0.006
+      ],
+      "schemes": [
+        {
+          "name": "qe-bridge",
+          "role": "correct",
+          "values": [
+            0.7917160788988779,
+            0.8607235647130027,
+            0.5993940315100846
+          ],
+          "rel_err": [
+            0.0009182894076294258,
+            0.0007945574671372016,
+            0.002389958890189831
+          ],
+          "rel_stderr": [
+            0.0005428602917119214,
+            0.000472976859200755,
+            0.0007406995264095299
+          ],
+          "gate_ratio": [
+            0.1530482346049043,
+            0.13242624452286694,
+            0.39832648169830515
+          ],
+          "wall_s": 113.4
+        },
+        {
+          "name": "qe-discrete",
+          "role": "wrong",
+          "values": [
+            0.80006125,
+            0.86680125,
+            0.6144775
+          ],
+          "rel_err": [
+            0.011468579601263322,
+            0.007861302943372755,
+            0.027614630082587858
+          ],
+          "rel_stderr": [
+            0.0005391586384195887,
+            0.000467505067177734,
+            0.0007525297657627999
+          ],
+          "gate_ratio": [
+            1.911429933543887,
+            1.3102171572287926,
+            4.602438347097976
+          ],
+          "wall_s": 24.7
+        }
+      ],
+      "separates": true,
+      "wrong_values_missed": 3
+    },
+    "sabr_set2_shift": {
+      "slug": "sde_sabr_cev_call_ii_lowvol",
+      "decision": "the CEV boundary at S = 0",
+      "labels": [
+        "price_K1",
+        "price_K2",
+        "price_K3"
+      ],
+      "paths": 1000000,
+      "steps": 2500,
+      "gate": [
+        0.01,
+        0.01,
+        0.01
+      ],
+      "schemes": [
+        {
+          "name": "lamperti-absorbing",
+          "role": "correct",
+          "values": [
+            0.04996079567473522,
+            0.04336547822010924,
+            0.035314544084733224
+          ],
+          "rel_err": [
+            0.00037844616850344823,
+            0.000493205796471424,
+            0.0005221989909385982
+          ],
+          "rel_stderr": [
+            0.00019203904563541515,
+            0.00029461753156900897,
+            0.00047348851850448993
+          ],
+          "gate_ratio": [
+            0.03784461685034482,
+            0.0493205796471424,
+            0.052219899093859816
+          ],
+          "wall_s": 138.6
+        },
+        {
+          "name": "euler-reflecting",
+          "role": "wrong",
+          "values": [
+            6.781493393693534,
+            6.769783153193428,
+            6.755480301899618
+          ],
+          "rel_err": [
+            134.78766575400547,
+            155.18695624909853,
+            190.39445749827905
+          ],
+          "rel_stderr": [
+            30.244734750806145,
+            34.848556727300135,
+            42.794495271959484
+          ],
+          "gate_ratio": [
+            13478.766575400547,
+            15518.695624909853,
+            19039.445749827904
+          ],
+          "wall_s": 166.5
+        },
+        {
+          "name": "euler-absorbing",
+          "role": "recorded",
+          "values": [
+            0.05035249208878687,
+            0.04372456158395294,
+            0.03563346569914667
+          ],
+          "rel_err": [
+            0.008221488793561523,
+            0.008777686461406508,
+            0.009557800702037093
+          ],
+          "rel_stderr": [
+            0.001493236404808756,
+            0.0016758562946550958,
+            0.0019786134405045306
+          ],
+          "gate_ratio": [
+            0.8221488793561522,
+            0.8777686461406509,
+            0.9557800702037094
+          ],
+          "wall_s": 118.3
+        }
+      ],
+      "separates": true,
+      "wrong_values_missed": 3
+    }
+  }
+}

@@ -5,14 +5,21 @@ solution, the evaluator grades against it — and that is circular: a formulator
 wrong solution can still be scored 10/10. This directory closes the loop with a problem set whose
 answer keys are authored here, validated here, and never visible to an agent.
 
-Two suites that run separately:
+Three suites that run separately:
 
 - **The main benchmark — 49 problems** whose solution has a closed form (or machine-precision
   moments). Runs by default.
-- **The no-closed-form suite — 7 problems** (`--no-closed-form`) with *no formula to transcribe*,
-  which is where a pipeline that scores itself against a closed form has nothing to lean on. Kept
-  out of the default selection so the main benchmark's baseline denominators stay comparable
-  across the C0/C1/C2 sweep; `--all-problems` runs both.
+- **The no-closed-form suite — 7 problems** (`--suite no-closed-form`) with *no formula to
+  transcribe*, which is where a pipeline that scores itself against a closed form has nothing to
+  lean on.
+- **The externally anchored suite — 10 problems** (`--suite benchop`), all SDE, whose answer keys
+  were published by a third party in 2018. Seven are graded against those published values; the
+  other three are the same problems with an initial condition moved, graded against values this
+  repo computes, so that a solver which recalls rather than solves scores well on the first set
+  and badly on the second.
+
+Each suite carries its own C0/C1/C2 baseline, measured over its own denominator, so they are kept
+apart by default and never folded together silently; `--all-problems` runs all three.
 
 **Every problem is independently checkable** — by exact ground truth, a discretization-free
 Monte-Carlo reference, a harness-owned high-resolution reference field, a scalar quantity of
@@ -46,23 +53,25 @@ directory rather than only the winner (`--skip-plans` to skip), which is what pr
 
 ```
 benchmark/
-├── problems.py               the 56 problems + independently-authored ground truth
+├── problems.py               the 66 problems + independently-authored ground truth
 ├── setup.py                  write workspace/{slug}/problem.md (+ the solver contract) and manifest.json
 ├── run.py                    PIPELINE runner: setup → conductor → verify → results → report
 ├── verify.py                 independent verification (SDE + PDE); --sandbox for untrusted solvers
 ├── runner.py                 sandboxed subprocess execution (timeout, mem cap, import policy)
 ├── validate_ground_truth.py  checks the ANSWER KEYS, by routes independent of problems.py
 ├── make_references.py        OFFLINE: build the harness-owned reference fields
+├── benchop.py                OFFLINE: re-derive the 24 published BENCHOP-SLV reference values,
+│                            and --calibrate each gate against a correct and a wrong scheme
 ├── oneshot.py                BASELINE runner: C0 (one-shot) / C1 (single agent + tools)
 ├── baseline_select.py        pick a matched baseline's answer with the conductor's own rule
 ├── compare.py                head-to-head: pipeline vs baselines (accuracy + cost)
 ├── report.py                 REPORT.md generator (verdicts, discrepancies, tiers)
-├── manifest.json             generated: the authoritative per-problem record
+├── manifest.json             generated: the authoritative per-problem record (suite included)
 ├── pipeline-settings.json    the deny rules that keep this directory out of the pipeline's reach
 ├── design/                   the suite's own design record — plans, candidate routes, lit reviews
-├── references/               generated: {slug}.npz reference fields (never read by the pipeline)
+├── references/               generated: {slug}.npz reference fields + benchop_slv.json (never read by the pipeline)
 ├── results/                  generated run artifacts + the committed REPORT.md
-└── tests/                    115 tests on the harness itself; no model calls, no workspace
+└── tests/                    464 tests on the harness itself; no model calls, no workspace
 ```
 
 `benchmark/` is a directory of scripts, not a package: each module puts its own directory on
@@ -81,9 +90,10 @@ specifications — [`docs/`](../docs/) holds the same kind of thing for the pipe
 | [design/HARDNUMERICS_IMPORT_LIST.md](design/HARDNUMERICS_IMPORT_LIST.md) <br> *161 lines* | The 13 problems imported from the HardNumerics survey, with what each one stresses |
 | [design/hard_sde_candidates_from_lit.md](design/hard_sde_candidates_from_lit.md) <br> *157 lines* | The numerical-SDE literature review the tier-3 SDE weighting comes from |
 
-## The problem set (56)
+## The problem set (66)
 
 **Main benchmark: 49** (27 PDE, 22 SDE). **No-closed-form suite: 7** (6 PDE, 1 SDE).
+**Externally anchored suite: 10** (0 PDE, 10 SDE).
 
 | | Tier 1 | Tier 2 | Tier 3 | Total |
 |---|---|---|---|---|
@@ -112,6 +122,40 @@ limits. `manifest.json` is the authoritative listing; `run.py --list` prints the
 | `pde_schrodinger_eigen_2d` | semi-analytic exact + functional | an eigenproblem: a number *and* a mode. The ground state is negative, so the lowest eigenvalue is not the smallest in magnitude |
 | `sde_double_well_langevin` | semi-analytic exact | no closed form for the transient or its moments; the truth is a Kolmogorov-equation solve, declared `exact` because it evaluates as an ordinary `moments` callable. The mean at T is the fraction of paths that have not crossed the barrier, and a first-order weak scheme misprices the escape rate by O(k·dt) |
 
+**The externally anchored suite** — ten SDE problems, seven of whose answer keys were published
+by a third party in 2018 and re-derived here before being trusted
+([`benchop.py`](benchop.py) → `references/benchop_slv.json`), and three *controls* at a shifted
+initial condition whose keys this repo computes:
+
+| Slug | Key | What makes it hard |
+|---|---|---|
+| `sde_sabr_cev_call_i` | published | CEV exponent ½, so the origin is attainable and **absorbing**; a scheme that reflects or goes negative is solving something else |
+| `sde_sabr_cev_call_ii` | published | the same over ten years at vol-of-vol 0.8, where absorption is common and the volatility spans orders of magnitude. The suite's loosest gate (1e-2), because `0.04/T` forces 2500 steps and so caps the paths |
+| `sde_heston_call_feller` | published | 2κη is a fifth of σ²: the variance sits on zero. Three values spanning 31×, each gated at what Monte Carlo resolves for *it* — 1.5e-2, 4e-3, 2e-3 |
+| `sde_heston_dnt` | published | a **continuously monitored** two-sided barrier. Per-step monitoring is biased high at O(√dt) — at the shipped 400k × 500 it reaches 3.6× the 6e-3 gate where a Brownian bridge reaches 0.35× |
+| `sde_qlsv_dnt` | published | the same corridor with a local volatility quadratic in S, where the Lamperti chart is −100/S rather than the logarithm and the bridge is only approximate. Per-step monitoring misses the gate on one of the three spots here against two on the Heston corridor |
+| `sde_hhw_call_corr` | published ±5e-3 | three correlated factors, a stochastic discount factor and a Feller ratio of 0.04. The only value in the suite this repo cannot confirm to the precision its source claims |
+| `sde_hhw_call_zerocorr` | published | the same with the rate decorrelated, which removes none of the difficulty and admits an independent check |
+| `sde_heston_call_hivar` · `sde_heston_dnt_hivar` · `sde_sabr_cev_call_ii_lowvol` | **harness** | the controls. Identical model, payoff, horizon and Feller ratio; only the initial variance or volatility moves, by enough to shift every answer 4.8–35× its own gate. A solver that recalled a published constant scores well on the sibling and badly here |
+
+Nothing in those statements names the benchmark, quotes a reference value, or says which three are
+the controls — a model warned off the memorized value would make the measurement come back clean
+for the wrong reason.
+
+**Every gate in this suite is calibrated both ways.** The repo's rule is that a correct scheme
+must clear a gate at the resolution the problem ships with and a plausible wrong one must fail it,
+and `benchop.py --calibrate` measures both for all ten — at the path count the entry declares and
+the step count `sde_verify_dt` leaves it at, with the two schemes differing by exactly one
+decision, so what separates them is that decision. The decisions are the CEV boundary at S = 0
+(absorb or reflect), the variance below zero (truncate or reflect) and barrier monitoring
+(a Brownian bridge or once per step). Results live in `references/benchop_slv.json` under
+`calibration` and are summarised in [plan-benchop-slv.md](../docs/plan-benchop-slv.md) step 8;
+`validate_ground_truth.py` checks that each stored calibration still refers to the gate its entry
+declares today. The narrowest separation is SABR set I, at 0.29× the gate against 1.97×. One
+qualification is recorded rather than smoothed over: on SABR set II a plain absorbing Euler in S
+lands at 0.90–0.99× of the gate, so that gate separates a wrong scheme decisively and a merely
+under-resolved one not at all.
+
 **SDE tier 3 — hard-literature additions:**
 
 | Slug | Route | What makes it hard |
@@ -127,7 +171,7 @@ limits. `manifest.json` is the authoritative listing; `run.py --list` prints the
 
 Every reference is authored in [`problems.py`](problems.py) and cross-checked by
 [`validate_ground_truth.py`](validate_ground_truth.py) — never the formulator's. Three declared
-routes, over the 56 problems: **exact 48 · reference 6 · stability 2**.
+routes, over the 66 problems: **exact 58 · reference 6 · stability 2**.
 
 - **exact** (48) — closed-form or machine-precision moments. SDE moments are checked against
   high-accuracy integration of the moment ODEs derived from the SDE by Itô (independent of the
@@ -145,6 +189,20 @@ routes, over the 56 problems: **exact 48 · reference 6 · stability 2**.
 - **stability** (2) — for blow-up and domain stress tests with no ground truth at all
   (`has_ground_truth=False`), the independent check is only that a correct scheme stays finite and
   in-domain, which is exactly what a naive scheme gets wrong.
+- **published** — the answer key was computed by somebody else, before this project existed.
+  The 24 BENCHOP-SLV reference values are the only ones of this kind, and they close the one gap
+  the other three routes cannot: `problems.py` holds a key the pipeline cannot read, but that key
+  and the pipeline share an author and a repo. A published number does not.
+
+**A published number is still derived before it is trusted**, because a transcribed constant is
+only as good as the reading of the problem it came from. [`benchop.py`](benchop.py) re-derives
+every one of the 24 from the published parameters by at least one independent route, and by two
+different method families — a quadrature and a grid, or a grid and a sampler — wherever no closed
+form exists, so that a shared mistake has to be made twice in two different languages. What it
+writes to `references/benchop_slv.json` is three separate numbers per value: the published figure,
+the uncertainty *that figure itself* carries, and how closely this repo reproduced it. Only the
+second belongs in `reference_abs_err`; conflating it with the third would widen a gate because of
+our own effort rather than because of the answer key's precision.
 
 Two rules make the reference route honest. The pass tolerance is widened to
 `REFERENCE_TOL_FACTOR = 3.0` times the reference's own error, so the answer key's error can never
@@ -153,9 +211,44 @@ fail a correct solver — the same rule the SDE side applies to Monte-Carlo stan
 reference whose accuracy nobody established is an answer key, not ground truth.
 
 A problem may also declare `functional_truth`, where the answer is a scalar quantity of interest
-(an eigenvalue) rather than a field, and `diagnostics` with `gate=True` for structural checks —
-mass conservation, a divergence-free constraint, non-triviality. A structural gate is never the
-only check, because a wrong-but-conservative scheme passes it.
+(an eigenvalue, an option price) rather than a field, and `diagnostics` with `gate=True` for
+structural checks — mass conservation, a divergence-free constraint, non-triviality. A structural
+gate is never the only check, because a wrong-but-conservative scheme passes it.
+
+**A functional is gated relatively, floored per value.** `functional_tol` is a relative tolerance,
+because relative error is the more uniform measure across a problem whose values span 30× — but a
+reference *number* is usually known to an **absolute** precision instead: a published figure
+rounded to a digit, a quadrature bound, a Monte-Carlo standard error. A problem declares that as
+`reference_abs_err` (one number, or `{name: abs_err}`), and each value's gate becomes
+`max(functional_tol, 3 × abs_err / |ref|)`. The factor is `REFERENCE_TOL_FACTOR` again, and the
+floor is taken per value because one absolute uncertainty is a different relative precision at
+every value: ±0.005 is 1.3e-4 relative at 37.52 and 0.13 at 0.0393. It only ever loosens. The
+record carries the relative error, the absolute error and `functional_tol_used` — the gate each
+value was actually held to — so a near-threshold result can be read without re-deriving the rule.
+
+**On the SDE side a functional is also checked at two path counts.** The route runs on either
+problem type — an SDE problem may carry `functional_truth` beside its terminal moments, as
+independent gates, or instead of them, since `moments` is no longer required. What the SDE side
+needs and the PDE side does not is a defence against a solver that simply returns the published
+number: the 2-grid order check already fails a constant, and a price graded from a single run
+would not notice one. So `solve_sde` is called a second time at `functional_level_paths`
+(default `num_paths // 4`), and the two reported values must **differ** — two Monte-Carlo
+estimates at different sample sizes do — and must agree within
+`tol_abs × (1 + √(n_graded/n_coarse))`, which is 3 × `tol_abs` at the default quarter because a
+standard error falls as `1/√n`. The band is symmetric: nothing requires the finer run to be the
+more accurate one, because these curves were measured non-monotone at this suite's path counts.
+Only *constant* and *inconsistent* fail; a crashed coarse solve is recorded as `not_run` and
+leaves the verdict alone, so a flaky sandbox cannot fail a correct solver.
+
+That coarse solve is also **the SDE side's free work-precision point** (step 9). It is a real
+(error, time) pair at a quarter of the work, in the same sandbox, and the harness was already
+timing it — so a functional-scored SDE problem emits a two-point curve for no extra compute,
+the way a PDE problem gets its two points from the order-check ladder. Measured on
+`sde_heston_dnt` with a correct solver: 100 000 paths, 15.1 s, 2.57e-3, against 400 000 paths,
+52.2 s, 2.37e-3 — four times the work for 8% of the error, because at these counts the error
+is discretization bias and not sampling noise. Where a problem carries moment gates *as well*,
+the point is recorded under `skipped` instead: the graded error is then
+max(mean, variance, functional) and the coarse level scores only the functional.
 
 ## Verdicts
 
@@ -252,7 +345,13 @@ uv run python benchmark/run.py
 # 2b. or a cheap subset / single smoke test / the hard suite
 uv run python benchmark/run.py --only sde_gbm,pde_heat_1d
 uv run python benchmark/run.py --only pde_heat_1d --timeout 1800
-uv run python benchmark/run.py --no-closed-form
+
+# anything outside the main suite must name its own results file, and is refused
+# without one -- see "Naming conventions" in results/README.md for the accident
+uv run python benchmark/run.py --suite no-closed-form \
+    --results-json benchmark/results/pipeline/no_closed_form.json
+uv run python benchmark/run.py --suite benchop \
+    --results-json benchmark/results/pipeline/benchop.json
 
 # resume after an interruption (skips problems already completed in results.json)
 uv run python benchmark/run.py --resume
@@ -263,8 +362,9 @@ uv run python benchmark/run.py --skip-run
 
 Useful `run.py` flags: `--timeout <s>` (per-problem wall clock, default 2400), `--fresh` (clear a
 workspace's prior pipeline outputs first), `--type` / `--tier` (select a slice), `--model`,
-`--results-json <path>` (write somewhere other than `results/results.json`), `--list` (preview the
-selection), `--skip-kernel` / `--skip-plans` (drop the per-problem kernel record and the
+`--results-json <path>` (write somewhere other than `results/results.json`; **required** for any
+selection that reaches outside the main suite, which both `run.py` and `oneshot.py` refuse to
+merge into the standing baseline), `--list` (preview the selection), `--skip-kernel` / `--skip-plans` (drop the per-problem kernel record and the
 every-plan grading), and `--no-skip-permissions --permission-mode acceptEdits` if you prefer not
 to bypass permission prompts — the default passes `--dangerously-skip-permissions` for unattended
 batch runs.
@@ -309,14 +409,50 @@ Each rung also runs **naked** (`problem.md` only) or **manual** (+ the same `sde
 reference material's.
 
 **Fairness is enforced mechanically.** Both sides read the identical `problem.md` (which does not
-leak the ground-truth moments), and every baseline `solver.py` is graded by the *same* `verify.py`
-at the *same* `(num_paths, eval dt, seed)`. Baseline code is untrusted, so it runs through
-[`runner.py`](runner.py): a fresh subprocess, a wall-clock timeout, a best-effort memory cap, and
+leak the ground-truth moments), and every `solver.py` — pipeline and baseline alike — is graded by
+the *same* `verify.py` at the *same* `(num_paths, eval dt, seed)`, **in the same sandbox, under the
+same wall-clock budget** (`verify.DEFAULT_SOLVER_TIMEOUT_S`, recorded in each run's results config).
+Until 2026-10-17 the pipeline was graded by importing `solver.py` inline, which made a
+pipeline-vs-baseline *time* comparison a comparison of two harnesses; routing both through
+[`runner.py`](runner.py) costs 2.4% (184.7 s against 180.3 s over the 34 solved workspaces) and
+reproduces the inline verdict on all 34. Getting there took three fixes to what the boundary
+carried — `functionals`, both result shapes at once, and an absolute solver path — the first of
+which had been failing *every* baseline on the one functional-scored problem for not returning a
+number it had returned. `run.py --no-verify-sandbox` restores the inline path for debugging.
+Solver code is untrusted, so it runs through [`runner.py`](runner.py): a fresh subprocess, a wall-clock timeout, a best-effort memory cap, and
 the **same import rule the pipeline solvers follow** — numpy + stdlib for SDE (`solver-sde.md`),
 numpy + scipy for PDE (`solver-pde.md`, where 38 of 55 pipeline solvers use `scipy.sparse`). A
 baseline that hangs, OOMs, violates the contract or reaches for a forbidden library simply fails;
 there is no self-score to be unsure about. The crash reasons are a closed set: `no_solve_fn`,
 `bad_signature`, `blocked_import`, `oom`, `timeout`, `bad_schema`, `exception`.
+
+**Two clocks come back from every sandboxed solve.** `wall_s` is the whole subprocess —
+interpreter startup, the numpy/scipy import, the solver module's top-level code and the solve —
+and it is what the timeout is applied to. `solve_s` is the `solve_pde` / `solve_sde` call alone,
+started in the child *after* the import. Their difference is the harness's own overhead, which on
+a cheap problem is nearly all of `wall_s`: measured 2026-10-17 on a Crank–Nicolson `pde_heat_1d`,
+0.0053 s of solve inside a 0.200 s process at N=64 and 0.0228 s inside 0.220 s at N=128 — so the
+4× between the two grids reads as 1.1× on the process clock. An error-vs-time curve has to be
+drawn against `solve_s`. A PDE verdict carries one clock per graded grid under `verify.timing`;
+an SDE verdict carries its one under `verify.run.solve_s`. The inline pipeline path
+(`sandbox=False`) is **not** timed, because a warm in-process call and a fresh interpreter are
+different measurement conditions — see step 2 of
+[`docs/plan-benchop-slv.md`](../docs/plan-benchop-slv.md).
+
+**Every sandboxed verdict carries an error-vs-time series** under `verify.work_precision`, because
+"more accurate" is not a claim until "at what cost" is attached. The first points are free: the PDE
+path already solves at `N` and `2N` for the order check and already times both, so the series is a
+join of two records the harness was keeping separately — measured over the 34 solved workspaces,
+turning it on costs **−0.4% (179.7 s against 180.5 s, i.e. noise)** and changes **0 of 34** verdicts,
+while **34 of 34** gain a series. A problem can extend it with `work_precision_levels` —
+`[32, 64, 128, 256]` for PDE, `[(20000, 0.02), (80000, 0.005)]` for SDE — which costs real solves
+(2.2×–2.9× the verification time for four PDE levels) and is what `--no-work-precision` turns off.
+Three rules hold it honest: it is **sandbox-only**, it is **measured rather than modelled** (no
+interpolated points, no fitted slope), and **it cannot move a verdict** — a level that crashes,
+times out, or is ignored by the solver is recorded under `skipped` with its reason while the graded
+ladder's decision stands. It is worth more than a cost axis: run on this repo's own solvers,
+`pde_advection_1d` passes a graded 2-grid order of **4.00** while the full ladder reads
+**3.89, 4.00, 2.71** — the order collapses at a doubling the graded pair does not look at.
 
 | One-shot verdict | Meaning |
 |---|---|
@@ -414,7 +550,8 @@ tuning knobs: `grid_N` (base resolution, default 64), `min_order` (order floor, 
 
 For a problem with **no closed form**, pick a route first — the four are catalogued in
 [`design/NO_CLOSED_FORM_CANDIDATES.md`](design/NO_CLOSED_FORM_CANDIDATES.md), and if none applies
-the problem is not ready — then set `closed_form=False` so it joins `--no-closed-form`:
+the problem is not ready — then set `closed_form=False` so it joins
+`--suite no-closed-form` (or `suite="benchop"` for an externally anchored one):
 
 - *harness-owned reference field*: add a generator to
   [`make_references.py`](make_references.py) that runs **two independent method families** and
@@ -427,7 +564,11 @@ the problem is not ready — then set `closed_form=False` so it joins `--no-clos
 - *functional*: `functional_truth={"name": value}` plus `functional_tol`; the solver returns a
   `functionals` dict. Compute the value yourself at a **de-memorized** parameter — a published
   constant can be recalled by a one-shot model that solved nothing, which corrupts the very
-  comparison the benchmark exists to make.
+  comparison the benchmark exists to make. If the value you compute has a known absolute
+  uncertainty, declare it as `reference_abs_err` rather than loosening `functional_tol`: the
+  former floors each value separately and leaves the precise ones precise. On an SDE problem
+  this is the whole ground truth if you omit `moments`, and the harness will solve twice to
+  check the number moved with the path count.
 - *structure*: `diagnostics` entries with `gate=True` (`_diag_mass_error`, `_diag_nontrivial`,
   `_diag_single_signed`, `_diag_divergence_free`, …). Never the only check.
 
@@ -442,14 +583,15 @@ tighter than the variance gate, 10%).
 
 ## tests/
 
-115 tests on the harness itself. They never run `claude` and never touch `workspace/`: they feed
-`verify.py` synthetic solver output built from the harness's own ground truth — a reference field
-with noise added, an exact eigenfunction with a wrong eigenvalue beside it — and check what the
-verdict says. Deterministic, and seconds apart from the `slow`-marked reference rebuilds.
+464 tests on the harness itself (`--collect-only`, 2026-10-21; 15 of them `slow`). They never run
+`claude` and never touch `workspace/`: they feed `verify.py` synthetic solver output built from the
+harness's own ground truth — a reference field with noise added, an exact eigenfunction with a
+wrong eigenvalue beside it — and check what the verdict says. Deterministic, and seconds apart
+from the `slow`-marked reference rebuilds.
 
 ```bash
 uv run --extra dev python -m pytest benchmark/tests -q        # 115 passed, 4 deselected, ~28 s
-uv run --extra dev python -m pytest verifylib benchmark/tests -q   # both layers: 690 passed
+uv run --extra dev python -m pytest verifylib benchmark/tests -q   # both layers: 1023 passed
 ```
 
 | File | What it pins |
@@ -460,3 +602,11 @@ uv run --extra dev python -m pytest verifylib benchmark/tests -q   # both layers
 | [tests/test_orchestration.py](tests/test_orchestration.py) | the runner, the suite split and the verdict logic — what gets graded and how the verdict is read |
 | [tests/test_oneshot_salvage.py](tests/test_oneshot_salvage.py) | that a C0 completion which produced a working solver is not discarded by the turn cap |
 | [tests/test_leakage_ncf.py](tests/test_leakage_ncf.py) | that truth stays in `problems.py` and the artifacts, and `problem.md` carries no formula, reference value or benchmark path |
+| [tests/test_solve_timing.py](tests/test_solve_timing.py) | that the solve clock is the `solve_*` call alone, separated from interpreter startup and the import |
+| [tests/test_execution_parity.py](tests/test_execution_parity.py) | that pipeline and baseline are graded through the same sandbox, so a comparison of either accuracy or time measures the solvers |
+| [tests/test_work_precision.py](tests/test_work_precision.py) | the error-against-time series: the points that are free, the levels that are paid for, and that none of it can move a verdict |
+| [tests/test_functional_tolerance.py](tests/test_functional_tolerance.py) | a quantity of interest gated relatively and floored per value by the reference number's own absolute uncertainty |
+| [tests/test_pde_functional.py](tests/test_pde_functional.py) | that a PDE problem whose only truth is a number still fails a hardcoded constant — the gap §5's memorization argument rested on |
+| [tests/test_sde_functional.py](tests/test_sde_functional.py) | the same route on the SDE side, where a price can be the whole grade and the defence is a second path count |
+| [tests/test_benchop_truth.py](tests/test_benchop_truth.py) | that the 24 published reference values were re-derived rather than transcribed, and that each wrong scheme is wrong in the direction claimed |
+| [tests/test_benchop_suite.py](tests/test_benchop_suite.py) | the ten entries: their numbers come from the ledger, their gates are calibrated both ways at the settings they ship with, and staging writes the call the verifier will make |

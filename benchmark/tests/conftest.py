@@ -24,13 +24,14 @@ for path in (BENCHMARK, REPO):
     if path not in sys.path:
         sys.path.insert(0, path)
 
+import benchop as BO  # noqa: E402  -- the BENCHOP-SLV derivations (step 6)
 import problems as P  # noqa: E402
 import report as R  # noqa: E402
 import run as RUN  # noqa: E402
 import setup as S  # noqa: E402
 import verify as V  # noqa: E402
 
-__all__ = ["P", "R", "RUN", "S", "V", "REPO", "BENCHMARK"]
+__all__ = ["BO", "P", "R", "RUN", "S", "V", "REPO", "BENCHMARK"]
 
 
 def problem(slug):
@@ -88,3 +89,8 @@ def record(prob, *, run_status="completed", verify=None, best_score=10, kernel=N
 @pytest.fixture(scope="session")
 def ncf_problems():
     return P.no_closed_form_problems()
+
+
+@pytest.fixture(scope="session")
+def benchop_problems():
+    return P.benchop_problems()

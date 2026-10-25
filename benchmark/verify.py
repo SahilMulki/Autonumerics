@@ -21,7 +21,19 @@ agree far below the problem's own tolerance (``benchmark/make_references.py``). 
 tolerance is widened by the recorded agreement so the reference's own error can never
 fail a correct solver, exactly as the SDE reference path widens by the Monte-Carlo
 standard error. ``functional_truth`` adds the other no-closed-form route: the truth is
-a scalar quantity of interest (an eigenvalue, an extremum) rather than a field.
+a scalar quantity of interest (an eigenvalue, an extremum, an option price) rather
+than a field, gated relatively and widened per value by whatever absolute uncertainty
+the reference number itself carries (``reference_abs_err``), which is the same
+widening one notch finer.
+
+That route runs on **both** problem types. It is orthogonal to the type and to the
+ground-truth kind: an SDE problem may be scored on a price with no terminal-moment
+formula behind it, on moments alone, or on both as independent gates. The one thing
+the SDE side needs that the PDE side gets free is a defence against a solver that
+simply returns the published number -- the PDE 2-grid order check already fails a
+constant, an SDE price graded from one run does not -- so a functional-scored SDE
+problem is solved at a second, coarser path count and the two prices are required to
+differ and to agree within the sampling noise the two counts imply.
 """
 
 from __future__ import annotations
@@ -52,6 +64,19 @@ ORDER_SUPERCONV_FLOOR = 1e-9  # below this, error is at noise; order is "passed"
 # answer key's own inaccuracy -- the same rule the SDE reference path applies to the
 # Monte-Carlo standard error.
 REFERENCE_TOL_FACTOR = 3.0
+
+# The sandbox budget for ONE graded solve, shared by every caller -- `run.py`
+# (pipeline), `oneshot.py` (baseline) and this module's CLI -- because a pipeline
+# and a baseline measured under different budgets are not comparable, and two
+# defaults in two files drift. 300 s is 4.2x the slowest solve measured over the 34
+# solved workspaces (`pde_cahn_hilliard_2d` at N=128, 71.1 s, 2026-10-17), so a
+# machine four times slower than that one still grades correctly; the previous 120 s
+# left a 1.7x margin on a *passing* problem, where the failure mode is a correct
+# solver recorded CRASHED. No recorded run has ever hit a verification timeout. Both
+# runners write the value they used into their results config, so a sweep taken at a
+# different budget is identifiable rather than silently pooled.
+DEFAULT_SOLVER_TIMEOUT_S = 300
+DEFAULT_SOLVER_MEM_MB = 4096
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
@@ -234,6 +259,13 @@ def pde_score(rel_l2):
 
 
 # --- SDE verification -------------------------------------------------------
+# The moment gates, named because a third caller now reads them: `_functional_tol`
+# takes the mean gate as the default for a quantity of interest on an SDE problem,
+# the way it takes `_pde_l2_tol` on a PDE one. They are deliberately loose -- a
+# sampled moment is not a resolved field -- which is exactly why a BENCHOP-style
+# price declares its own `functional_tol` rather than inheriting this.
+SDE_VAR_TOL = 0.10          # relative gate on a terminal variance
+SDE_MEAN_TOL = 0.05         # relative gate on a terminal mean (skipped near zero)
 
 
 def sde_verify_dt(problem):
@@ -279,7 +311,11 @@ def _run_and_read_sde(problem, plan_dir, injected=None):
                     "T": float(T), "seed": int(problem["seed"])}
     d = problem["state_dimension"]
     paths = np.asarray(result["terminal_paths"], dtype=float)
-    n = problem["num_paths"]
+    # The path count comes from the run that was actually executed, not from the
+    # problem: the graded run uses the problem's own count, but a work-precision
+    # level deliberately varies it, and a (d, num_paths) array would then fail to be
+    # recognized as transposed and be scored component-for-path.
+    n = int((run_meta or {}).get("num_paths") or problem["num_paths"])
     if d == 1:
         # The scored moments stay the solver's own reported values -- that is the
         # contract, and recomputing them here would silently forgive a solver whose
@@ -320,18 +356,30 @@ def _empirical_ses(col):
     return se_m, se_v
 
 
-def _score_sde_moments(problem, comps, gt, run_meta, reference):
-    """Score per-component terminal moments against ground truth. For ``reference``
-    ground truth ``gt`` maps each key to a ``(value, standard_error)`` pair and the
-    pass tolerance is widened to at least 3x the reference SE so a correct solution
-    within reference noise is not failed."""
+def _score_sde_moments(problem, comps, gt, run_meta, reference, result=None):
+    """Score per-component terminal moments against ground truth, and any scalar
+    quantity of interest beside them. For ``reference`` ground truth ``gt`` maps each
+    key to a ``(value, standard_error)`` pair and the pass tolerance is widened to at
+    least 3x the reference SE so a correct solution within reference noise is not
+    failed.
+
+    ``gt`` may be empty, which is new in step 5: an SDE problem whose truth is a
+    *price* has no elementary terminal moment to check, and ``functional_truth``
+    carries the whole grade. Where a problem declares both they are independent
+    gates -- the moments say the simulated law is right, the functional says the
+    number read off it is -- and failing either fails.
+
+    ``result`` is the raw solver output and is read only for ``functionals``. It
+    defaults to ``None`` so the callers that drive scoring from hand-built
+    components, ``validate_ground_truth.py`` and the tests, keep working unchanged.
+    """
     d = problem["state_dimension"]
     components = []
     scores = []
     all_pass = True
     # Values are coerced to native Python types (float/bool) so the record is always
     # JSON-serializable — numpy scalars (np.bool_ in particular) are not.
-    for comp in comps:
+    for comp in (comps or []) if gt else []:
         # 3-tuples are still accepted: validate_ground_truth.py and the tests build
         # components by hand from a scheme they drive themselves, and the standard
         # errors are reporting-only.
@@ -348,8 +396,8 @@ def _score_sde_moments(problem, comps, gt, run_meta, reference):
         mean_rel = float(_rel(em, xm))
         var_rel = float(_rel(ev, xv))
         near_zero = bool(abs(xm) < 0.01)
-        var_tol = max(0.10, 3.0 * se_v / max(abs(xv), 1e-12))
-        mean_tol = max(0.05, 3.0 * se_m / max(abs(xm), 1e-12))
+        var_tol = max(SDE_VAR_TOL, REFERENCE_TOL_FACTOR * se_v / max(abs(xv), 1e-12))
+        mean_tol = max(SDE_MEAN_TOL, REFERENCE_TOL_FACTOR * se_m / max(abs(xm), 1e-12))
         var_ok = bool(var_rel < var_tol)
         mean_ok = bool(near_zero or (mean_rel < mean_tol))
         passed = bool(var_ok and mean_ok)
@@ -378,35 +426,248 @@ def _score_sde_moments(problem, comps, gt, run_meta, reference):
     # ~0 and display an astronomical, meaningless percentage.
     checked = [c for c in components if not c["near_zero_mean"]]
     worst_mean = float(max((c["mean_rel_err"] for c in checked), default=0.0))
-    return {
+    # A functional-only problem has no components, so every aggregate over them needs
+    # an identity rather than an exception: no moment is wrong, which is a 10 and a
+    # zero error, and the functional branch below is then the only thing that can
+    # lower either.
+    out = {
         "status": "ok" if finite else "nonfinite",
         "gt_kind": "reference" if reference else "exact",
         "passed": bool(all_pass and finite),
-        "verified_score": int(min(scores) if finite else 1),
-        "worst_variance_rel_err": float(max(c["variance_rel_err"] for c in components)),
+        "verified_score": int(min(scores)) if (finite and scores) else (10 if finite else 1),
+        "worst_variance_rel_err": float(max((c["variance_rel_err"] for c in components),
+                                            default=0.0)),
         "worst_mean_rel_err": worst_mean,
         "components": components,
         "run": run_meta,
     }
+    return _score_sde_functionals(problem, result, out)
+
+
+def _score_sde_functionals(problem, result, out):
+    """Fold the quantity-of-interest gate into a scored SDE record.
+
+    The same gate as the PDE route, reached through the same two helpers --
+    ``_functional_errs`` for the relative and absolute error, ``_functional_tols``
+    for the per-value floored tolerance. That is not code thrift. BENCHOP states
+    every problem twice, once as a PDE and once as an SDE, and compares the two
+    (plan-benchop-slv.md §0, point c); a price graded by one rule on one formulation
+    and another rule on the other would make that a comparison of two graders rather
+    than of two methods.
+
+    A contract or type failure on the functional returns in place of the moment
+    record rather than beside it, exactly as on the PDE route: a solver told to
+    return a number and not returning it has failed, whatever its moments did. The
+    two PDE-shaped error fields are dropped on the way out, because ``rel_l2_err`` on
+    an SDE record would send ``_fmt`` and every reader down the PDE branch."""
+    if not problem.get("functional_truth"):
+        return out
+    errs, abs_errs, err = _functional_errs(problem, result or {})
+    if err is not None:
+        rec = {k: v for k, v in err.items() if k not in ("rel_l2_err", "primary_err")}
+        rec["gt_kind"] = out.get("gt_kind")
+        rec["components"] = out.get("components", [])
+        rec["run"] = out.get("run")
+        return rec
+    base, tols = _functional_tol(problem), _functional_tols(problem)
+    worst = float(max(errs.values(), default=0.0))
+    out["functional_errs"] = errs
+    out["functional_abs_errs"] = abs_errs
+    out["functional_tol"] = base
+    out["functional_tol_used"] = tols
+    out["worst_functional_rel_err"] = worst
+    widened = sorted(n for n, t in tols.items() if t > base)
+    if widened:
+        out["functional_tol_widened"] = widened
+        out["reference_abs_err"] = {n: _functional_reference_abs_err(problem, n)
+                                    for n in tols}
+    out["functional_ok"] = bool(all(e < tols.get(n, base) for n, e in errs.items()))
+    out["passed"] = bool(out["passed"] and out["functional_ok"])
+    # ``pde_score`` bands a relative error of a scalar against truth, which is what
+    # this is; the PDE functional route already scores a quantity of interest with
+    # it. A second rubric here would make the two formulations of one BENCHOP problem
+    # score differently for a reason that has nothing to do with either solver.
+    out["verified_score"] = int(min(out["verified_score"], pde_score(worst)))
+    return out
+
+
+def _sde_level_paths(problem, num_paths):
+    """The coarse path count the two-level functional check re-solves at.
+
+    A quarter of the graded count by default, and a problem may name its own with
+    ``functional_level_paths``. The quarter is chosen rather than a half because a
+    Monte-Carlo standard error falls as ``1/sqrt(n)``: four times fewer paths is
+    exactly twice the noise, which makes the consistency band below ``3 * tol_abs``
+    -- a factor that is derived rather than picked -- while costing 25% more solve
+    time than grading alone."""
+    declared = problem.get("functional_level_paths")
+    n = int(declared) if declared else int(num_paths) // 4
+    return max(n, 0)
+
+
+def _sde_functional_levels(problem, plan_dir, graded_meta, timeout_s, mem_mb):
+    """Re-solve at a second path count and compare the reported quantities of
+    interest. This is a **gate**, not measurement: it can fail a problem.
+
+    It is the anti-hardcoding defence for the SDE functional route
+    (plan-benchop-slv.md §6, step 5). The PDE route gets one free from the 2-grid
+    order check -- a constant has zero observed order and fails -- but an SDE price
+    is graded from a single run, so without this a solver that returns the published
+    number and never reads its own paths passes every other check in this module.
+
+    Two things are checked and a third is deliberately not:
+
+      * **Movement.** Two Monte-Carlo estimates of one expectation, taken at
+        different path counts, must differ. Equal to the bit is a constant, and that
+        is the finding. A solver that ignores the path count it was handed lands
+        here too, by the same arithmetic, and ``level_ignored`` records which of the
+        two it was.
+      * **Consistency.** ``|f_coarse - f_graded|`` is held inside
+        ``tol_abs * (1 + sqrt(n_graded / n_coarse))``, where ``tol_abs`` is that
+        value's own absolute gate. The graded run is within ``tol_abs`` of the truth
+        or it has already failed; the coarse run is ``sqrt(n_graded/n_coarse)``
+        times noisier, since a standard error falls as ``1/sqrt(n)``; so sampling
+        alone cannot separate them by more than the sum. Anything that does is not
+        sampling.
+      * **Not a decreasing test.** The band is symmetric, and nothing here requires
+        the finer run to be better. Step 3 measured these curves non-monotone at
+        this suite's path counts -- ``sde_gbm_2d_high_corr`` scores *worse* at twice
+        the work, because the error axis is dominated by sampling noise rather than
+        by discretization -- so "finer must be better" would fail correct solvers.
+        The rev to step 5 in the plan says this in as many words; the hardcoding
+        defence does not need it.
+
+    Everything that merely prevents the check from running -- a crashed coarse
+    solve, a coarse run that returns no functionals, a problem with no coarser level
+    to take -- is reported as ``not_run`` with a reason and leaves the verdict
+    alone. Only ``constant`` and ``inconsistent`` fail. That asymmetry is deliberate:
+    a flaky sandbox must not be able to fail a correct solver, while the two
+    findings this exists to produce are both positive evidence about the solver
+    itself.
+    """
+    import runner  # local import: keeps the pipeline path free of the dependency
+    n_hi, dt = int(graded_meta["num_paths"]), float(graded_meta["dt"])
+    n_lo = _sde_level_paths(problem, n_hi)
+    if not 2 <= n_lo < n_hi:
+        return {"status": "not_run", "reason": f"no coarser level below {n_hi} paths"}
+    run = runner.run_solver(problem=problem, plan_dir=plan_dir, timeout_s=timeout_s,
+                            mem_mb=mem_mb, sde_num_paths=n_lo, sde_dt=dt)
+    if run["status"] != "ok":
+        return {"status": "not_run", "reason": run.get("reason", "crashed"),
+                "num_paths": n_lo}
+    got = (run.get("result") or {}).get("functionals")
+    if not isinstance(got, dict):
+        return {"status": "not_run", "reason": "coarse run returned no functionals",
+                "num_paths": n_lo}
+    graded_got = (graded_meta.get("functionals") or {})
+    tols = _functional_tols(problem)
+    base = _functional_tol(problem)
+    widening = 1.0 + float(np.sqrt(n_hi / n_lo))
+    values, constant, inconsistent = {}, [], []
+    for name, ref in problem["functional_truth"].items():
+        if name not in got or name not in graded_got:
+            return {"status": "not_run", "reason": f"functional {name!r} absent from a level",
+                    "num_paths": n_lo}
+        try:
+            f_lo, f_hi = float(got[name]), float(graded_got[name])
+        except (TypeError, ValueError):
+            return {"status": "not_run", "reason": f"functional {name!r} is not a number",
+                    "num_paths": n_lo}
+        # A relative gate on a reference of 0.0 is an absolute gate of 0.0, which
+        # would make every nonzero difference "inconsistent" and fail every solver
+        # on the problem. No reference in the suite is zero and a test says so, but
+        # the failure that an authoring slip would produce here is baffling rather
+        # than legible, so the consistency half is simply not formed: the movement
+        # half still runs, and that is the half the hardcoding defence rests on.
+        band = tols.get(name, base) * abs(float(ref)) * widening
+        delta = abs(f_hi - f_lo)
+        moved = f_hi != f_lo
+        consistent = True if band == 0.0 else bool(delta <= band)
+        if not moved:
+            constant.append(name)
+        if not consistent:
+            inconsistent.append(name)
+        values[name] = {"graded": f_hi, "coarse": f_lo, "delta": float(delta),
+                        "band": float(band), "moved": bool(moved),
+                        "consistent": consistent}
+    out = {"status": "ok", "num_paths_graded": n_hi, "num_paths_coarse": n_lo,
+           "dt": dt, "band_factor": float(widening), "values": values,
+           "passed": not (constant or inconsistent)}
+    # What the coarse level got wrong, and what it cost [step 9]. The check above
+    # only needs the two values to *differ*; these two numbers make the solve the
+    # check has already paid for usable as a second point on the work-precision
+    # curve instead of being discarded. Nothing here can move the verdict.
+    coarse_rel = [abs(values[name]["coarse"] - float(ref)) / abs(float(ref))
+                  for name, ref in problem["functional_truth"].items() if float(ref) != 0.0]
+    if coarse_rel:
+        out["worst_functional_rel_err"] = float(max(coarse_rel))
+    out["solve_s"] = run.get("solve_s")
+    out["wall_s"] = run.get("wall_s")
+    # Why the price did not move, when it did not: the solver may be returning a
+    # constant, or it may be ignoring the path count it was handed and so running
+    # the same simulation twice. Both fail, and the record says which.
+    paths = np.asarray((run.get("result") or {}).get("terminal_paths", []), dtype=float)
+    if paths.size:
+        got_n = paths.size // max(int(problem["state_dimension"]), 1)
+        out["level_ignored"] = bool(got_n != n_lo)
+    if constant:
+        out["constant"] = constant
+    if inconsistent:
+        out["inconsistent"] = inconsistent
+    return out
+
+
+def _fold_sde_functional_levels(out, problem, plan_dir, graded_result, *, timeout_s,
+                                mem_mb):
+    """Run the two-level check and let it fail the verdict.
+
+    Unlike the work-precision sweep this one is allowed to move a verdict, so the
+    blanket ``except`` records ``not_run`` instead of swallowing: a defence that
+    crashed did not run, and a record that said nothing would read as a defence that
+    passed."""
+    if out.get("status") != "ok" or not problem.get("functional_truth"):
+        return out
+    try:
+        meta = dict(out.get("run") or {})
+        meta["functionals"] = (graded_result or {}).get("functionals") or {}
+        lv = _sde_functional_levels(problem, plan_dir, meta, timeout_s, mem_mb)
+    except Exception as exc:  # noqa: BLE001 -- see the docstring
+        lv = {"status": "not_run", "reason": f"{type(exc).__name__}: {exc}"}
+    out["functional_levels"] = lv
+    if lv.get("status") == "ok" and not lv.get("passed"):
+        out["passed"] = False
+        out["verified_score"] = min(int(out.get("verified_score", 10)), 1)
+    return out
+
+
+def _sde_moment_truth(problem):
+    """The problem's terminal moments, or ``None`` when it has none.
+
+    ``moments`` stopped being mandatory in step 5: a problem scored on a price
+    declares ``functional_truth`` and no moment formula, and ``.get`` is what lets
+    the same two entry points serve both rather than a third one appearing."""
+    fn = problem.get("moments")
+    return fn(problem["T"]) if callable(fn) else None
 
 
 def verify_sde(problem, plan_dir, injected=None):
     """Exact-moment SDE verification."""
-    comps, run_meta, _result, err = _run_and_read_sde(problem, plan_dir, injected=injected)
+    comps, run_meta, result, err = _run_and_read_sde(problem, plan_dir, injected=injected)
     if err is not None:
         return err
-    gt = problem["moments"](problem["T"])
-    return _score_sde_moments(problem, comps, gt, run_meta, reference=False)
+    return _score_sde_moments(problem, comps, _sde_moment_truth(problem), run_meta,
+                              reference=False, result=result)
 
 
 def verify_sde_reference(problem, plan_dir, injected=None):
     """Reference-moment SDE verification: ground truth is a discretization-free MC of
     the exact solution, returned as (value, standard_error) per moment."""
-    comps, run_meta, _result, err = _run_and_read_sde(problem, plan_dir, injected=injected)
+    comps, run_meta, result, err = _run_and_read_sde(problem, plan_dir, injected=injected)
     if err is not None:
         return err
-    gt = problem["moments"](problem["T"])  # {key: (value, standard_error)}
-    return _score_sde_moments(problem, comps, gt, run_meta, reference=True)
+    # {key: (value, standard_error)}
+    return _score_sde_moments(problem, comps, _sde_moment_truth(problem), run_meta,
+                              reference=True, result=result)
 
 
 def verify_sde_stability(problem, plan_dir, injected=None):
@@ -566,16 +827,98 @@ def _pde_l2_tol(problem):
     return max(tol, REFERENCE_TOL_FACTOR * _pde_reference_error(problem))
 
 
-def _pde_functional_tol(problem):
-    return float(problem.get("functional_tol", _pde_l2_tol(problem)))
+def _functional_tol(problem, name=None):
+    """The declared *relative* gate on a quantity of interest. Defaults to the
+    problem's own field gate, so a problem scored only on a number needs one
+    tolerance, not two -- ``_pde_l2_tol`` for a PDE, the terminal-mean gate for an
+    SDE, because on each side that is the gate the problem would otherwise be held
+    to. The two defaults are far apart (1% against 5%), which is the point: a
+    sampled moment is not a resolved field, and inheriting the wrong one would
+    silently grade a Monte-Carlo price at a field solver's tolerance.
+
+    ``functional_tol`` may be one number or ``{name: tol}``, the same two shapes
+    ``reference_abs_err`` takes. The per-value form is for a problem whose values
+    differ in how precisely they can be *computed* -- distinct from the floor
+    below, which is about how precisely they are *known*. A Monte-Carlo price
+    carries a standard error that is a fixed fraction of the payoff's spread, so a
+    deep out-of-the-money value thirty times smaller than its sibling has thirty
+    times its relative noise at the same path count: one relative gate across both
+    either fails the small one or stops testing the large one.
+
+    With no name, returns the loosest declared gate -- a headline for the record,
+    never the thing a value is graded against. That is ``functional_tol_used``."""
+    default = SDE_MEAN_TOL if problem.get("type") == "sde" else _pde_l2_tol(problem)
+    declared = problem.get("functional_tol", default)
+    if isinstance(declared, dict):
+        if name is not None:
+            return float(declared.get(name, default))
+        return float(max(declared.values())) if declared else float(default)
+    return float(declared)
+
+
+def _functional_reference_abs_err(problem, name):
+    """One reference value's own *absolute* uncertainty, or 0.0 if it has none.
+
+    ``reference_abs_err`` is the functional counterpart of ``reference_error``, and the
+    two are deliberately different shapes. A field reference's disagreement is naturally
+    relative -- one number over a whole grid -- while a scalar quantity of interest is
+    known to an *absolute* precision: a published figure rounded to a digit, a quadrature
+    bound, a Monte-Carlo standard error. Declared as one number covering every functional,
+    or as ``{name: abs_err}`` when they differ, which they do whenever the reference came
+    from sampling: plan-benchop-slv.md §2c measured absolute errors spanning 10x across
+    three values of one problem while their relative errors spanned 3x."""
+    ra = problem.get("reference_abs_err")
+    if isinstance(ra, dict):
+        return float(ra.get(name, 0.0) or 0.0)
+    return float(ra or 0.0)
+
+
+def _functional_tols(problem):
+    """The gate actually applied to each quantity of interest, keyed by name:
+
+        tol_i = max(functional_tol, REFERENCE_TOL_FACTOR * reference_abs_err_i / |ref_i|)
+
+    The gate stays **relative** -- the decision in plan-benchop-slv.md §4, taken because
+    relative error was measured to be the more uniform of the two across a problem whose
+    values span 30x -- but an absolute uncertainty on the answer key does not convert to
+    a single relative number, and it is the small values where it bites. A reference
+    published as ``37.52 +/- 0.005`` is known to 1.3e-4 relative; the same +/-0.005 on a
+    value of 0.0393 is known to 0.13, and a solver graded at 1e-3 there would be failed
+    for missing a digit the answer key does not have.
+
+    This is the rule ``_pde_l2_tol`` already applies to a field reference and
+    ``_score_sde_moments`` to a Monte-Carlo standard error, with the same factor, taken
+    per value because per value is where the information is. It never tightens: the
+    ``max`` leaves the gate exactly where a problem with a precise reference put it."""
+    tols = {}
+    for name, ref in (problem.get("functional_truth") or {}).items():
+        floor = (REFERENCE_TOL_FACTOR * _functional_reference_abs_err(problem, name)
+                 / max(abs(float(ref)), 1e-12))
+        tols[name] = max(_functional_tol(problem, name), floor)
+    return tols
 
 
 def _pde_order_check(problem):
-    """Whether to run the 2-grid order check: on by default, but requires a field
-    ground truth to measure error against (closed form *or* harness-owned reference),
-    and can be turned off per problem (e.g. a shock, where the L2 order is inherently
-    fractional/ill-defined)."""
-    return bool(problem.get("pde_order_check", True)) and _pde_truth(problem) is not None
+    """Whether to run the 2-grid order check: on by default, needs *something* to
+    measure an error against, and can be turned off per problem (e.g. a shock, where
+    the L2 order is inherently fractional/ill-defined).
+
+    A field truth is one such thing; a declared ``functional_truth`` is another, and
+    used to be missed. ``_pde_eval_run`` already makes the quantity of interest the
+    primary error when it is the only truth, so the two-grid machinery below works
+    on it unchanged -- but this predicate asked for a *field* and so skipped the
+    check entirely on exactly the problems that need it most. Measured on a
+    functional-only problem before the fix: a solver returning a hardcoded constant
+    scored 10, with ``order_checked`` false and no observed order recorded."""
+    return bool(problem.get("pde_order_check", True)) and (
+        _pde_truth(problem) is not None or bool(problem.get("functional_truth")))
+
+
+def _pde_functional_only(problem):
+    """A problem whose entire ground truth is a handful of numbers. That is the one
+    shape where a solver can hold the answer without having solved anything, so it
+    is the one shape where the two grids must be required to *disagree*."""
+    return bool(problem.get("functional_truth")) and _pde_truth(problem) is None
 
 
 def _pde_call_mode(fn):
@@ -613,40 +956,54 @@ def _crashed(run, plan_dir):
 
 
 def _produce_pde_runs(problem, plan_dir, sandbox, timeout_s, mem_mb):
-    """Execute solve_pde at the resolution(s) needed. Returns ``(runs, err)`` where
-    ``runs`` is a list of ``(N_or_None, result_dict)`` (one element for single-grid
-    / legacy, two for the order check) and ``err`` is a status dict or None."""
+    """Execute solve_pde at the resolution(s) needed. Returns ``(runs, timings, err)``
+    where ``runs`` is a list of ``(N_or_None, result_dict)`` (one element for
+    single-grid / legacy, two for the order check), ``timings`` is the parallel list
+    of per-run clocks, and ``err`` is a status dict or None.
+
+    ``timings`` is empty on the inline path, which is deliberate rather than an
+    omission: the sandboxed and inline routes are different measurement conditions
+    (a fresh interpreter per solve against a warm in-process one), so a time from
+    one is not comparable with a time from the other. Recording nothing is honest;
+    recording an inline number under the same key would quietly invite the
+    comparison. ``_fold_timing`` stamps the path onto whatever is recorded."""
     order = _pde_order_check(problem)
     grid_N = _pde_grid_N(problem)
 
     if sandbox:
         import runner
+
+        def clock(run, N):
+            return {"N": N, "solve_s": run.get("solve_s"), "wall_s": run.get("wall_s")}
+
         run1 = runner.run_solver(problem=problem, plan_dir=plan_dir,
                                  timeout_s=timeout_s, mem_mb=mem_mb, pde_N=grid_N)
         if run1["status"] != "ok":
-            return None, _crashed(run1, plan_dir)
+            return None, None, _crashed(run1, plan_dir)
         accepted = bool(run1.get("accepted_resolution"))
-        runs = [(grid_N if accepted else None, run1["result"])]
+        N1 = grid_N if accepted else None
+        runs, timings = [(N1, run1["result"])], [clock(run1, N1)]
         if accepted and order:
             run2 = runner.run_solver(problem=problem, plan_dir=plan_dir,
                                      timeout_s=timeout_s, mem_mb=mem_mb, pde_N=2 * grid_N)
             if run2["status"] != "ok":
-                return None, _crashed(run2, plan_dir)
+                return None, None, _crashed(run2, plan_dir)
             runs.append((2 * grid_N, run2["result"]))
-        return runs, None
+            timings.append(clock(run2, 2 * grid_N))
+        return runs, timings, None
 
     # Inline (trusted pipeline path): import and call directly.
     mod = import_solver(plan_dir)
     if not hasattr(mod, "solve_pde"):
-        return None, {"status": "error", "error": "solver.py has no solve_pde()"}
+        return None, None, {"status": "error", "error": "solver.py has no solve_pde()"}
     mode = _pde_call_mode(mod.solve_pde)
     if mode is None:
-        return None, {"status": "error",
-                      "error": "solve_pde signature is neither solve_pde(N) nor solve_pde()"}
+        return None, None, {"status": "error",
+                            "error": "solve_pde signature is neither solve_pde(N) nor solve_pde()"}
     if mode == "noarg":
-        return [(None, mod.solve_pde())], None
+        return [(None, mod.solve_pde())], [], None
     Ns = [grid_N, 2 * grid_N] if order else [grid_N]
-    return [(N, _run_pde(mod.solve_pde, N, mode)) for N in Ns], None
+    return [(N, _run_pde(mod.solve_pde, N, mode)) for N in Ns], [], None
 
 
 def _field_num(result, problem):
@@ -719,45 +1076,65 @@ def _eigen_normalize(un, ue, metric, mask):
 
 
 def _functional_errs(problem, result):
-    """Relative error of each scalar quantity of interest the solver reported.
+    """Relative *and* absolute error of each scalar quantity of interest the solver
+    reported, as ``(rel_errs, abs_errs, err_status)``.
 
     The other no-closed-form route: for an eigenvalue, an extremum, or a drag
     coefficient the truth is a *number*, authored in ``problems.py`` (and, per
     NO_CLOSED_FORM_CANDIDATES.md §3, computed here rather than quoted from a paper,
-    so a recalled constant is not a passing answer). Returns ``(errs, err_status)``;
-    a problem that declares ``functional_truth`` and gets no ``functionals`` back has
+    so a recalled constant is not a passing answer).
+
+    Both errors are returned because they answer different questions and only one of
+    them grades. The relative error is what the gate is stated in and what
+    ``_pde_converged`` reads. The absolute error is what an externally published
+    benchmark quotes its own values and its own tolerances in, so a result cannot be
+    compared against one without it -- and it cannot be recovered afterwards from the
+    relative number alone, since the record does not carry the reference value.
+
+    A problem that declares ``functional_truth`` and gets no ``functionals`` back has
     violated the contract, which is a failure of that solver, not an inconclusive."""
     truth = problem.get("functional_truth")
     if not truth:
-        return {}, None
+        return {}, {}, None
     got = result.get("functionals")
     # A missing dict or a missing name is a *failure*: the contract told the solver
     # to return this number, and a solution without the number is not a solution
     # to the problem as posed (findings §7.7). A value that is present but not a
     # real number stays `inconclusive` -- that is a type slip, not a refusal.
     if not isinstance(got, dict):
-        return None, {"status": "contract", "passed": False, "verified_score": 1,
-                      "rel_l2_err": float("inf"), "primary_err": float("inf"),
-                      "error": "solver returned no 'functionals' dict; this problem is "
-                               f"scored on {sorted(truth)}, and a solver told to return "
-                               f"them and not doing so has failed"}
-    errs = {}
+        return None, None, {"status": "contract", "passed": False, "verified_score": 1,
+                            "rel_l2_err": float("inf"), "primary_err": float("inf"),
+                            "error": "solver returned no 'functionals' dict; this problem is "
+                                     f"scored on {sorted(truth)}, and a solver told to return "
+                                     f"them and not doing so has failed"}
+    errs, abs_errs = {}, {}
     for name, ref in truth.items():
         if name not in got:
-            return None, {"status": "contract", "passed": False, "verified_score": 1,
-                          "rel_l2_err": float("inf"), "primary_err": float("inf"),
-                          "error": f"solver's 'functionals' is missing {name!r}; this "
-                                   f"problem is scored on it"}
+            return None, None, {"status": "contract", "passed": False, "verified_score": 1,
+                                "rel_l2_err": float("inf"), "primary_err": float("inf"),
+                                "error": f"solver's 'functionals' is missing {name!r}; this "
+                                         f"problem is scored on it"}
         try:
             val = float(got[name])
         except (TypeError, ValueError):
-            return None, {"status": "inconclusive",
-                          "error": f"functional {name!r} is not a real number: {got[name]!r}"}
+            return None, None, {"status": "inconclusive",
+                                "error": f"functional {name!r} is not a real number: "
+                                         f"{got[name]!r}"}
         if not np.isfinite(val):
-            return None, {"status": "nonfinite", "passed": False, "verified_score": 1,
-                          "rel_l2_err": float("inf"), "primary_err": float("inf")}
-        errs[name] = abs(val - float(ref)) / (abs(float(ref)) + 1e-14)
-    return errs, None
+            return None, None, {"status": "nonfinite", "passed": False, "verified_score": 1,
+                                "rel_l2_err": float("inf"), "primary_err": float("inf")}
+        abs_errs[name] = abs(val - float(ref))
+        errs[name] = abs_errs[name] / (abs(float(ref)) + 1e-14)
+    return errs, abs_errs, None
+
+
+def _functional_values(result, names):
+    """The raw numbers the solver reported, for the names ``_functional_errs`` has
+    already validated. Kept beside the errors because two different values can have
+    the same absolute error -- one above the reference and one below -- so "did this
+    move between the grids?" cannot be answered from the errors alone."""
+    got = result.get("functionals") or {}
+    return {n: float(got[n]) for n in names}
 
 
 def _pde_eval_run(problem, result):
@@ -785,16 +1162,24 @@ def _pde_eval_run(problem, result):
     coords = np.meshgrid(*axes, indexing="ij")  # d-generic; for d=1 this is [x]
     mask = _domain_mask(problem, coords)
 
-    func_errs, ferr = _functional_errs(problem, result)
+    func_errs, func_abs, ferr = _functional_errs(problem, result)
     if ferr is not None:
         return None, ferr
 
     if truth_fn is None:
         # Functional-only problem: no field truth exists, so the QoI carries the score.
         primary = problem.get("primary_functional") or sorted(func_errs)[0]
+        # ``max_abs_err`` is the largest *absolute* deviation, the same quantity the
+        # field branch below records under that name. It used to hold the primary
+        # *relative* error here, so the one field named for an absolute error meant two
+        # incompatible things depending on which truth route a problem took -- harmless
+        # while nothing read it, and a silent conflation the moment anything did
+        # (plan-benchop-slv.md §3).
         ev = {"rel_l2_err": func_errs[primary], "primary_err": func_errs[primary],
               "primary_field": primary, "metric": "functional", "field_errs": {},
-              "functional_errs": func_errs, "max_abs_err": func_errs[primary],
+              "functional_errs": func_errs, "functional_abs_errs": func_abs,
+              "functional_values": _functional_values(result, func_errs),
+              "max_abs_err": max(func_abs.values()),
               "grid_shape": [len(a) for a in axes], "diagnostics": [],
               "t_final": result.get("t_final")}
         return ev, None
@@ -859,6 +1244,8 @@ def _pde_eval_run(problem, result):
           "diagnostics": diagnostics, "t_final": result.get("t_final")}
     if func_errs:
         ev["functional_errs"] = func_errs
+        ev["functional_abs_errs"] = func_abs
+        ev["functional_values"] = _functional_values(result, func_errs)
     return ev, None
 
 
@@ -884,8 +1271,12 @@ def _pde_converged(problem, ev):
     tol = _pde_l2_tol(problem)
     required = problem.get("required_fields") or list(ev["field_errs"])
     ok = all(ev["field_errs"][f] < tol for f in required)
-    ftol = _pde_functional_tol(problem)
-    ok = ok and all(e < ftol for e in ev.get("functional_errs", {}).values())
+    # Per value, not one number for all of them: the gate on a quantity of interest is
+    # raised where the reference itself is uncertain, and that is a property of the
+    # individual value rather than of the problem.
+    ftols, ftol = _functional_tols(problem), _functional_tol(problem)
+    ok = ok and all(e < ftols.get(name, ftol)
+                    for name, e in ev.get("functional_errs", {}).items())
     return bool(ok), tol
 
 
@@ -895,13 +1286,62 @@ def _fold_reference(out, problem, ev):
     it bought, so a near-threshold result can be read without re-deriving them."""
     if ev.get("functional_errs"):
         out["functional_errs"] = ev["functional_errs"]
-        out["functional_tol"] = _pde_functional_tol(problem)
+        out["functional_tol"] = _functional_tol(problem)
+        if ev.get("functional_abs_errs"):
+            out["functional_abs_errs"] = ev["functional_abs_errs"]
+        # The effective gate is always recorded, even when it equals the declared one:
+        # a reader of the record should not have to know the widening rule, or go back
+        # to problems.py, to see what a value was actually held to.
+        out["functional_tol_used"] = _functional_tols(problem)
+        widened = sorted(n for n, t in out["functional_tol_used"].items()
+                         if t > out["functional_tol"])
+        if widened:
+            out["functional_tol_widened"] = widened
+            out["reference_abs_err"] = {n: _functional_reference_abs_err(problem, n)
+                                        for n in out["functional_tol_used"]}
     ref_err = _pde_reference_error(problem)
     if ref_err > 0.0:
         out["reference_error"] = ref_err
         out["tol_used"] = _pde_l2_tol(problem)
         out["tol_widened"] = bool(out["tol_used"] > float(problem.get("pde_l2_tol", PDE_L2_TOL)))
     return out
+
+
+def _fold_timing(out, timings):
+    """Record what the solve cost, for the runs where it was actually measured.
+
+    ``solve_s`` is the ``solve_pde`` call alone and ``wall_s`` the whole subprocess,
+    so their difference is the harness's own overhead -- on a fast problem that is
+    most of ``wall_s``, which is why the process clock alone cannot carry a
+    work-precision axis. The headline pair is the *graded* run (the finest grid,
+    the one ``rel_l2_err`` comes from) with the per-grid series beside it, mirroring
+    how ``rel_l2_err`` sits beside ``grid_errors``. ``path`` names the measurement
+    condition, because a sandboxed time and an inline one must never be compared
+    (plan-benchop-slv.md §6, step 2)."""
+    if not timings:
+        return out
+    out["timing"] = {"path": "sandbox", "solve_s": timings[-1]["solve_s"],
+                     "wall_s": timings[-1]["wall_s"], "runs": timings}
+    return out
+
+
+def _pde_functional_constant(problem, evals):
+    """Quantities of interest that came back *identical* at both resolutions.
+
+    A number that does not move when the grid is halved did not come off that grid.
+    On the field route this cannot happen by accident, and the field is its own
+    defence -- nobody memorizes a surface. On the functional-only route the whole
+    answer is two or three numbers, and on an externally published problem those
+    numbers have been on the internet since 2018, so the refinement ladder is the
+    only thing standing between a recalled constant and a score of 10. This is the
+    SDE side's two-level check (step 5) stated on the grid the PDE side already
+    runs: there the price is taken at two path counts, here at two resolutions, and
+    in both it has to move."""
+    if not _pde_functional_only(problem) or len(evals) < 2:
+        return []
+    lo = evals[0].get("functional_values") or {}
+    hi = evals[1].get("functional_values") or {}
+    return sorted(n for n, v in hi.items() if n in lo and lo[n] == v)
 
 
 def _score_pde_runs(problem, runs):
@@ -944,9 +1384,14 @@ def _score_pde_runs(problem, runs):
     else:
         p_hat = float(np.log(e0 / e1) / np.log(2.0))
         order_ok = bool(p_hat >= min_order or coarse_ok)
-    passed = bool(converged and order_ok)
+    # Checked after the order, and separately from it: the waiver above hands a
+    # perfect ``order_ok`` to anything whose error is tiny at both grids, which is
+    # exactly what a hardcoded constant looks like.
+    constant = _pde_functional_constant(problem, evals)
+    passed = bool(converged and order_ok and not constant)
     out = {"status": "ok", "passed": passed,
-           "verified_score": pde_score(e1) if order_ok else min(pde_score(e1), 5),
+           "verified_score": 1 if constant else (
+               pde_score(e1) if order_ok else min(pde_score(e1), 5)),
            "rel_l2_err": e1, "max_abs_err": evals[1]["max_abs_err"],
            "grid_shape": evals[1]["grid_shape"], "metric": evals[1]["metric"],
            "primary_field": evals[1]["primary_field"], "t_eval": t_eval,
@@ -954,21 +1399,30 @@ def _score_pde_runs(problem, runs):
            "observed_order": p_hat, "order_min": min_order, "order_ok": order_ok,
            "converged": converged, "grid_N": N0, "fine_grid_N": N1,
            "grid_errors": {str(N0): e0, str(N1): e1}}
+    if _pde_functional_only(problem):
+        # Recorded either way. A passing record that is silent about the check reads
+        # as one that had it and cleared it.
+        out["functional_constant"] = constant
     return _fold_reference(_fold_diagnostics(out, evals[1]), problem, evals[1])
 
 
-def verify_pde(problem, plan_dir, sandbox=False, timeout_s=120, mem_mb=4096):
-    runs, err = _produce_pde_runs(problem, plan_dir, sandbox, timeout_s, mem_mb)
+def verify_pde(problem, plan_dir, sandbox=False, timeout_s=DEFAULT_SOLVER_TIMEOUT_S,
+               mem_mb=DEFAULT_SOLVER_MEM_MB, work_precision=True):
+    runs, timings, err = _produce_pde_runs(problem, plan_dir, sandbox, timeout_s, mem_mb)
     if err is not None:
         return err
-    out = _score_pde_runs(problem, runs)
+    out = _fold_timing(_score_pde_runs(problem, runs), timings)
+    out = _fold_work_precision_pde(out, problem, plan_dir, timings,
+                                   extra_levels=bool(work_precision and sandbox),
+                                   timeout_s=timeout_s, mem_mb=mem_mb)
     # The finest run, carried to the ledger re-audit and dropped before the record
     # is written -- it holds full solution arrays and has no place in results.json.
     out["_run_result"] = runs[-1][1]
     return out
 
 
-def verify_pde_reference(problem, plan_dir, sandbox=False, timeout_s=120, mem_mb=4096):
+def verify_pde_reference(problem, plan_dir, sandbox=False, timeout_s=DEFAULT_SOLVER_TIMEOUT_S,
+                         mem_mb=DEFAULT_SOLVER_MEM_MB, work_precision=True):
     """A PDE with no closed form, scored against a harness-owned reference field.
 
     The scoring path is `verify_pde`'s, unchanged: ``_pde_eval_run`` takes the truth
@@ -988,14 +1442,284 @@ def verify_pde_reference(problem, plan_dir, sandbox=False, timeout_s=120, mem_mb
                 "error": f"{problem['slug']}: reference has no measured reference_error; "
                          "run benchmark/make_references.py and record the two-scheme "
                          "agreement before scoring against it"}
-    return verify_pde(problem, plan_dir, sandbox=sandbox, timeout_s=timeout_s, mem_mb=mem_mb)
+    return verify_pde(problem, plan_dir, sandbox=sandbox, timeout_s=timeout_s,
+                      mem_mb=mem_mb, work_precision=work_precision)
+
+
+# --- work-precision sweep ---------------------------------------------------
+# A work-precision diagram plots error against the time that error cost. It is how
+# the numerical-analysis literature -- BENCHOP included -- compares methods, because
+# "more accurate" is not a claim until "at what cost" is attached: a scheme that wins
+# at a loose tolerance routinely loses at a tight one, and the crossing point is the
+# result. Two things make the first points nearly free here. The PDE path already
+# solves at N and 2N for the observed-order check, and since step 1 it already times
+# each of those solves -- so the first two (error, time) pairs cost no extra compute
+# at all, only the join of two records the harness had been keeping separately.
+# Beyond that a problem may declare ``work_precision_levels`` and pay for the rest.
+#
+# Declared levels, both optional and both on the problem dict:
+#   PDE: a list of resolutions, e.g. ``[32, 64, 128, 256]``. Levels already covered
+#        by the graded ladder are reused rather than re-solved.
+#   SDE: a list of ``(num_paths, dt)`` pairs, e.g. ``[(20000, 0.02), (80000, 0.005)]``,
+#        ordered on emission by the work they ask for (paths x steps). The seed is
+#        held fixed across the sweep; moving the sample and the work together would
+#        measure two things at once.
+#
+# Three rules keep the series honest, and each one is a test:
+#   * It never moves a verdict. The curve is measurement taken after the grade is
+#     decided. An extra level that crashes, times out, is ignored by the solver or
+#     cannot be scored is recorded under ``skipped`` with its reason, and the verdict
+#     stands exactly as the graded ladder set it.
+#   * Sandbox only. An inline time and a sandboxed time are different measurement
+#     conditions (step 2), so the inline path emits no series rather than one that
+#     invites the comparison.
+#   * Measured, never modelled. A point exists only where a real solve produced both
+#     an error and a clock. Nothing is interpolated and no slope is fitted here; the
+#     series is emitted raw, because a fitted exponent would be a claim and the
+#     points are evidence.
+
+
+def _wp_declared(problem):
+    return problem.get("work_precision_levels") or []
+
+
+def _wp_pde_levels(problem):
+    """Declared extra resolutions, de-duplicated and ascending."""
+    return sorted({int(n) for n in _wp_declared(problem) if int(n) > 0})
+
+
+def _wp_sde_levels(problem):
+    """Declared ``(num_paths, dt)`` pairs, ordered by the work each asks for --
+    paths x steps, which is the sweep's own cost axis and so the order a reader
+    expects the series in."""
+    T = float(problem["T"])
+    out = set()
+    for item in _wp_declared(problem):
+        n, dt = int(item[0]), float(item[1])
+        if n > 0 and dt > 0:
+            out.add((n, dt))
+    return sorted(out, key=lambda nd: nd[0] * max(round(T / nd[1]), 1))
+
+
+def _wp_point(level, rel_err, clock, graded):
+    """One point on the curve: where it was taken, what it got wrong, what it cost."""
+    pt = dict(level)
+    pt["rel_err"] = float(rel_err)
+    pt["solve_s"] = (clock or {}).get("solve_s")
+    pt["wall_s"] = (clock or {}).get("wall_s")
+    pt["graded"] = bool(graded)
+    return pt
+
+
+def _wp_series(axis, points, skipped):
+    series = {"axis": axis, "path": "sandbox", "points": points}
+    if skipped:
+        series["skipped"] = skipped
+    return series
+
+
+def _wp_solve_pde(problem, plan_dir, N, timeout_s, mem_mb):
+    """One extra PDE point: solve at ``N``, score it, return ``(point, None)`` or
+    ``(None, reason)``.
+
+    Every failure path returns a reason instead of raising, including the blanket
+    ``except``. That is not defensive habit: this runs *after* the verdict is
+    decided, so an exception escaping here would convert a graded PASS into an
+    ``error`` status on the strength of a measurement the verdict does not use."""
+    import runner
+    try:
+        run = runner.run_solver(problem=problem, plan_dir=plan_dir,
+                                timeout_s=timeout_s, mem_mb=mem_mb, pde_N=N)
+        if run["status"] != "ok":
+            return None, run.get("reason", "crashed")
+        if not run.get("accepted_resolution"):
+            # A legacy ``solve_pde()`` ignores N, so every level would return the
+            # same solve: one point drawn four times, which reads as a flat curve
+            # rather than as the absent measurement it is.
+            return None, "fixed_resolution"
+        ev, err = _pde_eval_run(problem, run["result"])
+        if err is not None:
+            return None, err.get("status", "unscorable")
+        if not np.isfinite(ev["primary_err"]):
+            return None, "nonfinite"
+        clock = {"solve_s": run.get("solve_s"), "wall_s": run.get("wall_s")}
+        return _wp_point({"N": N}, ev["primary_err"], clock, False), None
+    except Exception as exc:  # noqa: BLE001 -- measurement must not rewrite a verdict
+        return None, type(exc).__name__
+
+
+def _wp_sde_err(scored):
+    """The SDE error axis: the worst relative error the verdict rests on.
+
+    The gate is every component's mean and variance inside tolerance *and* every
+    quantity of interest inside its own, so the curve is the max over all three and
+    describes the solver that was graded rather than a differently-summarized one.
+    The functional term matters more than it looks: a problem scored only on a price
+    has no components at all, and without it the axis would be a constant zero and
+    the curve would read as a perfect solver at every level. ``None`` where there is
+    no error to plot: the stability route, or a run that did not score."""
+    if scored.get("status") != "ok" or "worst_variance_rel_err" not in scored:
+        return None
+    v = max(float(scored["worst_variance_rel_err"]),
+            float(scored.get("worst_mean_rel_err") or 0.0),
+            float(scored.get("worst_functional_rel_err") or 0.0))
+    return v if np.isfinite(v) else None
+
+
+def _wp_solve_sde(problem, plan_dir, num_paths, dt, timeout_s, mem_mb, reference):
+    """One extra SDE point, with the same never-raise contract as its PDE twin."""
+    import runner
+    try:
+        run = runner.run_solver(problem=problem, plan_dir=plan_dir,
+                                timeout_s=timeout_s, mem_mb=mem_mb,
+                                sde_num_paths=num_paths, sde_dt=dt)
+        if run["status"] != "ok":
+            return None, run.get("reason", "crashed")
+        # A solver with a hardcoded path count would otherwise contribute the same
+        # error at every level and draw a flat curve -- the exact failure the ladder
+        # exists to catch on the PDE side, so it is caught here too.
+        got = np.asarray(run["result"].get("terminal_paths", []), dtype=float)
+        if got.size and got.size // max(int(problem["state_dimension"]), 1) != num_paths:
+            return None, "level_ignored"
+        comps, meta, _res, err = _run_and_read_sde(
+            problem, plan_dir, injected=(run["result"], run["run_meta"]))
+        if err is not None:
+            return None, err.get("status", "unscorable")
+        scored = _score_sde_moments(problem, comps, _sde_moment_truth(problem),
+                                    meta, reference, result=run["result"])
+        rel = _wp_sde_err(scored)
+        if rel is None:
+            return None, "unscorable"
+        clock = {"solve_s": run.get("solve_s"), "wall_s": run.get("wall_s")}
+        return _wp_point({"num_paths": num_paths, "dt": dt}, rel, clock, False), None
+    except Exception as exc:  # noqa: BLE001 -- measurement must not rewrite a verdict
+        return None, type(exc).__name__
+
+
+def _fold_work_precision_pde(out, problem, plan_dir, timings, *, extra_levels,
+                             timeout_s, mem_mb):
+    """Join the graded ladder's errors to its clocks, then add the declared levels.
+
+    The graded points cost nothing: ``_score_pde_runs`` already recorded a
+    per-resolution error in ``grid_errors`` and ``_produce_pde_runs`` already
+    recorded a per-resolution clock, and until now the two sat in the record with no
+    way to read one against the other. ``timings`` is empty on the inline path, which
+    is what makes the whole series sandbox-only without a flag for it.
+
+    The guards sit inside the ``try`` with everything else, so that nothing in the
+    series -- not even deciding whether to build one -- can raise into a decided
+    verdict."""
+    try:
+        if out.get("status") != "ok" or not timings:
+            return out
+        if not np.isfinite(out.get("rel_l2_err", np.inf)):
+            return out
+        by_N = {t["N"]: t for t in timings}
+        points, skipped = [], []
+        grid_errs = out.get("grid_errors")
+        if grid_errs:
+            for key, e in grid_errs.items():
+                N = int(key)
+                points.append(_wp_point({"N": N}, e, by_N.get(N), True))
+        else:
+            N = out.get("grid_N")
+            points.append(_wp_point({"N": N}, out["rel_l2_err"], by_N.get(N), True))
+        graded = {p["N"] for p in points}
+        if extra_levels:
+            for N in _wp_pde_levels(problem):
+                if N in graded:
+                    continue
+                pt, why = _wp_solve_pde(problem, plan_dir, N, timeout_s, mem_mb)
+                (points if pt else skipped).append(pt or {"N": N, "reason": why})
+        points.sort(key=lambda p: -1 if p["N"] is None else p["N"])
+        out["work_precision"] = _wp_series("N", points, skipped)
+    except Exception as exc:  # noqa: BLE001 -- see _wp_solve_pde
+        out["work_precision"] = {"axis": "N", "path": "sandbox", "points": [],
+                                 "error": f"{type(exc).__name__}: {exc}"}
+    return out
+
+
+def _wp_sde_free_level(problem, out):
+    """The second point the SDE curve has had since step 5 and was not plotting.
+
+    A functional-scored problem is already re-solved at ``functional_level_paths``
+    to prove its answer is an estimate rather than a constant -- same sandbox, same
+    step, a quarter of the paths -- and the harness times that solve. That is a real
+    (error, time) pair the grade has already paid for. Step 9 measured what skipping
+    it cost: every problem in the externally anchored suite emitted a one-point
+    "curve", and since none of them declares ``work_precision_levels``, a step-10
+    sweep would have recorded no work-precision information at all.
+
+    It is folded in only where the graded point's error is the same quantity. A
+    problem with moment gates plots max(mean, variance, functional) and the coarse
+    level scores the functional alone, so there the point is reported as skipped
+    rather than drawn against a differently-summarized error.
+
+    Returns ``(point, None)`` or ``(None, reason)``, and never raises -- the caller
+    is measurement taken after the verdict."""
+    lv = out.get("functional_levels") or {}
+    if not problem.get("functional_truth") or lv.get("status") != "ok":
+        return None, None  # nothing to say: this problem has no second level
+    n_lo, dt = lv.get("num_paths_coarse"), lv.get("dt")
+    if problem.get("moments") is not None:
+        return None, "the coarse level scores only the functional"
+    if lv.get("worst_functional_rel_err") is None or lv.get("solve_s") is None:
+        return None, "coarse level not scored or not timed"
+    return _wp_point({"num_paths": int(n_lo), "dt": float(dt)},
+                     lv["worst_functional_rel_err"],
+                     {"solve_s": lv.get("solve_s"), "wall_s": lv.get("wall_s")},
+                     False), None
+
+
+def _fold_work_precision_sde(out, problem, plan_dir, graded_run, *, extra_levels,
+                             timeout_s, mem_mb, reference):
+    """The SDE series: the graded (num_paths, dt) as its anchor, the coarse level of
+    the two-level check where there is one, plus declared levels.
+
+    ~~Unlike the PDE side there is no free second point~~ -- **[rev, step 9]** there
+    is one wherever a problem is scored on a functional, and it is the same kind of
+    reuse the PDE side makes of its order-check ladder. Beyond those two, a curve
+    costs solves."""
+    try:
+        rel = _wp_sde_err(out)
+        run_meta = out.get("run") or {}
+        if rel is None or run_meta.get("solve_s") is None:
+            return out
+        clock = {"solve_s": run_meta.get("solve_s"),
+                 "wall_s": (graded_run or {}).get("wall_s")}
+        anchor = (int(run_meta["num_paths"]), float(run_meta["dt"]))
+        points = [_wp_point({"num_paths": anchor[0], "dt": anchor[1]}, rel, clock, True)]
+        skipped = []
+        free, why = _wp_sde_free_level(problem, out)
+        if free:
+            points.append(free)
+        elif why:
+            skipped.append({"num_paths": (out.get("functional_levels") or {})
+                            .get("num_paths_coarse"), "dt": anchor[1], "reason": why})
+        if extra_levels:
+            have = {(p["num_paths"], p["dt"]) for p in points}
+            for n, dt in _wp_sde_levels(problem):
+                if (n, dt) in have:
+                    continue
+                pt, why = _wp_solve_sde(problem, plan_dir, n, dt, timeout_s, mem_mb,
+                                        reference)
+                (points if pt else skipped).append(
+                    pt or {"num_paths": n, "dt": dt, "reason": why})
+        T = float(problem["T"])
+        points.sort(key=lambda p: p["num_paths"] * max(round(T / p["dt"]), 1))
+        out["work_precision"] = _wp_series("paths_dt", points, skipped)
+    except Exception as exc:  # noqa: BLE001 -- see _wp_solve_pde
+        out["work_precision"] = {"axis": "paths_dt", "path": "sandbox", "points": [],
+                                 "error": f"{type(exc).__name__}: {exc}"}
+    return out
 
 
 # --- dispatch ---------------------------------------------------------------
 
 
 def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
-                   timeout_s=120, mem_mb=4096):
+                   timeout_s=DEFAULT_SOLVER_TIMEOUT_S, mem_mb=DEFAULT_SOLVER_MEM_MB,
+                   work_precision=True):
     """Independently verify one solved problem. Returns a result dict with a
     ``status`` field: no_ground_truth | ok | inconclusive | nonfinite | contract |
     error | crashed. ``contract`` is a solver that ran but did not return what the
@@ -1013,13 +1737,28 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
     *only* truth is a functional simply has no ``analytic`` and no ``reference``.
 
     ``sandbox=True`` runs ``solver.py`` in an isolated subprocess (wall-clock
-    timeout, memory cap, numpy+stdlib-only import policy) via ``runner.py`` and
-    scores the returned output. Use it for untrusted (one-shot baseline) solvers.
-    A sandbox failure -- timeout, out-of-memory, blocked import, wrong signature,
-    or a return value that violates the contract -- yields ``status="crashed"``
-    with a ``reason``; it is a genuine failure of that solver, never an
-    "unverified" of the benchmark. The default ``sandbox=False`` keeps the vetted
-    pipeline path importing the solver inline, unchanged."""
+    timeout, memory cap, import policy) via ``runner.py`` and scores the returned
+    output. A sandbox failure -- timeout, out-of-memory, blocked import, wrong
+    signature, or a return value that violates the contract -- yields
+    ``status="crashed"`` with a ``reason``; it is a genuine failure of that solver,
+    never an "unverified" of the benchmark.
+
+    **Both callers now pass it.** ``oneshot.py`` always did; ``run.py`` does since
+    2026-10-17, because a pipeline graded inline and a baseline graded sandboxed are
+    measured under different conditions and neither their times nor their crash
+    behaviour are comparable (plan-benchop-slv.md §6, step 2). The argument survives,
+    defaulting to ``False``, for callers that drive scoring themselves --
+    ``validate_ground_truth.py`` and the tests feed synthetic output and never
+    execute a solver through here. Reaching parity took three fixes to what the
+    boundary carries: ``functionals``, both result shapes at once, and an absolute
+    solver path. All 34 solved workspaces now return the identical verdict either
+    way.
+
+    ``work_precision`` gates only the *extra* solves of the work-precision sweep --
+    the levels a problem declares in ``work_precision_levels``. The graded ladder's
+    own (error, time) points are emitted regardless, because they are already paid
+    for. Turning it off makes a re-grade cheap; it cannot change a verdict either
+    way, since nothing the sweep measures is an input to one."""
     kind = problem.get("ground_truth_kind", "exact")
     if kind != "stability" and not problem["has_ground_truth"]:
         return {"status": "no_ground_truth",
@@ -1044,14 +1783,14 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
     # SDE is a single run, so it is pre-executed here (sandboxed) and injected. PDE
     # may need two runs (the N/2N order check), so verify_pde orchestrates its own
     # sandboxed execution.
-    injected = None
+    injected = sde_run = None
     if sandbox and problem["type"] == "sde":
         import runner  # local import: keeps the pipeline path free of the dependency
         run = runner.run_solver(problem=problem, plan_dir=plan_dir,
                                 timeout_s=timeout_s, mem_mb=mem_mb)
         if run["status"] != "ok":
             return _crashed(run, plan_dir)
-        injected = (run["result"], run["run_meta"])
+        injected, sde_run = (run["result"], run["run_meta"]), run
 
     try:
         if problem["type"] == "sde":
@@ -1063,10 +1802,34 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
                 out = verify_sde(problem, plan_dir, injected=injected)
         elif kind == "reference":
             out = verify_pde_reference(problem, plan_dir, sandbox=sandbox,
-                                       timeout_s=timeout_s, mem_mb=mem_mb)
+                                       timeout_s=timeout_s, mem_mb=mem_mb,
+                                       work_precision=work_precision)
         else:
             out = verify_pde(problem, plan_dir, sandbox=sandbox,
-                             timeout_s=timeout_s, mem_mb=mem_mb)
+                             timeout_s=timeout_s, mem_mb=mem_mb,
+                             work_precision=work_precision)
+        # Both SDE folds happen here rather than inside the three verify_sde* entry
+        # points, for the same reason the graded SDE run is executed here: the
+        # sandbox parameters live at this level, and the SDE side grades a single
+        # pre-executed run while the PDE side orchestrates its own. The order is
+        # not arbitrary -- the two-level check is a gate and runs first, the
+        # work-precision series is measurement taken after the verdict is settled.
+        if sde_run is not None:
+            out = _fold_sde_functional_levels(
+                out, problem, plan_dir, sde_run.get("result"),
+                timeout_s=timeout_s, mem_mb=mem_mb)
+        elif problem["type"] == "sde" and problem.get("functional_truth") \
+                and isinstance(out, dict) and out.get("status") == "ok":
+            # Inline, the harness cannot re-solve at a second path count, so the
+            # anti-hardcoding defence is simply absent. It is recorded as absent:
+            # a passing record with nothing in this field would read as a record
+            # that had the defence and cleared it.
+            out["functional_levels"] = {"status": "not_run", "reason": "inline"}
+        if sde_run is not None:
+            out = _fold_work_precision_sde(
+                out, problem, plan_dir, sde_run,
+                extra_levels=bool(work_precision), timeout_s=timeout_s,
+                mem_mb=mem_mb, reference=(kind == "reference"))
     except OracleLeak as exc:
         return {"status": "error", "error": f"answer-key leakage: {exc}",
                 "leakage": True, "plan_dir": os.path.relpath(plan_dir, REPO_ROOT)}
@@ -1150,6 +1913,66 @@ def ledger_audit(workspace_dir, plan_dir, out):
     return result
 
 
+def _wp_level_str(axis, p):
+    return f"N={p['N']}" if axis == "N" else f"{p['num_paths']}p/dt={p['dt']:g}"
+
+
+def _fmt_work_precision(out):
+    """The error-vs-time series, one line, as ``level: error@time`` pairs. A level
+    that was asked for and not measured is named with its reason rather than left
+    out, so a short curve is never mistaken for a cheap one."""
+    wp = out.get("work_precision") or {}
+    lines = []
+    if wp.get("error"):
+        return [f"  work-precision: not recorded ({wp['error']})"]
+    if wp.get("points"):
+        axis = wp["axis"]
+        pts = "  ".join(
+            f"{_wp_level_str(axis, p)}: {p['rel_err']:.2e}"
+            + ("" if p.get("solve_s") is None else f"@{p['solve_s']:.4g}s")
+            + ("" if p.get("graded") else "*")
+            for p in wp["points"])
+        lines.append(f"  work-precision: {pts}   (* = swept, not graded)"
+                     if any(not p.get("graded") for p in wp["points"])
+                     else f"  work-precision: {pts}")
+    if wp.get("skipped"):
+        why = ", ".join(f"{_wp_level_str(wp['axis'], sk)}: {sk['reason']}"
+                        for sk in wp["skipped"])
+        lines.append(f"  not measured  : {why}")
+    return lines
+
+
+def _fmt_functionals(out, problem=None):
+    """The quantity-of-interest lines, shared by the PDE and SDE branches of
+    ``_fmt`` so one record cannot print what the other hides."""
+    lines = []
+    if out.get("functional_errs"):
+        ftol = out.get("functional_tol", _functional_tol(problem or {}))
+        used = out.get("functional_tol_used") or {}
+        abs_errs = out.get("functional_abs_errs") or {}
+        for name, err in out["functional_errs"].items():
+            tol = used.get(name, ftol)
+            ae = abs_errs.get(name)
+            astr = f"  abs {ae:.3e}" if ae is not None else ""
+            wide = f", widened from {ftol:g}" if tol > ftol else ""
+            lines.append(f"  functional   : {name} rel {err:.3e}{astr}  "
+                         f"(pass < {tol:g}{wide} -> {'ok' if err < tol else 'FAIL'})")
+    lv = out.get("functional_levels")
+    if lv and lv.get("status") != "ok":
+        lines.append(f"  two-level    : not run ({lv.get('reason')}) -- no "
+                     "anti-hardcoding check on this record")
+    elif lv:
+        worst = max(lv["values"].values(), key=lambda v: v["delta"] / max(v["band"], 1e-30))
+        verdict = ("ok" if lv.get("passed")
+                   else ("CONSTANT across levels" if lv.get("constant") else "INCONSISTENT"))
+        lines.append(f"  two-level    : {lv['num_paths_graded']} vs "
+                     f"{lv['num_paths_coarse']} paths, worst |delta| {worst['delta']:.3e} "
+                     f"of band {worst['band']:.3e} -> {verdict}")
+        if lv.get("level_ignored"):
+            lines.append("  !! the coarse run ignored the path count it was given")
+    return lines
+
+
 def _fmt(out, problem=None):
     """Render one verification result. ``problem`` is display-only -- it supplies the
     problem's own tolerance, which the summary line previously printed as the global
@@ -1181,11 +2004,7 @@ def _fmt(out, problem=None):
         if out.get("field_errs"):
             per = "  ".join(f"{k}={v:.2e}" for k, v in out["field_errs"].items())
             lines.append(f"  per-field    : {per}")
-        if out.get("functional_errs"):
-            ftol = out.get("functional_tol", _pde_functional_tol(problem or {}))
-            for name, err in out["functional_errs"].items():
-                lines.append(f"  functional   : {name} rel err {err:.3e}  "
-                             f"(pass < {ftol:g} -> {'ok' if err < ftol else 'FAIL'})")
+        lines.extend(_fmt_functionals(out, problem))
         if out.get("reference_error"):
             lines.append(f"  reference    : own error {out['reference_error']:.3e}"
                          + (f", tolerance widened to {out['tol_used']:.3e}"
@@ -1202,6 +2021,13 @@ def _fmt(out, problem=None):
             lines.append(f"  [{gate}] {d['name']:<22}= {d['value']:.3e}  -> {verdict}")
         if out.get("constraint_violation"):
             lines.append(f"  !! CONSTRAINT VIOLATION: {', '.join(out['violated_constraints'])}")
+        if (out.get("timing") or {}).get("solve_s") is not None:
+            t = out["timing"]
+            per = "  ".join(f"N={r['N']}: {r['solve_s']:.4g}s" for r in t["runs"]
+                            if r.get("solve_s") is not None)
+            lines.append(f"  solve time    : {t['solve_s']:.4g}s  ({per}; "
+                         f"{t['wall_s']:.4g}s incl. {t['path']} overhead)")
+        lines.extend(_fmt_work_precision(out))
         lines.append(f"  verified score: {out['verified_score']}/10")
         lines.append(f"  plan          : {out['plan_dir']}")
     else:  # SDE moments (exact or reference)
@@ -1211,6 +2037,10 @@ def _fmt(out, problem=None):
                 f"(rel {c['mean_rel_err']:.3%}{' skip' if c['near_zero_mean'] else ''}) | "
                 f"var {c['empirical_variance']:.6g} vs {c['exact_variance']:.6g} "
                 f"(rel {c['variance_rel_err']:.3%})")
+        lines.extend(_fmt_functionals(out, problem))
+        if (out.get("run") or {}).get("solve_s") is not None:
+            lines.append(f"  solve time    : {out['run']['solve_s']:.4g}s")
+        lines.extend(_fmt_work_precision(out))
         lines.append(f"  verified score: {out['verified_score']}/10 "
                      f"({'PASS' if out['passed'] else 'FAIL'})")
         lines.append(f"  plan          : {out['plan_dir']}")
@@ -1225,20 +2055,34 @@ def main(argv=None):
     ap.add_argument("--workspace-dir", default=None,
                     help="explicit workspace dir (overrides --workspace/--slug pairing)")
     ap.add_argument("--plan-dir", default=None, help="explicit plan dir to verify")
-    ap.add_argument("--sandbox", action="store_true",
+    ap.add_argument("--sandbox", dest="sandbox", action="store_true", default=True,
                     help="run solver.py in an isolated subprocess (timeout, mem cap, "
-                         "numpy+stdlib-only) -- use for untrusted one-shot solvers")
-    ap.add_argument("--timeout", type=int, default=120,
-                    help="sandbox wall-clock timeout in seconds (default 120)")
-    ap.add_argument("--mem-mb", type=int, default=4096,
-                    help="sandbox address-space cap in MB, best-effort (default 4096)")
+                         "import policy). On by default, because that is how both "
+                         "run.py and oneshot.py grade -- a spot-check that took the "
+                         "other path could disagree with the recorded verdict")
+    ap.add_argument("--no-sandbox", dest="sandbox", action="store_false",
+                    help="import and call solver.py inline instead (debugging: a "
+                         "traceback in this process, no budget)")
+    ap.add_argument("--timeout", type=int, default=DEFAULT_SOLVER_TIMEOUT_S,
+                    help=f"sandbox wall-clock timeout per solve in seconds "
+                         f"(default {DEFAULT_SOLVER_TIMEOUT_S})")
+    ap.add_argument("--mem-mb", type=int, default=DEFAULT_SOLVER_MEM_MB,
+                    help=f"sandbox address-space cap in MB, best-effort "
+                         f"(default {DEFAULT_SOLVER_MEM_MB})")
+    ap.add_argument("--no-work-precision", dest="work_precision", action="store_false",
+                    default=True,
+                    help="skip the extra solves of the work-precision sweep (the "
+                         "levels the problem declares). The graded ladder's own "
+                         "(error, time) points are free and are emitted either way; "
+                         "no verdict depends on any of them")
     args = ap.parse_args(argv)
 
     problem = P.by_slug(args.slug)
     wdir = args.workspace_dir or os.path.join(args.workspace, args.slug)
     plan_dir = os.path.abspath(args.plan_dir) if args.plan_dir else None
     out = verify_problem(problem, wdir, plan_dir=plan_dir, sandbox=args.sandbox,
-                         timeout_s=args.timeout, mem_mb=args.mem_mb)
+                         timeout_s=args.timeout, mem_mb=args.mem_mb,
+                         work_precision=args.work_precision)
     print(f"=== {problem['id']} {args.slug} ({problem['type'].upper()}, tier {problem['tier']}) ===")
     print(_fmt(out, problem))
 

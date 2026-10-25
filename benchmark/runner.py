@@ -18,7 +18,12 @@ subprocess with:
 Only numeric arrays / scalars cross the process boundary (never a pickled solver
 object): the child extracts exactly the fields the solver contract promises and
 writes them to an ``.npz`` + a ``.meta.json`` sidecar, so the parent scores the
-same data whether it ran inline or sandboxed. Every failure mode -- missing
+same data whether it ran inline or sandboxed. "Exactly the fields" is a claim the
+two paths' verdicts depend on, so it is pinned by a test rather than trusted:
+``grid``, ``fields`` / ``numerical_solution``, ``t_final`` for a PDE,
+``terminal_paths`` / ``empirical_mean`` / ``empirical_variance`` for an SDE, and
+``functionals`` for either -- the whole set ``verify.py`` and ``verifylib.audit``
+read off a result. Every failure mode -- missing
 function, wrong signature, exception, out-of-memory, timeout, a blocked import,
 or a return value that does not match the schema -- comes back as a structured
 ``crashed`` result with a ``reason``. Crucially, non-finite output is *not* a
@@ -35,6 +40,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -169,6 +175,25 @@ def _coerce_scalar_or_list(v):
     return [float(x) for x in np.asarray(v, dtype=float).ravel()]
 
 
+def _coerce_functional(v):
+    """Carry one scalar quantity of interest across the boundary without deciding
+    its fate.
+
+    ``verify._functional_errs`` distinguishes three outcomes -- a real number, a
+    value that is present but is not one (``inconclusive``), and a name that is
+    missing altogether (``contract``) -- and that decision is the parent's to make,
+    on both execution paths, or the sandboxed and inline verdicts diverge. So the
+    rule here is exactly the parent's rule: whatever ``float()`` accepts travels as
+    a float (NaN and Inf included -- ``json`` round-trips both, and a non-finite
+    functional is a verdict the parent owns), and whatever it refuses travels as its
+    repr, which keeps the value present and still non-numeric.
+    """
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return repr(v)
+
+
 def _extract_sde(res):
     """Pull the contract fields out of an SDE solver's return dict.
 
@@ -197,7 +222,21 @@ def _extract_sde(res):
         if tp.ndim == 1:
             scalars.setdefault("empirical_mean", float(tp.mean()))
             scalars.setdefault("empirical_variance", float(tp.var(ddof=1)))
+    # A quantity of interest travels on this path too, by exactly the PDE rule. The
+    # SDE contract gained one in plan-benchop-slv.md §6 step 5, and a boundary that
+    # carried it for one problem type and dropped it for the other is the defect
+    # step 2 already had to fix once: a dropped `functionals` does not read as
+    # missing data downstream, it reads as a solver that refused the contract.
+    _extract_functionals(res, scalars)
     return scalars, arrays
+
+
+def _extract_functionals(res, scalars):
+    """Move ``res["functionals"]`` into ``scalars`` if it is a dict. Shared by both
+    result shapes so the two can never drift apart."""
+    func = res.get("functionals")
+    if isinstance(func, dict):
+        scalars["functionals"] = {str(k): _coerce_functional(v) for k, v in func.items()}
 
 
 def _pde_mode(fn):
@@ -235,14 +274,25 @@ def _extract_pde(res):
     if not isinstance(grid, dict) or not grid:
         raise ValueError("must return `grid` as a non-empty dict of axis arrays")
 
+    # Both shapes are carried when a solver returns both, which many do: `fields`
+    # is the systems contract and `numerical_solution` the scalar one, and a solver
+    # that fills in each costs nothing. Keeping only `fields` -- as this did until
+    # 2026-10-17 -- silently drops the key a *scalar* problem is scored on, and
+    # `_field_num` then raises KeyError and the verdict is `inconclusive` for a
+    # solver that is in fact correct. Measured over the 34 solved workspaces: 5 of
+    # them (wave_1d, laplace_2d, anisotropic_diffusion, and both Cahn-Hilliards)
+    # passed 10/10 inline and came back inconclusive sandboxed, every one for this
+    # reason. The boundary transports; the parent decides which shape it wants.
     arrays, field_keys = {}, []
-    if isinstance(res.get("fields"), dict) and res["fields"]:
-        for name, arr in res["fields"].items():
+    fields = res.get("fields")
+    if isinstance(fields, dict) and fields:
+        for name, arr in fields.items():
             arrays[f"field__{name}"] = np.asarray(arr, dtype=float)
             field_keys.append(name)
-    elif "numerical_solution" in res:
+    has_scalar = "numerical_solution" in res
+    if has_scalar:
         arrays["numerical_solution"] = np.asarray(res["numerical_solution"], dtype=float)
-    else:
+    if not field_keys and not has_scalar:
         raise ValueError("must return `numerical_solution` (scalar) or `fields` (systems)")
 
     grid_keys = []
@@ -255,7 +305,39 @@ def _extract_pde(res):
     scalars = {"grid_keys": grid_keys, "field_keys": field_keys}
     tf = res.get("t_final")
     scalars["t_final"] = None if tf is None else float(tf)
+    # The quantity of interest for a functional-scored problem (an eigenvalue, an
+    # option price). Without this the sandbox dropped it and the parent failed the
+    # solver for not returning what it had in fact returned -- measured 2026-10-17
+    # on `pde_schrodinger_eigen_2d`, where both archived C0 baselines returned
+    # `lambda_1` and both were recorded `contract` / FAIL. Only a dict is carried:
+    # anything else is not the contract, and the parent calls that `contract` too.
+    _extract_functionals(res, scalars)
     return scalars, arrays
+
+
+def _timed(fn, *args, **kwargs):
+    """Call ``fn`` and return ``(result, seconds)``.
+
+    The clock covers the solve and nothing else: it starts after the solver module
+    has been imported and its signature probed, so interpreter startup, the numpy
+    import and the solver's own module-level code all fall outside it. That is
+    exactly the difference between this number and ``run_solver``'s ``wall_s``,
+    which is what makes the pair readable as (solve, harness overhead) instead of
+    one opaque total -- and what makes a work-precision diagram measure the scheme
+    rather than the process. ``perf_counter`` rather than ``monotonic``: the same
+    monotonicity guarantee at finer resolution, and a coarse grid can solve in well
+    under a millisecond.
+
+    Rounded to the microsecond, not the previous tenth of a millisecond: the coarse
+    end of a work-precision ladder (step 3) really does solve in tens of
+    microseconds, and 4 decimals recorded those as ``0.0`` -- a time that cannot be
+    plotted on a log axis and reads as "instant" rather than "below the clock's
+    recorded resolution". 6 decimals is still far above ``perf_counter``'s own
+    resolution, so nothing here claims precision the clock does not have.
+    """
+    t0 = time.perf_counter()
+    res = fn(*args, **kwargs)
+    return res, round(time.perf_counter() - t0, 6)
 
 
 def _child_main(spec_path):
@@ -298,15 +380,16 @@ def _child_main(spec_path):
             N = call.get("N")
             if mode == "N":
                 try:
-                    res = fn(N=N)
+                    res, solve_s = _timed(fn, N=N)
                 except TypeError:
-                    res = fn(N)
+                    res, solve_s = _timed(fn, N)
                 accepted = True
             else:
-                res = fn()
+                res, solve_s = _timed(fn)
                 accepted = False
             scalars, arrays = _extract_pde(res)
-            meta["run_meta"] = {"N": N, "accepted_resolution": accepted}
+            meta["run_meta"] = {"N": N, "accepted_resolution": accepted,
+                                "solve_s": solve_s}
         else:
             # Distinguish a wrong signature from an internal error.
             try:
@@ -315,11 +398,11 @@ def _child_main(spec_path):
                 meta.update(reason="bad_signature", error=f"{fn_name}{tuple(call)}: {exc}")
                 _write_meta(out_base, meta)
                 return 3
-            res = fn(**call)
+            res, solve_s = _timed(fn, **call)
             scalars, arrays = _extract_sde(res)
             meta["run_meta"] = {"num_paths": int(call["num_paths"]),
                                 "dt": float(call["dt"]), "T": float(call["T"]),
-                                "seed": int(call["seed"])}
+                                "seed": int(call["seed"]), "solve_s": solve_s}
 
         np.savez(out_base + ".npz", **arrays)
         meta.update(status="ok", reason=None, scalars=scalars,
@@ -351,23 +434,46 @@ def _write_meta(out_base, meta):
 # --- parent API -------------------------------------------------------------
 
 
-def run_solver(plan_dir, problem, timeout_s=120, mem_mb=4096, scratch_dir=None, pde_N=None):
+def run_solver(plan_dir, problem, timeout_s=120, mem_mb=4096, scratch_dir=None, pde_N=None,
+               sde_num_paths=None, sde_dt=None):
     """Run ``plan_dir/solver.py`` in a sandboxed subprocess.
 
     Returns a dict:
-        {"status": "ok",      "result": <dict>, "run_meta": <dict>, "wall_s": ...}
+        {"status": "ok",      "result": <dict>, "run_meta": <dict>,
+         "wall_s": ..., "solve_s": ...}
         {"status": "crashed", "reason": <str>,  "error": <str>,     "wall_s": ...}
     ``result`` mirrors the fields the solver contract promises (``terminal_paths``
     / ``empirical_mean`` / ``empirical_variance`` for SDE; ``numerical_solution``
     / ``grid`` / ``t_final`` for PDE), so it can be handed straight to verify.py's
     scoring functions.
+
+    Two clocks come back, and they measure different things. ``wall_s`` is the whole
+    subprocess -- interpreter startup, the numpy/scipy import, the solver module's
+    top-level code and the solve -- which is the number that must bound a runaway,
+    and is the one the timeout is applied to. ``solve_s`` (also carried in
+    ``run_meta``) is the ``solve_pde`` / ``solve_sde`` call alone, measured in the
+    child. Their difference is the harness's own overhead, which on a fast problem
+    is most of ``wall_s`` and would otherwise swamp an error-vs-time comparison.
+    ``solve_s`` is absent on a crash, since there is no completed solve to time.
+
+    ``pde_N`` / ``sde_num_paths`` / ``sde_dt`` override the configuration the problem
+    declares. The graded call never passes them -- it is the problem's own
+    resolution, or ``2 * grid_N`` for the order check -- so they exist for the
+    work-precision sweep, which re-solves the same problem at other points on the
+    cost axis (plan-benchop-slv.md §6, step 3). The seed is deliberately NOT
+    overridable: a sweep that also moved the sample would be measuring two things at
+    once, and the whole value of the curve is that only the work changes.
     """
-    import time
     import uuid
 
     import numpy as np
 
-    solver_path = os.path.join(plan_dir, "solver.py")
+    # Absolute, because the child is launched with ``cwd=HERE`` (benchmark/) while
+    # the parent may have been called from anywhere: a relative ``plan_dir`` that
+    # imports fine inline resolves against the wrong directory in the child. The
+    # plan's own directory goes on the child's ``sys.path`` from this same string,
+    # so absolutising here fixes sibling imports too.
+    solver_path = os.path.abspath(os.path.join(plan_dir, "solver.py"))
     if not os.path.exists(solver_path):
         return {"status": "crashed", "reason": "no_solve_fn",
                 "error": f"no solver.py in {plan_dir}", "wall_s": 0.0}
@@ -385,8 +491,12 @@ def run_solver(plan_dir, problem, timeout_s=120, mem_mb=4096, scratch_dir=None, 
     }
     if problem["type"] == "sde":
         import verify as _V  # local import to avoid a cycle at module load
-        spec["call"] = {"num_paths": int(problem["num_paths"]),
-                        "dt": float(_V.sde_verify_dt(problem)),
+        # `is None`, not falsity: a sweep level of 0 paths or dt=0 is a caller bug and
+        # must reach the solver as itself rather than be silently replaced by the
+        # graded configuration, which would record a wrong level against a real time.
+        npaths = problem["num_paths"] if sde_num_paths is None else sde_num_paths
+        dt = _V.sde_verify_dt(problem) if sde_dt is None else sde_dt
+        spec["call"] = {"num_paths": int(npaths), "dt": float(dt),
                         "T": float(problem["T"]), "seed": int(problem["seed"])}
     else:
         spec["call"] = {"N": pde_N}
@@ -432,6 +542,7 @@ def run_solver(plan_dir, problem, timeout_s=120, mem_mb=4096, scratch_dir=None, 
         result = _reconstruct(problem["type"], meta["scalars"], arrays)
         run_meta = meta.get("run_meta", {})
         return {"status": "ok", "result": result, "run_meta": run_meta, "wall_s": wall,
+                "solve_s": run_meta.get("solve_s"),
                 "accepted_resolution": run_meta.get("accepted_resolution")}
     finally:
         for p in (spec_path, meta_path, npz_path):
@@ -448,13 +559,17 @@ def _reconstruct(kind_type, scalars, arrays):
         for k in ("empirical_mean", "empirical_variance"):
             if k in scalars:
                 result[k] = scalars[k]
+        if "functionals" in scalars:
+            result["functionals"] = scalars["functionals"]
         return result
     grid = {k: arrays[f"grid__{k}"] for k in scalars.get("grid_keys", [])}
     out = {"grid": grid, "t_final": scalars.get("t_final")}
+    if "functionals" in scalars:
+        out["functionals"] = scalars["functionals"]
     field_keys = scalars.get("field_keys") or []
     if field_keys:
         out["fields"] = {k: arrays[f"field__{k}"] for k in field_keys}
-    else:
+    if "numerical_solution" in arrays:
         out["numerical_solution"] = arrays["numerical_solution"]
     return out
 

@@ -500,7 +500,8 @@ def process_unit(problem, condition, manuals, model, rep, args):
     # (C1 leaves solver.py on disk in plan_dir; nothing to extract.)
 
     verify = V.verify_problem(problem, plan_dir, plan_dir=plan_dir, sandbox=True,
-                              timeout_s=args.timeout, mem_mb=args.mem_mb)
+                              timeout_s=args.timeout, mem_mb=args.mem_mb,
+                              work_precision=getattr(args, "work_precision", True))
     with open(os.path.join(plan_dir, "verify.json"), "w") as fh:
         json.dump(verify, fh, indent=2, default=_json_default)
 
@@ -565,7 +566,8 @@ def oneshot_pass_local(rec):
 
 def select_problems(args):
     chosen = S.select(args.only)
-    chosen = S.apply_suite_filter(chosen, args.only, args.no_closed_form, args.include_all)
+    chosen = S.apply_suite_filter(chosen, args.only, args.no_closed_form,
+                                args.include_all, args.suite)
     if args.discriminators:
         chosen = [p for p in chosen if p.get("discriminator")]
     if args.type_filter:
@@ -614,10 +616,19 @@ def main(argv=None):
                          "from a denied tool-call attempt that emitted no code) up to this "
                          "many times (default 2); usage-limit stops and real timeouts are "
                          "never retried")
-    ap.add_argument("--timeout", type=int, default=120,
-                    help="sandbox verification timeout in seconds (default 120)")
-    ap.add_argument("--mem-mb", type=int, default=4096,
-                    help="sandbox memory cap in MB, best-effort (default 4096)")
+    ap.add_argument("--timeout", type=int, default=V.DEFAULT_SOLVER_TIMEOUT_S,
+                    help=f"sandbox verification timeout per solve in seconds "
+                         f"(default {V.DEFAULT_SOLVER_TIMEOUT_S}; shared with run.py so the "
+                         f"two sides are measured under one budget)")
+    ap.add_argument("--mem-mb", type=int, default=V.DEFAULT_SOLVER_MEM_MB,
+                    help=f"sandbox memory cap in MB, best-effort "
+                         f"(default {V.DEFAULT_SOLVER_MEM_MB})")
+    ap.add_argument("--no-work-precision", dest="work_precision", action="store_false",
+                    default=True,
+                    help="skip the extra solves of the work-precision sweep. On by "
+                         "default, as in run.py: a baseline swept and a pipeline not "
+                         "swept would have no common error-vs-time axis, which is the "
+                         "comparison the sweep exists for")
     ap.add_argument("--c0-max-turns", dest="c0_max_turns", type=int, default=2,
                     help="C0 turn cap (default 2). Still tool-less at any value -- the "
                          "NoTool allow-list means no tool ever runs; a larger cap only "
@@ -658,6 +669,9 @@ def main(argv=None):
               f"x {len(manuals)} manual-setting(s) x {spread}, model={args.model}")
         return
 
+    S.guard_results_path(chosen, args.results_json,
+                         "benchmark/results/baselines/oneshot_{suite}.json")
+
     prior = load_prior(args.results_json)
     records = dict(prior)
     redo = {v.strip().upper() for v in args.redo.split(",") if v.strip()}
@@ -673,6 +687,7 @@ def main(argv=None):
         "max_turns": args.max_turns, "c0_max_turns": args.c0_max_turns,
         "agent_timeout": args.agent_timeout,
         "solver_timeout_s": args.timeout, "mem_mb": args.mem_mb,
+        "work_precision": args.work_precision,
     }
 
     t_start = time.monotonic()

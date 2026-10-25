@@ -84,3 +84,55 @@ def test_no_staged_plan_for_a_no_closed_form_problem_reads_the_reference():
         for path in glob.glob(os.path.join(REPO, "workspace", prob["slug"], "plans", "*", "*.py")):
             with open(path) as fh:
                 assert citation_scan(fh.read(), path=path) == [], path
+
+
+# --- the externally anchored suite (plan-benchop-slv.md step 7) -----------------
+#
+# The same two rules, and they bind harder here. These answer keys are *published*
+# and have been on the internet since 2018, so a statement that quoted one would
+# not merely be a leak, it would be handing back the thing the suite exists to test
+# independently.
+
+def test_benchop_problem_statements_are_leakage_free(benchop_problems):
+    assert benchop_problems, "the externally anchored suite is empty"
+    for p in benchop_problems:
+        text = p["description"]
+        assert citation_scan(text) == [], p["slug"]
+        assert "references/" not in text and ".json" not in text, p["slug"]
+        for name, value in (p.get("functional_truth") or {}).items():
+            digits = _significant(value)
+            assert digits[:5] not in text.replace(".", ""), (
+                f"{p['slug']}: problem.md appears to quote {name} = {value}")
+
+
+def test_benchop_problem_statements_do_not_name_the_benchmark(benchop_problems):
+    """Naming the source is a recall prompt. The parameters are the benchmark's
+    fingerprint and cannot be hidden, which is exactly why the shifted twins are
+    the control rather than the naming."""
+    for p in benchop_problems:
+        text = p["description"].lower()
+        for word in ("benchop", "uppsala", "von sydow", "published", "reference value"):
+            assert word not in text, f"{p['slug']}: statement says {word!r}"
+
+
+def test_a_shifted_twin_is_not_labelled_as_one(benchop_problems):
+    """If the statement announced that this one is the de-memorized copy, a model
+    that would otherwise have recalled would be warned off -- and the measurement
+    the twin exists to make would come back clean for the wrong reason."""
+    for p in benchop_problems:
+        blob = (p["slug"] + " " + p["title"] + " " + p["description"]).lower()
+        for word in ("shift", "twin", "de-memoriz", "memoriz", "control"):
+            assert word not in blob, f"{p['slug']}: gives the control away with {word!r}"
+
+
+def test_the_benchop_suite_is_separated_from_the_other_two(benchop_problems):
+    """Its own denominators. Folding it into either existing suite would move every
+    rate those suites' baselines are already quoted against."""
+    import setup as S
+    for p in benchop_problems:
+        assert S.problem_suite(p) == "benchop", p["slug"]
+    main = S.apply_suite_filter(list(P.PROBLEMS), only="", no_closed_form=False)
+    ncf = S.apply_suite_filter(list(P.PROBLEMS), only="", no_closed_form=True)
+    assert not ({p["slug"] for p in benchop_problems}
+                & ({p["slug"] for p in main} | {p["slug"] for p in ncf}))
+    assert len(main) == 49 and len(ncf) == 7

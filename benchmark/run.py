@@ -145,6 +145,22 @@ def conductor_command(slug, skip_permissions, permission_mode, model, settings=N
     return cmd
 
 
+# Headless `claude -p` gives the conductor's still-running background tasks 600 s
+# after the main thread closes, then terminates them and returns. On this suite one
+# evaluator's kernel pass costs minutes, so the ceiling landed mid-cycle: the first
+# BENCHOP run (B01, 2026-10-22, kept as
+# `results/superseded/benchop.bg-ceiling-truncated-2026-10-22.json`) ended on
+# "Background tasks still running after 600s; terminating" with plan 1's evaluator
+# unfinished, and recorded phase `running`, self-score **0**, two plans at iter 0 --
+# while the harness graded both of those plans a verified pass at 1.0e-3 against a
+# 4e-3 gate. A zero that means "the CLI stopped waiting" is indistinguishable in the
+# C2 column from a zero that means "the pipeline failed", and `best_plan` among plans
+# tied at 0 is arbitrary, which is what `wrong_plan_won` is computed from. Setting the
+# ceiling to 0 disables that sweep entirely (in 2.1.226: `ceilingExceeded = Uh > 0 &&
+# ...`), leaving `--timeout` as the one bound on a run.
+CONDUCTOR_ENV = {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"}
+
+
 def run_conductor(slug, timeout, skip_permissions, permission_mode, model):
     """Invoke the conductor headlessly; capture the transcript. Returns a run dict."""
     os.makedirs(LOGS_DIR, exist_ok=True)
@@ -169,7 +185,7 @@ def run_conductor(slug, timeout, skip_permissions, permission_mode, model):
             log.flush()
             proc = subprocess.run(
                 cmd, cwd=REPO_ROOT, stdout=log, stderr=subprocess.STDOUT,
-                timeout=timeout, check=False,
+                timeout=timeout, check=False, env={**os.environ, **CONDUCTOR_ENV},
             )
             returncode = proc.returncode
     except subprocess.TimeoutExpired:
@@ -307,8 +323,15 @@ def process(problem, args):
             "--resume retries it"
         )
 
-    # 4. independent verification
-    verify = V.verify_problem(problem, workspace_dir)
+    # 4. independent verification, through the same sandbox the baseline uses.
+    # Both sides now execute solver.py identically -- fresh subprocess, one wall-clock
+    # budget, the same import policy -- so a pipeline-vs-baseline comparison of either
+    # accuracy or *time* measures the solvers and not the harness. Measured over the 34
+    # solved workspaces, 2026-10-17: the sandbox costs 184.7 s against 180.3 s inline,
+    # 2.4%, and after the three boundary fixes it reproduces the inline verdict on all
+    # 34. --no-verify-sandbox restores the old inline path.
+    verify_kw = _verify_kwargs(args)
+    verify = V.verify_problem(problem, workspace_dir, **verify_kw)
 
     # 5. the pipeline's OWN verdict on itself, computed by the kernel rather than
     #    parsed out of prose an agent wrote about its own work. Recorded beside the
@@ -338,12 +361,25 @@ def process(problem, args):
     if not getattr(args, "skip_plans", False):
         rec["harness_by_plan"] = grade_every_plan(
             problem, workspace_dir, rec, verify, kernel,
-            rerun_kernel=not getattr(args, "skip_kernel", False))
+            rerun_kernel=not getattr(args, "skip_kernel", False),
+            verify_kw=verify_kw)
     return rec
 
 
+def _verify_kwargs(args):
+    """How ``verify_problem`` is to execute the solver, as keyword arguments.
+
+    One place, so the winner and the also-rans are graded under identical conditions
+    -- grading the winner sandboxed and its rivals inline would make
+    ``wrong_plan_won`` a comparison between two harnesses."""
+    return {"sandbox": getattr(args, "verify_sandbox", True),
+            "timeout_s": getattr(args, "verify_timeout", V.DEFAULT_SOLVER_TIMEOUT_S),
+            "mem_mb": getattr(args, "verify_mem_mb", V.DEFAULT_SOLVER_MEM_MB),
+            "work_precision": getattr(args, "work_precision", True)}
+
+
 def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, *,
-                     rerun_kernel=False):
+                     rerun_kernel=False, verify_kw=None):
     """Harness verdict per plan directory with a ``solver.py``, beside the kernel's
     own score for that plan (from its ``SOLUTION.md`` metrics block, and from a
     kernel re-run when ``rerun_kernel``). Respects F6: a plan whose file drifted
@@ -361,7 +397,8 @@ def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, 
             continue
         is_winner = winner_dir is not None and os.path.samefile(plan_dir, winner_dir)
         harness = (winner_verify if is_winner and winner_verify is not None
-                   else V.verify_problem(problem, workspace_dir, plan_dir=plan_dir))
+                   else V.verify_problem(problem, workspace_dir, plan_dir=plan_dir,
+                                         **(verify_kw or {})))
         block = solution_metrics(plan_dir)
         entry = {
             "harness": {k: harness.get(k) for k in (
@@ -372,7 +409,13 @@ def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, 
                 # errors are the record. Dropping them left `wrong_plan_won` with
                 # nothing to compare on every SDE.
                 "gt_kind", "worst_variance_rel_err", "worst_mean_rel_err",
-                "components") if k in harness},
+                "components",
+                # The quantity of interest, on either problem type. For a problem
+                # scored only on a price it *is* the result, and results.json
+                # carried the verdict without the number it rests on.
+                "functional_errs", "functional_abs_errs", "functional_tol",
+                "functional_tol_used", "worst_functional_rel_err", "functional_ok",
+                "reference_abs_err", "functional_levels") if k in harness},
             "kernel": block,
             "is_winner": bool(is_winner),
         }
@@ -415,14 +458,29 @@ def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, 
         margin = max(margins.get(winner, 0.0), margins.get(best, 0.0))
         out.update({"best_plan_by_harness": best, "best_harness_err": graded[best],
                     "winner_harness_err": graded[winner],
-                    "harness_error_metric": ("worst moment error / its gate"
-                                             if problem["type"] == "sde" else "rel_l2_err"),
+                    "harness_error_metric": harness_error_metric(problem),
                     "harness_error_margin": margin,
                     "wrong_plan_won": bool(best != winner
                                            and graded[winner] > graded[best] + margin)})
     else:
         out["wrong_plan_won"] = None
     return out
+
+
+def harness_error_metric(problem):
+    """What ``harness_error`` is a measurement of, for the record [step 9].
+
+    A PDE's is the relative field error. An SDE's is the worst of whatever it is
+    graded on, each scaled by its own gate -- and since step 5 that can be a price
+    rather than a moment. The label was written when it could only be a moment, so
+    on all ten entries of the externally anchored suite the record named a quantity
+    the number had not been computed from."""
+    if problem["type"] != "sde":
+        return "rel_l2_err"
+    terms = [t for t, present in (("moment", problem.get("moments") is not None),
+                                  ("functional", bool(problem.get("functional_truth"))))
+             if present]
+    return f"worst {' or '.join(terms) or 'moment'} error / its gate"
 
 
 def plan_harness_error(problem, harness):
@@ -445,13 +503,10 @@ def plan_harness_error(problem, harness):
         if not isinstance(err, (int, float)) or err != err:
             return None, 0.0
         return float(err), float(problem.get("reference_error") or 0.0)
-    comps = harness.get("components") or []
-    if not comps:
-        return None, 0.0
     # The gates verify.py applies, so the scaling puts 1.0 exactly at the pass line.
     MOMENTS = (("variance", 0.10), ("mean", 0.05))
     worst, worst_se = None, 0.0
-    for c in comps:
+    for c in harness.get("components") or []:
         for moment, tol in MOMENTS:
             if moment == "mean" and c.get("near_zero_mean"):
                 continue           # the rubric skips it, so it cannot decide anything
@@ -469,7 +524,59 @@ def plan_harness_error(problem, harness):
                 se = float(c.get(f"empirical_se_{moment}") or 0.0)
                 ref_se = float(c.get(f"reference_se_{moment}") or 0.0)
                 worst_se = (math.hypot(se, ref_se) / ref) / tol
+    # The quantity of interest on the same dimensionless scale. A problem scored
+    # only on a price has no components at all, so without this `wrong_plan_won`
+    # would have nothing to rank BENCHOP's SDE half on -- the defect recorded above
+    # for the moments, one problem type later. Its margin is the reference value's
+    # own absolute uncertainty, which is the functional counterpart of the
+    # Monte-Carlo standard error the moment branch uses.
+    truth = problem.get("functional_truth") or {}
+    tols_used = harness.get("functional_tol_used") or {}
+    base_tol = harness.get("functional_tol")
+    levels = harness.get("functional_levels") or {}
+    for name, err in (harness.get("functional_errs") or {}).items():
+        tol = float(tols_used.get(name) or base_tol or 0.0)
+        if not tol or not isinstance(err, (int, float)) or err != err:
+            continue
+        scaled = float(err) / tol
+        if worst is None or scaled > worst:
+            worst = scaled
+            ref = abs(float(truth.get(name) or 0.0)) or 1.0
+            # Both noise sources, as the moment branch above does: the reference
+            # value's own uncertainty and the solver's sampling error. Read from
+            # `problem`, not from the record -- `verify` exports `reference_abs_err`
+            # only when the floor actually *widened* a gate, which on this suite it
+            # never does, so a margin read from the record was identically zero.
+            worst_se = (math.hypot(V._functional_reference_abs_err(problem, name),
+                                   _functional_sampling_se(levels, name)) / ref) / tol
     return worst, worst_se
+
+
+def _functional_sampling_se(levels, name):
+    """The functional's Monte-Carlo standard error at the graded path count, in the
+    functional's own units, from the two levels the anti-hardcoding check re-solved.
+
+    A price has no `empirical_se` the way a moment does -- the solver returns one
+    scalar and the harness never sees its spread -- so the margin on BENCHOP's half
+    of the suite was zero and **every** difference between two plans read as
+    `wrong_plan_won`, which is how B03 came to be flagged on 0.4606 against 0.4478.
+    The second level supplies what is missing. Nested sampling (same seed, same dt,
+    `r = n_hi/n_lo` times the paths) gives `Var(graded - coarse) = sigma^2 (r-1)/n_hi`,
+    hence `SE(graded) = |delta| / sqrt(r-1)`; if the two levels are in fact
+    independent draws the divisor is `sqrt(r+1)` instead, so this is the larger of
+    the two and the comparison errs towards *not* calling a ranking wrong. It is one
+    realization, so it estimates the noise with a single degree of freedom: enough to
+    stop a difference far below the noise from reading as a finding, not enough to
+    make a knife-edge call trustworthy.
+    """
+    value = (levels.get("values") or {}).get(name) or {}
+    n_hi, n_lo = levels.get("num_paths_graded"), levels.get("num_paths_coarse")
+    if not n_hi or not n_lo or n_hi <= n_lo:
+        return 0.0
+    delta = value.get("delta")
+    if not isinstance(delta, (int, float)) or delta != delta:
+        return 0.0
+    return abs(float(delta)) / math.sqrt(n_hi / n_lo - 1.0)
 
 
 def solution_metrics(plan_dir):
@@ -741,6 +848,26 @@ def main(argv=None):
                     help="restrict to one difficulty tier")
     ap.add_argument("--timeout", type=int, default=2400,
                     help="per-problem wall-clock timeout in seconds (default 2400 = 40 min)")
+    ap.add_argument("--no-verify-sandbox", dest="verify_sandbox", action="store_false",
+                    default=True,
+                    help="verify by importing solver.py inline instead of in the sandboxed "
+                         "subprocess the baseline uses. Faster to debug, but the two sides "
+                         "are then measured under different conditions and their times must "
+                         "not be compared")
+    ap.add_argument("--verify-timeout", type=int, default=V.DEFAULT_SOLVER_TIMEOUT_S,
+                    help=f"wall-clock budget for ONE graded solve, in seconds "
+                         f"(default {V.DEFAULT_SOLVER_TIMEOUT_S}; shared with oneshot.py). "
+                         f"A PDE spends it twice, at N and 2N")
+    ap.add_argument("--verify-mem-mb", type=int, default=V.DEFAULT_SOLVER_MEM_MB,
+                    help=f"address-space cap for a graded solve, best-effort "
+                         f"(default {V.DEFAULT_SOLVER_MEM_MB})")
+    ap.add_argument("--no-work-precision", dest="work_precision", action="store_false",
+                    default=True,
+                    help="skip the extra solves of the work-precision sweep. Only the "
+                         "levels a problem declares in `work_precision_levels` cost "
+                         "anything; the graded ladder's own (error, time) points are "
+                         "free and are recorded either way, and no verdict depends on "
+                         "any of them")
     ap.add_argument("--resume", action="store_true",
                     help="skip problems already completed in results.json")
     ap.add_argument("--fresh", action="store_true",
@@ -780,7 +907,8 @@ def main(argv=None):
         REPORT_MD = os.path.join(RESULTS_DIR, "REPORT.md")
 
     chosen = S.select(args.only)
-    chosen = S.apply_suite_filter(chosen, args.only, args.no_closed_form, args.include_all)
+    chosen = S.apply_suite_filter(chosen, args.only, args.no_closed_form,
+                                args.include_all, args.suite)
     if args.type_filter:
         chosen = [p for p in chosen if p["type"] == args.type_filter]
     if args.tier:
@@ -794,6 +922,11 @@ def main(argv=None):
         print(f"\n{len(chosen)} problem(s) selected.")
         return
 
+    # Everything above this line writes nothing, which is why the guard sits here:
+    # --list still answers for any suite without being told where results would go.
+    S.guard_results_path(chosen, args.results_json,
+                         "benchmark/results/pipeline/{suite}.json")
+
     prior = load_prior()
     records = dict(prior)  # slug -> record; preserves earlier runs
     config = {
@@ -801,6 +934,18 @@ def main(argv=None):
         "claude_version": claude_version(),
         "command_template": 'claude --plugin-dir . -p "/conductor workspace/{slug}/problem.md"',
         "timeout_seconds": args.timeout,
+        # The grading conditions, recorded for the same reason oneshot.py records
+        # `c0_max_turns`: a sweep graded inline, or at a different budget, is not
+        # comparable with one graded here, and a config that does not say so lets the
+        # two be pooled silently.
+        "verify_sandbox": args.verify_sandbox,
+        "solver_timeout_s": args.verify_timeout,
+        "mem_mb": args.verify_mem_mb,
+        "work_precision": args.work_precision,
+        # Part of the invocation, not of the grading: a run made under the CLI's
+        # default 600 s background ceiling can have been cut off mid-cycle, and the
+        # config is the only place that distinguishes it from one that was not.
+        "conductor_env": dict(CONDUCTOR_ENV),
         "n_selected": len(chosen),
     }
 

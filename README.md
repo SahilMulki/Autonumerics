@@ -4,8 +4,8 @@ Describe a differential equation in plain English. Get back a numerical solver, 
 
 Autonumerics is a Claude Code plugin. Seven agents and an orchestrator read a problem statement, design several competing schemes, implement and test each one in parallel, and return the winner. Two things make the answer checkable rather than merely plausible: the score is computed by a deterministic Python kernel instead of written by a language model, and a benchmark the agents are forbidden to read re-runs the winner against ground truth authored separately.
 
-- **56 problems** — 33 PDE, 23 SDE, tiered from textbook to past what the reference manuals describe
-- **690 tests** over the verification library, including canaries that are wrong on purpose
+- **66 problems** in three suites — 33 PDE, 33 SDE, tiered from textbook to past what the reference manuals describe, including ten whose answer keys a third party published before this project existed
+- **1042 tests** over the verification library and the benchmark harness, including canaries that are wrong on purpose
 - **Zero overclaims** on the closed-form suite across every recorded sweep; **one** on the suite built to provoke them, which is the most useful result in this repo
 
 ## The problem it addresses
@@ -147,10 +147,12 @@ uv run python verifylib/cli.py rank workspace/my_problem         # the ranking t
 Run the test suite with:
 
 ```bash
-uv run --extra dev python -m pytest verifylib benchmark/tests -q    # 690 passed, ~10 min
+uv run --extra dev python -m pytest verifylib benchmark/tests -q    # 1023 passed, 1 failed, ~11 min
 ```
 
 `--extra dev` is required; a plain `uv run` re-syncs to the base dependencies and uninstalls pytest.
+
+The one failure is known and is a test-side bug, not a verifier one: `test_frozen_records_fall_back_to_the_old_test_unchanged` re-grades every frozen pipeline record it can find and asserts it saw more than 50, but it looks for them with a non-recursive `os.listdir`, and the results were moved into `benchmark/results/{pipeline,studies,...}/` subfolders in c21077e. It now sees 28 and fails on the count; every record it does read still re-grades correctly.
 
 ## The benchmark
 
@@ -163,22 +165,24 @@ Fifty-six problems with independently authored checks, split into two suites tha
 
 Tier 1 is textbook material the reference manuals cover. Tier 2 needs care: boundary layers, indefinite operators, 100:1 anisotropy, multi-field systems, 3D. Tier 3 goes past what the manuals describe — a shock, a Caputo fractional derivative, a Feller condition violation that drives variance to zero, thirteen noise channels that do not commute, chaos, and two blow-up problems where the only correct behaviour is to stay finite.
 
-Every problem is independently checkable, by one of four routes:
+Every problem is independently checkable, by one of these routes:
 
 | Route | What the answer key is | Count |
 |---|---|---|
-| **exact** | a closed form, or moments cross-checked against moment-ODE integration, matrix exponentials and direct simulation | 48 |
+| **exact** | a closed form, or moments cross-checked against moment-ODE integration, matrix exponentials and direct simulation | 58 |
 | **reference** | for superlinear SDEs, a *discretization-free* Monte-Carlo of the known exact solution (zero scheme bias), compared within a standard-error-aware tolerance; for PDEs, a harness-owned high-resolution field built offline by **two independent method families**, whose disagreement is measured, stored, and used to widen the tolerance — so the answer key's own error can never fail a correct solver | 6 |
 | **stability** | nothing but "a correct scheme stays finite and in its domain", which is exactly what a naive scheme gets wrong | 2 |
-| **functional** | a scalar quantity of interest — an eigenvalue — computed at a *de-memorized* parameter, so a model that recalled a published constant gains nothing | +1 overlay |
+| **functional** | a scalar quantity of interest — an eigenvalue, an option price — rather than a field or a moment | +11 overlay |
+| **published** | the answer key was computed by somebody else, before this project existed. The ten problems of the externally anchored suite: seven graded against values published in 2018 and re-derived here before being trusted, and three *de-memorized* controls at a shifted initial condition whose keys this repo computes, so a model that recalled a published constant scores well on the first set and badly on the second | +10 overlay |
 
-`verify.py` refuses to score against a reference that does not carry a measured error: an answer key whose accuracy nobody established is not ground truth.
+The first three routes partition the 66; the last two are overlays on them, which is why they are counted with a plus. `verify.py` refuses to score against a reference that does not carry a measured error: an answer key whose accuracy nobody established is not ground truth.
 
 ```bash
 uv run python benchmark/setup.py                                  # stage every problem.md
 uv run python benchmark/run.py --only pde_heat_1d                 # one problem, to see it work
 uv run python benchmark/run.py                                    # the full main suite (hours, real API usage)
-uv run python benchmark/run.py --no-closed-form                   # the hard suite
+uv run python benchmark/run.py --suite no-closed-form \
+    --results-json benchmark/results/pipeline/no_closed_form.json # a suite of its own
 uv run python benchmark/run.py --skip-run                         # re-verify existing workspaces for free
 uv run python benchmark/verify.py --slug sde_gbm                  # check one solved problem independently
 uv run python benchmark/validate_ground_truth.py                  # check the answer keys themselves
@@ -285,7 +289,7 @@ The measurement that forced that rework: on `pde_heat_2d`, three second-order pl
 ## Limits, and what is not measured yet
 
 - **No baseline head-to-head has been recorded.** The comparison rungs are built and wired to the same verifier at the same `(num_paths, dt, seed)` — C0 is a naked one-shot completion, C1 a single agent with tools and no decomposition, C2 the pipeline — and `benchmark/compare.py` renders the table. But the one real C0-at-Opus sweep was void — the results file was clobbered, and 36 of its 44 units never produced a scorable solver, because a model given a one-shot harness behaves like an agent and narrates instead of returning code — and it has not been re-run. So the claim that the *structure* rather than the model drives the result is currently unmeasured, and the comparison table has only the pipeline column.
-- **External anchoring is planned, not implemented.** The answer keys and the pipeline share an author and a repo. [docs/plan-benchop-slv.md](docs/plan-benchop-slv.md) is a measured feasibility plan for adopting BENCHOP-SLV — eight option-pricing problems with 24 published reference values to 15 digits, computed by third parties before this project existed, each with both a PDE and an SDE formulation.
+- **External anchoring is built, but nothing has been run against it.** The answer keys and the pipeline share an author and a repo, which is the one circularity the benchmark cannot argue its way out of. [docs/plan-benchop-slv.md](docs/plan-benchop-slv.md) adopts BENCHOP-SLV, whose reference values were computed by third parties before this project existed. [benchmark/benchop.py](benchmark/benchop.py) re-derives all 24 of them rather than transcribing them — seven of the eight problems by two independent method families — and every one agrees with the published figure to better than 1e-3 relative, 21 of the 24 to better than 1e-4, and the six with a closed form to 6e-14. Ten SDE problems now carry those keys as their own suite, and every one of their gates is calibrated both ways — at the resolution the entry ships with, a correct scheme clears it and a plausible wrong one (reflecting a CEV forward off zero, reflecting a variance instead of truncating it, monitoring a continuous barrier once per step) fails it. The suite is staged and smoke-tested end to end — the ten briefs state exactly the call their verifier will make and quote none of the thirty reference values, and a correct solver passes through the real sandbox with score 10. **But no solver written by the pipeline or a baseline has been run against them**, and the claim that an external number confirms the pipeline remains unmeasured.
 - **The suite's own calibration is not finished.** Several tier-3 PDE order floors were tuned against reference solvers written for the purpose; the remaining ones are still set from theory, and a floor nobody has run a correct solver against is a bar of unknown height. `benchmark/validate_ground_truth.py` is the place that check belongs.
 - The SDE side has no implicit-scheme support for stiff problems beyond what tamed and drift-implicit methods handle.
 

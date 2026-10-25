@@ -13,14 +13,21 @@ from .conftest import RUN, P, R, S, problem, record
 # --- E1: the suite split ---------------------------------------------------------
 
 def test_apply_suite_filter_partitions_the_suites():
-    """The no-closed-form problems run on their own by default, so the baseline
-    denominators the C0/C1/C2 rates are quoted against never move."""
+    """Each suite runs on its own by default, so the baseline denominators the
+    C0/C1/C2 rates are quoted against never move. There are three of them since
+    step 7 added the externally anchored one, and the partition claim is the same
+    claim -- every problem in exactly one suite, and the older two unchanged."""
     everything = list(P.PROBLEMS)
-    main = S.apply_suite_filter(everything, "", no_closed_form=False)
-    ncf = S.apply_suite_filter(everything, "", no_closed_form=True)
-    assert {p["slug"] for p in main} | {p["slug"] for p in ncf} == {p["slug"] for p in everything}
-    assert not ({p["slug"] for p in main} & {p["slug"] for p in ncf})
+    parts = {name: S.apply_suite_filter(everything, "", suite=name) for name in S.SUITES}
+    slugs = {name: {p["slug"] for p in part} for name, part in parts.items()}
+    assert set().union(*slugs.values()) == {p["slug"] for p in everything}
+    assert sum(map(len, slugs.values())) == len(everything)      # disjoint
+    main, ncf = parts["main"], parts["no-closed-form"]
+    # `--no-closed-form` is the older spelling and still selects the same suite.
+    assert S.apply_suite_filter(everything, "", no_closed_form=True) == ncf
+    assert S.apply_suite_filter(everything, "", no_closed_form=False) == main
     assert [p["slug"] for p in ncf] == [p["slug"] for p in P.no_closed_form_problems()]
+    assert [p["slug"] for p in parts["benchop"]] == [p["slug"] for p in P.benchop_problems()]
     assert all(p.get("closed_form") is not False for p in main)
     # An explicit request always wins, whichever suite the problem is in.
     chosen = [problem("pde_kuramoto_sivashinsky"), problem("pde_heat_1d")]
@@ -249,3 +256,92 @@ def test_the_provenance_vocabulary_is_one_set_everywhere():
         with open(os.path.join(root, rel)) as fh:
             text = re.sub(r"\s+", " ", fh.read())
         assert ordered in text, f"{rel} does not state the kernel's provenance order verbatim"
+
+
+# --- E7: a non-main sweep cannot land in the standing results file (step 9) -------
+#
+# The accident `results/README.md` names: a sweep launched with no `--results-json`
+# overwrote the live baseline, 44 units where there had been hundreds. What came out
+# of it was a *convention*, which is to say a thing a person has to remember at the
+# moment they are launching an expensive run. Step 9 made it a refusal.
+
+def test_the_guard_refuses_a_suite_it_would_have_to_merge_into_main():
+    for suite in ("benchop", "no-closed-form"):
+        chosen = S.apply_suite_filter(list(P.PROBLEMS), "", suite=suite)
+        with pytest.raises(SystemExit) as e:
+            S.guard_results_path(chosen, None, "results/{suite}.json")
+        assert suite in str(e.value) and "--results-json" in str(e.value)
+
+
+def test_the_guard_names_a_path_that_follows_the_naming_convention():
+    chosen = P.benchop_problems()
+    with pytest.raises(SystemExit) as e:
+        S.guard_results_path(chosen, None, "benchmark/results/pipeline/{suite}.json")
+    assert "benchmark/results/pipeline/benchop.json" in str(e.value)
+    # The hyphen in a suite name is not a filename this repo writes.
+    with pytest.raises(SystemExit) as e:
+        S.guard_results_path(S.apply_suite_filter(list(P.PROBLEMS), "", suite="no-closed-form"),
+                             None, "benchmark/results/pipeline/{suite}.json")
+    assert "pipeline/no_closed_form.json" in str(e.value)
+
+
+def test_the_guard_leaves_every_main_suite_invocation_alone():
+    """Including a one-problem smoke test, which is the invocation the convention
+    was most likely to be forgotten on and the one least able to do harm."""
+    main = S.apply_suite_filter(list(P.PROBLEMS), "", suite="main")
+    assert S.guard_results_path(main, None, "x/{suite}.json") is None
+    assert S.guard_results_path(main[:1], None, "x/{suite}.json") is None
+    # An explicit path is the whole point: with one, anything may be written.
+    assert S.guard_results_path(P.benchop_problems(), "somewhere.json",
+                                "x/{suite}.json") is None
+
+
+def test_a_mixed_selection_is_refused_too():
+    """`--all-problems` runs the three suites together, so it has no single
+    denominator at all and least of all the main one's."""
+    with pytest.raises(SystemExit):
+        S.guard_results_path(list(P.PROBLEMS), None, "x/{suite}.json")
+
+
+def test_the_runner_refuses_before_it_reads_or_writes_anything(capsys):
+    """Through `main`, not the helper: the guard has to sit after `--list` (which
+    writes nothing and must keep working) and before `load_prior`."""
+    with pytest.raises(SystemExit) as e:
+        RUN.main(["--suite", "benchop"])
+    assert "--results-json" in str(e.value)
+    assert RUN.main(["--suite", "benchop", "--list"]) is None
+    assert "10 problem(s) selected." in capsys.readouterr().out
+
+
+# --- E8: the conductor's background tasks are not swept mid-cycle (step 10) -------
+
+def test_the_conductor_is_given_an_unbounded_background_wait(monkeypatch, tmp_path):
+    """Headless `claude -p` terminates still-running background tasks 600 s after
+    the main thread closes. On this suite one evaluator pass costs minutes, so the
+    first BENCHOP run came back with phase `running` and self-score 0 on a problem
+    whose plans the harness then graded a verified pass -- a zero that says nothing
+    about the pipeline. The run is bounded by `--timeout` instead."""
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(RUN, "LOGS_DIR", str(tmp_path))
+    monkeypatch.setattr(RUN, "isolated_settings", lambda slug, d: str(tmp_path / "s.json"))
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    run = RUN.run_conductor("sde_heston_dnt", 3600, True, None, None)
+
+    assert seen["env"]["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] == "0"
+    # 0 disables the sweep; any other number would be a new, smaller ceiling.
+    assert seen["timeout"] == 3600
+    assert run["status"] == "completed"
+    # The rest of the environment is inherited, not replaced -- PATH included, or
+    # the `claude` the subprocess finds would not be the one on this machine.
+    assert set(os.environ) <= set(seen["env"])
+
+
+def test_the_run_config_says_which_ceiling_the_sweep_was_made_under():
+    """A sweep made under the default ceiling can have been cut off mid-cycle, and
+    nothing else in the record distinguishes it from one that was not."""
+    assert RUN.CONDUCTOR_ENV == {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"}

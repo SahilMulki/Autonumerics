@@ -169,6 +169,11 @@ explicit output path.
 - **Always pass `--results-json`** for anything that is not the main sweep. `run.py` derives
   `logs/` and `REPORT.md` from the directory of the file you name, so pointing it at
   `results/pipeline/<name>.json` keeps a sweep's whole output together.
+  Since 2026-10-21 this is **enforced rather than remembered**: `run.py` and `oneshot.py`
+  both refuse a selection that reaches outside the `main` suite unless they are given a
+  path, and the refusal names one that follows this convention. `--list` is unaffected,
+  and a main-suite run — including a one-problem smoke test — is exactly as it was.
+  (`benchmark/setup.py:guard_results_path`, plan-benchop-slv.md §6 step 9.)
 - `*.selection.json` — the output of `baseline_select.py` for the run of the same stem.
 - `<name>.pre-<change>-bak` — a copy taken immediately before a behaviour change, so the
   before-state survives the fix.
