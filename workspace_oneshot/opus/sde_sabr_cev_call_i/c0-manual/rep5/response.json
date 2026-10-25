@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 25.9,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    # Model (Ito, zero correlation):\n    #   dS     = sigma * sqrt(S) dW_S,   S(0) = 0.5\n    #   dsigma = 0.4 * sigma dW_sig,     sigma(0) = 0.5\n    # Because the correlation is zero, S given the sigma path is a time-changed\n    # squared-Bessel process of dimension 0:  S(t) = Y(tau(t)),  tau = int sigma^2 dt,\n    # with dY = sqrt(Y) dB.  Exact transition (absorbing at 0):\n    #   Y_tau = (tau/2) * Gamma(N, 1),   N ~ Poisson(2*Y_0/tau)   (Y_tau = 0 if N = 0)\n    # sigma is simulated exactly (lognormal) on the grid, and tau is integrated with\n    # the trapezoid rule (O(dt^2) error).\n    S0 = 0.5\n    sig0 = 0.5\n    nu = 0.4\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    sig = np.full(num_paths, sig0, dtype=float)\n    tau = np.zeros(num_paths, dtype=float)\n    sq_dt = np.sqrt(dt)\n    drift = -0.5 * nu * nu * dt\n    v_prev = sig * sig\n    for _ in range(Nt):\n        z = rng.standard_normal(num_paths)\n        sig *= np.exp(nu * sq_dt * z + drift)\n        v_new = sig * sig\n        tau += 0.5 * (v_prev + v_new) * dt\n        v_prev = v_new\n\n    tau = np.maximum(tau, 1e-300)\n    lam = 2.0 * S0 / tau\n    N = rng.poisson(lam)\n    shape = np.maximum(N, 1).astype(float)\n    G = rng.gamma(shape, 1.0)\n    S = np.where(N > 0, 0.5 * tau * G, 0.0)\n\n    K1 = 0.434061722697\n    K2 = 0.5\n    K3 = 0.575954955084\n    p1 = float(np.mean(np.maximum(S - K1, 0.0)))\n    p2 = float(np.mean(np.maximum(S - K2, 0.0)))\n    p3 = float(np.mean(np.maximum(S - K3, 0.0)))\n\n    X = np.column_stack((S, sig))\n    return {\n        \"terminal_paths\": X,\n        \"empirical_mean\": [float(np.mean(X[:, 0])), float(np.mean(X[:, 1]))],\n        \"empirical_variance\": [float(np.var(X[:, 0], ddof=1)),\n                               float(np.var(X[:, 1], ddof=1))],\n        \"functionals\": {\"price_K1\": p1, \"price_K2\": p2, \"price_K3\": p3},\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    r = solve_sde(num_paths=200000, dt=0.005, T=2, seed=42)\n    print(r[\"empirical_mean\"], r[\"empirical_variance\"])\n    print(r[\"functionals\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.1146858,
+  "input_tokens": 41914,
+  "output_tokens": 2256,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}

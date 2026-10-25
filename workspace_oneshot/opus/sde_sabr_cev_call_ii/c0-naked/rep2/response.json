@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 39.4,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    rng = np.random.default_rng(seed)\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n\n    S0, sig0 = 0.07, 0.4\n    alpha, rho = 0.8, -0.6\n    rhobar2 = 1.0 - rho * rho\n\n    n = num_paths\n    S = np.full(n, S0)\n    sig = np.full(n, sig0)\n    idx = np.arange(n)\n\n    a = -0.5 * alpha * alpha * dt\n    b = alpha * np.sqrt(dt)\n    LAM_MAX = 1e12\n\n    for _ in range(Nt):\n        Z = rng.standard_normal(n)\n        sig1 = sig * np.exp(a + b * Z)\n        if idx.size > 0:\n            s0 = sig[idx]\n            s1 = sig1[idx]\n            x = S[idx]\n            # correlated part: int sigma sqrt(S) rho dW_sigma ~ rho/alpha sqrt(S) dsigma\n            xp = x + (rho / alpha) * np.sqrt(x) * (s1 - s0)\n            np.maximum(xp, 0.0, out=xp)\n            # uncorrelated part: exact zero-dimensional squared Bessel transition\n            v = rhobar2 * 0.5 * (s0 * s0 + s1 * s1) * dt\n            with np.errstate(divide=\"ignore\", invalid=\"ignore\"):\n                lam = np.where(v > 0, 2.0 * xp / v, np.inf)\n            big = lam > LAM_MAX\n            lam_c = np.where(big, 0.0, lam)\n            N = rng.poisson(lam_c)\n            xn = np.zeros_like(xp)\n            m = N > 0\n            if np.any(m):\n                xn[m] = 0.5 * v[m] * rng.standard_gamma(N[m].astype(np.float64))\n            if np.any(big):\n                xn[big] = xp[big]\n            S[idx] = xn\n            keep = xn > 0\n            idx = idx[keep]\n        sig = sig1\n\n    terminal = np.column_stack([S, sig])\n    K1 = 0.051022538988\n    K2 = 0.07\n    K3 = 0.096035989138\n    p1 = float(np.mean(np.maximum(S - K1, 0.0)))\n    p2 = float(np.mean(np.maximum(S - K2, 0.0)))\n    p3 = float(np.mean(np.maximum(S - K3, 0.0)))\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(S)), float(np.mean(sig))],\n        \"empirical_variance\": [float(np.var(S, ddof=1)), float(np.var(sig, ddof=1))],\n        \"functionals\": {\"price_K1\": p1, \"price_K2\": p2, \"price_K3\": p3},\n    }\n\n\nif __name__ == \"__main__\":\n    out = solve_sde(num_paths=100000, dt=0.004, T=10, seed=42)\n    print(out[\"functionals\"], out[\"empirical_mean\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.1417908,
+  "input_tokens": 37161,
+  "output_tokens": 3658,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}
