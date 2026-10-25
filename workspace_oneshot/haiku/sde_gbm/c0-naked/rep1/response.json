@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 13.5,
+  "result_text": "```python\nimport numpy as np\n\nMU = 0.1\nSIGMA = 0.2\nX0 = 1.0\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n    sqrt_dt = np.sqrt(dt)\n    X = np.full(num_paths, X0, dtype=float)\n    for _ in range(Nt):\n        dW = rng.standard_normal(num_paths) * sqrt_dt\n        # Milstein step; the correction term is 0.5 * b * b' * (dW^2 - dt) with b = SIGMA * X\n        X = X + MU * X * dt + SIGMA * X * dW + 0.5 * SIGMA**2 * X * (dW**2 - dt)\n    return {\n        \"terminal_paths\": X,\n        \"empirical_mean\": float(np.mean(X)),\n        \"empirical_variance\": float(np.var(X, ddof=1)),\n    }\n\n\nif __name__ == \"__main__\":\n    out = solve_sde(num_paths=50000, dt=0.01, T=1, seed=42)\n    print(out[\"empirical_mean\"], out[\"empirical_variance\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.00342369,
+  "input_tokens": 37149,
+  "output_tokens": 1864,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}

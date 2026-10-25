@@ -1,0 +1,77 @@
+You are an expert in numerical methods and scientific computing. Your task is to implement a solver for the numerical problem below.
+
+IMPORTANT -- you have NO TOOLS in this session. You cannot run code, read or write files, inspect your environment, or test your implementation. Any tool call will be rejected and will consume the budget you need to answer, so do not attempt one. You get exactly one reply: write the solver directly from your own knowledge of numerical analysis, choose your scheme and step size by reasoning rather than by experiment, and make it correct in a single pass.
+
+The problem statement ends with a "Solver contract" section that specifies exactly the function to implement, the arguments it will be called with, the dict it must return, and how it will be scored. Follow that contract precisely -- in particular, use the step size (dt) you are told you will be called with.
+
+Respond with the complete contents of a single file `solver.py` inside ONE ```python code block, and nothing else: no explanation before or after the code block.
+
+===== PROBLEM =====
+
+# SABR Forward Price, CEV Exponent 1/2 (Set I)
+
+Simulate the two-factor system (Ito) for a forward price with stochastic
+volatility:
+
+    dS     = sigma * S^(1/2) dW_S,      S(0)     = 0.5
+    dsigma = 0.4 * sigma dW_sigma,      sigma(0) = 0.5
+
+with corr(dW_S, dW_sigma) = 0, over the interval [0, 2]. S is a forward price,
+so it has no drift and no discounting is applied anywhere.
+
+Two properties of this model decide whether a scheme is right:
+
+- The exponent 1/2 makes the diffusion degenerate at the origin. S = 0 is
+  **attainable and absorbing**: a path that reaches zero stays at zero and
+  contributes nothing to the payoff. A scheme that lets S go negative, or that
+  reflects it off zero, is simulating a different process.
+- S is a true martingale, so E[S(T)] = S(0) = 0.5 exactly. A time-discretised
+  scheme does not inherit that, and how much of it each scheme loses differs.
+
+Report the **undiscounted** European call values E[(S(T) - K)^+] at the three
+strikes
+
+    K1 = 0.434061722697
+    K2 = 0.5
+    K3 = 0.575954955084
+
+as `price_K1`, `price_K2` and `price_K3` in the `functionals` dict, and the
+terminal states (S, sigma) in `terminal_paths`.
+
+
+---
+
+## Solver contract (how this problem is run and scored)
+
+Implement, in `solver.py`, exactly this function:
+
+    def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict
+
+It is imported and called **twice**, with these exact arguments:
+
+    solve_sde(num_paths=4000000, dt=0.005, T=2, seed=42)
+
+and then again with `num_paths=1000000`, everything else unchanged (see **Two path counts** below).
+
+Use the `dt` you are given (do not hardcode a different step). It must return a dict with:
+
+- `terminal_paths`: 2-D numpy array of shape `(num_paths, 2)` — the 2 state components (X, Y) at time T, in that column order
+- `empirical_mean`: list of floats, one per component
+- `empirical_variance`: list of floats, one per component (use `ddof=1`)
+- `functionals`: a dict of scalar results, containing `"price_K1"`, `"price_K2"`, `"price_K3"` — each a float
+
+Requirements:
+- Seed all randomness with `np.random.default_rng(seed)` (not `np.random.seed`).
+- Round the step count: `Nt = max(1, round(T / dt))`, then `dt = T / Nt`.
+- Keep `solve_sde` importable — no work at module load outside `if __name__ == "__main__"`.
+- Use the Python standard library and numpy only.
+
+Scoring is independent of any self-report: this problem has no terminal-moment formula, so the quantity of interest below is the whole grade.
+
+**Quantity of interest.** `price_K1`, `price_K2`, `price_K3` must be within 0.4% (relative) of the reference value. It is read from the `functionals` dict you return, and it is gated independently of the moments: reporting a number without a simulation behind it, or a simulation without the number, fails.
+
+**Two path counts.** `solve_sde` is called a second time with `num_paths=1000000` and the same `dt`, `T` and `seed`, and the two reported values of each quantity are compared. They must differ — two Monte-Carlo estimates taken at different sample sizes do — and they must agree to within the sampling noise the two counts imply. A value that is identical at both counts is a constant, not an estimate, and fails. Nothing here requires the finer run to be the more accurate one; the check is symmetric.
+
+
+===== REMINDER =====
+You have no tools: do not attempt to run or test anything. Respond with ONLY the contents of `solver.py` in a single ```python code block.

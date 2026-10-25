@@ -1,0 +1,49 @@
+{
+  "status": "ok",
+  "gt_kind": "exact",
+  "passed": true,
+  "verified_score": 10,
+  "worst_variance_rel_err": 0.01773632520119918,
+  "worst_mean_rel_err": 0.001969751496355234,
+  "components": [
+    {
+      "component": "X",
+      "empirical_mean": 1.1073478301452555,
+      "exact_mean": 1.1051709180756477,
+      "mean_rel_err": 0.001969751496355234,
+      "empirical_variance": 0.05073048398271301,
+      "exact_variance": 0.04984639216123484,
+      "variance_rel_err": 0.01773632520119918,
+      "near_zero_mean": false,
+      "mean_ok": true,
+      "variance_ok": true,
+      "passed": true,
+      "empirical_se_mean": 0.001007278352618709,
+      "empirical_se_variance": 0.0003741554543974488,
+      "mean_resolved": true,
+      "variance_resolved": true
+    }
+  ],
+  "run": {
+    "num_paths": 50000,
+    "dt": 0.01,
+    "T": 1.0,
+    "seed": 42,
+    "solve_s": 0.130852
+  },
+  "work_precision": {
+    "axis": "paths_dt",
+    "path": "sandbox",
+    "points": [
+      {
+        "num_paths": 50000,
+        "dt": 0.01,
+        "rel_err": 0.01773632520119918,
+        "solve_s": 0.130852,
+        "wall_s": 0.28,
+        "graded": true
+      }
+    ]
+  },
+  "plan_dir": "workspace_oneshot/haiku/sde_gbm/c0-naked/rep1"
+}

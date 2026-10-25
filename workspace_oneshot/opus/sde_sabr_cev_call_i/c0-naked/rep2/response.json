@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 22.2,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    \"\"\"\n    SABR with beta = 1/2 and rho = 0.\n\n    sigma is a driftless GBM, which we simulate exactly on the time grid.\n    Because rho = 0, conditional on the sigma path S is a time-changed\n    squared Bessel process of dimension 0, with clock tau = int_0^T sigma^2 dt:\n        X = 4 S  satisfies  dX = 2 sqrt(X) dB  (BESQ(0)) on the tau clock.\n    Its transition is exact: N ~ Poisson(2 S0 / tau), S_T = (tau/2) * Gamma(N, 1),\n    and N = 0 means absorption at zero. This keeps S >= 0, makes zero absorbing,\n    and preserves E[S_T] = S0 exactly for any tau. The only discretisation error\n    is in the trapezoidal integral tau.\n    \"\"\"\n    S0 = 0.5\n    sig0 = 0.5\n    alpha = 0.4\n    K = [0.434061722697, 0.5, 0.575954955084]\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    sqdt = np.sqrt(dt)\n\n    rng = np.random.default_rng(seed)\n\n    S_T = np.empty(num_paths)\n    sig_T = np.empty(num_paths)\n\n    chunk = 500000\n    for start in range(0, num_paths, chunk):\n        n = min(chunk, num_paths - start)\n        logsig = np.full(n, np.log(sig0))\n        v_prev = np.full(n, sig0 * sig0)\n        tau = np.zeros(n)\n        drift = -0.5 * alpha * alpha * dt\n        for _ in range(Nt):\n            logsig += drift + alpha * sqdt * rng.standard_normal(n)\n            v = np.exp(2.0 * logsig)\n            tau += 0.5 * dt * (v_prev + v)\n            v_prev = v\n        lam = 2.0 * S0 / tau\n        N = rng.poisson(lam)\n        shape = np.maximum(N, 1).astype(float)\n        G = rng.gamma(shape)\n        S = np.where(N > 0, 0.5 * tau * G, 0.0)\n        S_T[start:start + n] = S\n        sig_T[start:start + n] = np.exp(logsig)\n\n    terminal = np.column_stack([S_T, sig_T])\n    prices = [float(np.mean(np.maximum(S_T - k, 0.0))) for k in K]\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(x) for x in terminal.mean(axis=0)],\n        \"empirical_variance\": [float(x) for x in terminal.var(axis=0, ddof=1)],\n        \"functionals\": {\n            \"price_K1\": prices[0],\n            \"price_K2\": prices[1],\n            \"price_K3\": prices[2],\n        },\n    }\n\n\nif __name__ == \"__main__\":\n    out = solve_sde(num_paths=200000, dt=0.005, T=2, seed=42)\n    print(out[\"empirical_mean\"], out[\"empirical_variance\"], out[\"functionals\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.1079764,
+  "input_tokens": 37067,
+  "output_tokens": 1969,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}

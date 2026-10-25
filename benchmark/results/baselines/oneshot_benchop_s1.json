@@ -1,0 +1,286 @@
+{
+  "config": {
+    "generated_at": "2026-10-25 02:31",
+    "model": "opus",
+    "conditions": [
+      "c0"
+    ],
+    "manuals": [
+      "naked",
+      "manual"
+    ],
+    "reps": 5,
+    "reps_from": null,
+    "max_turns": 30,
+    "c0_max_turns": 8,
+    "agent_timeout": 1800,
+    "solver_timeout_s": 1800,
+    "mem_mb": 4096,
+    "work_precision": true,
+    "invocation_seconds": 135.0
+  },
+  "results": [
+    {
+      "id": "B01",
+      "slug": "sde_sabr_cev_call_i",
+      "type": "sde",
+      "tier": 3,
+      "family": "sabr_cev",
+      "title": "SABR forward with CEV exponent 1/2, three strikes (set I)",
+      "challenge": "Degenerate diffusion with an attainable, absorbing origin, and a martingale property that time discretisation destroys. Scored on three option values and nothing else, so the scheme has to be right where the payoff is thin.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "naked",
+      "model": "opus",
+      "rep": 1,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 25.1,
+        "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    \"\"\"\n    SABR with beta = 1/2, rho = 0.\n\n    sigma is a GBM and is sampled exactly on the grid. Because rho = 0, conditional on\n    the sigma path, S is a time-changed squared Bessel process of dimension 0:\n    with tau = int_0^T sigma^2 dt, Y = 4S satisfies dY = 2 sqrt(Y) dB_tau (BESQ(0)),\n    whose transition is known exactly (absorbing at 0):\n        N ~ Poisson(2 S0 / tau),  S_T = (tau / 2) * Gamma(N, 1),  S_T = 0 if N = 0.\n    The integrated variance tau is computed by the trapezoid rule on the sigma grid.\n    \"\"\"\n    S0 = 0.5\n    sig0 = 0.5\n    alpha = 0.4\n    K1 = 0.434061722697\n    K2 = 0.5\n    K3 = 0.575954955084\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    sqdt = np.sqrt(dt)\n\n    rng = np.random.default_rng(seed)\n\n    out = np.empty((num_paths, 2))\n    chunk = 1_000_000\n    start = 0\n    while start < num_paths:\n        n = min(chunk, num_paths - start)\n        logsig = np.full(n, np.log(sig0))\n        var_prev = np.full(n, sig0 * sig0)\n        tau = np.zeros(n)\n        drift = -0.5 * alpha * alpha * dt\n        for _ in range(Nt):\n            z = rng.standard_normal(n)\n            logsig += drift + alpha * sqdt * z\n            var_new = np.exp(2.0 * logsig)\n            tau += 0.5 * dt * (var_prev + var_new)\n            var_prev = var_new\n        sigT = np.exp(logsig)\n\n        lam = 2.0 * S0 / tau\n        N = rng.poisson(lam)\n        g = rng.gamma(np.maximum(N, 1).astype(float), 1.0)\n        ST = np.where(N > 0, 0.5 * tau * g, 0.0)\n\n        out[start:start + n, 0] = ST\n        out[start:start + n, 1] = sigT\n        start += n\n\n    S = out[:, 0]\n    functionals = {\n        \"price_K1\": float(np.mean(np.maximum(S - K1, 0.0))),\n        \"price_K2\": float(np.mean(np.maximum(S - K2, 0.0))),\n        \"price_K3\": float(np.mean(np.maximum(S - K3, 0.0))),\n    }\n\n    return {\n        \"terminal_paths\": out,\n        \"empirical_mean\": [float(v) for v in out.mean(axis=0)],\n        \"empirical_variance\": [float(v) for v in out.var(axis=0, ddof=1)],\n        \"functionals\": functionals,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=100000, dt=0.005, T=2, seed=42)\n    print(res[\"empirical_mean\"], res[\"empirical_variance\"], res[\"functionals\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.1351138,
+        "input_tokens": 37067,
+        "output_tokens": 2065,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 4000000,
+          "dt": 0.005,
+          "T": 2.0,
+          "seed": 42,
+          "solve_s": 34.119128
+        },
+        "functional_errs": {
+          "price_K1": 2.6459514072899723e-05,
+          "price_K2": 7.159556851189297e-05,
+          "price_K3": 0.0001801919170423015
+        },
+        "functional_abs_errs": {
+          "price_K1": 5.857691812050092e-06,
+          "price_K2": 1.3877847977045166e-05,
+          "price_K3": 2.9955251083041423e-05
+        },
+        "functional_tol": 0.004,
+        "functional_tol_used": {
+          "price_K1": 0.004,
+          "price_K2": 0.004,
+          "price_K3": 0.004
+        },
+        "worst_functional_rel_err": 0.0001801919170423015,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 4000000,
+          "num_paths_coarse": 1000000,
+          "dt": 0.005,
+          "band_factor": 3.0,
+          "values": {
+            "price_K1": {
+              "graded": 0.22138905452267804,
+              "coarse": 0.2207290073851622,
+              "delta": 0.000660047137515829,
+              "band": 0.002656598361970392,
+              "moved": true,
+              "consistent": true
+            },
+            "price_K2": {
+              "graded": 0.19385056726178004,
+              "coarse": 0.1931850010723186,
+              "delta": 0.0006655661894614529,
+              "band": 0.002326040272965636,
+              "moved": true,
+              "consistent": true
+            },
+            "price_K3": {
+              "graded": 0.16627076990431405,
+              "coarse": 0.16560965215531268,
+              "delta": 0.0006611177490013775,
+              "band": 0.0019948897758387723,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.0037966759200194346,
+          "solve_s": 8.657246,
+          "wall_s": 8.8,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 1000000,
+              "dt": 0.005,
+              "rel_err": 0.0037966759200194346,
+              "solve_s": 8.657246,
+              "wall_s": 8.8,
+              "graded": false
+            },
+            {
+              "num_paths": 4000000,
+              "dt": 0.005,
+              "rel_err": 0.0001801919170423015,
+              "solve_s": 34.119128,
+              "wall_s": 34.33,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_sabr_cev_call_i/c0-naked/rep1"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_sabr_cev_call_i/c0-naked/rep1",
+      "verdict": "PASS",
+      "_key": "sde_sabr_cev_call_i|c0|naked|opus|1"
+    },
+    {
+      "id": "B01",
+      "slug": "sde_sabr_cev_call_i",
+      "type": "sde",
+      "tier": 3,
+      "family": "sabr_cev",
+      "title": "SABR forward with CEV exponent 1/2, three strikes (set I)",
+      "challenge": "Degenerate diffusion with an attainable, absorbing origin, and a martingale property that time discretisation destroys. Scored on three option values and nothing else, so the scheme has to be right where the payoff is thin.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "naked",
+      "model": "opus",
+      "rep": 2,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 22.2,
+        "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    \"\"\"\n    SABR with beta = 1/2 and rho = 0.\n\n    sigma is a driftless GBM, which we simulate exactly on the time grid.\n    Because rho = 0, conditional on the sigma path S is a time-changed\n    squared Bessel process of dimension 0, with clock tau = int_0^T sigma^2 dt:\n        X = 4 S  satisfies  dX = 2 sqrt(X) dB  (BESQ(0)) on the tau clock.\n    Its transition is exact: N ~ Poisson(2 S0 / tau), S_T = (tau/2) * Gamma(N, 1),\n    and N = 0 means absorption at zero. This keeps S >= 0, makes zero absorbing,\n    and preserves E[S_T] = S0 exactly for any tau. The only discretisation error\n    is in the trapezoidal integral tau.\n    \"\"\"\n    S0 = 0.5\n    sig0 = 0.5\n    alpha = 0.4\n    K = [0.434061722697, 0.5, 0.575954955084]\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    sqdt = np.sqrt(dt)\n\n    rng = np.random.default_rng(seed)\n\n    S_T = np.empty(num_paths)\n    sig_T = np.empty(num_paths)\n\n    chunk = 500000\n    for start in range(0, num_paths, chunk):\n        n = min(chunk, num_paths - start)\n        logsig = np.full(n, np.log(sig0))\n        v_prev = np.full(n, sig0 * sig0)\n        tau = np.zeros(n)\n        drift = -0.5 * alpha * alpha * dt\n        for _ in range(Nt):\n            logsig += drift + alpha * sqdt * rng.standard_normal(n)\n            v = np.exp(2.0 * logsig)\n            tau += 0.5 * dt * (v_prev + v)\n            v_prev = v\n        lam = 2.0 * S0 / tau\n        N = rng.poisson(lam)\n        shape = np.maximum(N, 1).astype(float)\n        G = rng.gamma(shape)\n        S = np.where(N > 0, 0.5 * tau * G, 0.0)\n        S_T[start:start + n] = S\n        sig_T[start:start + n] = np.exp(logsig)\n\n    terminal = np.column_stack([S_T, sig_T])\n    prices = [float(np.mean(np.maximum(S_T - k, 0.0))) for k in K]\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(x) for x in terminal.mean(axis=0)],\n        \"empirical_variance\": [float(x) for x in terminal.var(axis=0, ddof=1)],\n        \"functionals\": {\n            \"price_K1\": prices[0],\n            \"price_K2\": prices[1],\n            \"price_K3\": prices[2],\n        },\n    }\n\n\nif __name__ == \"__main__\":\n    out = solve_sde(num_paths=200000, dt=0.005, T=2, seed=42)\n    print(out[\"empirical_mean\"], out[\"empirical_variance\"], out[\"functionals\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.1079764,
+        "input_tokens": 37067,
+        "output_tokens": 1969,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 4000000,
+          "dt": 0.005,
+          "T": 2.0,
+          "seed": 42,
+          "solve_s": 33.214703
+        },
+        "functional_errs": {
+          "price_K1": 8.011523008467575e-05,
+          "price_K2": 5.722232720196911e-05,
+          "price_K3": 6.448283860301636e-05
+        },
+        "functional_abs_errs": {
+          "price_K1": 1.7736165750986688e-05,
+          "price_K2": 1.1091786465383668e-05,
+          "price_K3": 1.0719679620518896e-05
+        },
+        "functional_tol": 0.004,
+        "functional_tol_used": {
+          "price_K1": 0.004,
+          "price_K2": 0.004,
+          "price_K3": 0.004
+        },
+        "worst_functional_rel_err": 8.011523008467575e-05,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 4000000,
+          "num_paths_coarse": 1000000,
+          "dt": 0.005,
+          "band_factor": 3.0,
+          "values": {
+            "price_K1": {
+              "graded": 0.22140093299661698,
+              "coarse": 0.22158173864765127,
+              "delta": 0.00018080565103428814,
+              "band": 0.002656598361970392,
+              "moved": true,
+              "consistent": true
+            },
+            "price_K2": {
+              "graded": 0.19384778120026838,
+              "coarse": 0.19395639380715046,
+              "delta": 0.0001086126068820803,
+              "band": 0.002326040272965636,
+              "moved": true,
+              "consistent": true
+            },
+            "price_K3": {
+              "graded": 0.16625153433285153,
+              "coarse": 0.16628171510977635,
+              "delta": 3.0180776924820796e-05,
+              "band": 0.0019948897758387723,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.0008968242379161157,
+          "solve_s": 9.175498,
+          "wall_s": 9.32,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 1000000,
+              "dt": 0.005,
+              "rel_err": 0.0008968242379161157,
+              "solve_s": 9.175498,
+              "wall_s": 9.32,
+              "graded": false
+            },
+            {
+              "num_paths": 4000000,
+              "dt": 0.005,
+              "rel_err": 8.011523008467575e-05,
+              "solve_s": 33.214703,
+              "wall_s": 33.42,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_sabr_cev_call_i/c0-naked/rep2"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_sabr_cev_call_i/c0-naked/rep2",
+      "verdict": "PASS",
+      "_key": "sde_sabr_cev_call_i|c0|naked|opus|2"
+    }
+  ]
+}

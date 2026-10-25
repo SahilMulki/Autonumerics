@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 6.8,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    # Geometric Brownian motion: dX = 0.1 X dt + 0.2 X dW, X(0) = 1.0\n    # Milstein scheme (scalar, multiplicative noise, milstein_eligible):\n    #   X_{n+1} = X_n + f(X_n) dt + g(X_n) dW_n + 0.5 g(X_n) g'(X_n) (dW_n^2 - dt)\n    # with f(X) = mu X, g(X) = sigma X, g'(X) = sigma.\n    mu = 0.1\n    sigma = 0.2\n    X_0 = 1.0\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n\n    rng = np.random.default_rng(seed)\n    dW = np.sqrt(dt) * rng.standard_normal((num_paths, Nt))\n\n    X = np.full(num_paths, X_0, dtype=float)\n    for n in range(Nt):\n        X_prev = X\n        X = (X_prev\n             + mu * X_prev * dt\n             + sigma * X_prev * dW[:, n]\n             + 0.5 * sigma * X_prev * sigma * (dW[:, n] ** 2 - dt))\n\n    out = {\n        \"terminal_paths\": X,\n        \"empirical_mean\": float(np.mean(X)),\n        \"empirical_variance\": float(np.var(X, ddof=1)),\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n    return out\n\n\nif __name__ == \"__main__\":\n    result = solve_sde(num_paths=50000, dt=0.01, T=1.0)\n    print(f\"Empirical mean:     {result['empirical_mean']:.6f}\")\n    print(f\"Empirical variance: {result['empirical_variance']:.6f}\")\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.003444,
+  "input_tokens": 41996,
+  "output_tokens": 654,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}
