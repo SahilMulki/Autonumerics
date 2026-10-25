@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 33.6,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    Nt = max(1, int(round(T / dt)))\n    dt = T / Nt\n    sqdt = np.sqrt(dt)\n\n    kappa, theta, sigma = 0.5, 0.04, 1.0\n    a_r, b_r, sig_r = 0.08, 0.10, 0.09\n    V0, R0 = 0.04, 0.10\n    K = 100.0\n    spots = [75.0, 100.0, 125.0]\n\n    C = np.array([[1.0, -0.9, 0.6],\n                  [-0.9, 1.0, -0.7],\n                  [0.6, -0.7, 1.0]])\n    L = np.linalg.cholesky(C)\n\n    rng = np.random.default_rng(seed)\n\n    chunk = 50000\n    S_term = np.empty(num_paths)\n    V_term = np.empty(num_paths)\n    R_term = np.empty(num_paths)\n    pay_sums = np.zeros(len(spots))\n\n    start = 0\n    while start < num_paths:\n        n = min(chunk, num_paths - start)\n        X = np.zeros(n)          # log(S/S0)\n        V = np.full(n, V0)\n        R = np.full(n, R0)\n        I = np.zeros(n)          # integral of R (left point, consistent with S drift)\n        for _ in range(Nt):\n            Z = rng.standard_normal((3, n))\n            dW1 = (L[0, 0] * Z[0]) * sqdt\n            dW2 = (L[1, 0] * Z[0] + L[1, 1] * Z[1]) * sqdt\n            dW3 = (L[2, 0] * Z[0] + L[2, 1] * Z[1] + L[2, 2] * Z[2]) * sqdt\n            Vp = np.maximum(V, 0.0)\n            sV = np.sqrt(Vp)\n            X += (R - 0.5 * Vp) * dt + sV * dW1\n            I += R * dt\n            V = V + kappa * (theta - Vp) * dt + sigma * sV * dW2\n            R = R + a_r * (b_r - R) * dt + sig_r * dW3\n        D = np.exp(-I)\n        eX = np.exp(X)\n        for j, s0 in enumerate(spots):\n            pay_sums[j] += np.sum(D * np.maximum(s0 * eX - K, 0.0))\n        S_term[start:start + n] = 100.0 * eX\n        V_term[start:start + n] = np.maximum(V, 0.0)\n        R_term[start:start + n] = R\n        start += n\n\n    prices = pay_sums / num_paths\n    terminal = np.column_stack([S_term, V_term, R_term])\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(x) for x in terminal.mean(axis=0)],\n        \"empirical_variance\": [float(x) for x in terminal.var(axis=0, ddof=1)],\n        \"functionals\": {\n            \"price_S75\": float(prices[0]),\n            \"price_S100\": float(prices[1]),\n            \"price_S125\": float(prices[2]),\n        },\n    }\n\n\nif __name__ == \"__main__\":\n    out = solve_sde(num_paths=20000, dt=0.004, T=10, seed=42)\n    print(out[\"functionals\"], out[\"empirical_mean\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.1309106,
+  "input_tokens": 37294,
+  "output_tokens": 3115,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}
