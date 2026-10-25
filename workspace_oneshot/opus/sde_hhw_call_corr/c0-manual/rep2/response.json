@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 38.7,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    sqdt = np.sqrt(dt)\n\n    kappa, theta = 0.5, 0.04\n    a_r, b_r, sig_r = 0.08, 0.10, 0.09\n    V0, R0 = 0.04, 0.10\n    K = 100.0\n    spots = (75.0, 100.0, 125.0)\n\n    C = np.array([[1.0, -0.9, 0.6],\n                  [-0.9, 1.0, -0.7],\n                  [0.6, -0.7, 1.0]])\n    L = np.linalg.cholesky(C)\n\n    rng = np.random.default_rng(seed)\n\n    logM = np.zeros(num_paths)          # log(S_T / S0), independent of S0\n    V = np.full(num_paths, V0)\n    R = np.full(num_paths, R0)\n    I = np.zeros(num_paths)             # integral of R dt (left point, consistent with S drift)\n\n    for _ in range(Nt):\n        Z = rng.standard_normal((3, num_paths))\n        dW = (L @ Z)\n        dW *= sqdt\n        Vp = np.maximum(V, 0.0)         # full truncation\n        sv = np.sqrt(Vp)\n        logM += (R - 0.5 * Vp) * dt + sv * dW[0]\n        I += R * dt\n        V += kappa * (theta - Vp) * dt + sv * dW[1]\n        R += a_r * (b_r - R) * dt + sig_r * dW[2]\n\n    M = np.exp(logM)\n    D = np.exp(-I)\n    DM = D * M  # discrete martingale with E = 1 exactly under this scheme\n\n    functionals = {}\n    for S0 in spots:\n        Y = D * np.maximum(S0 * M - K, 0.0)\n        X = S0 * DM\n        Xc = X - X.mean()\n        varX = np.mean(Xc * Xc)\n        beta = np.mean(Xc * (Y - Y.mean())) / varX if varX > 0 else 0.0\n        price = float(Y.mean() - beta * (X.mean() - S0))\n        functionals[\"price_S%d\" % int(S0)] = price\n\n    S = 100.0 * M\n    terminal = np.column_stack([S, np.maximum(V, 0.0), R])\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(v) for v in terminal.mean(axis=0)],\n        \"empirical_variance\": [float(v) for v in terminal.var(axis=0, ddof=1)],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=20000, dt=0.004, T=10, seed=42)\n    print(res[\"functionals\"])\n    print(res[\"empirical_mean\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.13685999999999998,
+  "input_tokens": 42141,
+  "output_tokens": 3364,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}
