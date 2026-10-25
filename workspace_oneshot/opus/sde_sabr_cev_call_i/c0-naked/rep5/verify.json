@@ -1,0 +1,95 @@
+{
+  "status": "ok",
+  "gt_kind": "exact",
+  "passed": true,
+  "verified_score": 10,
+  "worst_variance_rel_err": 0.0,
+  "worst_mean_rel_err": 0.0,
+  "components": [],
+  "run": {
+    "num_paths": 4000000,
+    "dt": 0.005,
+    "T": 2.0,
+    "seed": 42,
+    "solve_s": 38.943416
+  },
+  "functional_errs": {
+    "price_K1": 0.0007128974421092093,
+    "price_K2": 0.0007531973126126533,
+    "price_K3": 0.0008572210929320094
+  },
+  "functional_abs_errs": {
+    "price_K1": 0.0001578235147466911,
+    "price_K2": 0.00014599727355221748,
+    "price_K3": 0.00014250513282695887
+  },
+  "functional_tol": 0.004,
+  "functional_tol_used": {
+    "price_K1": 0.004,
+    "price_K2": 0.004,
+    "price_K3": 0.004
+  },
+  "worst_functional_rel_err": 0.0008572210929320094,
+  "functional_ok": true,
+  "functional_levels": {
+    "status": "ok",
+    "num_paths_graded": 4000000,
+    "num_paths_coarse": 1000000,
+    "dt": 0.005,
+    "band_factor": 3.0,
+    "values": {
+      "price_K1": {
+        "graded": 0.22154102034561268,
+        "coarse": 0.2218399326352405,
+        "delta": 0.00029891228962780625,
+        "band": 0.002656598361970392,
+        "moved": true,
+        "consistent": true
+      },
+      "price_K2": {
+        "graded": 0.19398268668735522,
+        "coarse": 0.19422741904976437,
+        "delta": 0.00024473236240915575,
+        "band": 0.002326040272965636,
+        "moved": true,
+        "consistent": true
+      },
+      "price_K3": {
+        "graded": 0.16638331978605797,
+        "coarse": 0.16656929797600445,
+        "delta": 0.00018597818994647852,
+        "band": 0.0019948897758387723,
+        "moved": true,
+        "consistent": true
+      }
+    },
+    "passed": true,
+    "worst_functional_rel_err": 0.002063100591701356,
+    "solve_s": 10.459853,
+    "wall_s": 10.61,
+    "level_ignored": false
+  },
+  "work_precision": {
+    "axis": "paths_dt",
+    "path": "sandbox",
+    "points": [
+      {
+        "num_paths": 1000000,
+        "dt": 0.005,
+        "rel_err": 0.002063100591701356,
+        "solve_s": 10.459853,
+        "wall_s": 10.61,
+        "graded": false
+      },
+      {
+        "num_paths": 4000000,
+        "dt": 0.005,
+        "rel_err": 0.0008572210929320094,
+        "solve_s": 38.943416,
+        "wall_s": 39.13,
+        "graded": true
+      }
+    ]
+  },
+  "plan_dir": "workspace_oneshot/opus/sde_sabr_cev_call_i/c0-naked/rep5"
+}

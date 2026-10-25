@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 25.8,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    \"\"\"\n    SABR with beta = 1/2, zero correlation:\n        dS     = sigma * sqrt(S) dW_S,   S(0) = 0.5\n        dsigma = 0.4 * sigma dW_sigma,   sigma(0) = 0.5\n\n    sigma is simulated exactly (driftless GBM).  Because the two noises are\n    independent, conditionally on the sigma path S is a time-changed\n    squared Bessel process of dimension 0:  X = 4 S solves dX = 2 sqrt(X) dB_tau\n    with clock tau(t) = int_0^t sigma^2 ds.  Its transition is known exactly:\n        N ~ Poisson(X0 / (2 tau)),  X_T = 2 tau * Gamma(N, 1)   (N = 0 -> absorbed at 0)\n    This keeps S >= 0, absorbing at zero, and a martingale.\n    The integrated variance is computed with the trapezoid rule on the exact\n    sigma path (O(dt^2) bias).\n    \"\"\"\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    S0 = 0.5\n    sig0 = 0.5\n    nu = 0.4\n\n    sig = np.full(num_paths, sig0, dtype=float)\n    tau = np.zeros(num_paths, dtype=float)\n    sqdt = np.sqrt(dt)\n    drift = -0.5 * nu * nu * dt\n\n    sig2_prev = sig * sig\n    for _ in range(Nt):\n        Z = rng.standard_normal(num_paths)\n        sig *= np.exp(nu * sqdt * Z + drift)\n        sig2 = sig * sig\n        tau += 0.5 * (sig2_prev + sig2) * dt\n        sig2_prev = sig2\n\n    # Exact BESQ(0) transition over clock tau\n    X0 = 4.0 * S0\n    tau = np.maximum(tau, 1e-300)\n    lam = X0 / (2.0 * tau)\n    N = rng.poisson(lam)\n    G = np.zeros(num_paths, dtype=float)\n    pos = N > 0\n    G[pos] = rng.standard_gamma(N[pos].astype(float))\n    X_T = 2.0 * tau * G\n    S_T = 0.25 * X_T\n\n    terminal = np.column_stack((S_T, sig))\n\n    K1 = 0.434061722697\n    K2 = 0.5\n    K3 = 0.575954955084\n    functionals = {\n        \"price_K1\": float(np.mean(np.maximum(S_T - K1, 0.0))),\n        \"price_K2\": float(np.mean(np.maximum(S_T - K2, 0.0))),\n        \"price_K3\": float(np.mean(np.maximum(S_T - K3, 0.0))),\n    }\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(terminal[:, 0])), float(np.mean(terminal[:, 1]))],\n        \"empirical_variance\": [float(np.var(terminal[:, 0], ddof=1)),\n                               float(np.var(terminal[:, 1], ddof=1))],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=200000, dt=0.005, T=2, seed=42)\n    print(res[\"empirical_mean\"], res[\"empirical_variance\"])\n    print(res[\"functionals\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.17116800000000001,
+  "input_tokens": 41914,
+  "output_tokens": 2331,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}
