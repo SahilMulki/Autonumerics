@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 72.5,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    # SABR, beta = 1/2:\n    #   dS = sigma sqrt(S) dW_S,  dsigma = nu sigma dW_sigma,  corr = rho\n    # sigma: exact lognormal step.\n    # S: conditional on the sigma step, the correlated part is integrated as\n    #    (rho/nu) sqrt(S_n) * (sigma_{n+1} - sigma_n)  (since sigma dW_sigma = dsigma/nu),\n    #    and the remaining part is a time-changed squared Bessel process of dimension 0,\n    #    dZ = sqrt(Z) dB, with time change (1-rho^2) * int sigma^2 dt.\n    #    The BESQ(0) transition is sampled exactly (Poisson-mixed Gamma), which gets the\n    #    absorbing boundary at 0 right. Where it is far from zero (large noncentrality),\n    #    a Gaussian step is used instead because it is cheaper.\n    S0 = 0.07\n    sig0 = 0.4\n    nu = 0.8\n    rho = -0.6\n    rhob2 = 1.0 - rho * rho\n    c_rho = rho / nu\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    sqdt = np.sqrt(dt)\n    rng = np.random.default_rng(seed)\n\n    S = np.full(num_paths, S0, dtype=float)\n    sig = np.full(num_paths, sig0, dtype=float)\n    drift_ls = -0.5 * nu * nu * dt\n    LAM_GAUSS = 400.0\n\n    for n in range(Nt):\n        z = rng.standard_normal(num_paths)\n        sig_new = sig * np.exp(drift_ls + nu * sqdt * z)\n\n        idx = np.nonzero(S > 0.0)[0]\n        if idx.size > 0:\n            s = S[idx]\n            so = sig[idx]\n            sn = sig_new[idx]\n            h = rhob2 * 0.5 * (so * so + sn * sn) * dt\n            h = np.maximum(h, 1e-300)\n            start = s + c_rho * np.sqrt(s) * (sn - so)\n\n            newS = np.zeros_like(s)\n            pos = start > 0.0\n            lam = np.zeros_like(s)\n            lam[pos] = 2.0 * start[pos] / h[pos]\n\n            big = lam > LAM_GAUSS\n            small = pos & ~big\n\n            if np.any(big):\n                st = start[big]\n                xi = rng.standard_normal(st.size)\n                newS[big] = np.maximum(st + np.sqrt(st * h[big]) * xi, 0.0)\n\n            if np.any(small):\n                Np = rng.poisson(lam[small])\n                g = rng.standard_gamma(np.maximum(Np, 1).astype(float))\n                g = np.where(Np > 0, g, 0.0)\n                newS[small] = 0.5 * h[small] * g\n\n            S[idx] = newS\n\n        sig = sig_new\n\n    X = np.column_stack([S, sig])\n    Ks = {\n        \"price_K1\": 0.051022538988,\n        \"price_K2\": 0.07,\n        \"price_K3\": 0.096035989138,\n    }\n    functionals = {k: float(np.mean(np.maximum(S - K, 0.0))) for k, K in Ks.items()}\n\n    return {\n        \"terminal_paths\": X,\n        \"empirical_mean\": [float(np.mean(X[:, 0])), float(np.mean(X[:, 1]))],\n        \"empirical_variance\": [float(np.var(X[:, 0], ddof=1)),\n                               float(np.var(X[:, 1], ddof=1))],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=20000, dt=0.004, T=10, seed=42)\n    print(res[\"empirical_mean\"], res[\"functionals\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.2091002,
+  "input_tokens": 42008,
+  "output_tokens": 6975,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}

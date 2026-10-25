@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 43.2,
+  "result_text": "```python\nimport numpy as np\n\nKAPPA = 2.58\nETA = 0.043\nSIGMA = 1.0\nRHO = -0.36\nV0 = 0.114\nSTRIKE = 100.0\nSPOTS = (75.0, 100.0, 125.0)\n\n\ndef _erfc(x):\n    # Numerical Recipes erfcc, fractional error < 1.2e-7 everywhere\n    z = np.abs(x)\n    t = 1.0 / (1.0 + 0.5 * z)\n    ans = t * np.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 +\n          t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 +\n          t * (-0.82215223 + t * 0.17087277)))))))))\n    return np.where(x >= 0.0, ans, 2.0 - ans)\n\n\ndef _ncdf(x):\n    return 0.5 * _erfc(-x / np.sqrt(2.0))\n\n\ndef _bs_call(F, K, sv):\n    sv = np.maximum(sv, 1e-12)\n    d1 = (np.log(F / K) + 0.5 * sv * sv) / sv\n    d2 = d1 - sv\n    return F * _ncdf(d1) - K * _ncdf(d2)\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    # Exact CIR transition (noncentral chi-square), valid at and near V = 0\n    ekdt = np.exp(-KAPPA * dt)\n    c = SIGMA ** 2 * (1.0 - ekdt) / (4.0 * KAPPA)\n    df = 4.0 * KAPPA * ETA / SIGMA ** 2\n\n    V = np.full(num_paths, V0, dtype=float)\n    IV = np.zeros(num_paths)\n    for _ in range(Nt):\n        V_prev = V\n        nonc = V_prev * ekdt / c\n        V = c * rng.noncentral_chisquare(df, nonc)\n        IV += 0.5 * (V_prev + V) * dt\n\n    # int sqrt(V) dW2 recovered from the variance dynamics\n    M = (V - V0 - KAPPA * ETA * T + KAPPA * IV) / SIGMA\n    sv = np.sqrt((1.0 - RHO ** 2) * IV)\n    growth = np.exp(RHO * M - 0.5 * RHO ** 2 * IV)\n\n    functionals = {}\n    for S0 in SPOTS:\n        F = S0 * growth\n        C = _bs_call(F, STRIKE, sv)\n        # control variate: E[F] = S0 (martingale)\n        Fc = F - F.mean()\n        var_F = np.mean(Fc * Fc)\n        b = np.mean(Fc * (C - C.mean())) / var_F if var_F > 0 else 0.0\n        price = float(C.mean() - b * (F.mean() - S0))\n        functionals[\"price_S%d\" % int(S0)] = price\n\n    Z = rng.standard_normal(num_paths)\n    S = 100.0 * growth * np.exp(-0.5 * sv * sv + sv * Z)\n\n    X = np.column_stack([S, V])\n    return {\n        \"terminal_paths\": X,\n        \"empirical_mean\": [float(v) for v in np.mean(X, axis=0)],\n        \"empirical_variance\": [float(v) for v in np.var(X, axis=0, ddof=1)],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    r = solve_sde(num_paths=100000, dt=0.002, T=1, seed=42)\n    print(r[\"functionals\"], r[\"empirical_mean\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.20545200000000002,
+  "input_tokens": 41947,
+  "output_tokens": 4032,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}

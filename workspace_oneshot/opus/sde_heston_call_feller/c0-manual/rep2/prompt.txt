@@ -1,0 +1,338 @@
+You are an expert in numerical methods and scientific computing. Your task is to implement a solver for the numerical problem below.
+
+IMPORTANT -- you have NO TOOLS in this session. You cannot run code, read or write files, inspect your environment, or test your implementation. Any tool call will be rejected and will consume the budget you need to answer, so do not attempt one. You get exactly one reply: write the solver directly from your own knowledge of numerical analysis, choose your scheme and step size by reasoning rather than by experiment, and make it correct in a single pass.
+
+The problem statement ends with a "Solver contract" section that specifies exactly the function to implement, the arguments it will be called with, the dict it must return, and how it will be scored. Follow that contract precisely -- in particular, use the step size (dt) you are told you will be called with.
+
+Respond with the complete contents of a single file `solver.py` inside ONE ```python code block, and nothing else: no explanation before or after the code block.
+
+===== REFERENCE: NUMERICAL METHODS MANUAL =====
+You may use the following reference material on schemes and formulas.
+
+# SDE Solver Manual
+
+## Numerical Schemes
+
+### Euler-Maruyama (EM)
+
+Strong order 0.5, weak order 1.0. Use for any SDE.
+
+**Scalar update** (state X ∈ ℝ):
+```
+dW_n  = sqrt(dt) * Z_n,   Z_n ~ N(0,1)
+X_{n+1} = X_n + f(X_n, t_n) * dt + g(X_n, t_n) * dW_n
+```
+
+**Vector update** (state X ∈ ℝ^d, noise W ∈ ℝ^m):
+```
+dW_n  = sqrt(dt) * Z_n,   Z_n ~ N(0, I_m)
+X_{n+1} = X_n + f(X_n, t_n) * dt + G(X_n, t_n) @ dW_n
+```
+where G is the d×m diffusion matrix.
+
+**Monte Carlo layout**: `X` has shape `(num_paths, d)`. All paths are stepped simultaneously using NumPy broadcasting.
+
+---
+
+### Milstein (scalar only)
+
+Strong order 1.0, weak order 1.0. Use only when `state_dimension == 1` AND `noise_structure == "multiplicative"` AND `milstein_eligible == true` in sde_spec.json.
+
+**Scalar update**:
+```
+dW_n  = sqrt(dt) * Z_n,   Z_n ~ N(0,1)
+X_{n+1} = X_n + f(X_n, t_n) * dt + g(X_n, t_n) * dW_n
+         + 0.5 * g(X_n, t_n) * g'(X_n, t_n) * (dW_n**2 - dt)
+```
+where `g'(X, t) = dg/dX`. This correction term is exactly what improves the strong order.
+
+**Why not multi-D Milstein?** Multi-dimensional Milstein requires the Lévy area (the iterated stochastic integral ∫∫dW_i dW_j), which is not computable without approximation. Use EM for all multi-D problems.
+
+---
+
+## Milstein Corrections by SDE Family
+
+| SDE | g(X) | dg/dX | Milstein correction |
+|---|---|---|---|
+| GBM / Black-Scholes | σX | σ | 0.5 σ²X (dW²−dt) |
+| CIR | σ√X | σ/(2√X) | (σ²/4)(dW²−dt) |
+| Exp-OU | σX | σ | 0.5 σ²X (dW²−dt) |
+| BM with drift | σ (const) | 0 | 0 (Milstein == EM) |
+| OU | σ (const) | 0 | 0 (Milstein == EM) |
+| Linear additive | c (const) | 0 | 0 (Milstein == EM) |
+
+---
+
+## Implementation Notes by SDE Family
+
+### CIR (Cox-Ingersoll-Ross)
+- Diffusion g(X) = σ√X is undefined for X < 0.
+- Apply a positivity guard before computing sqrt: `X_pos = np.maximum(X_n, 0.0)`
+- The Feller condition (2κθ ≥ σ²) guarantees X stays positive mathematically, but floating-point rounding can produce tiny negative values near zero. The guard is mandatory.
+
+### Exp-OU (Exponential Ornstein-Uhlenbeck)
+- The drift is f(X) = X·(−θ·log(X) + σ²/2). Requires X > 0 for log(X) to be defined.
+- With X_0 = 1.0 and typical parameters, X stays positive. Guard with `np.maximum(X_n, 1e-12)` if needed.
+
+### 2D Correlated GBM
+- Introduce correlation via Cholesky: `dW_corr = rho * dW1 + sqrt(1 - rho**2) * dW2`
+- X and Y are updated independently after generating correlated increments.
+
+### Stochastic Oscillator
+- Noise enters only the Y component: `G = [[0], [sigma]]`
+- X update has no stochastic term: `X_{n+1} = X_n + Y_n * dt`
+- Y update: `Y_{n+1} = Y_n - X_n * dt + sigma * dW_n`
+
+---
+
+## Analytic Moments Reference
+
+All expressions below use NumPy syntax. `t` is the evaluation time (use terminal T).
+
+### 1. Standard Brownian Motion (`bm_standard`)
+```python
+X_0 = 0.0
+exact_mean     = 0.0
+exact_variance = t
+```
+
+### 2. BM with Drift (`bm_with_drift`)
+```python
+X_0, mu, sigma = 1.0, 0.5, 0.3
+exact_mean     = X_0 + mu * t
+exact_variance = sigma**2 * t
+```
+
+### 3. Geometric Brownian Motion (`geometric_brownian_motion`)
+```python
+X_0, mu, sigma = 1.0, 0.1, 0.2
+exact_mean     = X_0 * np.exp(mu * t)
+exact_variance = X_0**2 * np.exp(2*mu*t) * (np.exp(sigma**2 * t) - 1)
+```
+
+### 4. Ornstein-Uhlenbeck (`ornstein_uhlenbeck`)
+```python
+X_0, theta, mu, sigma = 2.0, 1.5, 0.0, 0.5
+exact_mean     = mu + (X_0 - mu) * np.exp(-theta * t)
+exact_variance = sigma**2 / (2*theta) * (1 - np.exp(-2*theta*t))
+```
+
+### 5. Linear SDE Additive (`linear_sde_additive`)
+```python
+X_0, a, b, c = 0.0, 2.0, -1.0, 0.5
+exact_mean     = np.exp(b*t) * (X_0 + a/b) - a/b
+exact_variance = c**2 / (2*b) * (np.exp(2*b*t) - 1)
+# With b=-1: variance = 0.125*(1 - exp(-2t)) > 0
+```
+
+### 6. Cox-Ingersoll-Ross (`cox_ingersoll_ross`)
+```python
+X_0, kappa, theta, sigma = 0.5, 2.0, 1.0, 0.5
+exact_mean     = theta + (X_0 - theta) * np.exp(-kappa * t)
+exact_variance = (sigma**2 / kappa) * (
+    X_0 * (np.exp(-kappa*t) - np.exp(-2*kappa*t))
+    + 0.5 * theta * (1 - np.exp(-kappa*t))**2
+)
+```
+
+### 7. Exponential Ornstein-Uhlenbeck (`exponential_ornstein_uhlenbeck`)
+```python
+X_0, theta, sigma = 1.0, 1.0, 0.4
+# v_t = sigma^2/(2*theta) * (1 - exp(-2*theta*t))
+v_t = sigma**2 / (2*theta) * (1 - np.exp(-2*theta*t))
+exact_mean     = np.exp(v_t / 2)
+exact_variance = np.exp(v_t) * (np.exp(v_t) - 1)
+```
+
+### 8. Black-Scholes (`black_scholes`)
+```python
+X_0, r, sigma = 100.0, 0.05, 0.20
+exact_mean     = X_0 * np.exp(r * t)
+exact_variance = X_0**2 * np.exp(2*r*t) * (np.exp(sigma**2 * t) - 1)
+```
+
+### 9. 2D Correlated GBM (`gbm_2d_correlated`)
+```python
+X_0, Y_0 = 1.0, 1.0
+mu1, sigma1, mu2, sigma2, rho = 0.10, 0.20, 0.15, 0.25, 0.60
+exact_mean_X     = X_0 * np.exp(mu1 * t)
+exact_variance_X = X_0**2 * np.exp(2*mu1*t) * (np.exp(sigma1**2 * t) - 1)
+exact_mean_Y     = Y_0 * np.exp(mu2 * t)
+exact_variance_Y = Y_0**2 * np.exp(2*mu2*t) * (np.exp(sigma2**2 * t) - 1)
+```
+
+### 10. Stochastic Oscillator (`stochastic_oscillator`)
+```python
+X_0, Y_0, sigma = 1.0, 0.0, 0.30
+T = 2 * np.pi
+exact_mean_X     = X_0 * np.cos(t) + Y_0 * np.sin(t)
+exact_mean_Y     = -X_0 * np.sin(t) + Y_0 * np.cos(t)
+exact_variance_X = sigma**2 / 2 * (t - np.sin(t) * np.cos(t))
+exact_variance_Y = sigma**2 / 2 * (t + np.sin(t) * np.cos(t))
+# At t=2pi: exact_mean_X ≈ 1.0, exact_mean_Y ≈ 0.0 (near zero — skip mean check)
+```
+
+---
+
+## Scheme Selection Rules
+
+1. **`noise_structure == "additive"` OR `state_dimension > 1`** → EM only. Milstein adds no value for additive noise (dg/dX = 0) and is not well-defined for multi-D without Lévy areas.
+
+2. **`noise_structure == "multiplicative"` AND `state_dimension == 1`** → propose both EM and Milstein. Milstein achieves strong order 1.0 vs EM's 0.5.
+
+3. **`stiff == true`** → implicit or semi-implicit scheme required. Not yet supported; document the limitation.
+
+---
+
+## Solver Code Template
+
+```python
+import numpy as np
+
+def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42,
+              dW: np.ndarray | None = None,
+              observables: dict | None = None) -> dict:
+    # `dW`: pre-generated Brownian INCREMENTS (already scaled by sqrt(dt)), shape
+    #       (num_paths, Nt). The evaluator supplies these so that dt, dt/2 and dt/4 are
+    #       all driven by ONE Brownian path — without that, MC noise swamps the
+    #       discretization bias and no convergence order is measurable. When given, use
+    #       them exactly and take Nt from their shape; draw no randomness of your own.
+    # `observables`: {name: phi(X)} — accumulate the path integral of phi for the
+    #       Dynkin identity check, which is available for every SDE with no closed form.
+    if dW is None:
+        Nt = max(1, round(T / dt))
+        dt = T / Nt
+        rng = np.random.default_rng(seed)
+        dW = np.sqrt(dt) * rng.standard_normal((num_paths, Nt))   # one block, path-major
+    else:
+        Nt = dW.shape[1]
+        dt = T / Nt
+
+    # Initialize: shape (num_paths,) for scalar, (num_paths, d) for vector
+    X = np.full(num_paths, X_0, dtype=float)
+    acc = {k: np.zeros(num_paths) for k in (observables or {})}
+
+    for n in range(Nt):
+        X_prev = X
+        # --- EM step ---
+        X = X + f(X) * dt + g(X) * dW[:, n]
+        # --- Milstein correction (if applicable) — note it uses X_prev, not X ---
+        # X = X + 0.5 * g(X_prev) * dg_dX(X_prev) * (dW[:, n]**2 - dt)
+        for k, phi in (observables or {}).items():
+            acc[k] += 0.5 * (phi(X_prev) + phi(X)) * dt      # trapezoid path integral
+
+    out = {
+        "terminal_paths": X,           # shape (num_paths,) or (num_paths, d)
+        "empirical_mean": float(np.mean(X)),
+        "empirical_variance": float(np.var(X, ddof=1)),
+        "num_paths": num_paths,
+        "dt": dt,
+        "T": T,
+    }
+    if observables:
+        out["path_integrals"] = acc
+    return out
+
+if __name__ == "__main__":
+    result = solve_sde(num_paths=50000, dt=0.01, T=1.0)
+    print(f"Empirical mean:     {result['empirical_mean']:.6f}")
+    print(f"Empirical variance: {result['empirical_variance']:.6f}")
+    # confirm both hooks work — the evaluator depends on them
+    dW = np.sqrt(0.01) * np.random.default_rng(0).standard_normal((1000, 100))
+    print("dW hook:", solve_sde(1000, 0.01, 1.0, dW=dW)["dt"])
+    print("obs hook:", solve_sde(1000, 0.01, 1.0,
+                                 observables={"x": lambda a: a})["path_integrals"]["x"].shape)
+```
+
+The evaluator will import `solve_sde` from `solver.py` and call it directly.
+
+## Measured Convergence Orders
+
+The evaluator measures these directly, with common random numbers, and compares them against what the
+plan claimed. Reference values measured on GBM at 20 000 paths:
+
+| Scheme | Strong order | Weak order |
+|---|---|---|
+| Euler–Maruyama | 0.5 (measured 0.488) | 1.0 |
+| Milstein | 1.0 (measured 1.006) | 1.0 |
+
+**The strong order is the reliable discriminator** — it is a pathwise difference, so CRN removes
+almost all its variance. The weak order is a difference *of means*, so MC error does not cancel, and
+for some `(scheme, φ)` pairs the leading term vanishes and the estimate returns nonsense (GBM with
+Euler–Maruyama and `φ = tanh(x)` yields a spurious 4.18). See `verification_manual.md` §19 for the
+noise-floor filter that removes those.
+
+A Milstein plan measuring strong order ≈ 0.5 has a broken correction term — most often a sign error,
+or applying it with `X_{n+1}` instead of `X_n`.
+
+
+===== PROBLEM =====
+
+# Heston Call at Three Spots, Feller Condition Violated
+
+Simulate the Heston system (Ito) with a zero interest rate:
+
+    dS = sqrt(V) * S dW1,                        S(0) = S0
+    dV = 2.58 * (0.043 - V) dt + sqrt(V) dW2,    V(0) = 0.114
+
+with corr(dW1, dW2) = -0.36, over the interval [0, 1].
+
+**The Feller condition fails here, and it is the point of the problem.**
+2*kappa*eta = 0.221880 is well below sigma^2 = 1, so the variance process
+reaches zero and spends real time near it. A scheme that takes the square root
+of a negative variance produces NaN; one that clips the variance in a way that
+changes its law produces a biased price. What a scheme does at V = 0 is the
+main thing being measured.
+
+The rate is zero, so the asset is a martingale: E[S(T)] = S0 exactly, for every
+T, and no discounting is applied anywhere.
+
+Report the European call value E[(S(T) - 100)^+] from each of the three initial
+spots
+
+    S0 = 75,   S0 = 100,   S0 = 125
+
+as `price_S75`, `price_S100` and `price_S125` in the `functionals` dict. The
+variance process does not depend on S, so one set of variance paths serves all
+three spots; simulating the three independently costs about three times as much
+for no benefit.
+
+Return the terminal states (S, V) for **S0 = 100** in `terminal_paths`.
+
+
+---
+
+## Solver contract (how this problem is run and scored)
+
+Implement, in `solver.py`, exactly this function:
+
+    def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict
+
+It is imported and called **twice**, with these exact arguments:
+
+    solve_sde(num_paths=2000000, dt=0.002, T=1, seed=42)
+
+and then again with `num_paths=500000`, everything else unchanged (see **Two path counts** below).
+
+Use the `dt` you are given (do not hardcode a different step). It must return a dict with:
+
+- `terminal_paths`: 2-D numpy array of shape `(num_paths, 2)` — the 2 state components (X, Y) at time T, in that column order
+- `empirical_mean`: list of floats, one per component
+- `empirical_variance`: list of floats, one per component (use `ddof=1`)
+- `functionals`: a dict of scalar results, containing `"price_S75"`, `"price_S100"`, `"price_S125"` — each a float
+
+Requirements:
+- Seed all randomness with `np.random.default_rng(seed)` (not `np.random.seed`).
+- Round the step count: `Nt = max(1, round(T / dt))`, then `dt = T / Nt`.
+- Keep `solve_sde` importable — no work at module load outside `if __name__ == "__main__"`.
+- Use the Python standard library and numpy only.
+
+Scoring is independent of any self-report: this problem has no terminal-moment formula, so the quantity of interest below is the whole grade.
+
+**Quantity of interest.** `price_S75`, `price_S100`, `price_S125` must each be within their own relative tolerance of the reference value — `price_S75` within 1.5%; `price_S100` within 0.4%; `price_S125` within 0.2%. It is read from the `functionals` dict you return, and it is gated independently of the moments: reporting a number without a simulation behind it, or a simulation without the number, fails.
+
+**Two path counts.** `solve_sde` is called a second time with `num_paths=500000` and the same `dt`, `T` and `seed`, and the two reported values of each quantity are compared. They must differ — two Monte-Carlo estimates taken at different sample sizes do — and they must agree to within the sampling noise the two counts imply. A value that is identical at both counts is a constant, not an estimate, and fails. Nothing here requires the finer run to be the more accurate one; the check is symmetric.
+
+
+===== REMINDER =====
+You have no tools: do not attempt to run or test anything. Respond with ONLY the contents of `solver.py` in a single ```python code block.
