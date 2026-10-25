@@ -1,0 +1,95 @@
+{
+  "status": "ok",
+  "gt_kind": "exact",
+  "passed": true,
+  "verified_score": 10,
+  "worst_variance_rel_err": 0.0,
+  "worst_mean_rel_err": 0.0,
+  "components": [],
+  "run": {
+    "num_paths": 1000000,
+    "dt": 0.004,
+    "T": 10.0,
+    "seed": 42,
+    "solve_s": 411.741105
+  },
+  "functional_errs": {
+    "price_S75": 0.0005846974365319006,
+    "price_S100": 0.0007025278788937957,
+    "price_S125": 0.0006350793936676554
+  },
+  "functional_abs_errs": {
+    "price_S75": 0.021937847818676914,
+    "price_S100": 0.04033212552729282,
+    "price_S125": 0.04990453875440437
+  },
+  "functional_tol": 0.003,
+  "functional_tol_used": {
+    "price_S75": 0.003,
+    "price_S100": 0.003,
+    "price_S125": 0.003
+  },
+  "worst_functional_rel_err": 0.0007025278788937957,
+  "functional_ok": true,
+  "functional_levels": {
+    "status": "ok",
+    "num_paths_graded": 1000000,
+    "num_paths_coarse": 250000,
+    "dt": 0.004,
+    "band_factor": 3.0,
+    "values": {
+      "price_S75": {
+        "graded": 37.54193784781868,
+        "coarse": 37.55965987074183,
+        "delta": 0.01772202292315228,
+        "band": 0.33768000000000004,
+        "moved": true,
+        "consistent": true
+      },
+      "price_S100": {
+        "graded": 57.45033212552729,
+        "coarse": 57.46819464424272,
+        "delta": 0.01786251871543243,
+        "band": 0.51669,
+        "moved": true,
+        "consistent": true
+      },
+      "price_S125": {
+        "graded": 78.6299045387544,
+        "coarse": 78.64904779364868,
+        "delta": 0.019143254894274264,
+        "band": 0.70722,
+        "moved": true,
+        "consistent": true
+      }
+    },
+    "passed": true,
+    "worst_functional_rel_err": 0.0010570328022875585,
+    "solve_s": 97.350186,
+    "wall_s": 97.51,
+    "level_ignored": false
+  },
+  "work_precision": {
+    "axis": "paths_dt",
+    "path": "sandbox",
+    "points": [
+      {
+        "num_paths": 250000,
+        "dt": 0.004,
+        "rel_err": 0.0010570328022875585,
+        "solve_s": 97.350186,
+        "wall_s": 97.51,
+        "graded": false
+      },
+      {
+        "num_paths": 1000000,
+        "dt": 0.004,
+        "rel_err": 0.0007025278788937957,
+        "solve_s": 411.741105,
+        "wall_s": 411.96,
+        "graded": true
+      }
+    ]
+  },
+  "plan_dir": "workspace_oneshot/opus/sde_hhw_call_corr/c0-manual/rep4"
+}
