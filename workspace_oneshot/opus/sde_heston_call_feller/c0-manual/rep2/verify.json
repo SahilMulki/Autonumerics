@@ -1,0 +1,95 @@
+{
+  "status": "ok",
+  "gt_kind": "exact",
+  "passed": true,
+  "verified_score": 10,
+  "worst_variance_rel_err": 0.0,
+  "worst_mean_rel_err": 0.0,
+  "components": [],
+  "run": {
+    "num_paths": 2000000,
+    "dt": 0.002,
+    "T": 1.0,
+    "seed": 42,
+    "solve_s": 117.37355
+  },
+  "functional_errs": {
+    "price_S75": 0.0008682678697591627,
+    "price_S100": 0.0001928513186024196,
+    "price_S125": 2.6629048498943745e-06
+  },
+  "functional_abs_errs": {
+    "price_S75": 0.0007888237287100308,
+    "price_S100": 0.0017446584044265023,
+    "price_S125": 7.593216299639494e-05
+  },
+  "functional_tol": 0.015,
+  "functional_tol_used": {
+    "price_S75": 0.015,
+    "price_S100": 0.004,
+    "price_S125": 0.002
+  },
+  "worst_functional_rel_err": 0.0008682678697591627,
+  "functional_ok": true,
+  "functional_levels": {
+    "status": "ok",
+    "num_paths_graded": 2000000,
+    "num_paths_coarse": 500000,
+    "dt": 0.002,
+    "band_factor": 3.0,
+    "values": {
+      "price_S75": {
+        "graded": 0.909291552188331,
+        "coarse": 0.9004049202268295,
+        "delta": 0.008886631961501523,
+        "band": 0.04088262278068294,
+        "moved": true,
+        "consistent": true
+      },
+      "price_S100": {
+        "graded": 9.048394777625395,
+        "coarse": 9.03263713682762,
+        "delta": 0.01575764079777464,
+        "band": 0.10855980143065164,
+        "moved": true,
+        "consistent": true
+      },
+      "price_S125": {
+        "graded": 28.514862331461792,
+        "coarse": 28.505958549293474,
+        "delta": 0.008903782168317775,
+        "band": 0.17108871839579276,
+        "moved": true,
+        "consistent": true
+      }
+    },
+    "passed": true,
+    "worst_functional_rel_err": 0.008913355985756299,
+    "solve_s": 29.091478,
+    "wall_s": 29.26,
+    "level_ignored": false
+  },
+  "work_precision": {
+    "axis": "paths_dt",
+    "path": "sandbox",
+    "points": [
+      {
+        "num_paths": 500000,
+        "dt": 0.002,
+        "rel_err": 0.008913355985756299,
+        "solve_s": 29.091478,
+        "wall_s": 29.26,
+        "graded": false
+      },
+      {
+        "num_paths": 2000000,
+        "dt": 0.002,
+        "rel_err": 0.0008682678697591627,
+        "solve_s": 117.37355,
+        "wall_s": 117.6,
+        "graded": true
+      }
+    ]
+  },
+  "plan_dir": "workspace_oneshot/opus/sde_heston_call_feller/c0-manual/rep2"
+}

@@ -17,7 +17,7 @@
     "solver_timeout_s": 1800,
     "mem_mb": 4096,
     "work_precision": true,
-    "invocation_seconds": 3971.6
+    "invocation_seconds": 4658.1
   },
   "results": [
     {
@@ -3425,6 +3425,530 @@
       "plan_dir": "workspace_oneshot/opus/sde_heston_call_feller/c0-manual/rep1",
       "verdict": "PASS",
       "_key": "sde_heston_call_feller|c0|manual|opus|1"
+    },
+    {
+      "id": "B03",
+      "slug": "sde_heston_call_feller",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_feller",
+      "title": "Heston call at three spots, Feller condition violated",
+      "challenge": "2*kappa*eta is a fifth of sigma^2, so the variance sits on zero and every square root in the scheme has to say what it does there. Three option values spanning 31x, each gated at what Monte Carlo can resolve for it.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "manual",
+      "model": "opus",
+      "rep": 2,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 44.4,
+        "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    # Heston parameters (r = 0)\n    kappa, theta, sigma, rho = 2.58, 0.043, 1.0, -0.36\n    V0 = 0.114\n    K_strike = 100.0\n    spots = (75.0, 100.0, 125.0)\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    # Andersen QE constants\n    ek = np.exp(-kappa * dt)\n    c1 = sigma**2 * ek * (1.0 - ek) / kappa\n    c2 = theta * sigma**2 * (1.0 - ek) ** 2 / (2.0 * kappa)\n    g1 = g2 = 0.5\n    K1 = g1 * dt * (kappa * rho / sigma - 0.5) - rho / sigma\n    K2 = g2 * dt * (kappa * rho / sigma - 0.5) + rho / sigma\n    K3 = g1 * dt * (1.0 - rho**2)\n    K4 = g2 * dt * (1.0 - rho**2)\n    A = K2 + 0.5 * K4  # negative here -> martingale correction always valid\n    psi_c = 1.5\n\n    X_all = np.empty(num_paths)\n    V_all = np.empty(num_paths)\n\n    chunk = 250000\n    for start in range(0, num_paths, chunk):\n        n = min(chunk, num_paths - start)\n        X = np.zeros(n)\n        V = np.full(n, V0)\n        with np.errstate(divide=\"ignore\", invalid=\"ignore\", over=\"ignore\"):\n            for _ in range(Nt):\n                Zv = rng.standard_normal(n)\n                U = rng.random(n)\n                Zs = rng.standard_normal(n)\n\n                m = theta + (V - theta) * ek\n                s2 = V * c1 + c2\n                psi = s2 / (m * m)\n\n                # quadratic branch\n                pq = np.minimum(psi, psi_c)\n                t2 = 2.0 / pq\n                b2 = t2 - 1.0 + np.sqrt(t2 * (t2 - 1.0))\n                a = m / (1.0 + b2)\n                Vq = a * (np.sqrt(b2) + Zv) ** 2\n                one_m = 1.0 - 2.0 * A * a\n                k0q = -A * b2 * a / one_m + 0.5 * np.log(one_m)\n\n                # exponential branch\n                pe = np.maximum(psi, psi_c)\n                p = (pe - 1.0) / (pe + 1.0)\n                beta = (1.0 - p) / m\n                Ve = np.where(U <= p, 0.0, np.log((1.0 - p) / (1.0 - U)) / beta)\n                k0e = -np.log(p + beta * (1.0 - p) / (beta - A))\n\n                sel = psi <= psi_c\n                Vn = np.where(sel, Vq, Ve)\n                k0 = np.where(sel, k0q, k0e)\n\n                # martingale-corrected log-asset step\n                X += k0 - 0.5 * K3 * V + K2 * Vn + np.sqrt(np.maximum(K3 * V + K4 * Vn, 0.0)) * Zs\n                V = Vn\n        X_all[start:start + n] = X\n        V_all[start:start + n] = V\n\n    growth = np.exp(X_all)\n    functionals = {}\n    for S0 in spots:\n        ST = S0 * growth\n        pay = np.maximum(ST - K_strike, 0.0)\n        # control variate: E[S_T] = S0 exactly (martingale-corrected scheme)\n        dS = ST - S0\n        varS = np.mean((ST - ST.mean()) ** 2)\n        b = np.mean((pay - pay.mean()) * (ST - ST.mean())) / varS if varS > 0 else 0.0\n        price = float(np.mean(pay) - b * np.mean(dS))\n        functionals[f\"price_S{int(S0)}\"] = price\n\n    S100 = 100.0 * growth\n    paths = np.column_stack([S100, V_all])\n\n    return {\n        \"terminal_paths\": paths,\n        \"empirical_mean\": [float(np.mean(paths[:, 0])), float(np.mean(paths[:, 1]))],\n        \"empirical_variance\": [float(np.var(paths[:, 0], ddof=1)),\n                               float(np.var(paths[:, 1], ddof=1))],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=200000, dt=0.002, T=1, seed=42)\n    print(res[\"functionals\"])\n    print(res[\"empirical_mean\"], res[\"empirical_variance\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.1590256,
+        "input_tokens": 41947,
+        "output_tokens": 4475,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 2000000,
+          "dt": 0.002,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 117.37355
+        },
+        "functional_errs": {
+          "price_S75": 0.0008682678697591627,
+          "price_S100": 0.0001928513186024196,
+          "price_S125": 2.6629048498943745e-06
+        },
+        "functional_abs_errs": {
+          "price_S75": 0.0007888237287100308,
+          "price_S100": 0.0017446584044265023,
+          "price_S125": 7.593216299639494e-05
+        },
+        "functional_tol": 0.015,
+        "functional_tol_used": {
+          "price_S75": 0.015,
+          "price_S100": 0.004,
+          "price_S125": 0.002
+        },
+        "worst_functional_rel_err": 0.0008682678697591627,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 2000000,
+          "num_paths_coarse": 500000,
+          "dt": 0.002,
+          "band_factor": 3.0,
+          "values": {
+            "price_S75": {
+              "graded": 0.909291552188331,
+              "coarse": 0.9004049202268295,
+              "delta": 0.008886631961501523,
+              "band": 0.04088262278068294,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S100": {
+              "graded": 9.048394777625395,
+              "coarse": 9.03263713682762,
+              "delta": 0.01575764079777464,
+              "band": 0.10855980143065164,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S125": {
+              "graded": 28.514862331461792,
+              "coarse": 28.505958549293474,
+              "delta": 0.008903782168317775,
+              "band": 0.17108871839579276,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.008913355985756299,
+          "solve_s": 29.091478,
+          "wall_s": 29.26,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 500000,
+              "dt": 0.002,
+              "rel_err": 0.008913355985756299,
+              "solve_s": 29.091478,
+              "wall_s": 29.26,
+              "graded": false
+            },
+            {
+              "num_paths": 2000000,
+              "dt": 0.002,
+              "rel_err": 0.0008682678697591627,
+              "solve_s": 117.37355,
+              "wall_s": 117.6,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_heston_call_feller/c0-manual/rep2"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_heston_call_feller/c0-manual/rep2",
+      "verdict": "PASS",
+      "_key": "sde_heston_call_feller|c0|manual|opus|2"
+    },
+    {
+      "id": "B03",
+      "slug": "sde_heston_call_feller",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_feller",
+      "title": "Heston call at three spots, Feller condition violated",
+      "challenge": "2*kappa*eta is a fifth of sigma^2, so the variance sits on zero and every square root in the scheme has to say what it does there. Three option values spanning 31x, each gated at what Monte Carlo can resolve for it.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "manual",
+      "model": "opus",
+      "rep": 3,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 41.4,
+        "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    # Heston parameters (r = 0)\n    kappa, eta, eps, rho = 2.58, 0.043, 1.0, -0.36\n    V0 = 0.114\n    spots = (75.0, 100.0, 125.0)\n    K_strike = 100.0\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    # Andersen QE scheme constants\n    ek = np.exp(-kappa * dt)\n    c1 = eps**2 * ek * (1.0 - ek) / kappa\n    c2 = eta * eps**2 * (1.0 - ek) ** 2 / (2.0 * kappa)\n    psi_c = 1.5\n    g1 = g2 = 0.5\n    K1 = g1 * dt * (kappa * rho / eps - 0.5) - rho / eps\n    K2 = g2 * dt * (kappa * rho / eps - 0.5) + rho / eps\n    K3 = g1 * dt * (1.0 - rho**2)\n    K4 = g2 * dt * (1.0 - rho**2)\n    A = K2 + 0.5 * K4  # negative here, so moment generating function finite\n\n    X_all = np.empty(num_paths)   # log(S_T / S0), identical for all spots\n    V_all = np.empty(num_paths)\n\n    chunk = 250000\n    for start in range(0, num_paths, chunk):\n        n = min(chunk, num_paths - start)\n        V = np.full(n, V0)\n        X = np.zeros(n)\n        for _ in range(Nt):\n            Zv = rng.standard_normal(n)\n            U = rng.random(n)\n            Zs = rng.standard_normal(n)\n\n            m = eta + (V - eta) * ek\n            s2 = V * c1 + c2\n            psi = s2 / (m * m)\n            quad = psi <= psi_c\n\n            # quadratic branch\n            pq = np.minimum(psi, psi_c)\n            inv = 2.0 / pq\n            b2 = inv - 1.0 + np.sqrt(inv) * np.sqrt(inv - 1.0)\n            a = m / (1.0 + b2)\n            b = np.sqrt(b2)\n            Vq = a * (b + Zv) ** 2\n            one_m_2Aa = 1.0 - 2.0 * A * a\n            lnMq = A * b2 * a / one_m_2Aa - 0.5 * np.log(one_m_2Aa)\n\n            # exponential branch\n            pe = np.maximum(psi, psi_c)\n            p = (pe - 1.0) / (pe + 1.0)\n            beta = (1.0 - p) / m\n            Ve = np.where(U <= p, 0.0,\n                          np.log((1.0 - p) / np.maximum(1.0 - U, 1e-300)) / beta)\n            lnMe = np.log(p + beta * (1.0 - p) / (beta - A))\n\n            Vn = np.where(quad, Vq, Ve)\n            lnM = np.where(quad, lnMq, lnMe)\n\n            # martingale-corrected log-asset step\n            K0s = -lnM - (K1 + 0.5 * K3) * V\n            X += K0s + K1 * V + K2 * Vn + np.sqrt(np.maximum(K3 * V + K4 * Vn, 0.0)) * Zs\n            V = Vn\n        X_all[start:start + n] = X\n        V_all[start:start + n] = V\n\n    E = np.exp(X_all)\n    functionals = {}\n    for S0 in spots:\n        ST = S0 * E\n        pay = np.maximum(ST - K_strike, 0.0)\n        # control variate: E[S_T] = S0 exactly (martingale-corrected scheme)\n        cov = np.cov(pay, ST)\n        bcv = cov[0, 1] / cov[1, 1] if cov[1, 1] > 0 else 0.0\n        price = float(np.mean(pay) - bcv * (np.mean(ST) - S0))\n        functionals[\"price_S%d\" % int(S0)] = price\n\n    S100 = 100.0 * E\n    terminal = np.column_stack([S100, V_all])\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(terminal[:, 0])), float(np.mean(terminal[:, 1]))],\n        \"empirical_variance\": [float(np.var(terminal[:, 0], ddof=1)),\n                               float(np.var(terminal[:, 1], ddof=1))],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=100000, dt=0.002, T=1, seed=42)\n    print(res[\"functionals\"])\n    print(res[\"empirical_mean\"], res[\"empirical_variance\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.15038559999999998,
+        "input_tokens": 41947,
+        "output_tokens": 4043,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 2000000,
+          "dt": 0.002,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 121.44565
+        },
+        "functional_errs": {
+          "price_S75": 0.0008682678697580628,
+          "price_S100": 0.00019285131860183053,
+          "price_S125": 2.6629048502681503e-06
+        },
+        "functional_abs_errs": {
+          "price_S75": 0.0007888237287090316,
+          "price_S100": 0.0017446584044211733,
+          "price_S125": 7.593216300705308e-05
+        },
+        "functional_tol": 0.015,
+        "functional_tol_used": {
+          "price_S75": 0.015,
+          "price_S100": 0.004,
+          "price_S125": 0.002
+        },
+        "worst_functional_rel_err": 0.0008682678697580628,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 2000000,
+          "num_paths_coarse": 500000,
+          "dt": 0.002,
+          "band_factor": 3.0,
+          "values": {
+            "price_S75": {
+              "graded": 0.90929155218833,
+              "coarse": 0.9004049202268286,
+              "delta": 0.008886631961501412,
+              "band": 0.04088262278068294,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S100": {
+              "graded": 9.04839477762539,
+              "coarse": 9.032637136827624,
+              "delta": 0.01575764079776576,
+              "band": 0.10855980143065164,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S125": {
+              "graded": 28.514862331461803,
+              "coarse": 28.505958549293474,
+              "delta": 0.008903782168328433,
+              "band": 0.17108871839579276,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.008913355985757277,
+          "solve_s": 30.090465,
+          "wall_s": 30.28,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 500000,
+              "dt": 0.002,
+              "rel_err": 0.008913355985757277,
+              "solve_s": 30.090465,
+              "wall_s": 30.28,
+              "graded": false
+            },
+            {
+              "num_paths": 2000000,
+              "dt": 0.002,
+              "rel_err": 0.0008682678697580628,
+              "solve_s": 121.44565,
+              "wall_s": 121.63,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_heston_call_feller/c0-manual/rep3"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_heston_call_feller/c0-manual/rep3",
+      "verdict": "PASS",
+      "_key": "sde_heston_call_feller|c0|manual|opus|3"
+    },
+    {
+      "id": "B03",
+      "slug": "sde_heston_call_feller",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_feller",
+      "title": "Heston call at three spots, Feller condition violated",
+      "challenge": "2*kappa*eta is a fifth of sigma^2, so the variance sits on zero and every square root in the scheme has to say what it does there. Three option values spanning 31x, each gated at what Monte Carlo can resolve for it.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "manual",
+      "model": "opus",
+      "rep": 4,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 47.1,
+        "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    # Heston model (r = 0), Feller condition violated.\n    # Variance: Andersen QE scheme (handles V = 0 exactly, never negative).\n    # Log-asset: Andersen trapezoidal scheme with martingale correction, so\n    # E[S_T] = S0 holds exactly in the discrete scheme.\n    kappa, eta, sigma, rho = 2.58, 0.043, 1.0, -0.36\n    V0 = 0.114\n    K = 100.0\n    spots = (75.0, 100.0, 125.0)\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    ekt = np.exp(-kappa * dt)\n    c1 = sigma**2 * ekt * (1.0 - ekt) / kappa\n    c2 = eta * sigma**2 * (1.0 - ekt) ** 2 / (2.0 * kappa)\n    psi_c = 1.5\n\n    g1 = g2 = 0.5\n    K1 = g1 * dt * (kappa * rho / sigma - 0.5) - rho / sigma\n    K2 = g2 * dt * (kappa * rho / sigma - 0.5) + rho / sigma\n    K3 = g1 * dt * (1.0 - rho**2)\n    K4 = g2 * dt * (1.0 - rho**2)\n    A = K2 + 0.5 * K4  # negative here, so the MGF always exists\n\n    V = np.full(num_paths, V0, dtype=float)\n    X = np.zeros(num_paths, dtype=float)  # log(S/S0)\n    Vn = np.empty(num_paths, dtype=float)\n    lnM = np.empty(num_paths, dtype=float)\n\n    for _ in range(Nt):\n        m = eta + (V - eta) * ekt\n        s2 = V * c1 + c2\n        psi = s2 / (m * m)\n\n        quad = psi <= psi_c\n        iq = np.nonzero(quad)[0]\n        ie = np.nonzero(~quad)[0]\n\n        # Quadratic branch\n        if iq.size:\n            mq = m[iq]\n            pq = psi[iq]\n            tq = 2.0 / pq\n            b2 = tq - 1.0 + np.sqrt(tq) * np.sqrt(tq - 1.0)\n            a = mq / (1.0 + b2)\n            b = np.sqrt(b2)\n            Zv = rng.standard_normal(iq.size)\n            Vn[iq] = a * (b + Zv) ** 2\n            den = 1.0 - 2.0 * A * a\n            lnM[iq] = A * b2 * a / den - 0.5 * np.log(den)\n\n        # Exponential branch\n        if ie.size:\n            me = m[ie]\n            pe = psi[ie]\n            p = (pe - 1.0) / (pe + 1.0)\n            beta = (1.0 - p) / me\n            U = rng.random(ie.size)\n            ve = np.zeros(ie.size)\n            pos = U > p\n            ve[pos] = np.log((1.0 - p[pos]) / (1.0 - U[pos])) / beta[pos]\n            Vn[ie] = ve\n            lnM[ie] = np.log(p + beta * (1.0 - p) / (beta - A))\n\n        K0s = -lnM - (K1 + 0.5 * K3) * V\n        Z = rng.standard_normal(num_paths)\n        X += K0s + K1 * V + K2 * Vn + np.sqrt(K3 * V + K4 * Vn) * Z\n        V, Vn = Vn, V\n\n    eX = np.exp(X)\n    functionals = {}\n    for S0 in spots:\n        ST = S0 * eX\n        C = np.maximum(ST - K, 0.0)\n        # Control variate with the exact martingale E[S_T] = S0\n        dS = ST - ST.mean()\n        varS = np.dot(dS, dS)\n        cbeta = np.dot(dS, C - C.mean()) / varS if varS > 0 else 0.0\n        price = C.mean() - cbeta * (ST.mean() - S0)\n        functionals[f\"price_S{int(S0)}\"] = float(price)\n\n    S100 = 100.0 * eX\n    terminal = np.column_stack((S100, V))\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(terminal[:, 0])), float(np.mean(terminal[:, 1]))],\n        \"empirical_variance\": [float(np.var(terminal[:, 0], ddof=1)),\n                               float(np.var(terminal[:, 1], ddof=1))],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=200000, dt=0.002, T=1, seed=42)\n    print(res[\"functionals\"])\n    print(res[\"empirical_mean\"], res[\"empirical_variance\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.1657656,
+        "input_tokens": 41947,
+        "output_tokens": 4812,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 2000000,
+          "dt": 0.002,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 107.498305
+        },
+        "functional_errs": {
+          "price_S75": 0.006324913423014207,
+          "price_S100": 0.0003524837264424643,
+          "price_S125": 4.479540678276808e-05
+        },
+        "functional_abs_errs": {
+          "price_S75": 0.005746201102079351,
+          "price_S100": 0.0031887969458441745,
+          "price_S125": 0.0012773314560803328
+        },
+        "functional_tol": 0.015,
+        "functional_tol_used": {
+          "price_S75": 0.015,
+          "price_S100": 0.004,
+          "price_S125": 0.002
+        },
+        "worst_functional_rel_err": 0.006324913423014207,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 2000000,
+          "num_paths_coarse": 500000,
+          "dt": 0.002,
+          "band_factor": 3.0,
+          "values": {
+            "price_S75": {
+              "graded": 0.9142489295617003,
+              "coarse": 0.8986009150004673,
+              "delta": 0.015648014561232992,
+              "band": 0.04088262278068294,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S100": {
+              "graded": 9.049838916166813,
+              "coarse": 9.048773799373013,
+              "delta": 0.0010651167938000583,
+              "band": 0.10855980143065164,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S125": {
+              "graded": 28.516063730754876,
+              "coarse": 28.521979220462452,
+              "delta": 0.005915489707575716,
+              "band": 0.17108871839579276,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.010899046473908013,
+          "solve_s": 23.823482,
+          "wall_s": 23.99,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 500000,
+              "dt": 0.002,
+              "rel_err": 0.010899046473908013,
+              "solve_s": 23.823482,
+              "wall_s": 23.99,
+              "graded": false
+            },
+            {
+              "num_paths": 2000000,
+              "dt": 0.002,
+              "rel_err": 0.006324913423014207,
+              "solve_s": 107.498305,
+              "wall_s": 107.68,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_heston_call_feller/c0-manual/rep4"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_heston_call_feller/c0-manual/rep4",
+      "verdict": "PASS",
+      "_key": "sde_heston_call_feller|c0|manual|opus|4"
+    },
+    {
+      "id": "B03",
+      "slug": "sde_heston_call_feller",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_feller",
+      "title": "Heston call at three spots, Feller condition violated",
+      "challenge": "2*kappa*eta is a fifth of sigma^2, so the variance sits on zero and every square root in the scheme has to say what it does there. Three option values spanning 31x, each gated at what Monte Carlo can resolve for it.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "manual",
+      "model": "opus",
+      "rep": 5,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 51.3,
+        "result_text": "```python\nimport math\nimport numpy as np\n\n\nKAPPA = 2.58\nETA = 0.043\nSIGMA = 1.0\nV0 = 0.114\nRHO = -0.36\nSTRIKE = 100.0\nSPOTS = (75.0, 100.0, 125.0)\n\n\ndef _norm_cdf(x):\n    # Phi(x) = 0.5 * erfc(-x / sqrt(2)); erfc via Chebyshev fit (rel. err < 1.2e-7)\n    z = -x / math.sqrt(2.0)\n    az = np.abs(z)\n    t = 1.0 / (1.0 + 0.5 * az)\n    poly = (-1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 +\n            t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 +\n            t * (-0.82215223 + t * 0.17087277)))))))))\n    ans = t * np.exp(-az * az + poly)\n    erfc = np.where(z >= 0.0, ans, 2.0 - ans)\n    return 0.5 * erfc\n\n\ndef _bs_call(F, K, w):\n    # zero rate Black call with total variance w\n    sw = np.sqrt(np.maximum(w, 1e-300))\n    d1 = (np.log(F / K) + 0.5 * w) / sw\n    d2 = d1 - sw\n    return F * _norm_cdf(d1) - K * _norm_cdf(d2)\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    ek = math.exp(-KAPPA * dt)\n    c1 = SIGMA ** 2 * ek * (1.0 - ek) / KAPPA\n    c2 = ETA * SIGMA ** 2 * (1.0 - ek) ** 2 / (2.0 * KAPPA)\n    psi_c = 1.5\n    rho2 = RHO * RHO\n\n    chunk = 200000\n    S_T = np.empty(num_paths)\n    V_T = np.empty(num_paths)\n\n    sumY = 0.0\n    sumYY = 0.0\n    sumC = {s: 0.0 for s in SPOTS}\n    sumCY = {s: 0.0 for s in SPOTS}\n\n    start = 0\n    while start < num_paths:\n        n = min(chunk, num_paths - start)\n        V = np.full(n, V0)\n        intV = np.zeros(n)\n        for _ in range(Nt):\n            Z = rng.standard_normal(n)\n            U = rng.random(n)\n            m = ETA + (V - ETA) * ek\n            s2 = V * c1 + c2\n            psi = s2 / (m * m)\n            small = psi <= psi_c\n            # quadratic branch\n            psi_s = np.minimum(psi, psi_c)\n            inv = 2.0 / psi_s\n            b2 = inv - 1.0 + np.sqrt(inv * (inv - 1.0))\n            a = m / (1.0 + b2)\n            Vq = a * (np.sqrt(b2) + Z) ** 2\n            # exponential branch\n            psi_e = np.maximum(psi, psi_c)\n            p = (psi_e - 1.0) / (psi_e + 1.0)\n            beta = (1.0 - p) / m\n            Ve = np.where(U > p, np.log((1.0 - p) / (1.0 - U)) / beta, 0.0)\n            Vn = np.where(small, Vq, Ve)\n            intV += 0.5 * (V + Vn) * dt\n            V = Vn\n\n        # integral of sqrt(V) dW2 recovered from the V dynamics\n        I2 = (V - V0 - KAPPA * ETA * T + KAPPA * intV) / SIGMA\n        X = RHO * I2 - 0.5 * rho2 * intV\n        Y = np.exp(X)\n        w = (1.0 - rho2) * intV\n\n        sumY += float(np.sum(Y))\n        sumYY += float(np.sum(Y * Y))\n        for s in SPOTS:\n            C = _bs_call(s * Y, STRIKE, w)\n            sumC[s] += float(np.sum(C))\n            sumCY[s] += float(np.sum(C * Y))\n\n        Zs = rng.standard_normal(n)\n        S_T[start:start + n] = 100.0 * Y * np.exp(np.sqrt(w) * Zs - 0.5 * w)\n        V_T[start:start + n] = V\n        start += n\n\n    N = float(num_paths)\n    mY = sumY / N\n    varY = sumYY / N - mY * mY\n    functionals = {}\n    for s in SPOTS:\n        mC = sumC[s] / N\n        cov = sumCY[s] / N - mC * mY\n        b = cov / varY if varY > 0 else 0.0\n        price = mC - b * (mY - 1.0)\n        functionals[\"price_S%d\" % int(s)] = float(price)\n\n    paths = np.column_stack([S_T, V_T])\n    return {\n        \"terminal_paths\": paths,\n        \"empirical_mean\": [float(np.mean(paths[:, 0])), float(np.mean(paths[:, 1]))],\n        \"empirical_variance\": [float(np.var(paths[:, 0], ddof=1)),\n                               float(np.var(paths[:, 1], ddof=1))],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    r = solve_sde(num_paths=100000, dt=0.002, T=1, seed=42)\n    print(r[\"functionals\"], r[\"empirical_mean\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.1710056,
+        "input_tokens": 41947,
+        "output_tokens": 5074,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 2000000,
+          "dt": 0.002,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 55.646081
+        },
+        "functional_errs": {
+          "price_S75": 0.0005878008146376883,
+          "price_S100": 0.00013544971327032984,
+          "price_S125": 2.367593864352755e-05
+        },
+        "functional_abs_errs": {
+          "price_S75": 0.0005340186438891337,
+          "price_S100": 0.001225366164705477,
+          "price_S125": 0.0006751143332230924
+        },
+        "functional_tol": 0.015,
+        "functional_tol_used": {
+          "price_S75": 0.015,
+          "price_S100": 0.004,
+          "price_S125": 0.002
+        },
+        "worst_functional_rel_err": 0.0005878008146376883,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 2000000,
+          "num_paths_coarse": 500000,
+          "dt": 0.002,
+          "band_factor": 3.0,
+          "values": {
+            "price_S75": {
+              "graded": 0.9090367471035101,
+              "coarse": 0.9084799890642009,
+              "delta": 0.0005567580393092131,
+              "band": 0.04088262278068294,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S100": {
+              "graded": 9.047875485385674,
+              "coarse": 9.046576368731303,
+              "delta": 0.0012991166543709909,
+              "band": 0.10855980143065164,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S125": {
+              "graded": 28.51546151363202,
+              "coarse": 28.515031644959386,
+              "delta": 0.00042986867263294926,
+              "band": 0.17108871839579276,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 2.502952903469467e-05,
+          "solve_s": 14.134938,
+          "wall_s": 14.31,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 500000,
+              "dt": 0.002,
+              "rel_err": 2.502952903469467e-05,
+              "solve_s": 14.134938,
+              "wall_s": 14.31,
+              "graded": false
+            },
+            {
+              "num_paths": 2000000,
+              "dt": 0.002,
+              "rel_err": 0.0005878008146376883,
+              "solve_s": 55.646081,
+              "wall_s": 55.83,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_heston_call_feller/c0-manual/rep5"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_heston_call_feller/c0-manual/rep5",
+      "verdict": "PASS",
+      "_key": "sde_heston_call_feller|c0|manual|opus|5"
     }
   ]
 }
