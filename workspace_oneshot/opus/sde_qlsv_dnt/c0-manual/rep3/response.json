@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 64.2,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    kappa, theta, sig, rho = 2.58, 0.043, 1.0, -0.36\n    V0 = 0.114\n    c = 0.01\n    srho = np.sqrt(1.0 - rho ** 2)\n\n    # Exact CIR transition (noncentral chi-square)\n    ekt = np.exp(-kappa * dt)\n    cfac = sig ** 2 * (1.0 - ekt) / (4.0 * kappa)\n    dfree = 4.0 * kappa * theta / sig ** 2\n    lam_fac = 4.0 * kappa * ekt / (sig ** 2 * (1.0 - ekt))\n\n    # Transformed variable Z = 1/(c S):  dZ = -sqrt(V) dW1 + (V/Z) dt\n    # (time-changed Bessel-3).  Corridor S in (50,150) <=> Z in (L, U).\n    L = 1.0 / (c * 150.0)\n    U = 1.0 / (c * 50.0)\n    spots = [75.0, 100.0, 125.0]\n    Z = [np.full(num_paths, 1.0 / (c * s)) for s in spots]\n    W = [np.ones(num_paths) for _ in spots]\n\n    V = np.full(num_paths, V0)\n    for n in range(Nt):\n        V1 = cfac * rng.noncentral_chisquare(dfree, lam_fac * V)\n        Iv = 0.5 * (V + V1) * dt\n        J = (V1 - V - kappa * theta * dt + kappa * Iv) / sig  # int sqrt(V) dW2\n        xi = rng.standard_normal(num_paths)\n        E = rng.exponential(size=num_paths)\n        dM = -(rho * J + srho * np.sqrt(Iv) * xi)\n        q = 2.0 * Iv * E\n        Ivs = np.maximum(Iv, 1e-300)\n        for k in range(len(spots)):\n            z0 = Z[k]\n            # BES(3)-type step: radial part of 3D BM, always positive\n            z1 = np.sqrt((z0 + dM) ** 2 + q)\n            inside = (z1 > L) & (z1 < U)\n            a_d = np.maximum(z0 - L, 0.0)\n            b_d = np.maximum(z1 - L, 0.0)\n            a_u = np.maximum(U - z0, 0.0)\n            b_u = np.maximum(U - z1, 0.0)\n            p_d = np.exp(-2.0 * a_d * b_d / Ivs)\n            p_u = np.exp(-2.0 * a_u * b_u / Ivs)\n            W[k] *= inside * (1.0 - p_d) * (1.0 - p_u)\n            Z[k] = z1\n        V = V1\n\n    S100 = 1.0 / (c * Z[1])\n    terminal = np.column_stack([S100, V])\n\n    functionals = {\n        \"no_touch_S75\": float(np.mean(W[0])),\n        \"no_touch_S100\": float(np.mean(W[1])),\n        \"no_touch_S125\": float(np.mean(W[2])),\n    }\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(terminal[:, j])) for j in range(2)],\n        \"empirical_variance\": [float(np.var(terminal[:, j], ddof=1)) for j in range(2)],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=100000, dt=0.002, T=1, seed=42)\n    print(res[\"functionals\"])\n    print(res[\"empirical_mean\"], res[\"empirical_variance\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.19438079999999996,
+  "input_tokens": 42145,
+  "output_tokens": 6240,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}

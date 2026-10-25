@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 53.9,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    c = 0.01\n    kappa, eta, sigma = 2.58, 0.043, 1.0\n    rho = -0.36\n    V0 = 0.114\n    srho = np.sqrt(1.0 - rho * rho)\n\n    # exact CIR transition parameters (noncentral chi-square)\n    ekdt = np.exp(-kappa * dt)\n    c0 = sigma**2 * (1.0 - ekdt) / (4.0 * kappa)\n    dfree = 4.0 * kappa * eta / sigma**2\n\n    L, U = 1.0 / 150.0, 1.0 / 50.0  # barriers in Y = 1/S\n    spots = [75.0, 100.0, 125.0]\n    Ys = [np.full(num_paths, 1.0 / s0) for s0 in spots]\n    Ws = [np.ones(num_paths) for _ in spots]\n\n    V = np.full(num_paths, V0)\n    for n in range(Nt):\n        Vn = V\n        V = c0 * rng.noncentral_chisquare(dfree, Vn * (ekdt / c0))\n        Vbar = 0.5 * (Vn + V)\n        # int sqrt(V) dW2 recovered from the V dynamics\n        IW2 = (V - Vn) - kappa * eta * dt + kappa * Vbar * dt\n        Z = rng.standard_normal(num_paths)\n        IW1 = rho * IW2 + srho * np.sqrt(Vbar * dt) * Z\n        xi1 = -c * IW1\n        dtau = c * c * Vbar * dt + 1e-300\n        sq = np.sqrt(dtau)\n        xi2 = sq * rng.standard_normal(num_paths)\n        xi3 = sq * rng.standard_normal(num_paths)\n        e23 = xi2 * xi2 + xi3 * xi3\n        inv2 = 2.0 / dtau\n        for k in range(3):\n            Y0 = Ys[k]\n            # Y = 1/S is a time-changed 3-d Bessel process: exact positive step\n            Y1 = np.sqrt((Y0 + xi1) ** 2 + e23)\n            inside = (Y1 > L) & (Y1 < U)\n            dl0 = np.maximum(Y0 - L, 0.0)\n            dl1 = np.maximum(Y1 - L, 0.0)\n            du0 = np.maximum(U - Y0, 0.0)\n            du1 = np.maximum(U - Y1, 0.0)\n            p_lo = np.exp(-dl0 * dl1 * inv2)\n            p_hi = np.exp(-du0 * du1 * inv2)\n            w = Ws[k] * (1.0 - p_lo) * (1.0 - p_hi)\n            w[~inside] = 0.0\n            Ws[k] = w\n            Ys[k] = Y1\n\n    S100 = 1.0 / Ys[1]\n    X = np.column_stack([S100, V])\n    functionals = {\n        \"no_touch_S75\": float(np.mean(Ws[0])),\n        \"no_touch_S100\": float(np.mean(Ws[1])),\n        \"no_touch_S125\": float(np.mean(Ws[2])),\n    }\n    return {\n        \"terminal_paths\": X,\n        \"empirical_mean\": [float(v) for v in np.mean(X, axis=0)],\n        \"empirical_variance\": [float(v) for v in np.var(X, axis=0, ddof=1)],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    r = solve_sde(num_paths=20000, dt=0.002, T=1.0)\n    print(r[\"functionals\"])\n    print(r[\"empirical_mean\"], r[\"empirical_variance\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.1731808,
+  "input_tokens": 42145,
+  "output_tokens": 5180,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}
