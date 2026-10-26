@@ -1,0 +1,234 @@
+{
+  "id": "sde_sabr_cev_call_ii_lowvol",
+  "equation_type": "SDE",
+  "sde_family": "sabr",
+  "state_dimension": 2,
+  "noise_dimension": 2,
+  "noise_structure": "multiplicative",
+  "linear": false,
+  "stiff": false,
+  "chaotic": false,
+  "equation": "SABR (Ito), beta = 1/2, zero drift. State X = (S, sigma) with column 0 = S (forward), column 1 = sigma (volatility). dS = sigma * S^beta dW_S, S(0) = X_0;  dsigma = nu * sigma dW_sigma, sigma(0) = Y_0;  d<W_S, W_sigma> = rho dt. S = 0 is attainable and ABSORBING.",
+  "parameters": {
+    "X_0": 0.07,
+    "Y_0": 0.34,
+    "beta": 0.5,
+    "nu": 0.8,
+    "rho": -0.6,
+    "K1": 0.051022538988,
+    "K2": 0.07,
+    "K3": 0.096035989138
+  },
+  "parameter_aliases": {
+    "X_0": "S(0), the initial forward price",
+    "Y_0": "sigma(0), the initial volatility",
+    "nu": "vol-of-vol (the 0.8 in dsigma = 0.8 * sigma dW_sigma)",
+    "rho": "corr(dW_S, dW_sigma)",
+    "beta": "CEV exponent (the 1/2 in S^(1/2))"
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 10.0
+  },
+  "boundary_behavior": {
+    "S": "S = 0 is attainable (beta = 1/2) and absorbing: once S hits 0 it stays at 0 for the rest of the path and its call payoff is 0 for every K > 0. Not reflecting, never negative.",
+    "sigma": "sigma is a driftless geometric Brownian motion; 0 is not attainable and sigma(t) > 0 for all t. log sigma(T) ~ N(log(Y_0) - nu**2*T/2, nu**2*T), log-sd = nu*sqrt(T) = 2.53."
+  },
+  "milstein_eligible": false,
+  "milstein_ineligible_reason": "levy_area",
+  "diffusion_derivative": "Two non-commuting noise channels. With G = [[sigma*sqrt(S), 0], [nu*rho*sigma, nu*sqrt(1-rho^2)*sigma]] against independent channels, the commutativity condition L^1 G^2 = L^2 G^1 fails in the S row (0 vs nu*sqrt(1-rho^2)*sigma*sqrt(S)), so the multi-dimensional Milstein correction needs the Levy area of the channel pair. Also dg_S/dS = sigma/(2*sqrt(S)) is singular at the absorbing boundary S = 0.",
+  "milstein_correction": null,
+  "analytic_moments": {
+    "has_analytic_solution": false,
+    "state_dimension": 2,
+    "mean_X": null,
+    "variance_X": null,
+    "mean_Y": null,
+    "variance_Y": null,
+    "note": "problem.md states this problem has no terminal-moment formula and is graded on the call prices only. Partial facts that ARE exact are carried elsewhere rather than here, deliberately: E[S(T)] = X_0 (true martingale) is a verification.invariants martingale entry; sigma(T) is exactly lognormal, so E[sigma(T)] = Y_0 and Var[sigma(T)] = Y_0**2*(np.exp(nu**2*T) - 1) ~ 69.4, but at log-variance nu**2*T = 6.4 the sample variance of 1e6 lognormal draws is dominated by z ~ 2*nu*sqrt(T) = 5.1 sigma events (expected count < 1), so a variance comparison on that column would fail or be inconclusive on a correct solver. Declaring either as analytic_moments would also contradict problem.md's own statement and route the problem to the analytic rubric on moments that are not the graded quantity."
+  },
+  "drift_expression": "[0, 0]  (both components driftless: S is a forward under its own measure, sigma is a driftless GBM; no discounting anywhere)",
+  "diffusion_expression": "S row: sigma*sqrt(max(S,0)) on dW_S;  sigma row: nu*sigma on dW_sigma;  corr(dW_S, dW_sigma) = rho",
+  "diffusion_matrix_expression": "G(X) against INDEPENDENT channels (dW[..., 0], dW[..., 1]), X shape (num_paths, 2): G = [[X[:,1]*sqrt(max(X[:,0],0)), 0], [nu*rho*X[:,1], nu*sqrt(1-rho**2)*X[:,1]]], i.e. dW_S = dW[...,0] and dW_sigma = rho*dW[...,0] + sqrt(1-rho**2)*dW[...,1]",
+  "diffusion_derivative_expression": null,
+  "evaluation_thresholds": {
+    "num_paths": 1000000,
+    "seed": 42,
+    "dt": 0.004,
+    "dt0": 0.016,
+    "conv_levels": 3,
+    "conv_num_paths": 20000,
+    "ci_mult": 2.0,
+    "variance_rel_err_max": 0.1,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "stability_check": null,
+    "functionals": {
+      "price_K1": {
+        "rel_tol": 0.01, "gate": true, "strike_param": "K1",
+        "definition": "undiscounted E[(S(T) - K1)^+], absorbed paths contribute 0",
+        "reference_value": null,
+        "note": "Graded against a reference value problem.md does not disclose; no closed form exists for SABR beta=1/2 with rho != 0. The pipeline can only check self-convergence in dt and MC resolution (1% of the price must be well outside 2 MC standard errors at 1e6 paths)."
+      },
+      "price_K2": {
+        "rel_tol": 0.01, "gate": true, "strike_param": "K2",
+        "definition": "undiscounted E[(S(T) - K2)^+], absorbed paths contribute 0",
+        "reference_value": null,
+        "note": "At-the-money strike K2 = X_0. Same reference caveat as price_K1."
+      },
+      "price_K3": {
+        "rel_tol": 0.01, "gate": true, "strike_param": "K3",
+        "definition": "undiscounted E[(S(T) - K3)^+], absorbed paths contribute 0",
+        "reference_value": null,
+        "note": "Out-of-the-money strike; smallest price, so the largest relative MC error of the three. Same reference caveat as price_K1."
+      }
+    },
+    "functional_sanity_bounds": {
+      "note": "Model-free facts any correct estimate satisfies (not reference values): max(X_0 - K, 0) <= price_K <= X_0 (Jensen with E[S(T)] = X_0, payoff <= S); price_K1 > price_K2 > price_K3 (decreasing in K); convex in K. K1 = X_0*exp(-0.3162), K3 = X_0*exp(+0.3162), symmetric in log-moneyness."
+    },
+    "path_count_check": {
+      "num_paths_primary": 1000000,
+      "num_paths_secondary": 250000,
+      "same_dt_T_seed": true,
+      "must_differ": true,
+      "agreement": "|p_1e6 - p_2.5e5| within the combined MC sampling noise of the two counts, for each of price_K1, price_K2, price_K3",
+      "note": "Symmetric check: the finer run need not be the more accurate one, but a value identical at both counts is a constant, not an estimate, and fails."
+    }
+  },
+  "solver_contract": {
+    "signature": "solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict  (plus the optional dW / observables hooks of verification_manual.md §18, which the harness never passes)",
+    "calls": ["solve_sde(num_paths=1000000, dt=0.004, T=10, seed=42)", "solve_sde(num_paths=250000, dt=0.004, T=10, seed=42)"],
+    "step_rule": "Nt = max(1, round(T / dt)); dt = T / Nt. Use the dt given; do not hardcode a different step.",
+    "rng": "np.random.default_rng(seed), never np.random.seed",
+    "returns": {
+      "terminal_paths": "numpy array, shape (num_paths, 2), columns (S, sigma) in that order",
+      "empirical_mean": "list of 2 floats, one per component",
+      "empirical_variance": "list of 2 floats, ddof=1",
+      "functionals": "dict with float entries price_K1, price_K2, price_K3"
+    },
+    "importable": "no work at module load outside if __name__ == '__main__'",
+    "dependencies": "Python standard library and numpy only"
+  },
+  "verification": {
+    "expected_provenance": "self_convergence",
+    "operator": null,
+    "operator_note": "SDE, not a PDE: the stated structure is carried by verification.generator (drift and diffusion matrix as evaluable expressions) for the Dynkin residual.",
+    "generator": {
+      "drift": ["0.0*X[:, 0]", "0.0*X[:, 1]"],
+      "diffusion_matrix": [
+        ["X[:, 1]*np.maximum(X[:, 0], 0.0)**beta", "0.0*X[:, 0]"],
+        ["nu*rho*X[:, 1]", "nu*np.sqrt(1 - rho**2)*X[:, 1]"]
+      ],
+      "note": "G against independent channels; correlation enters through the Cholesky row of sigma. Hand check: phi = S**2 gives L phi = (G G^T)_00 = sigma**2*S; phi = S*sigma gives L phi = (G G^T)_01 = rho*nu*sigma**2*sqrt(S). At S = 0 the S row vanishes, which is consistent with absorption."
+    },
+    "dynkin_test_functions": ["X[:, 0]", "X[:, 0]**2", "np.tanh(X[:, 0]/X_0)", "np.exp(-X[:, 1])"],
+    "dynkin_note": "Three probes of S (linear, quadratic, bounded around the strike scale) and one bounded probe of sigma. EXPECTED TO BE REFUSED BY THE BUDGET at the graded settings: the Dynkin ladder refines downward from the graded dt with the graded num_paths, 1e6 paths x 10000 steps x 2 channels x 8 B = 160 GB against the 12 GB cap. The contract fixes num_paths = 1e6 and dt = 0.004, so no spec lever avoids this; dynkin_ok will read 'unavailable'.",
+    "moment_ode": null,
+    "moment_ode_note": "Does not close. E[S] closes trivially (dE[S]/dt = 0) and E[sigma^k] closes, but dE[S^2]/dt = E[sigma^2 S], whose own equation contains rho*nu*E[sigma^3 S^(1/2)] -- non-polynomial in S, so the hierarchy never closes. A mean-only moment ODE was deliberately NOT declared: it would mark the run surrogate (Tier A') on the strength of E[S(T)] = X_0 alone, while the graded call prices have no reference. E[S(T)] = X_0 is carried as a martingale invariant instead.",
+    "kolmogorov": null,
+    "kolmogorov_note": "The backward Kolmogorov equation is 2-D (S, sigma) with a degenerate S-diffusion at the absorbing boundary and sigma(T) spanning several orders of magnitude (log-sd 2.53); the kernel's Kolmogorov route is scalar-only (state_dimension must be 1). A 2-D evaluator-side PDE for E[(S_T - K)^+] would be the right reference in principle but is not something the kernel can run.",
+    "stationary_density": {
+      "ergodic": false,
+      "note": "Not ergodic: S is absorbed at 0 with probability tending to 1 and sigma is a driftless GBM collapsing to 0 a.s. with diverging moments."
+    },
+    "terminal_law": null,
+    "terminal_law_note": "sigma(T) is exactly lognormal(log_mean = np.log(Y_0) - nu**2*T/2, log_variance = nu**2*T), but it is deliberately not declared: the kernel's KS test standardizes by the sample mean and sd, and at log-variance 6.4 the sample sd of 1e6 draws is far below the exact sd, so a correct solver would fail the shape test. S(T) has an atom at 0 and no closed-form law.",
+    "expected_weak_order": 1.0,
+    "expected_strong_order": 0.5,
+    "expected_order_note": "Euler-Maruyama nominal orders (log-Euler on sigma is exact in sigma). The S-equation has a non-Lipschitz sqrt diffusion and an absorbing boundary hit by a substantial fraction of paths, which is known to degrade both orders (CIR-with-zero-attainable behaviour); an order-study abstention ('unresolved') is likely and is not a defect. Milstein is impossible here (levy_area), so no Milstein floor is declared.",
+    "constraints": [
+      {"name": "finite", "expr": "np.isfinite(X)", "gate": true,
+       "note": "every terminal state finite"},
+      {"name": "shape", "expr": "X.shape == (num_paths, 2)", "gate": true,
+       "note": "terminal_paths is (num_paths, 2), columns (S, sigma)"},
+      {"name": "positivity", "expr": "X[:, 0] >= 0", "gate": true,
+       "note": "S = 0 is absorbing: S(T) >= 0 on every path, mathematically guaranteed. A negative terminal S is a definite defect. A reflected scheme cannot be caught by a terminal check -- it also returns S >= 0 -- so the review must confirm absorption in solver.py (once S hits 0 it stays at 0)."},
+      {"name": "vol_positivity", "expr": "X[:, 1] > 0", "gate": true,
+       "note": "sigma is a GBM and never reaches 0; a log-Euler/exact step keeps it strictly positive."}
+    ],
+    "invariants": [
+      {"name": "martingale", "expr": "X[:, 0]", "reference_value_at_T": 0.07, "ci_mult": 2.0,
+       "tol": 0.00035, "gate": false,
+       "note": "E[S(T)] = S(0) = 0.07 exactly for the true absorbed process. problem.md warns a time-discretised scheme does not inherit this (e.g. truncating an EM step at 0 biases E[S] upward). tol = 0.5% of S(0): through put-call parity a bias delta in E[S] moves every call price by ~delta, which against price_K2 is a large fraction of the 1% tolerance. Ungated because the exact value holds for the process, not for the scheme."},
+      {"name": "martingale", "expr": "X[:, 1]", "reference_value_at_T": 0.34, "ci_mult": 2.0,
+       "gate": false,
+       "note": "E[sigma(T)] = sigma(0) = 0.34 exactly. Heavy-tailed (lognormal, log-variance 6.4): the sample mean of 1e6 draws runs ~1% low typically against a nominal 2.4% standard error, so treat a marginal miss as tail noise, not a defect."}
+    ],
+    "structural_facts": {
+      "absorbing_boundary": "S = 0 attainable and absorbing; a substantial fraction of paths absorbed by T = 10",
+      "kink": "call payoff (S - K)^+ kinked at each strike"
+    },
+    "ceiling_note": "No Tier A / A' / B evidence is available: no closed form, no closing moment ODE, Kolmogorov is 2-D, not ergodic, and Dynkin is refused by the memory budget at the contract's (num_paths, dt). The kernel can measure only the CRN strong-order ladder, constraints and invariants. The graded quantity (call prices against an undisclosed reference to 1%) is not checkable by the kernel at all -- verifylib/kernel/functionals.py is wired into the PDE driver only."
+  },
+  "implementation_notes": "Two-factor SABR, beta = 1/2, rho = -0.6, nu = 0.8, T = 10, dt = 0.004 (Nt = 2500). (1) sigma: integrate exactly in log space, sigma_{n+1} = sigma_n*exp(nu*dW_sigma - 0.5*nu**2*dt); this is exact, strictly positive, and needed because sigma(T) spans several orders of magnitude (log-sd 2.53). (2) S: S = 0 is attainable and ABSORBING. Once a path reaches 0 (or a step would carry it below 0) it must be frozen at exactly 0 for the rest of the horizon. Never let S go negative; never reflect (|S| or a reflected scheme simulates a different process). Plain EM with a post-step clip to 0 is a valid absorbing rule but biases E[S] upward (the martingale property is lost); stronger options are a conditional-on-sigma-path scheme or a CEV/squared-Bessel exact or moment-matched step with absorption, and/or a martingale correction -- the choice is the planner's. Note that for beta = 1/2 the process Y = S is a time-changed squared Bessel of dimension 0 (the absorbing case), which is what makes zero absorbing. (3) Correlation: dW_S = dW[...,0], dW_sigma = rho*dW[...,0] + sqrt(1-rho**2)*dW[...,1] when the evaluator's CRN increments (num_paths, Nt, 2) are supplied; draw the same layout from np.random.default_rng(seed) otherwise. (4) Prices: undiscounted mean of np.maximum(S_T - K, 0) for K1, K2, K3, absorbed paths contributing 0; report as functionals price_K1..K3. 1e6 paths: the 1% bar is a hard target -- MC relative error of the OTM price at 1e6 paths must sit well below it, and the dt-bias of the absorbing step must too; the planner should quantify both. (5) Memory: never materialize (1e6, 2500) increment arrays; loop over steps drawing (num_paths, 2) normals per step from one generator (or chunk paths), and still honour a supplied dW. (6) Contract: Nt = max(1, round(T/dt)), dt = T/Nt; numpy + stdlib only; no work at import; return terminal_paths (num_paths, 2) in (S, sigma) order, empirical_mean / empirical_variance (ddof=1) lists of 2 floats. (7) Two path counts: the harness calls with 1e6 and 2.5e5 paths at the same seed; the estimates must differ and agree within sampling noise -- a genuine simulation at each count satisfies this automatically, a cached/constant value fails. (8) Kernel ceiling: Dynkin needs a 160 GB increment array at these settings and is refused; the score ceiling on this problem is set by that, not by the solver.",
+  "requirements": [
+    {"id": "R1", "kind": "equation", "quote": "dS     = sigma * S^(1/2) dW_S,      S(0)     = 0.07",
+     "status": "mapped", "spec_path": "equation, parameters.beta, verification.generator.diffusion_matrix, parameters.X_0"},
+    {"id": "R2", "kind": "equation", "quote": "dsigma = 0.8 * sigma dW_sigma,      sigma(0) = 0.34",
+     "status": "mapped", "spec_path": "equation, parameters.nu, verification.generator.diffusion_matrix, parameters.Y_0"},
+    {"id": "R3", "kind": "parameter", "quote": "with corr(dW_S, dW_sigma) = -0.6",
+     "status": "mapped", "spec_path": "parameters.rho, noise_dimension, verification.generator.diffusion_matrix"},
+    {"id": "R4", "kind": "domain", "quote": "over the interval [0, 10]",
+     "status": "mapped", "spec_path": "time_interval"},
+    {"id": "R5", "kind": "equation", "quote": "S is a forward\nprice, so it has no drift and no discounting is applied anywhere.",
+     "status": "mapped", "spec_path": "verification.generator.drift, drift_expression, evaluation_thresholds.functionals"},
+    {"id": "R6", "kind": "other", "quote": "the volatility is lognormal with a log\n  standard deviation of about 2.5, so sigma(T) ranges over several orders of\n  magnitude between paths.",
+     "status": "mapped", "spec_path": "boundary_behavior.sigma, implementation_notes"},
+    {"id": "R7", "kind": "method", "quote": "The step has to be fine enough for the paths where\n  it is large.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.dt, implementation_notes"},
+    {"id": "R8", "kind": "boundary_condition", "quote": "The exponent 1/2 makes S = 0 **attainable and absorbing**, and at these\n  parameters a substantial fraction of paths reach it.",
+     "status": "mapped", "spec_path": "boundary_behavior.S, verification.structural_facts.absorbing_boundary, verification.constraints"},
+    {"id": "R9", "kind": "boundary_condition", "quote": "A path absorbed at zero\n  stays there and contributes nothing to the payoff; a scheme that lets S go\n  negative, or that reflects it, is simulating a different process.",
+     "status": "mapped", "spec_path": "verification.constraints, boundary_behavior.S, evaluation_thresholds.functionals, implementation_notes",
+     "note": "Negativity is a gated terminal constraint; reflection is not detectable from terminal states alone and is flagged for review in the positivity constraint's note."},
+    {"id": "R10", "kind": "other", "quote": "S is a true martingale, so E[S(T)] = S(0) = 0.07 exactly.",
+     "status": "mapped", "spec_path": "verification.invariants"},
+    {"id": "R11", "kind": "method", "quote": "A time-discretised\n  scheme does not inherit that.",
+     "status": "mapped", "spec_path": "verification.invariants, implementation_notes"},
+    {"id": "R12", "kind": "evaluation", "quote": "Report the **undiscounted** European call values E[(S(T) - K)^+] at the three\nstrikes",
+     "status": "mapped", "spec_path": "evaluation_thresholds.functionals"},
+    {"id": "R13", "kind": "parameter", "quote": "K1 = 0.051022538988",
+     "status": "mapped", "spec_path": "parameters.K1"},
+    {"id": "R14", "kind": "parameter", "quote": "K2 = 0.07",
+     "status": "mapped", "spec_path": "parameters.K2"},
+    {"id": "R15", "kind": "parameter", "quote": "K3 = 0.096035989138",
+     "status": "mapped", "spec_path": "parameters.K3"},
+    {"id": "R16", "kind": "evaluation", "quote": "as `price_K1`, `price_K2` and `price_K3` in the `functionals` dict, and the\nterminal states (S, sigma) in `terminal_paths`.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.functionals, solver_contract.returns"},
+    {"id": "R17", "kind": "method", "quote": "def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict",
+     "status": "mapped", "spec_path": "solver_contract.signature"},
+    {"id": "R18", "kind": "evaluation", "quote": "solve_sde(num_paths=1000000, dt=0.004, T=10, seed=42)",
+     "status": "mapped", "spec_path": "evaluation_thresholds.num_paths, evaluation_thresholds.dt, evaluation_thresholds.seed, time_interval.T, solver_contract.calls"},
+    {"id": "R19", "kind": "evaluation", "quote": "and then again with `num_paths=250000`, everything else unchanged",
+     "status": "mapped", "spec_path": "evaluation_thresholds.path_count_check.num_paths_secondary, solver_contract.calls"},
+    {"id": "R20", "kind": "method", "quote": "Use the `dt` you are given (do not hardcode a different step).",
+     "status": "mapped", "spec_path": "evaluation_thresholds.dt, solver_contract.step_rule"},
+    {"id": "R21", "kind": "evaluation", "quote": "`terminal_paths`: 2-D numpy array of shape `(num_paths, 2)` — the 2 state components (X, Y) at time T, in that column order",
+     "status": "mapped", "spec_path": "solver_contract.returns.terminal_paths, verification.constraints"},
+    {"id": "R22", "kind": "evaluation", "quote": "`empirical_mean`: list of floats, one per component",
+     "status": "mapped", "spec_path": "solver_contract.returns.empirical_mean"},
+    {"id": "R23", "kind": "evaluation", "quote": "`empirical_variance`: list of floats, one per component (use `ddof=1`)",
+     "status": "mapped", "spec_path": "solver_contract.returns.empirical_variance"},
+    {"id": "R24", "kind": "evaluation", "quote": "`functionals`: a dict of scalar results, containing `\"price_K1\"`, `\"price_K2\"`, `\"price_K3\"` — each a float",
+     "status": "mapped", "spec_path": "evaluation_thresholds.functionals, solver_contract.returns.functionals"},
+    {"id": "R25", "kind": "method", "quote": "Seed all randomness with `np.random.default_rng(seed)` (not `np.random.seed`).",
+     "status": "mapped", "spec_path": "evaluation_thresholds.seed, solver_contract.rng"},
+    {"id": "R26", "kind": "method", "quote": "Round the step count: `Nt = max(1, round(T / dt))`, then `dt = T / Nt`.",
+     "status": "mapped", "spec_path": "solver_contract.step_rule"},
+    {"id": "R27", "kind": "method", "quote": "Keep `solve_sde` importable — no work at module load outside `if __name__ == \"__main__\"`.",
+     "status": "mapped", "spec_path": "solver_contract.importable"},
+    {"id": "R28", "kind": "method", "quote": "Use the Python standard library and numpy only.",
+     "status": "mapped", "spec_path": "solver_contract.dependencies"},
+    {"id": "R29", "kind": "evaluation", "quote": "this problem has no terminal-moment formula, so the quantity of interest below is the whole grade.",
+     "status": "mapped", "spec_path": "analytic_moments.has_analytic_solution, evaluation_thresholds.functionals"},
+    {"id": "R30", "kind": "evaluation", "quote": "`price_K1`, `price_K2`, `price_K3` must be within 1% (relative) of the reference value.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.functionals.price_K1.rel_tol, evaluation_thresholds.functionals.price_K2.rel_tol, evaluation_thresholds.functionals.price_K3.rel_tol",
+     "note": "The tolerance is carried; the reference value is not disclosed in problem.md and no closed form exists, so reference_value is null and the pipeline cannot measure this directly -- only dt self-convergence and MC resolution of the prices."},
+    {"id": "R31", "kind": "evaluation", "quote": "it is gated independently of the moments: reporting a number without a simulation behind it, or a simulation without the number, fails.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.functionals.price_K1.gate, evaluation_thresholds.functionals.price_K2.gate, evaluation_thresholds.functionals.price_K3.gate"},
+    {"id": "R32", "kind": "evaluation", "quote": "They must differ — two Monte-Carlo estimates taken at different sample sizes do — and they must agree to within the sampling noise the two counts imply.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.path_count_check.must_differ, evaluation_thresholds.path_count_check.agreement"},
+    {"id": "R33", "kind": "evaluation", "quote": "A value that is identical at both counts is a constant, not an estimate, and fails.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.path_count_check.must_differ"}
+  ]
+}

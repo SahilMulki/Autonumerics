@@ -62,7 +62,7 @@
       "verifylib/kernel/sde/laws.py": "d13c89966bdee68a",
       "verifylib/kernel/sde/surrogates.py": "7c7b5ec947f19861"
     },
-    "invocation_seconds": 2015.8
+    "invocation_seconds": 6063.0
   },
   "results": [
     {
@@ -405,6 +405,348 @@
         "harness_error_metric": "worst functional error / its gate",
         "harness_error_margin": 0.13454973466370404,
         "wrong_plan_won": false
+      }
+    },
+    {
+      "id": "B10",
+      "slug": "sde_sabr_cev_call_ii_lowvol",
+      "type": "sde",
+      "tier": 3,
+      "family": "sabr_cev",
+      "title": "SABR forward with CEV exponent 1/2, lower initial volatility",
+      "challenge": "The long-horizon SABR set started at a lower initial volatility, which moves every option value without changing the vol-of-vol, the correlation or the absorbing boundary that make it hard.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 3162.5,
+        "wall_clock_seconds": 3162.5,
+        "started_at": "2026-10-26T19:11:42",
+        "ended_at": "2026-10-26T20:04:25",
+        "log": "benchmark/results/pipeline/logs/sde_sabr_cev_call_ii_lowvol.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "1-euler-maruyama-absorbing",
+        "best_score": 2,
+        "n_plans": 2,
+        "total_iters": 4,
+        "plans": {
+          "1-euler-maruyama-absorbing": {
+            "iter": 2,
+            "score": 2,
+            "one_sentence": "Euler-Maruyama on S absorbed at 0, exact log-step for sigma, put-call-parity pricing."
+          },
+          "2-qe-martingale-absorbing": {
+            "iter": 2,
+            "score": 2,
+            "one_sentence": "Andersen QE martingale-preserving step for S with absorption, exact sigma, parity pricing."
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 1000000,
+          "dt": 0.004,
+          "T": 10.0,
+          "seed": 42,
+          "solve_s": 172.002666
+        },
+        "functional_errs": {
+          "price_K1": 0.0017738953679302125,
+          "price_K2": 0.0026201533845351724,
+          "price_K3": 0.004250484224644536
+        },
+        "functional_abs_errs": {
+          "price_K1": 8.859169683730905e-05,
+          "price_K2": 0.00011356819203982293,
+          "price_K3": 0.00015002556933179506
+        },
+        "functional_tol": 0.01,
+        "functional_tol_used": {
+          "price_K1": 0.01,
+          "price_K2": 0.01,
+          "price_K3": 0.01
+        },
+        "worst_functional_rel_err": 0.004250484224644536,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 1000000,
+          "num_paths_coarse": 250000,
+          "dt": 0.004,
+          "band_factor": 3.0,
+          "values": {
+            "price_K1": {
+              "graded": 0.04985330365895271,
+              "coarse": 0.049831598459147225,
+              "delta": 2.1705199805488462e-05,
+              "band": 0.0014982568606737006,
+              "moved": true,
+              "consistent": true
+            },
+            "price_K2": {
+              "graded": 0.043230532466381845,
+              "coarse": 0.04319184781150938,
+              "delta": 3.868465487246592e-05,
+              "band": 0.00130032301975265,
+              "moved": true,
+              "consistent": true
+            },
+            "price_K3": {
+              "graded": 0.03514608692107488,
+              "coarse": 0.0350911880618015,
+              "delta": 5.4898859273386225e-05,
+              "band": 0.0010588833747122003,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.005805863993120455,
+          "solve_s": 42.383822,
+          "wall_s": 42.55,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 250000,
+              "dt": 0.004,
+              "rel_err": 0.005805863993120455,
+              "solve_s": 42.383822,
+              "wall_s": 42.55,
+              "graded": false
+            },
+            {
+              "num_paths": 1000000,
+              "dt": 0.004,
+              "rel_err": 0.004250484224644536,
+              "solve_s": 172.002666,
+              "wall_s": 172.19,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace/sde_sabr_cev_call_ii_lowvol/plans/1-euler-maruyama-absorbing"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 2,
+        "provenance": "none",
+        "certified": false,
+        "tier": "C",
+        "bound_by": "certification",
+        "reason": "no test in the manual could be run",
+        "agent_cap": null
+      },
+      "verdict": "UNDERCLAIM",
+      "harness_by_plan": {
+        "plans": {
+          "1-euler-maruyama-absorbing": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "price_K1": 0.0017738953679302125,
+                "price_K2": 0.0026201533845351724,
+                "price_K3": 0.004250484224644536
+              },
+              "functional_abs_errs": {
+                "price_K1": 8.859169683730905e-05,
+                "price_K2": 0.00011356819203982293,
+                "price_K3": 0.00015002556933179506
+              },
+              "functional_tol": 0.01,
+              "functional_tol_used": {
+                "price_K1": 0.01,
+                "price_K2": 0.01,
+                "price_K3": 0.01
+              },
+              "worst_functional_rel_err": 0.004250484224644536,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 1000000,
+                "num_paths_coarse": 250000,
+                "dt": 0.004,
+                "band_factor": 3.0,
+                "values": {
+                  "price_K1": {
+                    "graded": 0.04985330365895271,
+                    "coarse": 0.049831598459147225,
+                    "delta": 2.1705199805488462e-05,
+                    "band": 0.0014982568606737006,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_K2": {
+                    "graded": 0.043230532466381845,
+                    "coarse": 0.04319184781150938,
+                    "delta": 3.868465487246592e-05,
+                    "band": 0.00130032301975265,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_K3": {
+                    "graded": 0.03514608692107488,
+                    "coarse": 0.0350911880618015,
+                    "delta": 5.4898859273386225e-05,
+                    "band": 0.0010588833747122003,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.005805863993120455,
+                "solve_s": 42.383822,
+                "wall_s": 42.55,
+                "level_ignored": false
+              }
+            },
+            "kernel": {
+              "score": 2.0,
+              "certified": false,
+              "provenance": "none",
+              "estimated_rel_error": 2.22e-14,
+              "d1_outcome": "unavailable",
+              "reference_outcome": "unavailable",
+              "invariant_max_drift": 0.00722,
+              "dynkin_z": "unavailable",
+              "solve_time_s": 171.3
+            },
+            "is_winner": true,
+            "harness_error": 0.4250484224644536,
+            "harness_error_margin": 0.09153829702011664,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 2,
+              "provenance": "none",
+              "certified": false,
+              "tier": "C",
+              "bound_by": "certification",
+              "reason": "no test in the manual could be run",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "2-qe-martingale-absorbing": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "price_K1": 2.5032829893117463e-05,
+                "price_K2": 4.1183407905433845e-05,
+                "price_K3": 1.2979449989836047e-05
+              },
+              "functional_abs_errs": {
+                "price_K1": 1.250186970981615e-06,
+                "price_K2": 1.7850577777103749e-06,
+                "price_K3": 4.581241269049907e-07
+              },
+              "functional_tol": 0.01,
+              "functional_tol_used": {
+                "price_K1": 0.01,
+                "price_K2": 0.01,
+                "price_K3": 0.01
+              },
+              "worst_functional_rel_err": 4.1183407905433845e-05,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 1000000,
+                "num_paths_coarse": 250000,
+                "dt": 0.004,
+                "band_factor": 3.0,
+                "values": {
+                  "price_K1": {
+                    "graded": 0.04994064516881904,
+                    "coarse": 0.04991512455152231,
+                    "delta": 2.552061729672872e-05,
+                    "band": 0.0014982568606737006,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_K2": {
+                    "graded": 0.04334588571619938,
+                    "coarse": 0.04330425053195136,
+                    "delta": 4.163518424801782e-05,
+                    "band": 0.00130032301975265,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_K3": {
+                    "graded": 0.03529657061453358,
+                    "coarse": 0.03524323965667742,
+                    "delta": 5.333095785615971e-05,
+                    "band": 0.0010588833747122003,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.0014979789557171576,
+                "solve_s": 44.381948,
+                "wall_s": 44.55,
+                "level_ignored": false
+              }
+            },
+            "kernel": {
+              "score": 2.0,
+              "certified": false,
+              "provenance": "none",
+              "estimated_rel_error": 2.341e-14,
+              "invariant_max_drift": 0.007219,
+              "solve_time_s": 198.802,
+              "solver_sha256": "b1f753c9b635cdd4ab29ac1d0f042cb1206228418a7a9f297416d027dbe94b9f"
+            },
+            "is_winner": false,
+            "harness_error": 0.004118340790543384,
+            "harness_error_margin": 0.05731240795167646,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 2,
+              "provenance": "none",
+              "certified": false,
+              "tier": "C",
+              "bound_by": "certification",
+              "reason": "no test in the manual could be run",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          }
+        },
+        "winner": "1-euler-maruyama-absorbing",
+        "best_plan_by_harness": "2-qe-martingale-absorbing",
+        "best_harness_err": 0.004118340790543384,
+        "winner_harness_err": 0.4250484224644536,
+        "harness_error_metric": "worst functional error / its gate",
+        "harness_error_margin": 0.09153829702011664,
+        "wrong_plan_won": true
       }
     }
   ]

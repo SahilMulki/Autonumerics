@@ -1,0 +1,122 @@
+[
+  {
+    "a": "1-euler-maruyama-absorbing",
+    "b": "2-qe-martingale-absorbing",
+    "N": null,
+    "t_final": 10.0,
+    "rel_diff": 0.9745083459439888,
+    "tol": 0.1,
+    "metric": "moments",
+    "agree": null,
+    "family_a": "euler-maruyama",
+    "family_b": "other",
+    "different_family": true,
+    "sha_a": "cf788d9eb81fd6be84130139e587b7a7ff3aed5ee9bea75b0e4f936a907bb8cc",
+    "sha_b": "b1f753c9b635cdd4ab29ac1d0f042cb1206228418a7a9f297416d027dbe94b9f",
+    "interpolated": false,
+    "config": {
+      "num_paths": 1000000,
+      "dt": 0.004,
+      "T": 10.0,
+      "seed": 42,
+      "seed_b_independent": 3444837047,
+      "ci_mult": 2.0
+    },
+    "agree_shared_seed": null,
+    "rel_diff_shared_seed": 0.0051928521359174695,
+    "seeding": "both (D6): shared seed detects, independent seed earns the break",
+    "per_moment": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.07042647135950421,
+        "b": 0.0700617041982461,
+        "rel_diff": 0.0051928521359174695,
+        "rel_se": 0.002737815672662696,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "mean",
+        "component": 1,
+        "a": 0.33278117377582767,
+        "b": 0.33278117377582767,
+        "rel_diff": 0.0,
+        "rel_se": 0.019592450006734444,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.018505943465634295,
+        "b": 0.018479255931324295,
+        "rel_diff": 0.0014431467043649119,
+        "rel_se": 0.08624423140086512,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 1,
+        "a": 21.25519028771335,
+        "b": 21.255190287713337,
+        "rel_diff": 6.685828036748582e-16,
+        "rel_se": 0.2796406454298668,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "per_moment_independent": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.07042647135950421,
+        "b": 0.06987692371775044,
+        "rel_diff": 0.007833704116014834,
+        "rel_se": 0.0026896546892997046,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "mean",
+        "component": 1,
+        "a": 0.33278117377582767,
+        "b": 0.3420016809979232,
+        "rel_diff": 0.027328812985881547,
+        "rel_se": 0.026987483238721674,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.018505943465634295,
+        "b": 0.01709564885949557,
+        "rel_diff": 0.07922649039173733,
+        "rel_se": 0.0627078703351299,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 1,
+        "a": 21.25519028771335,
+        "b": 61.65212623171456,
+        "rel_diff": 0.9745083459439888,
+        "rel_se": 0.5759713348227937,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "recorded_at": 1793044792.157152
+  }
+]
