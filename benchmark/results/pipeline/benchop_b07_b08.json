@@ -1,0 +1,348 @@
+{
+  "config": {
+    "generated_at": "2026-10-26 18:38",
+    "claude_version": "2.1.310 (Claude Code)",
+    "command_template": "claude --plugin-dir . -p \"/conductor workspace/{slug}/problem.md\"",
+    "timeout_seconds": 5400,
+    "verify_sandbox": true,
+    "solver_timeout_s": 1800,
+    "mem_mb": 4096,
+    "work_precision": true,
+    "conductor_env": {
+      "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"
+    },
+    "n_selected": 2,
+    "agent_file_hashes": {
+      "agents/README.md": "6076499cfa2b0f77",
+      "agents/evaluator-pde.md": "eee0938465067a45",
+      "agents/evaluator-sde.md": "4cadbaffa517dd62",
+      "agents/formulator.md": "31db9b1f08766c09",
+      "agents/plan-creator-pde.md": "155e4adf193cabf5",
+      "agents/plan-creator-sde.md": "06223a6f34a19eda",
+      "agents/solver-pde.md": "26f24e1a637da3a2",
+      "agents/solver-sde.md": "7afeac0623945b35",
+      "commands/conductor.md": "a963662649415a3b",
+      "references/pde_manual.md": "a0a067e8c9ec064c",
+      "references/project_manual.md": "03af2d925c7c9607",
+      "references/sde_manual.md": "3db7a0d79747d975",
+      "references/verification_manual.md": "b69892bfe34c2fcb",
+      "verifylib/README.md": "e19e0a15a17b8e3b",
+      "verifylib/__init__.py": "cb5f54774244b3dc",
+      "verifylib/audit.py": "b4482efefe598f99",
+      "verifylib/cli.py": "acdadf62239e8a5a",
+      "verifylib/findings.py": "b9c187bb071f2f96",
+      "verifylib/gate.py": "093fb4251c946b51",
+      "verifylib/leakage.py": "31cbb56e5add04ec",
+      "verifylib/operator.py": "822873215b566841",
+      "verifylib/ranking.py": "f1916756812359fc",
+      "verifylib/reference.py": "bf3c9aa449e137fc",
+      "verifylib/review.py": "cf9dbbe762bd5185",
+      "verifylib/schema.py": "c4246d60c9a4a46d",
+      "verifylib/kernel/__init__.py": "195c01b2e40e23eb",
+      "verifylib/kernel/agreement.py": "6add76182df1660b",
+      "verifylib/kernel/degenerate.py": "75385cee18b44bad",
+      "verifylib/kernel/driver.py": "1cc67dccb811a7eb",
+      "verifylib/kernel/functionals.py": "7703afaae4b56c7d",
+      "verifylib/kernel/invariants.py": "0ec0b74069c02fdb",
+      "verifylib/kernel/ladder.py": "645a7eacda6206f9",
+      "verifylib/kernel/metrics.py": "938c7d421393535e",
+      "verifylib/kernel/mms.py": "ffe549b3384df506",
+      "verifylib/kernel/plan_meta.py": "6cc14e1f09d87c73",
+      "verifylib/kernel/residual.py": "eaf6951083a12e80",
+      "verifylib/kernel/richardson.py": "a878383a079a31f4",
+      "verifylib/kernel/sandbox.py": "57dc799479a368cb",
+      "verifylib/kernel/schema_bridge.py": "2d291842a5218d6a",
+      "verifylib/kernel/score.py": "004e2351c6535d49",
+      "verifylib/kernel/temporal.py": "f2dfedb9593d4530",
+      "verifylib/kernel/sde/__init__.py": "d5048e1182909dc6",
+      "verifylib/kernel/sde/constraints.py": "566e2eec35b9711c",
+      "verifylib/kernel/sde/crn.py": "8b167cceb1f26c5d",
+      "verifylib/kernel/sde/driver.py": "9fb3dbe7e4c59f87",
+      "verifylib/kernel/sde/dynkin.py": "1abe385fab9fe810",
+      "verifylib/kernel/sde/laws.py": "d13c89966bdee68a",
+      "verifylib/kernel/sde/surrogates.py": "7c7b5ec947f19861"
+    },
+    "invocation_seconds": 4255.1
+  },
+  "results": [
+    {
+      "id": "B07",
+      "slug": "sde_hhw_call_zerocorr",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_hull_white",
+      "title": "Heston-Hull-White call, rate uncorrelated with asset and variance",
+      "challenge": "The same three factors and the same ten-year horizon, with the rate decorrelated. Removing two correlations removes none of the difficulty that matters -- the Feller ratio is still 0.04 and the discount factor is still path-dependent -- but it does admit an independent check, which is why it is here beside its correlated sibling.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 3535.9,
+        "wall_clock_seconds": 3535.9,
+        "started_at": "2026-10-26T18:38:27",
+        "ended_at": "2026-10-26T19:37:22",
+        "log": "benchmark/results/pipeline/logs/sde_hhw_call_zerocorr.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "running",
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "1-euler-maruyama-full-truncation",
+        "best_score": 3,
+        "n_plans": 2,
+        "total_iters": 4,
+        "plans": {
+          "1-euler-maruyama-full-truncation": {
+            "iter": 2,
+            "score": 3,
+            "one_sentence": "Euler-Maruyama with full-truncation V, log-Euler S, pathwise trapezoid discounting, control variates; dt=0.004, 1e6 paths."
+          },
+          "2-qe-log-euler": {
+            "iter": 2,
+            "score": 3,
+            "one_sentence": "Andersen QE scheme for V with log-Euler S and exact OU for R; dt=0.004, 1e6 paths."
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 1000000,
+          "dt": 0.004,
+          "T": 10.0,
+          "seed": 42,
+          "solve_s": 249.114031
+        },
+        "functional_errs": {
+          "price_S75": 0.0008854634067234326,
+          "price_S100": 0.0008780416375615248,
+          "price_S125": 0.0008666398816796958
+        },
+        "functional_abs_errs": {
+          "price_S75": 0.03137896089518932,
+          "price_S100": 0.04805352008381192,
+          "price_S125": 0.06534256440001229
+        },
+        "functional_tol": 0.003,
+        "functional_tol_used": {
+          "price_S75": 0.003,
+          "price_S100": 0.003,
+          "price_S125": 0.003
+        },
+        "worst_functional_rel_err": 0.0008854634067234326,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 1000000,
+          "num_paths_coarse": 250000,
+          "dt": 0.004,
+          "band_factor": 3.0,
+          "values": {
+            "price_S75": {
+              "graded": 35.46927583718054,
+              "coarse": 35.50198517393878,
+              "delta": 0.03270933675823784,
+              "band": 0.3189410718865682,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S100": {
+              "graded": 54.776118828313315,
+              "coarse": 54.80123327870378,
+              "delta": 0.025114450390468335,
+              "band": 0.4925525877740656,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S125": {
+              "graded": 75.46293939939363,
+              "coarse": 75.4803098222857,
+              "delta": 0.017370422892071247,
+              "band": 0.6785783715149426,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.001808467863574442,
+          "solve_s": 60.348786,
+          "wall_s": 60.62,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 250000,
+              "dt": 0.004,
+              "rel_err": 0.001808467863574442,
+              "solve_s": 60.348786,
+              "wall_s": 60.62,
+              "graded": false
+            },
+            {
+              "num_paths": 1000000,
+              "dt": 0.004,
+              "rel_err": 0.0008854634067234326,
+              "solve_s": 249.114031,
+              "wall_s": 249.39,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace/sde_hhw_call_zerocorr/plans/1-euler-maruyama-full-truncation"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 3,
+        "provenance": "surrogate",
+        "certified": false,
+        "tier": "A_prime",
+        "bound_by": "rubric",
+        "reason": "the estimator is erratic in dt: orders far from expectation, or the differences are not shrinking. The CRN ladder is deterministic given its seed, so this is not a resolution problem",
+        "agent_cap": null
+      },
+      "verdict": "UNDERCLAIM",
+      "harness_by_plan": {
+        "plans": {
+          "1-euler-maruyama-full-truncation": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "price_S75": 0.0008854634067234326,
+                "price_S100": 0.0008780416375615248,
+                "price_S125": 0.0008666398816796958
+              },
+              "functional_abs_errs": {
+                "price_S75": 0.03137896089518932,
+                "price_S100": 0.04805352008381192,
+                "price_S125": 0.06534256440001229
+              },
+              "functional_tol": 0.003,
+              "functional_tol_used": {
+                "price_S75": 0.003,
+                "price_S100": 0.003,
+                "price_S125": 0.003
+              },
+              "worst_functional_rel_err": 0.0008854634067234326,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 1000000,
+                "num_paths_coarse": 250000,
+                "dt": 0.004,
+                "band_factor": 3.0,
+                "values": {
+                  "price_S75": {
+                    "graded": 35.46927583718054,
+                    "coarse": 35.50198517393878,
+                    "delta": 0.03270933675823784,
+                    "band": 0.3189410718865682,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_S100": {
+                    "graded": 54.776118828313315,
+                    "coarse": 54.80123327870378,
+                    "delta": 0.025114450390468335,
+                    "band": 0.4925525877740656,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_S125": {
+                    "graded": 75.46293939939363,
+                    "coarse": 75.4803098222857,
+                    "delta": 0.017370422892071247,
+                    "band": 0.6785783715149426,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.001808467863574442,
+                "solve_s": 60.348786,
+                "wall_s": 60.62,
+                "level_ignored": false
+              }
+            },
+            "kernel": {
+              "score": 3.0,
+              "certified": false,
+              "provenance": "surrogate",
+              "estimated_rel_error": 0.002255,
+              "invariant_max_drift": 0.0,
+              "solve_time_s": 245.743,
+              "solver_sha256": "353a02e05a600b22f08330bbeddfc0f7e36ded1e797a79f028b313662f21217b"
+            },
+            "is_winner": true,
+            "harness_error": 0.29515446890781083,
+            "harness_error_margin": 0.1776322905420515,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 3,
+              "provenance": "surrogate",
+              "certified": false,
+              "tier": "A_prime",
+              "bound_by": "rubric",
+              "reason": "the estimator is erratic in dt: orders far from expectation, or the differences are not shrinking. The CRN ladder is deterministic given its seed, so this is not a resolution problem",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "2-qe-log-euler": {
+            "harness": {
+              "status": "crashed",
+              "error": "PicklingError: Can't pickle <function _fork_work at 0x7fa80f81f6a0>: import of module '_sandbox_solver' failed"
+            },
+            "kernel": {
+              "score": 3.0,
+              "certified": false,
+              "provenance": "surrogate",
+              "estimated_rel_error": 0.0004542,
+              "invariant_max_drift": 0.0,
+              "solve_time_s": 111.146,
+              "solver_sha256": "99adecfc035dc0e073f4613ca40f48db722ac9ca0891be135b85484979bf38d4"
+            },
+            "is_winner": false,
+            "harness_error": null,
+            "harness_error_margin": 0.0,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 3,
+              "provenance": "surrogate",
+              "certified": false,
+              "tier": "A_prime",
+              "bound_by": "rubric",
+              "reason": "the estimator is erratic in dt: orders far from expectation, or the differences are not shrinking. The CRN ladder is deterministic given its seed, so this is not a resolution problem",
+              "agent_cap": null
+            },
+            "verdict": "FAIL"
+          }
+        },
+        "winner": "1-euler-maruyama-full-truncation",
+        "best_plan_by_harness": "1-euler-maruyama-full-truncation",
+        "best_harness_err": 0.29515446890781083,
+        "winner_harness_err": 0.29515446890781083,
+        "harness_error_metric": "worst functional error / its gate",
+        "harness_error_margin": 0.1776322905420515,
+        "wrong_plan_won": false
+      }
+    }
+  ]
+}
