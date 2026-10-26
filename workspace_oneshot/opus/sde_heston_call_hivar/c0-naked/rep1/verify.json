@@ -1,0 +1,95 @@
+{
+  "status": "ok",
+  "gt_kind": "exact",
+  "passed": true,
+  "verified_score": 10,
+  "worst_variance_rel_err": 0.0,
+  "worst_mean_rel_err": 0.0,
+  "components": [],
+  "run": {
+    "num_paths": 2000000,
+    "dt": 0.002,
+    "T": 1.0,
+    "seed": 42,
+    "solve_s": 131.816043
+  },
+  "functional_errs": {
+    "price_S75": 0.004181612592212691,
+    "price_S100": 0.0010396660784081388,
+    "price_S125": 0.0004612589485471379
+  },
+  "functional_abs_errs": {
+    "price_S75": 0.00554020181991044,
+    "price_S100": 0.010708736445950606,
+    "price_S125": 0.013572924305279344
+  },
+  "functional_tol": 0.015,
+  "functional_tol_used": {
+    "price_S75": 0.015,
+    "price_S100": 0.004,
+    "price_S125": 0.002
+  },
+  "worst_functional_rel_err": 0.004181612592212691,
+  "functional_ok": true,
+  "functional_levels": {
+    "status": "ok",
+    "num_paths_graded": 2000000,
+    "num_paths_coarse": 500000,
+    "dt": 0.002,
+    "band_factor": 3.0,
+    "values": {
+      "price_S75": {
+        "graded": 1.3304362073053952,
+        "coarse": 1.3354013044304027,
+        "delta": 0.004965097125007478,
+        "band": 0.05962032024684681,
+        "moved": true,
+        "consistent": true
+      },
+      "price_S100": {
+        "graded": 10.310877866083262,
+        "coarse": 10.324303941323782,
+        "delta": 0.013426075240520419,
+        "band": 0.12360202955564772,
+        "moved": true,
+        "consistent": true
+      },
+      "price_S125": {
+        "graded": 29.439396202164716,
+        "coarse": 29.454735711544384,
+        "delta": 0.015339509379668215,
+        "band": 0.17655493966715663,
+        "moved": true,
+        "consistent": true
+      }
+    },
+    "passed": true,
+    "worst_functional_rel_err": 0.007929149836230684,
+    "solve_s": 34.425092,
+    "wall_s": 34.57,
+    "level_ignored": false
+  },
+  "work_precision": {
+    "axis": "paths_dt",
+    "path": "sandbox",
+    "points": [
+      {
+        "num_paths": 500000,
+        "dt": 0.002,
+        "rel_err": 0.007929149836230684,
+        "solve_s": 34.425092,
+        "wall_s": 34.57,
+        "graded": false
+      },
+      {
+        "num_paths": 2000000,
+        "dt": 0.002,
+        "rel_err": 0.004181612592212691,
+        "solve_s": 131.816043,
+        "wall_s": 131.99,
+        "graded": true
+      }
+    ]
+  },
+  "plan_dir": "workspace_oneshot/opus/sde_heston_call_hivar/c0-naked/rep1"
+}
