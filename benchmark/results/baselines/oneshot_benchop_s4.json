@@ -17,7 +17,7 @@
     "solver_timeout_s": 1800,
     "mem_mb": 4096,
     "work_precision": true,
-    "invocation_seconds": 594.2
+    "invocation_seconds": 1017.5
   },
   "results": [
     {
@@ -805,6 +805,530 @@
       "plan_dir": "workspace_oneshot/opus/sde_heston_dnt_hivar/c0-manual/rep1",
       "verdict": "PASS",
       "_key": "sde_heston_dnt_hivar|c0|manual|opus|1"
+    },
+    {
+      "id": "B09",
+      "slug": "sde_heston_dnt_hivar",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_barrier",
+      "title": "Heston double-no-touch, higher initial variance",
+      "challenge": "The same continuously monitored corridor started at a higher variance, so more paths reach the barriers and the per-step monitoring error a naive scheme makes is correspondingly larger.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "manual",
+      "model": "opus",
+      "rep": 2,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 35.9,
+        "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    kappa, eta, sigma, rho = 2.58, 0.043, 1.0, -0.36\n    V0 = 0.164\n    L, U = 50.0, 150.0\n    spots = (75.0, 100.0, 125.0)\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    # Andersen QE constants\n    ekt = np.exp(-kappa * dt)\n    c1 = sigma**2 * ekt * (1.0 - ekt) / kappa\n    c2 = eta * sigma**2 * (1.0 - ekt) ** 2 / (2.0 * kappa)\n    psi_c = 1.5\n    g1 = g2 = 0.5\n    K0 = -rho * kappa * eta * dt / sigma\n    K1 = g1 * dt * (kappa * rho / sigma - 0.5) - rho / sigma\n    K2 = g2 * dt * (kappa * rho / sigma - 0.5) + rho / sigma\n    K3 = g1 * dt * (1.0 - rho**2)\n    K4 = g2 * dt * (1.0 - rho**2)\n\n    V = np.full(num_paths, V0)\n    Y = np.zeros(num_paths)  # log(S/S0), common to all spots\n\n    lbs = {s0: np.log(L / s0) for s0 in spots}\n    ubs = {s0: np.log(U / s0) for s0 in spots}\n    weight = {s0: np.ones(num_paths) for s0 in spots}\n\n    for n in range(Nt):\n        Zv = rng.standard_normal(num_paths)\n        Uv = rng.random(num_paths)\n        Zx = rng.standard_normal(num_paths)\n\n        # --- QE step for V ---\n        m = eta + (V - eta) * ekt\n        s2 = V * c1 + c2\n        psi = s2 / (m * m)\n        Vn = np.empty(num_paths)\n        quad = psi <= psi_c\n        if np.any(quad):\n            pq = psi[quad]\n            ip = 2.0 / pq\n            b2 = ip - 1.0 + np.sqrt(ip) * np.sqrt(np.maximum(ip - 1.0, 0.0))\n            a = m[quad] / (1.0 + b2)\n            Vn[quad] = a * (np.sqrt(b2) + Zv[quad]) ** 2\n        ex = ~quad\n        if np.any(ex):\n            pe = psi[ex]\n            p = (pe - 1.0) / (pe + 1.0)\n            beta = (1.0 - p) / m[ex]\n            u = Uv[ex]\n            ve = np.zeros_like(u)\n            pos = u > p\n            ve[pos] = np.log((1.0 - p[pos]) / (1.0 - u[pos])) / beta[pos]\n            Vn[ex] = ve\n\n        # --- log-price step ---\n        var_x = np.maximum(K3 * V + K4 * Vn, 0.0)\n        Y1 = Y + K0 + K1 * V + K2 * Vn + np.sqrt(var_x) * Zx\n\n        # --- continuous monitoring: Brownian bridge in log space ---\n        vdt = np.maximum(0.5 * (V + Vn) * dt, 1e-300)\n        for s0 in spots:\n            lb, ub = lbs[s0], ubs[s0]\n            w = weight[s0]\n            du0 = ub - Y\n            du1 = ub - Y1\n            dl0 = Y - lb\n            dl1 = Y1 - lb\n            inside = (du1 > 0) & (dl1 > 0) & (du0 > 0) & (dl0 > 0)\n            pu = np.exp(-2.0 * np.maximum(du0, 0.0) * np.maximum(du1, 0.0) / vdt)\n            pl = np.exp(-2.0 * np.maximum(dl0, 0.0) * np.maximum(dl1, 0.0) / vdt)\n            surv = np.where(inside, np.clip(1.0 - pu - pl, 0.0, 1.0), 0.0)\n            w *= surv\n\n        Y = Y1\n        V = Vn\n\n    S = 100.0 * np.exp(Y)\n    X = np.column_stack([S, V])\n\n    functionals = {\n        \"no_touch_S75\": float(np.mean(weight[75.0])),\n        \"no_touch_S100\": float(np.mean(weight[100.0])),\n        \"no_touch_S125\": float(np.mean(weight[125.0])),\n    }\n\n    return {\n        \"terminal_paths\": X,\n        \"empirical_mean\": [float(v) for v in np.mean(X, axis=0)],\n        \"empirical_variance\": [float(v) for v in np.var(X, axis=0, ddof=1)],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    r = solve_sde(num_paths=100000, dt=0.002, T=1, seed=42)\n    print(r[\"functionals\"])\n    print(r[\"empirical_mean\"], r[\"empirical_variance\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.1433978,
+        "input_tokens": 42057,
+        "output_tokens": 3689,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 400000,
+          "dt": 0.002,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 55.788944
+        },
+        "functional_errs": {
+          "no_touch_S75": 0.00039671310718579614,
+          "no_touch_S100": 0.0005416767308615518,
+          "no_touch_S125": 0.0013456024538548348
+        },
+        "functional_abs_errs": {
+          "no_touch_S75": 0.0003137959901350351,
+          "no_touch_S100": 0.00046586377117119326,
+          "no_touch_S125": 0.0008046230635818663
+        },
+        "functional_tol": 0.006,
+        "functional_tol_used": {
+          "no_touch_S75": 0.006,
+          "no_touch_S100": 0.006,
+          "no_touch_S125": 0.006
+        },
+        "worst_functional_rel_err": 0.0013456024538548348,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 400000,
+          "num_paths_coarse": 100000,
+          "dt": 0.002,
+          "band_factor": 3.0,
+          "values": {
+            "no_touch_S75": {
+              "graded": 0.7913035174062927,
+              "coarse": 0.7900040769373032,
+              "delta": 0.0012994404689894434,
+              "band": 0.014237814985490836,
+              "moved": true,
+              "consistent": true
+            },
+            "no_touch_S100": {
+              "graded": 0.8595743495682844,
+              "coarse": 0.8585425082686668,
+              "delta": 0.0010318412996175308,
+              "band": 0.015480723840110202,
+              "moved": true,
+              "consistent": true
+            },
+            "no_touch_S125": {
+              "graded": 0.5971602968700856,
+              "coarse": 0.5982006142664071,
+              "delta": 0.0010403173963214885,
+              "band": 0.010763368558806016,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.0017414360951487089,
+          "solve_s": 12.240352,
+          "wall_s": 12.38,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 100000,
+              "dt": 0.002,
+              "rel_err": 0.0017414360951487089,
+              "solve_s": 12.240352,
+              "wall_s": 12.38,
+              "graded": false
+            },
+            {
+              "num_paths": 400000,
+              "dt": 0.002,
+              "rel_err": 0.0013456024538548348,
+              "solve_s": 55.788944,
+              "wall_s": 55.96,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_heston_dnt_hivar/c0-manual/rep2"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_heston_dnt_hivar/c0-manual/rep2",
+      "verdict": "PASS",
+      "_key": "sde_heston_dnt_hivar|c0|manual|opus|2"
+    },
+    {
+      "id": "B09",
+      "slug": "sde_heston_dnt_hivar",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_barrier",
+      "title": "Heston double-no-touch, higher initial variance",
+      "challenge": "The same continuously monitored corridor started at a higher variance, so more paths reach the barriers and the per-step monitoring error a naive scheme makes is correspondingly larger.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "manual",
+      "model": "opus",
+      "rep": 3,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 37.2,
+        "result_text": "```python\nimport numpy as np\n\nKAPPA = 2.58\nTHETA = 0.043\nSIGMA = 1.0\nRHO = -0.36\nV0 = 0.164\nL_BAR = 50.0\nU_BAR = 150.0\nSPOTS = (75.0, 100.0, 125.0)\n\n\ndef _qe_step(V, dt, rng, n):\n    # Andersen Quadratic-Exponential step for CIR variance\n    e = np.exp(-KAPPA * dt)\n    m = THETA + (V - THETA) * e\n    s2 = (V * SIGMA**2 * e * (1.0 - e) / KAPPA\n          + THETA * SIGMA**2 * (1.0 - e) ** 2 / (2.0 * KAPPA))\n    psi = s2 / (m * m)\n    Zv = rng.standard_normal(n)\n    U = rng.random(n)\n    Vn = np.empty_like(V)\n\n    q = psi <= 1.5\n    if np.any(q):\n        pq = psi[q]\n        inv = 2.0 / pq\n        b2 = inv - 1.0 + np.sqrt(inv) * np.sqrt(inv - 1.0)\n        a = m[q] / (1.0 + b2)\n        Vn[q] = a * (np.sqrt(b2) + Zv[q]) ** 2\n    nq = ~q\n    if np.any(nq):\n        pe = psi[nq]\n        p = (pe - 1.0) / (pe + 1.0)\n        beta = (1.0 - p) / m[nq]\n        u = U[nq]\n        out = np.zeros_like(u)\n        pos = u > p\n        out[pos] = np.log((1.0 - p[pos]) / (1.0 - u[pos])) / beta[pos]\n        Vn[nq] = out\n    return Vn\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n    n = num_paths\n\n    V = np.full(n, V0, dtype=float)\n    X = np.zeros(n)  # log(S/S0), independent of S0\n\n    lu = np.log(U_BAR)\n    ld = np.log(L_BAR)\n    l0 = [np.log(s) for s in SPOTS]\n    weights = [np.ones(n) for _ in SPOTS]\n\n    sq = np.sqrt(1.0 - RHO**2)\n    for _ in range(Nt):\n        Vn = _qe_step(V, dt, rng, n)\n        Z = rng.standard_normal(n)\n        intV = 0.5 * (V + Vn) * dt\n        # integral of sqrt(V) dW2 implied by the variance dynamics\n        intdW2 = (Vn - V - KAPPA * THETA * dt + KAPPA * intV) / SIGMA\n        Xn = (X - 0.5 * intV + RHO * intdW2\n              + sq * np.sqrt(np.maximum(intV, 0.0)) * Z)\n\n        denom = np.maximum(intV, 1e-300)\n        with np.errstate(over=\"ignore\", under=\"ignore\", invalid=\"ignore\"):\n            for k in range(len(SPOTS)):\n                x0 = X + l0[k]\n                x1 = Xn + l0[k]\n                inside = (x1 < lu) & (x1 > ld) & (x0 < lu) & (x0 > ld)\n                du0 = np.maximum(lu - x0, 0.0)\n                du1 = np.maximum(lu - x1, 0.0)\n                dd0 = np.maximum(x0 - ld, 0.0)\n                dd1 = np.maximum(x1 - ld, 0.0)\n                pu = np.exp(-2.0 * du0 * du1 / denom)\n                pd = np.exp(-2.0 * dd0 * dd1 / denom)\n                pu = np.where(intV > 0, pu, 0.0)\n                pd = np.where(intV > 0, pd, 0.0)\n                surv = np.clip((1.0 - pu) * (1.0 - pd), 0.0, 1.0)\n                weights[k] *= np.where(inside, surv, 0.0)\n\n        X = Xn\n        V = Vn\n\n    S100 = 100.0 * np.exp(X)\n    terminal = np.column_stack([S100, V])\n\n    functionals = {\n        \"no_touch_S75\": float(np.mean(weights[0])),\n        \"no_touch_S100\": float(np.mean(weights[1])),\n        \"no_touch_S125\": float(np.mean(weights[2])),\n    }\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(terminal[:, 0])), float(np.mean(terminal[:, 1]))],\n        \"empirical_variance\": [float(np.var(terminal[:, 0], ddof=1)),\n                               float(np.var(terminal[:, 1], ddof=1))],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    r = solve_sde(num_paths=100000, dt=0.002, T=1.0, seed=42)\n    print(r[\"functionals\"])\n    print(r[\"empirical_mean\"], r[\"empirical_variance\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.1440178,
+        "input_tokens": 42057,
+        "output_tokens": 3720,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 400000,
+          "dt": 0.002,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 58.408789
+        },
+        "functional_errs": {
+          "no_touch_S75": 0.00039671310718705934,
+          "no_touch_S100": 0.0005416767308624555,
+          "no_touch_S125": 0.0013456024538589196
+        },
+        "functional_abs_errs": {
+          "no_touch_S75": 0.0003137959901360343,
+          "no_touch_S100": 0.0004658637711719704,
+          "no_touch_S125": 0.0008046230635843088
+        },
+        "functional_tol": 0.006,
+        "functional_tol_used": {
+          "no_touch_S75": 0.006,
+          "no_touch_S100": 0.006,
+          "no_touch_S125": 0.006
+        },
+        "worst_functional_rel_err": 0.0013456024538589196,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 400000,
+          "num_paths_coarse": 100000,
+          "dt": 0.002,
+          "band_factor": 3.0,
+          "values": {
+            "no_touch_S75": {
+              "graded": 0.7913035174062937,
+              "coarse": 0.7900040769373042,
+              "delta": 0.0012994404689894434,
+              "band": 0.014237814985490836,
+              "moved": true,
+              "consistent": true
+            },
+            "no_touch_S100": {
+              "graded": 0.8595743495682836,
+              "coarse": 0.8585425082686663,
+              "delta": 0.0010318412996173087,
+              "band": 0.015480723840110202,
+              "moved": true,
+              "consistent": true
+            },
+            "no_touch_S125": {
+              "graded": 0.5971602968700832,
+              "coarse": 0.5982006142664047,
+              "delta": 0.0010403173963214885,
+              "band": 0.010763368558806016,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.0017414360951493544,
+          "solve_s": 12.240419,
+          "wall_s": 12.38,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 100000,
+              "dt": 0.002,
+              "rel_err": 0.0017414360951493544,
+              "solve_s": 12.240419,
+              "wall_s": 12.38,
+              "graded": false
+            },
+            {
+              "num_paths": 400000,
+              "dt": 0.002,
+              "rel_err": 0.0013456024538589196,
+              "solve_s": 58.408789,
+              "wall_s": 58.57,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_heston_dnt_hivar/c0-manual/rep3"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_heston_dnt_hivar/c0-manual/rep3",
+      "verdict": "PASS",
+      "_key": "sde_heston_dnt_hivar|c0|manual|opus|3"
+    },
+    {
+      "id": "B09",
+      "slug": "sde_heston_dnt_hivar",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_barrier",
+      "title": "Heston double-no-touch, higher initial variance",
+      "challenge": "The same continuously monitored corridor started at a higher variance, so more paths reach the barriers and the per-step monitoring error a naive scheme makes is correspondingly larger.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "manual",
+      "model": "opus",
+      "rep": 4,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 35.3,
+        "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    # Heston parameters (r = 0)\n    kappa, theta, sigma, rho = 2.58, 0.043, 1.0, -0.36\n    V0 = 0.164\n    spots = (75.0, 100.0, 125.0)\n    L, U = 50.0, 150.0\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    # Andersen QE constants for variance\n    ekdt = np.exp(-kappa * dt)\n    c1 = sigma**2 * ekdt * (1.0 - ekdt) / kappa\n    c2 = theta * sigma**2 * (1.0 - ekdt) ** 2 / (2.0 * kappa)\n    psi_c = 1.5\n\n    # Andersen log-S discretization constants (gamma1 = gamma2 = 0.5)\n    g1 = g2 = 0.5\n    K0 = -rho * kappa * theta * dt / sigma\n    K1 = g1 * dt * (kappa * rho / sigma - 0.5) - rho / sigma\n    K2 = g2 * dt * (kappa * rho / sigma - 0.5) + rho / sigma\n    K3 = g1 * dt * (1.0 - rho**2)\n    K4 = g2 * dt * (1.0 - rho**2)\n\n    # X = log(S / S0), common to all spots\n    X = np.zeros(num_paths)\n    V = np.full(num_paths, V0)\n\n    logU = [np.log(U / s0) for s0 in spots]\n    logL = [np.log(L / s0) for s0 in spots]\n    surv = [np.ones(num_paths) for _ in spots]\n\n    for n in range(Nt):\n        Zv = rng.standard_normal(num_paths)\n        Uv = rng.random(num_paths)\n        Zs = rng.standard_normal(num_paths)\n\n        # --- QE step for V ---\n        m = theta + (V - theta) * ekdt\n        s2 = V * c1 + c2\n        psi = s2 / (m * m)\n        Vn = np.empty(num_paths)\n\n        quad = psi <= psi_c\n        if np.any(quad):\n            pq = psi[quad]\n            inv = 2.0 / pq\n            b2 = inv - 1.0 + np.sqrt(inv) * np.sqrt(inv - 1.0)\n            a = m[quad] / (1.0 + b2)\n            Vn[quad] = a * (np.sqrt(b2) + Zv[quad]) ** 2\n        ex = ~quad\n        if np.any(ex):\n            pe = psi[ex]\n            p = (pe - 1.0) / (pe + 1.0)\n            beta = (1.0 - p) / m[ex]\n            u = Uv[ex]\n            val = np.zeros(u.shape)\n            pos = u > p\n            val[pos] = np.log((1.0 - p[pos]) / (1.0 - u[pos])) / beta[pos]\n            Vn[ex] = val\n\n        # --- log S step ---\n        var_s = np.maximum(K3 * V + K4 * Vn, 0.0)\n        Xn = X + K0 + K1 * V + K2 * Vn + np.sqrt(var_s) * Zs\n\n        # --- Brownian-bridge continuous barrier monitoring ---\n        qv = np.maximum(0.5 * (V + Vn) * dt, 1e-300)\n        for i in range(len(spots)):\n            su = surv[i]\n            lu, ld = logU[i], logL[i]\n            du0 = lu - X\n            du1 = lu - Xn\n            dd0 = X - ld\n            dd1 = Xn - ld\n            inside = (du1 > 0.0) & (dd1 > 0.0)\n            pu = np.exp(-2.0 * np.maximum(du0, 0.0) * np.maximum(du1, 0.0) / qv)\n            pd = np.exp(-2.0 * np.maximum(dd0, 0.0) * np.maximum(dd1, 0.0) / qv)\n            fac = np.where(inside, np.maximum(1.0 - pu - pd, 0.0), 0.0)\n            su *= fac\n\n        X = Xn\n        V = Vn\n\n    S100 = 100.0 * np.exp(X)\n    terminal = np.column_stack([S100, V])\n\n    functionals = {\n        \"no_touch_S75\": float(np.mean(surv[0])),\n        \"no_touch_S100\": float(np.mean(surv[1])),\n        \"no_touch_S125\": float(np.mean(surv[2])),\n    }\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(v) for v in np.mean(terminal, axis=0)],\n        \"empirical_variance\": [float(v) for v in np.var(terminal, axis=0, ddof=1)],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=100000, dt=0.002, T=1, seed=42)\n    print(res[\"functionals\"])\n    print(res[\"empirical_mean\"], res[\"empirical_variance\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.14107779999999998,
+        "input_tokens": 42057,
+        "output_tokens": 3573,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 400000,
+          "dt": 0.002,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 53.72452
+        },
+        "functional_errs": {
+          "no_touch_S75": 0.00039671310718579614,
+          "no_touch_S100": 0.0005416767308615518,
+          "no_touch_S125": 0.0013456024538548348
+        },
+        "functional_abs_errs": {
+          "no_touch_S75": 0.0003137959901350351,
+          "no_touch_S100": 0.00046586377117119326,
+          "no_touch_S125": 0.0008046230635818663
+        },
+        "functional_tol": 0.006,
+        "functional_tol_used": {
+          "no_touch_S75": 0.006,
+          "no_touch_S100": 0.006,
+          "no_touch_S125": 0.006
+        },
+        "worst_functional_rel_err": 0.0013456024538548348,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 400000,
+          "num_paths_coarse": 100000,
+          "dt": 0.002,
+          "band_factor": 3.0,
+          "values": {
+            "no_touch_S75": {
+              "graded": 0.7913035174062927,
+              "coarse": 0.7900040769373032,
+              "delta": 0.0012994404689894434,
+              "band": 0.014237814985490836,
+              "moved": true,
+              "consistent": true
+            },
+            "no_touch_S100": {
+              "graded": 0.8595743495682844,
+              "coarse": 0.8585425082686668,
+              "delta": 0.0010318412996175308,
+              "band": 0.015480723840110202,
+              "moved": true,
+              "consistent": true
+            },
+            "no_touch_S125": {
+              "graded": 0.5971602968700856,
+              "coarse": 0.5982006142664071,
+              "delta": 0.0010403173963214885,
+              "band": 0.010763368558806016,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.0017414360951487089,
+          "solve_s": 12.009385,
+          "wall_s": 12.15,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 100000,
+              "dt": 0.002,
+              "rel_err": 0.0017414360951487089,
+              "solve_s": 12.009385,
+              "wall_s": 12.15,
+              "graded": false
+            },
+            {
+              "num_paths": 400000,
+              "dt": 0.002,
+              "rel_err": 0.0013456024538548348,
+              "solve_s": 53.72452,
+              "wall_s": 53.88,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_heston_dnt_hivar/c0-manual/rep4"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_heston_dnt_hivar/c0-manual/rep4",
+      "verdict": "PASS",
+      "_key": "sde_heston_dnt_hivar|c0|manual|opus|4"
+    },
+    {
+      "id": "B09",
+      "slug": "sde_heston_dnt_hivar",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_barrier",
+      "title": "Heston double-no-touch, higher initial variance",
+      "challenge": "The same continuously monitored corridor started at a higher variance, so more paths reach the barriers and the per-step monitoring error a naive scheme makes is correspondingly larger.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "manual",
+      "model": "opus",
+      "rep": 5,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 46.4,
+        "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    kappa, theta, sigma, rho = 2.58, 0.043, 1.0, -0.36\n    V0 = 0.164\n    L, U_bar = 50.0, 150.0\n    spots = [75.0, 100.0, 125.0]\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    # Andersen QE constants\n    e = np.exp(-kappa * dt)\n    c1 = sigma**2 * e * (1.0 - e) / kappa\n    c2 = theta * sigma**2 * (1.0 - e) ** 2 / (2.0 * kappa)\n    psi_c = 1.5\n    g1 = g2 = 0.5\n    K0 = -rho * kappa * theta / sigma * dt\n    K1 = g1 * dt * (kappa * rho / sigma - 0.5) - rho / sigma\n    K2 = g2 * dt * (kappa * rho / sigma - 0.5) + rho / sigma\n    K3 = g1 * dt * (1.0 - rho**2)\n    K4 = g2 * dt * (1.0 - rho**2)\n\n    V = np.full(num_paths, V0, dtype=float)\n    x = np.zeros(num_paths)  # log(S/S0), common to all spots\n    lus = [np.log(U_bar / s) for s in spots]\n    lds = [np.log(L / s) for s in spots]\n    weights = [np.ones(num_paths) for _ in spots]\n\n    for n in range(Nt):\n        Zv = rng.standard_normal(num_paths)\n        Uv = rng.random(num_paths)\n        Zs = rng.standard_normal(num_paths)\n\n        m = theta + (V - theta) * e\n        s2 = V * c1 + c2\n        psi = s2 / (m * m)\n\n        # quadratic branch\n        psi_q = np.minimum(psi, psi_c)\n        inv = 2.0 / psi_q\n        b2 = inv - 1.0 + np.sqrt(inv) * np.sqrt(np.maximum(inv - 1.0, 0.0))\n        a = m / (1.0 + b2)\n        Vq = a * (np.sqrt(b2) + Zv) ** 2\n        # exponential branch\n        psi_e = np.maximum(psi, psi_c)\n        p = (psi_e - 1.0) / (psi_e + 1.0)\n        beta = (1.0 - p) / m\n        Ve = np.where(Uv <= p, 0.0,\n                      np.log(np.maximum((1.0 - p) / np.maximum(1.0 - Uv, 1e-300), 1.0)) / beta)\n        Vn = np.where(psi <= psi_c, Vq, Ve)\n\n        x_new = x + K0 + K1 * V + K2 * Vn + np.sqrt(np.maximum(K3 * V + K4 * Vn, 0.0)) * Zs\n\n        # Brownian-bridge crossing probability in log space\n        var = np.maximum(0.5 * (V + Vn) * dt, 1e-300)\n        for i in range(len(spots)):\n            lu, ld = lus[i], lds[i]\n            du0 = lu - x\n            du1 = lu - x_new\n            dd0 = x - ld\n            dd1 = x_new - ld\n            inside = (du1 > 0.0) & (dd1 > 0.0) & (du0 > 0.0) & (dd0 > 0.0)\n            pu = np.exp(-2.0 * np.maximum(du0 * du1, 0.0) / var)\n            pd = np.exp(-2.0 * np.maximum(dd0 * dd1, 0.0) / var)\n            surv = np.maximum(1.0 - pu, 0.0) * np.maximum(1.0 - pd, 0.0)\n            weights[i] *= np.where(inside, surv, 0.0)\n\n        x = x_new\n        V = Vn\n\n    S = 100.0 * np.exp(x)\n    terminal = np.column_stack([S, V])\n    functionals = {\n        \"no_touch_S75\": float(np.mean(weights[0])),\n        \"no_touch_S100\": float(np.mean(weights[1])),\n        \"no_touch_S125\": float(np.mean(weights[2])),\n    }\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(terminal[:, 0])), float(np.mean(terminal[:, 1]))],\n        \"empirical_variance\": [float(np.var(terminal[:, 0], ddof=1)),\n                               float(np.var(terminal[:, 1], ddof=1))],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    r = solve_sde(num_paths=100000, dt=0.002, T=1, seed=42)\n    print(r[\"functionals\"])\n    print(r[\"empirical_mean\"], r[\"empirical_variance\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.15129779999999998,
+        "input_tokens": 42057,
+        "output_tokens": 4084,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 400000,
+          "dt": 0.002,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 51.548975
+        },
+        "functional_errs": {
+          "no_touch_S75": 0.00039671310718579614,
+          "no_touch_S100": 0.0005416767308615518,
+          "no_touch_S125": 0.0013456024538548348
+        },
+        "functional_abs_errs": {
+          "no_touch_S75": 0.0003137959901350351,
+          "no_touch_S100": 0.00046586377117119326,
+          "no_touch_S125": 0.0008046230635818663
+        },
+        "functional_tol": 0.006,
+        "functional_tol_used": {
+          "no_touch_S75": 0.006,
+          "no_touch_S100": 0.006,
+          "no_touch_S125": 0.006
+        },
+        "worst_functional_rel_err": 0.0013456024538548348,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 400000,
+          "num_paths_coarse": 100000,
+          "dt": 0.002,
+          "band_factor": 3.0,
+          "values": {
+            "no_touch_S75": {
+              "graded": 0.7913035174062927,
+              "coarse": 0.7900040769373032,
+              "delta": 0.0012994404689894434,
+              "band": 0.014237814985490836,
+              "moved": true,
+              "consistent": true
+            },
+            "no_touch_S100": {
+              "graded": 0.8595743495682844,
+              "coarse": 0.8585425082686668,
+              "delta": 0.0010318412996175308,
+              "band": 0.015480723840110202,
+              "moved": true,
+              "consistent": true
+            },
+            "no_touch_S125": {
+              "graded": 0.5971602968700856,
+              "coarse": 0.5982006142664071,
+              "delta": 0.0010403173963214885,
+              "band": 0.010763368558806016,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.0017414360951487089,
+          "solve_s": 10.859339,
+          "wall_s": 10.99,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 100000,
+              "dt": 0.002,
+              "rel_err": 0.0017414360951487089,
+              "solve_s": 10.859339,
+              "wall_s": 10.99,
+              "graded": false
+            },
+            {
+              "num_paths": 400000,
+              "dt": 0.002,
+              "rel_err": 0.0013456024538548348,
+              "solve_s": 51.548975,
+              "wall_s": 51.72,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_heston_dnt_hivar/c0-manual/rep5"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_heston_dnt_hivar/c0-manual/rep5",
+      "verdict": "PASS",
+      "_key": "sde_heston_dnt_hivar|c0|manual|opus|5"
     }
   ]
 }
