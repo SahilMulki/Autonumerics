@@ -1,0 +1,43 @@
+$ claude --plugin-dir /home/user/Autonumerics --settings /home/user/Autonumerics/benchmark/results/pipeline/logs/sde_heston_dnt.settings.json -p /conductor workspace/sde_heston_dnt/problem.md --dangerously-skip-permissions
+
+Permission deny rule (benchmark/results/pipeline/logs/sde_heston_dnt.settings.json): Write(./benchmark/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(./benchmark/**) instead (Edit rules cover all file-editing tools).
+The formulator is running in the background. I'll continue once it returns.
+
+The plan-creator is running in the background. I'll continue once it returns.
+
+Both solvers are running in the background. I'll continue when they return.
+
+Plan 1 solved and hashed; its evaluator is running. Plan 2's solver is still running.
+
+Both evaluators are now running. I'll update STATE.md as they return.
+
+Plan 2 scored 9, not certified, and its solver is unchanged. I'm waiting on plan 1's evaluator.
+
+Both plans are in their second cycle. The solvers are refining in the background.
+
+Plan 1's solver is unchanged, and I've sent it for re-evaluation. Plan 2's solver is still running.
+
+Both re-evaluations are now running. I'll finalize once they return.
+
+Plan 2 re-evaluated at 9 again, so it has plateaued and I'm marking it stopped. Plan 1's re-evaluation is still running.
+
+The pipeline finished (`phase: done`), but neither plan certified. Both scored 9/10 and the best plan is `1-euler-maruyama`.
+
+- **What held the score at 9:** the Dynkin generator check never ran. Its finest ladder level needs a 12.8 GB array (400,000 paths × 2,000 steps × 2 noise channels), and the kernel's budget is 12 GB. That comes from the spec's path count and step size, not the solvers. Any correct plan would stop at 9 for the same reason.
+- **How the plans compare:**
+
+  | Plan | Scheme | Score | Strong order (expected 0.3) | No-touch error vs reference |
+  |---|---|---|---|---|
+  | `1-euler-maruyama` | Euler–Maruyama, full-truncation V, Brownian-bridge barrier weights | 9 | 0.282 | within 0.19% at all three spots |
+  | `2-euler-maruyama-cir-milstein-v` | Plan 1 plus a CIR Milstein correction on V | 9 | 0.243 | within 0.23% at all three spots |
+
+  Both plans read about 0.24–0.28 against 0.3, which the formulator attributes to the Feller violation. Both stopped after two cycles because the second evaluation gave the same score with an unchanged solver.
+- **Why plan 1 won:** the two tie on score, provenance (`analytic`) and accuracy. The ranker's quality index (0.717 vs 0.559) separates them. Plan 2's V correction added nothing measurable.
+- **The no-touch probability is the real grade, but the kernel doesn't score it.** The SDE kernel scores moments only. The no-touch comparison against the formulator's 2-D reference (0.6% tolerance) was done by the solvers and evaluators themselves. The formulator computed that reference and nobody validated it independently.
+- **Ambiguity R16:** `problem.md` says there is no terminal-moment formula. The formulator derived and validated one anyway and used it as internal evidence. This is flagged in `REPORT.md`.
+
+The final guardrail gate (`verifylib gate`) came back clean, and there is no `GUARDRAIL_UNSATISFIED` file. `REPORT.md` also lists the smaller verification gaps.
+
+Files are in `/home/user/Autonumerics/workspace/sde_heston_dnt/`:
+- REPORT.md
+- STATE.md
