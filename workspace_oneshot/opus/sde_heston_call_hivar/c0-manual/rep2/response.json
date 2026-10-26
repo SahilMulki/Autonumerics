@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 35.2,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    kappa, theta, sigma, rho = 2.58, 0.043, 1.0, -0.36\n    V0 = 0.164\n    K = 100.0\n    spots = (75.0, 100.0, 125.0)\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n    n = int(num_paths)\n\n    # Andersen QE scheme for V, with central (trapezoid) discretization of log S\n    ed = np.exp(-kappa * dt)\n    c1 = sigma**2 * ed * (1.0 - ed) / kappa\n    c2 = theta * sigma**2 * (1.0 - ed) ** 2 / (2.0 * kappa)\n    g1 = g2 = 0.5\n    K0 = -rho * kappa * theta / sigma * dt\n    K1 = g1 * dt * (kappa * rho / sigma - 0.5) - rho / sigma\n    K2 = g2 * dt * (kappa * rho / sigma - 0.5) + rho / sigma\n    K3 = g1 * dt * (1.0 - rho**2)\n    K4 = g2 * dt * (1.0 - rho**2)\n    psi_c = 1.5\n\n    V = np.full(n, V0, dtype=float)\n    X = np.zeros(n, dtype=float)  # log(S/S0)\n\n    for _ in range(Nt):\n        Zv = rng.standard_normal(n)\n        Zs = rng.standard_normal(n)\n\n        m = theta + (V - theta) * ed\n        s2 = V * c1 + c2\n        psi = s2 / (m * m)\n\n        Vn = np.empty(n)\n        low = psi <= psi_c\n        # quadratic branch\n        if np.any(low):\n            pl = psi[low]\n            ml = m[low]\n            inv = 2.0 / pl\n            b2 = inv - 1.0 + np.sqrt(inv) * np.sqrt(inv - 1.0)\n            a = ml / (1.0 + b2)\n            Vn[low] = a * (np.sqrt(b2) + Zv[low]) ** 2\n        # exponential branch\n        high = ~low\n        nh = int(np.count_nonzero(high))\n        if nh > 0:\n            ph = psi[high]\n            mh = m[high]\n            p = (ph - 1.0) / (ph + 1.0)\n            beta = (1.0 - p) / mh\n            U = rng.random(nh)\n            out = np.zeros(nh)\n            pos = U > p\n            out[pos] = np.log((1.0 - p[pos]) / (1.0 - U[pos])) / beta[pos]\n            Vn[high] = out\n\n        var_term = np.maximum(K3 * V + K4 * Vn, 0.0)\n        X += K0 + K1 * V + K2 * Vn + np.sqrt(var_term) * Zs\n        V = Vn\n\n    G = np.exp(X)  # S_T / S0\n    functionals = {}\n    for S0 in spots:\n        ST = S0 * G\n        C = np.maximum(ST - K, 0.0)\n        # control variate: E[S_T] = S0 (martingale)\n        cv = ST - S0\n        cvc = cv - cv.mean()\n        varcv = np.dot(cvc, cvc)\n        b = np.dot(C - C.mean(), cvc) / varcv if varcv > 0 else 0.0\n        price = float(C.mean() - b * cv.mean())\n        functionals[f\"price_S{int(S0)}\"] = price\n\n    S100 = 100.0 * G\n    terminal = np.column_stack((S100, V))\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(terminal[:, 0])), float(np.mean(terminal[:, 1]))],\n        \"empirical_variance\": [float(np.var(terminal[:, 0], ddof=1)),\n                               float(np.var(terminal[:, 1], ddof=1))],\n        \"functionals\": functionals,\n        \"num_paths\": n,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    r = solve_sde(num_paths=100000, dt=0.002, T=1, seed=42)\n    print(r[\"functionals\"], r[\"empirical_mean\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.13227,
+  "input_tokens": 41991,
+  "output_tokens": 3136,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}
