@@ -1,0 +1,166 @@
+[
+  {
+    "a": "1-euler-maruyama-full-truncation",
+    "b": "2-qe-martingale-corrected",
+    "N": null,
+    "t_final": 10.0,
+    "rel_diff": 0.0362782152870568,
+    "tol": 0.1,
+    "metric": "moments",
+    "agree": null,
+    "family_a": "euler-maruyama",
+    "family_b": "euler-maruyama",
+    "different_family": false,
+    "sha_a": "3b6c4676329213132276137328f076044c93efe33f822b3bc63c4484f9b666f2",
+    "sha_b": "d60556a0110057d590dd8f718427b269edeeeb7433edc39fc93ffdb9746d1150",
+    "interpolated": false,
+    "config": {
+      "num_paths": 1000000,
+      "dt": 0.004,
+      "T": 10.0,
+      "seed": 42,
+      "seed_b_independent": 3444837047,
+      "ci_mult": 2.0
+    },
+    "agree_shared_seed": true,
+    "rel_diff_shared_seed": 0.022633093505938215,
+    "seeding": "both (D6): shared seed detects, independent seed earns the break",
+    "per_moment": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 634.9200579498977,
+        "b": 635.0802729501772,
+        "rel_diff": 0.0002523070213155017,
+        "rel_se": 0.0029464558601590913,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "mean",
+        "component": 1,
+        "a": 0.03940251720538627,
+        "b": 0.040304525682771014,
+        "rel_diff": 0.022633093505938215,
+        "rel_se": 0.007123333733806367,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "mean",
+        "component": 2,
+        "a": 0.09982684836225035,
+        "b": 0.09996787535369936,
+        "rel_diff": 0.0014117188765155604,
+        "rel_se": 0.0028492527070634478,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 1764512.8456571037,
+        "b": 1736127.999769318,
+        "rel_diff": 0.016216942634872417,
+        "rel_se": 0.0319493447498538,
+        "tol": 0.1,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 1,
+        "a": 0.040159980451354764,
+        "b": 0.04043351401254652,
+        "rel_diff": 0.0067879811642682355,
+        "rel_se": 0.017300648864243557,
+        "tol": 0.1,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 2,
+        "a": 0.04052082282642524,
+        "b": 0.04049502434866564,
+        "rel_diff": 0.0006368748500238668,
+        "rel_se": 0.0019969559744945587,
+        "tol": 0.1,
+        "agree": true,
+        "disagree": false
+      }
+    ],
+    "per_moment_independent": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 634.9200579498977,
+        "b": 633.9129923246287,
+        "rel_diff": 0.0015873887034249126,
+        "rel_se": 0.0029346030423984424,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "mean",
+        "component": 1,
+        "a": 0.03940251720538627,
+        "b": 0.039812857327548974,
+        "rel_diff": 0.010360113161924122,
+        "rel_se": 0.007118870185144865,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "mean",
+        "component": 2,
+        "a": 0.09982684836225035,
+        "b": 0.09987822644555638,
+        "rel_diff": 0.0005145395864925212,
+        "rel_se": 0.002849241883694336,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 1764512.8456571037,
+        "b": 1701639.9273977473,
+        "rel_diff": 0.0362782152870568,
+        "rel_se": 0.033056737371561305,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 1,
+        "a": 0.040159980451354764,
+        "b": 0.03934257996072494,
+        "rel_diff": 0.02056287209853502,
+        "rel_se": 0.017241499284421005,
+        "tol": 0.1,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 2,
+        "a": 0.04052082282642524,
+        "b": 0.0404217212637489,
+        "rel_diff": 0.002448689098922714,
+        "rel_se": 0.001997280295191221,
+        "tol": 0.1,
+        "agree": true,
+        "disagree": false
+      }
+    ],
+    "recorded_at": 1793044404.0717194
+  }
+]

@@ -62,7 +62,7 @@
       "verifylib/kernel/sde/laws.py": "d13c89966bdee68a",
       "verifylib/kernel/sde/surrogates.py": "7c7b5ec947f19861"
     },
-    "invocation_seconds": 2318.4
+    "invocation_seconds": 5216.9
   },
   "results": [
     {
@@ -402,6 +402,346 @@
         "winner_harness_err": 0.19358918217168347,
         "harness_error_metric": "worst functional error / its gate",
         "harness_error_margin": 0.12127787724702055,
+        "wrong_plan_won": false
+      }
+    },
+    {
+      "id": "B06",
+      "slug": "sde_hhw_call_corr",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_hull_white",
+      "title": "Heston-Hull-White call, all three factors correlated",
+      "challenge": "Three correlated factors over ten years, with the variance's Feller ratio at 0.04 and the discount factor itself stochastic and correlated with both others. The only problem in the suite with no two-dimensional reduction and no quadrature.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 2268.4,
+        "wall_clock_seconds": 2268.4,
+        "started_at": "2026-10-26T19:16:04",
+        "ended_at": "2026-10-26T19:53:53",
+        "log": "benchmark/results/pipeline/logs/sde_hhw_call_corr.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "1-euler-maruyama-full-truncation",
+        "best_score": 7,
+        "n_plans": 2,
+        "total_iters": 4,
+        "plans": {
+          "1-euler-maruyama-full-truncation": {
+            "iter": 2,
+            "score": 7,
+            "one_sentence": "Euler-Maruyama, full-truncation V, log-S step, left-point rate shared by S drift and discount."
+          },
+          "2-qe-martingale-corrected": {
+            "iter": 2,
+            "score": 7,
+            "one_sentence": "Andersen QE for V, martingale-corrected log-S, exact R transition, trapezoid discount."
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 1000000,
+          "dt": 0.004,
+          "T": 10.0,
+          "seed": 42,
+          "solve_s": 37.847694
+        },
+        "functional_errs": {
+          "price_S75": 0.0015529802669380526,
+          "price_S100": 0.0012160112305274655,
+          "price_S125": 0.000839097571679208
+        },
+        "functional_abs_errs": {
+          "price_S75": 0.05826781961551575,
+          "price_S100": 0.0698112047445818,
+          "price_S125": 0.06593628718255218
+        },
+        "functional_tol": 0.003,
+        "functional_tol_used": {
+          "price_S75": 0.003,
+          "price_S100": 0.003,
+          "price_S125": 0.003
+        },
+        "worst_functional_rel_err": 0.0015529802669380526,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 1000000,
+          "num_paths_coarse": 250000,
+          "dt": 0.004,
+          "band_factor": 3.0,
+          "values": {
+            "price_S75": {
+              "graded": 37.57826781961552,
+              "coarse": 37.651310933889896,
+              "delta": 0.07304311427437682,
+              "band": 0.33768000000000004,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S100": {
+              "graded": 57.47981120474458,
+              "coarse": 57.563135729541166,
+              "delta": 0.0833245247965877,
+              "band": 0.51669,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S125": {
+              "graded": 78.64593628718255,
+              "coarse": 78.73707285934574,
+              "delta": 0.09113657216319382,
+              "band": 0.70722,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.003499758365935303,
+          "solve_s": 14.082111,
+          "wall_s": 14.22,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 250000,
+              "dt": 0.004,
+              "rel_err": 0.003499758365935303,
+              "solve_s": 14.082111,
+              "wall_s": 14.22,
+              "graded": false
+            },
+            {
+              "num_paths": 1000000,
+              "dt": 0.004,
+              "rel_err": 0.0015529802669380526,
+              "solve_s": 37.847694,
+              "wall_s": 38.04,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace/sde_hhw_call_corr/plans/1-euler-maruyama-full-truncation"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 7,
+        "provenance": "self_convergence",
+        "certified": false,
+        "tier": "C",
+        "bound_by": "rubric",
+        "reason": "the Richardson-extrapolated moments are unstable, or Dynkin failed",
+        "agent_cap": null
+      },
+      "verdict": "UNDERCLAIM",
+      "harness_by_plan": {
+        "plans": {
+          "1-euler-maruyama-full-truncation": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "price_S75": 0.0015529802669380526,
+                "price_S100": 0.0012160112305274655,
+                "price_S125": 0.000839097571679208
+              },
+              "functional_abs_errs": {
+                "price_S75": 0.05826781961551575,
+                "price_S100": 0.0698112047445818,
+                "price_S125": 0.06593628718255218
+              },
+              "functional_tol": 0.003,
+              "functional_tol_used": {
+                "price_S75": 0.003,
+                "price_S100": 0.003,
+                "price_S125": 0.003
+              },
+              "worst_functional_rel_err": 0.0015529802669380526,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 1000000,
+                "num_paths_coarse": 250000,
+                "dt": 0.004,
+                "band_factor": 3.0,
+                "values": {
+                  "price_S75": {
+                    "graded": 37.57826781961552,
+                    "coarse": 37.651310933889896,
+                    "delta": 0.07304311427437682,
+                    "band": 0.33768000000000004,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_S100": {
+                    "graded": 57.47981120474458,
+                    "coarse": 57.563135729541166,
+                    "delta": 0.0833245247965877,
+                    "band": 0.51669,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_S125": {
+                    "graded": 78.64593628718255,
+                    "coarse": 78.73707285934574,
+                    "delta": 0.09113657216319382,
+                    "band": 0.70722,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.003499758365935303,
+                "solve_s": 14.082111,
+                "wall_s": 14.22,
+                "level_ignored": false
+              }
+            },
+            "kernel": {
+              "score": 7.0,
+              "certified": false,
+              "provenance": "self_convergence",
+              "estimated_rel_error": 8.883e-07,
+              "invariant_max_drift": 0.649,
+              "solve_time_s": 93.47,
+              "solver_sha256": "3b6c4676329213132276137328f076044c93efe33f822b3bc63c4484f9b666f2"
+            },
+            "is_winner": true,
+            "harness_error": 0.5176600889793509,
+            "harness_error_margin": 0.3772817719315346,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 7,
+              "provenance": "self_convergence",
+              "certified": false,
+              "tier": "C",
+              "bound_by": "rubric",
+              "reason": "the Richardson-extrapolated moments are unstable, or Dynkin failed",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "2-qe-martingale-corrected": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "price_S75": 0.0014691257911059348,
+                "price_S100": 0.001205273563421524,
+                "price_S125": 0.0008577207654482729
+              },
+              "functional_abs_errs": {
+                "price_S75": 0.055121599682294686,
+                "price_S100": 0.0691947552760297,
+                "price_S125": 0.06739969774892529
+              },
+              "functional_tol": 0.003,
+              "functional_tol_used": {
+                "price_S75": 0.003,
+                "price_S100": 0.003,
+                "price_S125": 0.003
+              },
+              "worst_functional_rel_err": 0.0014691257911059348,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 1000000,
+                "num_paths_coarse": 250000,
+                "dt": 0.004,
+                "band_factor": 3.0,
+                "values": {
+                  "price_S75": {
+                    "graded": 37.5751215996823,
+                    "coarse": 37.54125737175678,
+                    "delta": 0.033864227925519685,
+                    "band": 0.33768000000000004,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_S100": {
+                    "graded": 57.479194755276026,
+                    "coarse": 57.42617140758865,
+                    "delta": 0.05302334768737893,
+                    "band": 0.51669,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_S125": {
+                    "graded": 78.64739969774892,
+                    "coarse": 78.58385976532686,
+                    "delta": 0.06353993242206002,
+                    "band": 0.70722,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.0005665610809375,
+                "solve_s": 73.80509,
+                "wall_s": 73.98,
+                "level_ignored": false
+              }
+            },
+            "kernel": {
+              "score": 7.0,
+              "certified": false,
+              "provenance": "self_convergence",
+              "estimated_rel_error": 8.691e-06,
+              "invariant_max_drift": 9.1e-05,
+              "solve_time_s": 96.075,
+              "solver_sha256": "d60556a0110057d590dd8f718427b269edeeeb7433edc39fc93ffdb9746d1150"
+            },
+            "is_winner": false,
+            "harness_error": 0.4897085970353116,
+            "harness_error_margin": 0.17928867122135791,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 7,
+              "provenance": "self_convergence",
+              "certified": false,
+              "tier": "C",
+              "bound_by": "rubric",
+              "reason": "the Richardson-extrapolated moments are unstable, or Dynkin failed",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          }
+        },
+        "winner": "1-euler-maruyama-full-truncation",
+        "best_plan_by_harness": "2-qe-martingale-corrected",
+        "best_harness_err": 0.4897085970353116,
+        "winner_harness_err": 0.5176600889793509,
+        "harness_error_metric": "worst functional error / its gate",
+        "harness_error_margin": 0.3772817719315346,
         "wrong_plan_won": false
       }
     }
