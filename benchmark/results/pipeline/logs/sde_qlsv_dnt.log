@@ -1,0 +1,50 @@
+$ claude --plugin-dir /home/user/Autonumerics --settings /home/user/Autonumerics/benchmark/results/pipeline/logs/sde_qlsv_dnt.settings.json -p /conductor workspace/sde_qlsv_dnt/problem.md --dangerously-skip-permissions
+
+Permission deny rule (benchmark/results/pipeline/logs/sde_qlsv_dnt.settings.json): Write(./benchmark/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(./benchmark/**) instead (Edit rules cover all file-editing tools).
+The formulator is running in the background. I'm waiting for it to finish before the next step.
+
+Both solvers are running in the background. I'm waiting for them to finish before dispatching the evaluators.
+
+Plan 2's evaluator is running. Plan 1's solver is still running.
+
+Both evaluators are running. I'm waiting for them to finish.
+
+Plan 1 scored 7 and is not certified. I'm waiting for plan 2's evaluator.
+
+Both cycle-2 solvers are running. I'm waiting for them.
+
+Plan 2's solver hash is unchanged, and its cycle-2 evaluator is running. Plan 1's solver is still running.
+
+Both cycle-2 evaluators are running. I'm waiting for them to finish.
+
+Plan 2 is stopped at 7. I'm waiting on plan 1's cycle-2 evaluator.
+
+The evaluator hasn't reported yet. The metrics are still the cycle-1 values. I'm waiting for its completion notification.
+
+The pipeline finished (`phase: done`), but no plan certified. Both plans score 7/10 with `self_convergence` provenance, and the three no-touch probabilities were never graded against a reference.
+
+**Best plan:** `2-euler-maruyama-drift-implicit`. It ties with plan 1 on score and provenance, and ranks first on quality index (0.692 vs 0.538), cost (61 s vs 77 s) and using the supplied Brownian increments directly.
+
+**Solver values** (400k paths, dt=0.002, seed 42), for S0 = 75 / 100 / 125:
+
+| Plan | no_touch_S75 | no_touch_S100 | no_touch_S125 |
+|---|---|---|---|
+| 2 (drift-implicit) | 0.93383 | 0.91433 | 0.59207 |
+| 1 (Bessel) | 0.93392 | 0.91464 | 0.59236 |
+
+The two independent schemes agree to about 0.05%. At ρ=0 both match the exact series within Monte Carlo error. At ρ=−0.36, moving from dt=0.002 to 0.0005 changes the values by at most 0.13%. These are solver-side checks, not kernel evidence.
+
+**Why 7 and not higher:**
+- The kernel had no reference for S, so scoring rests on self-convergence alone.
+- It does not read the three no-touch probabilities, which are the real grade. The 2-D Kolmogorov reference at ρ=−0.36 was never run, so the 0.8% criterion is unverified.
+- The spec's report-only `variance_nonnegative` check fails under full truncation (18.5% of V_T are negative). It still sets `invariants_ok: false` and binds the score at 7.
+- The Dynkin check could not run: the finest ladder level needs 12.8 GB against a 12 GB budget.
+
+**Other gaps:**
+- Both plans are in the same Euler-Maruyama family, so the second circularity break could not be earned. I recorded `single_family_pool: true`.
+- Plan 2's final gate raised a `state_clip` warning on line 47 of `solver.py`.
+- The ambiguous R36 requirement is carried into the report: the formulator picked |p_400k − p_100k| ≤ 2·√(se₄₀₀² + se₁₀₀²) as the path-count bar.
+
+Both plans hit the plateau stop after 2 cycles.
+
+Everything is in `workspace/sde_qlsv_dnt/`; `REPORT.md` has the full detail.

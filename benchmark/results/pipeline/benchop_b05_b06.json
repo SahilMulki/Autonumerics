@@ -1,0 +1,409 @@
+{
+  "config": {
+    "generated_at": "2026-10-26 18:37",
+    "claude_version": "2.1.310 (Claude Code)",
+    "command_template": "claude --plugin-dir . -p \"/conductor workspace/{slug}/problem.md\"",
+    "timeout_seconds": 5400,
+    "verify_sandbox": true,
+    "solver_timeout_s": 1800,
+    "mem_mb": 4096,
+    "work_precision": true,
+    "conductor_env": {
+      "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"
+    },
+    "n_selected": 2,
+    "agent_file_hashes": {
+      "agents/README.md": "6076499cfa2b0f77",
+      "agents/evaluator-pde.md": "eee0938465067a45",
+      "agents/evaluator-sde.md": "4cadbaffa517dd62",
+      "agents/formulator.md": "31db9b1f08766c09",
+      "agents/plan-creator-pde.md": "155e4adf193cabf5",
+      "agents/plan-creator-sde.md": "06223a6f34a19eda",
+      "agents/solver-pde.md": "26f24e1a637da3a2",
+      "agents/solver-sde.md": "7afeac0623945b35",
+      "commands/conductor.md": "a963662649415a3b",
+      "references/pde_manual.md": "a0a067e8c9ec064c",
+      "references/project_manual.md": "03af2d925c7c9607",
+      "references/sde_manual.md": "3db7a0d79747d975",
+      "references/verification_manual.md": "b69892bfe34c2fcb",
+      "verifylib/README.md": "e19e0a15a17b8e3b",
+      "verifylib/__init__.py": "cb5f54774244b3dc",
+      "verifylib/audit.py": "b4482efefe598f99",
+      "verifylib/cli.py": "acdadf62239e8a5a",
+      "verifylib/findings.py": "b9c187bb071f2f96",
+      "verifylib/gate.py": "093fb4251c946b51",
+      "verifylib/leakage.py": "31cbb56e5add04ec",
+      "verifylib/operator.py": "822873215b566841",
+      "verifylib/ranking.py": "f1916756812359fc",
+      "verifylib/reference.py": "bf3c9aa449e137fc",
+      "verifylib/review.py": "cf9dbbe762bd5185",
+      "verifylib/schema.py": "c4246d60c9a4a46d",
+      "verifylib/kernel/__init__.py": "195c01b2e40e23eb",
+      "verifylib/kernel/agreement.py": "6add76182df1660b",
+      "verifylib/kernel/degenerate.py": "75385cee18b44bad",
+      "verifylib/kernel/driver.py": "1cc67dccb811a7eb",
+      "verifylib/kernel/functionals.py": "7703afaae4b56c7d",
+      "verifylib/kernel/invariants.py": "0ec0b74069c02fdb",
+      "verifylib/kernel/ladder.py": "645a7eacda6206f9",
+      "verifylib/kernel/metrics.py": "938c7d421393535e",
+      "verifylib/kernel/mms.py": "ffe549b3384df506",
+      "verifylib/kernel/plan_meta.py": "6cc14e1f09d87c73",
+      "verifylib/kernel/residual.py": "eaf6951083a12e80",
+      "verifylib/kernel/richardson.py": "a878383a079a31f4",
+      "verifylib/kernel/sandbox.py": "57dc799479a368cb",
+      "verifylib/kernel/schema_bridge.py": "2d291842a5218d6a",
+      "verifylib/kernel/score.py": "004e2351c6535d49",
+      "verifylib/kernel/temporal.py": "f2dfedb9593d4530",
+      "verifylib/kernel/sde/__init__.py": "d5048e1182909dc6",
+      "verifylib/kernel/sde/constraints.py": "566e2eec35b9711c",
+      "verifylib/kernel/sde/crn.py": "8b167cceb1f26c5d",
+      "verifylib/kernel/sde/driver.py": "9fb3dbe7e4c59f87",
+      "verifylib/kernel/sde/dynkin.py": "1abe385fab9fe810",
+      "verifylib/kernel/sde/laws.py": "d13c89966bdee68a",
+      "verifylib/kernel/sde/surrogates.py": "7c7b5ec947f19861"
+    },
+    "invocation_seconds": 2318.4
+  },
+  "results": [
+    {
+      "id": "B05",
+      "slug": "sde_qlsv_dnt",
+      "type": "sde",
+      "tier": 3,
+      "family": "qlsv_barrier",
+      "title": "Quadratic local-stochastic-volatility double-no-touch",
+      "challenge": "The same continuously monitored corridor, with a local volatility quadratic in S. The diffusion is superlinear, so the Lamperti transform that makes a Brownian bridge valid is no longer the logarithm, and the obvious explicit step walks the transformed variable through its boundary.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 1977.3,
+        "wall_clock_seconds": 1977.3,
+        "started_at": "2026-10-26T18:37:26",
+        "ended_at": "2026-10-26T19:10:23",
+        "log": "benchmark/results/pipeline/logs/sde_qlsv_dnt.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "2-euler-maruyama-drift-implicit",
+        "best_score": 7,
+        "n_plans": 2,
+        "total_iters": 4,
+        "plans": {
+          "1-euler-maruyama-bessel": {
+            "iter": 2,
+            "score": 7,
+            "one_sentence": "Full-truncation EM for V, exact Bessel-3 step for R=1/(c S), Brownian-bridge barrier weights."
+          },
+          "2-euler-maruyama-drift-implicit": {
+            "iter": 2,
+            "score": 7,
+            "one_sentence": "Full-truncation EM for V, drift-implicit positive-root step for R=1/(c S) using supplied dW, Brownian-bridge barrier weights."
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 400000,
+          "dt": 0.002,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 69.09246
+        },
+        "functional_errs": {
+          "no_touch_S75": 3.35459904256886e-05,
+          "no_touch_S100": 0.0005101370702222405,
+          "no_touch_S125": 0.0015487134573734678
+        },
+        "functional_abs_errs": {
+          "no_touch_S75": 3.132527615523628e-05,
+          "no_touch_S100": 0.00046667295346647375,
+          "no_touch_S125": 0.0009183608494921502
+        },
+        "functional_tol": 0.008,
+        "functional_tol_used": {
+          "no_touch_S75": 0.008,
+          "no_touch_S100": 0.008,
+          "no_touch_S125": 0.008
+        },
+        "worst_functional_rel_err": 0.0015487134573734678,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 400000,
+          "num_paths_coarse": 100000,
+          "dt": 0.002,
+          "band_factor": 3.0,
+          "values": {
+            "no_touch_S75": {
+              "graded": 0.9338322283864092,
+              "coarse": 0.9342064714439697,
+              "delta": 0.00037424305756050824,
+              "band": 0.022411221674646098,
+              "moved": true,
+              "consistent": true
+            },
+            "no_touch_S100": {
+              "graded": 0.9143324677229075,
+              "coarse": 0.9137238111678802,
+              "delta": 0.0006086565550273981,
+              "band": 0.021955179376232977,
+              "moved": true,
+              "consistent": true
+            },
+            "no_touch_S125": {
+              "graded": 0.5920647020404138,
+              "coarse": 0.5910682084946616,
+              "delta": 0.000996493545752264,
+              "band": 0.014231593509357744,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.0032291890191810226,
+          "solve_s": 16.7578,
+          "wall_s": 16.9,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 100000,
+              "dt": 0.002,
+              "rel_err": 0.0032291890191810226,
+              "solve_s": 16.7578,
+              "wall_s": 16.9,
+              "graded": false
+            },
+            {
+              "num_paths": 400000,
+              "dt": 0.002,
+              "rel_err": 0.0015487134573734678,
+              "solve_s": 69.09246,
+              "wall_s": 69.24,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace/sde_qlsv_dnt/plans/2-euler-maruyama-drift-implicit"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 7,
+        "provenance": "self_convergence",
+        "certified": false,
+        "tier": "C",
+        "bound_by": "rubric",
+        "reason": "the Richardson-extrapolated moments are unstable, or Dynkin failed",
+        "agent_cap": null
+      },
+      "verdict": "UNDERCLAIM",
+      "harness_by_plan": {
+        "plans": {
+          "1-euler-maruyama-bessel": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "no_touch_S75": 0.00012288567504200305,
+                "no_touch_S100": 0.00017472830246717535,
+                "no_touch_S125": 0.0010517045378676947
+              },
+              "functional_abs_errs": {
+                "no_touch_S75": 0.00011475075433353688,
+                "no_touch_S100": 0.00015984130094881532,
+                "no_touch_S125": 0.0006236429781200092
+              },
+              "functional_tol": 0.008,
+              "functional_tol_used": {
+                "no_touch_S75": 0.008,
+                "no_touch_S100": 0.008,
+                "no_touch_S125": 0.008
+              },
+              "worst_functional_rel_err": 0.0010517045378676947,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 400000,
+                "num_paths_coarse": 100000,
+                "dt": 0.002,
+                "band_factor": 3.0,
+                "values": {
+                  "no_touch_S75": {
+                    "graded": 0.9339156538645875,
+                    "coarse": 0.9335435715703716,
+                    "delta": 0.0003720822942159252,
+                    "band": 0.022411221674646098,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "no_touch_S100": {
+                    "graded": 0.9146392993754252,
+                    "coarse": 0.9131203525888045,
+                    "delta": 0.0015189467866206785,
+                    "band": 0.021955179376232977,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "no_touch_S125": {
+                    "graded": 0.592359419911786,
+                    "coarse": 0.5920612217993279,
+                    "delta": 0.00029819811245812566,
+                    "band": 0.014231593509357744,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.0018351439271447612,
+                "solve_s": 17.911453,
+                "wall_s": 18.08,
+                "level_ignored": false
+              }
+            },
+            "kernel": {
+              "score": 7.0,
+              "certified": false,
+              "provenance": "self_convergence",
+              "estimated_rel_error": 0.017,
+              "invariant_max_drift": 0.1857,
+              "solve_time_s": 77.379,
+              "solver_sha256": "7806bfab683e7f222965119663b1aa8d77539e8367e41c0dd44bbe4bbb5a7440"
+            },
+            "is_winner": false,
+            "harness_error": 0.13146306723346182,
+            "harness_error_margin": 0.03629209063335033,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 7,
+              "provenance": "self_convergence",
+              "certified": false,
+              "tier": "C",
+              "bound_by": "rubric",
+              "reason": "the Richardson-extrapolated moments are unstable, or Dynkin failed",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "2-euler-maruyama-drift-implicit": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "no_touch_S75": 3.35459904256886e-05,
+                "no_touch_S100": 0.0005101370702222405,
+                "no_touch_S125": 0.0015487134573734678
+              },
+              "functional_abs_errs": {
+                "no_touch_S75": 3.132527615523628e-05,
+                "no_touch_S100": 0.00046667295346647375,
+                "no_touch_S125": 0.0009183608494921502
+              },
+              "functional_tol": 0.008,
+              "functional_tol_used": {
+                "no_touch_S75": 0.008,
+                "no_touch_S100": 0.008,
+                "no_touch_S125": 0.008
+              },
+              "worst_functional_rel_err": 0.0015487134573734678,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 400000,
+                "num_paths_coarse": 100000,
+                "dt": 0.002,
+                "band_factor": 3.0,
+                "values": {
+                  "no_touch_S75": {
+                    "graded": 0.9338322283864092,
+                    "coarse": 0.9342064714439697,
+                    "delta": 0.00037424305756050824,
+                    "band": 0.022411221674646098,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "no_touch_S100": {
+                    "graded": 0.9143324677229075,
+                    "coarse": 0.9137238111678802,
+                    "delta": 0.0006086565550273981,
+                    "band": 0.021955179376232977,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "no_touch_S125": {
+                    "graded": 0.5920647020404138,
+                    "coarse": 0.5910682084946616,
+                    "delta": 0.000996493545752264,
+                    "band": 0.014231593509357744,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.0032291890191810226,
+                "solve_s": 16.7578,
+                "wall_s": 16.9,
+                "level_ignored": false
+              }
+            },
+            "kernel": {
+              "score": 7.0,
+              "certified": false,
+              "provenance": "self_convergence",
+              "estimated_rel_error": 0.017,
+              "invariant_max_drift": 0.1846,
+              "solve_time_s": 61.441,
+              "solver_sha256": "a0565256f96e62ff7ef6c52679ac9d024379ab829bba73dc61afb5c60459e530"
+            },
+            "is_winner": true,
+            "harness_error": 0.19358918217168347,
+            "harness_error_margin": 0.12127787724702055,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 7,
+              "provenance": "self_convergence",
+              "certified": false,
+              "tier": "C",
+              "bound_by": "rubric",
+              "reason": "the Richardson-extrapolated moments are unstable, or Dynkin failed",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          }
+        },
+        "winner": "2-euler-maruyama-drift-implicit",
+        "best_plan_by_harness": "1-euler-maruyama-bessel",
+        "best_harness_err": 0.13146306723346182,
+        "winner_harness_err": 0.19358918217168347,
+        "harness_error_metric": "worst functional error / its gate",
+        "harness_error_margin": 0.12127787724702055,
+        "wrong_plan_won": false
+      }
+    }
+  ]
+}
