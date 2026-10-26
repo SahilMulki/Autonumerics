@@ -1,0 +1,239 @@
+{
+  "id": "sde_heston_dnt_hivar",
+  "equation_type": "SDE",
+  "sde_family": "heston_stochastic_volatility",
+  "state_dimension": 2,
+  "noise_dimension": 2,
+  "noise_structure": "multiplicative",
+  "linear": false,
+  "stiff": false,
+  "equation": "dS = sqrt(V) * S dW1 ;  dV = kappa*(eta - V) dt + sigma*sqrt(V) dW2 ;  d<W1,W2>_t = rho dt ;  S(0) = S0, V(0) = V0 ;  zero rate (no S drift, no discounting)",
+  "parameters": {
+    "X_0": 100.0,
+    "Y_0": 0.164,
+    "kappa": 2.58,
+    "eta": 0.043,
+    "sigma": 1.0,
+    "rho": -0.36,
+    "r": 0.0,
+    "barrier_lo": 50.0,
+    "barrier_hi": 150.0,
+    "spot_75": 75.0,
+    "spot_100": 100.0,
+    "spot_125": 125.0
+  },
+  "parameter_notes": "State components: X[:, 0] = S (spot), X[:, 1] = V (variance). X_0 = S0 = 100 is the spot whose terminal states are returned in terminal_paths; the double-no-touch functional is reported from each of spot_75, spot_100, spot_125. Y_0 = V(0) = 0.164. sigma (vol of variance) = 1.0, read from 'sqrt(V) dW2' with unit coefficient and stated explicitly as 'sigma^2 = 1'. Feller ratio 2*kappa*eta/sigma^2 = 0.22188 < 1: V attains 0.",
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": false,
+  "milstein_ineligible_reason": "levy_area",
+  "milstein_ineligible_note": "Two correlated noise channels drive S and V, and the S diffusion sqrt(V)*S depends on V, so the multi-dimensional Milstein cross term needs the Levy area of (W1, W2), which cannot be sampled from the increments alone. A scalar Milstein correction applied to the V equation ALONE (V is driven by the single combined channel W2 = rho*Z1 + sqrt(1-rho^2)*Z2, correction (sigma^2/4)*(dW2^2 - dt)) is legitimate; a plan doing that should declare scheme_family 'euler_maruyama' (or 'log_euler') with a note, or declare levy_area_treatment if it claims the 'milstein' family.",
+  "diffusion_derivative": "Matrix-valued, two channels: G = [[sqrt(V)*S, 0], [sigma*rho*sqrt(V), sigma*sqrt(1-rho^2)*sqrt(V)]] against independent channels (Z1, Z2). dG_V/dV along the V channel = sigma/(2*sqrt(V)) (CIR); not used, Milstein ineligible (levy_area).",
+  "milstein_correction": null,
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 2,
+    "mean_expression": [
+      "X_0 + 0.0*t",
+      "eta + (Y_0 - eta)*np.exp(-kappa*t)"
+    ],
+    "variance_expression": [
+      "X_0**2*(np.exp(kappa*eta*(((-(2*rho*sigma - kappa) - np.sqrt((2*rho*sigma - kappa)**2 - 2*sigma**2))/sigma**2)*t - (2/sigma**2)*np.log((1 - (((-(2*rho*sigma - kappa) - np.sqrt((2*rho*sigma - kappa)**2 - 2*sigma**2))/sigma**2)/((-(2*rho*sigma - kappa) + np.sqrt((2*rho*sigma - kappa)**2 - 2*sigma**2))/sigma**2))*np.exp(-np.sqrt((2*rho*sigma - kappa)**2 - 2*sigma**2)*t))/(1 - (((-(2*rho*sigma - kappa) - np.sqrt((2*rho*sigma - kappa)**2 - 2*sigma**2))/sigma**2)/((-(2*rho*sigma - kappa) + np.sqrt((2*rho*sigma - kappa)**2 - 2*sigma**2))/sigma**2))))) + Y_0*((-(2*rho*sigma - kappa) - np.sqrt((2*rho*sigma - kappa)**2 - 2*sigma**2))/sigma**2)*(1 - np.exp(-np.sqrt((2*rho*sigma - kappa)**2 - 2*sigma**2)*t))/(1 - (((-(2*rho*sigma - kappa) - np.sqrt((2*rho*sigma - kappa)**2 - 2*sigma**2))/sigma**2)/((-(2*rho*sigma - kappa) + np.sqrt((2*rho*sigma - kappa)**2 - 2*sigma**2))/sigma**2))*np.exp(-np.sqrt((2*rho*sigma - kappa)**2 - 2*sigma**2)*t))) - 1)",
+      "(sigma**2/kappa)*(Y_0*(np.exp(-kappa*t) - np.exp(-2*kappa*t)) + 0.5*eta*(1 - np.exp(-kappa*t))**2)"
+    ],
+    "derivation": "Component 0 (S): with r = 0, S is a true martingale (Heston, rho <= 0), so E[S_t] = S0. E[S_t^2] = S0^2 * exp(A(t) + B(t)*V0) by the affine transform of the Heston model at exponent omega = 2: B' = 1 + (2*rho*sigma - kappa)*B + (sigma^2/2)*B^2, A' = kappa*eta*B, A(0) = B(0) = 0. The discriminant (2*rho*sigma-kappa)^2 - 2*sigma^2 = 8.89 > 0, so B converges to the smaller root and the second moment does not explode. Closed form with b = 2*rho*sigma - kappa, d = sqrt(b^2 - 2*sigma^2), r_m = (-b - d)/sigma^2, r_p = (-b + d)/sigma^2, g = r_m/r_p: B = r_m*(1 - e^{-dt})/(1 - g e^{-dt}), A = kappa*eta*(r_m*t - (2/sigma^2)*log((1 - g e^{-dt})/(1 - g))). Var(S_t) = E[S_t^2] - S0^2. Component 1 (V): CIR mean and variance (sde_manual.md family 6, theta -> eta, X_0 -> Y_0), unaffected by the Feller violation. Values at T = 1: E[S] = 100, Var(S) = 768.581, E[V] = 0.0521687, Var(V) = 0.0115699. Cross-checked against verification.moment_ode (agreement ~1e-14) and against a 200 000-path log-Euler / full-truncation simulation at dt = 0.002 (Var(S) 768.41, E[V+] 0.05227, Var(V+) 0.01159)."
+  },
+  "drift_expression": [
+    "0.0*X[:, 0]",
+    "kappa*(eta - np.maximum(X[:, 1], 0.0))"
+  ],
+  "diffusion_expression": "Matrix-valued against two independent channels (Z1, Z2): G = [[sqrt(V)*S, 0], [sigma*rho*sqrt(V), sigma*sqrt(1 - rho**2)*sqrt(V)]], V = X[:, 1] taken as max(V, 0) inside the square root. Machine-readable form in verification.generator.diffusion_matrix.",
+  "diffusion_matrix_expression": "[[np.sqrt(np.maximum(X[:, 1], 0.0))*X[:, 0], 0], [sigma*rho*np.sqrt(np.maximum(X[:, 1], 0.0)), sigma*np.sqrt(1 - rho**2)*np.sqrt(np.maximum(X[:, 1], 0.0))]]",
+  "diffusion_derivative_expression": null,
+  "functionals_definition": {
+    "no_touch_S75": "P( 50 < S_t < 150 for all t in [0, 1] | S(0) = 75,  V(0) = 0.164 )",
+    "no_touch_S100": "P( 50 < S_t < 150 for all t in [0, 1] | S(0) = 100, V(0) = 0.164 )",
+    "no_touch_S125": "P( 50 < S_t < 150 for all t in [0, 1] | S(0) = 125, V(0) = 0.164 )",
+    "monitoring": "continuous in time. A path that crosses either barrier between two grid points and returns has knocked out. Grid-point-only monitoring biases survival HIGH by O(sqrt(dt)) and is not acceptable.",
+    "payoff": "1 at T if never touched, else 0; r = 0, so the value is the undiscounted survival probability.",
+    "shared_variance_paths": "V does not depend on S, so one set of variance paths (and one set of Brownian increments) may serve all three spots."
+  },
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.10,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 400000,
+    "num_paths_secondary": 100000,
+    "dt": 0.002,
+    "seed": 42,
+    "stability_check": null,
+    "ci_mult": 2.0,
+    "dt0": 0.008,
+    "conv_levels": 3,
+    "functionals": {
+      "no_touch_S75": {"rel_tol": 0.006, "gate": true,
+                        "note": "within 0.6% relative of the reference value; read from the returned functionals dict"},
+      "no_touch_S100": {"rel_tol": 0.006, "gate": true,
+                         "note": "within 0.6% relative of the reference value; read from the returned functionals dict"},
+      "no_touch_S125": {"rel_tol": 0.006, "gate": true,
+                         "note": "within 0.6% relative of the reference value; nearest the upper barrier, lowest survival, the most discriminating of the three"}
+    },
+    "two_path_count_check": {
+      "num_paths": [400000, 100000],
+      "same_dt_T_seed": true,
+      "must_differ": true,
+      "must_agree_within_sampling_noise": true,
+      "note": "solve_sde is called at num_paths=400000 and again at num_paths=100000 with identical dt, T, seed. Each functional must differ between the two calls (a constant is not an estimate) and agree within the sampling noise the two counts imply (binomial s.e. sqrt(p(1-p)/M) at each M, or the s.e. of whatever variance-reduced estimator is used)."
+    },
+    "solver_contract": "solve_sde(num_paths, dt, T, seed=42) -> {terminal_paths (num_paths, 2) [S, V] at T for S0 = 100 (unconditional on knockout), empirical_mean [2], empirical_variance [2] (ddof=1), functionals {no_touch_S75, no_touch_S100, no_touch_S125}}. Nt = max(1, round(T/dt)), dt = T/Nt. np.random.default_rng(seed). numpy + stdlib only. No work at import."
+  },
+  "verification": {
+    "expected_provenance": "analytic",
+    "moment_ode": {
+      "state": ["mV", "m2V", "B", "A"],
+      "rhs": [
+        "kappa*(eta - mV)",
+        "2*kappa*eta*mV - 2*kappa*m2V + sigma**2*mV",
+        "1 + (2*rho*sigma - kappa)*B + 0.5*sigma**2*B**2",
+        "kappa*eta*B"
+      ],
+      "initial": ["Y_0", "Y_0**2", "0.0", "0.0"],
+      "closes_exactly": true,
+      "mean_from": ["X_0 + 0.0*mV", "mV"],
+      "variance_from": ["X_0**2*(np.exp(A + B*Y_0) - 1)", "m2V - mV**2"],
+      "note": "mV, m2V: exact first and second moment ODEs of the CIR variance (affine drift, g^2 = sigma^2 V affine). B, A: the exact Riccati system of the Heston affine transform at omega = 2, E[S_t^2] = S0^2 exp(A(t) + B(t) V0) -- not a closure. Integrated to 1e-12 this reproduces analytic_moments to ~1e-14."
+    },
+    "kolmogorov": null,
+    "kolmogorov_note": "The kernel's Kolmogorov route is scalar; the state here is 2-D and the moment ODE already gives exact moments. The 2-D backward Kolmogorov PDE for the QUANTITY OF INTEREST is recorded under functional_reference_pde for an evaluator who wants a deterministic cross-check of the survival probabilities.",
+    "stationary_density": {"ergodic": false, "note": "(S, V) jointly is not ergodic (S is a martingale with growing variance); V alone is ergodic (Gamma(2 kappa eta/sigma^2, sigma^2/(2 kappa)) invariant law) but the transient at T = 1 is what is graded, and V's transient moments are exact anyway."},
+    "functional_reference_pde": {
+      "consumed_by_kernel": false,
+      "description": "u(S, v, tau) = P(no touch on the remaining horizon tau | S, v). It solves the backward Kolmogorov equation on the corridor with absorbing barriers; no_touch_S{75,100,125} = u(S0, V0 = 0.164, tau = T = 1).",
+      "spatial_variables": ["S", "v"],
+      "domain": {"S": [50.0, 150.0], "v": [0.0, "v_max (truncation, e.g. 2.0-3.0; check insensitivity by widening 1.5x)"]},
+      "initial_condition": "u(S, v, 0) = 1 for 50 < S < 150",
+      "boundary_conditions": "u = 0 at S = 50 and S = 150 (absorbing, Dirichlet); at v = 0 the equation degenerates to u_tau = kappa*eta*u_v (outflow, no condition imposed); at v = v_max linear/natural u_vv = 0",
+      "operator": {
+        "fields": ["u"],
+        "terms": {
+          "time_derivative": "u_t",
+          "diffusion_S": "-0.5*v*S**2*u_SS",
+          "cross": "-rho*sigma*v*S*u_Sv",
+          "diffusion_v": "-0.5*sigma**2*v*u_vv",
+          "drift_v": "-kappa*(eta - v)*u_v"
+        },
+        "source": "0",
+        "note": "t here is time-to-maturity tau. Corner singularity at (S = barrier, tau -> 0) from the 1-to-0 jump; a log-S grid and Rannacher start are advisable."
+      }
+    },
+    "generator": {
+      "drift": [
+        "0.0*X[:, 0]",
+        "kappa*(eta - np.maximum(X[:, 1], 0.0))"
+      ],
+      "diffusion_matrix": [
+        ["np.sqrt(np.maximum(X[:, 1], 0.0))*X[:, 0]", "0.0*X[:, 0]"],
+        ["sigma*rho*np.sqrt(np.maximum(X[:, 1], 0.0))", "sigma*np.sqrt(1.0 - rho**2)*np.sqrt(np.maximum(X[:, 1], 0.0))"]
+      ],
+      "note": "G against independent channels (Z1, Z2); correlation enters as the Cholesky row [rho, sqrt(1-rho^2)] scaled by sigma*sqrt(V). Check: phi = S*V gives L phi = kappa*(eta - V)*S + rho*sigma*V*S."
+    },
+    "expected_weak_order": 1.0,
+    "expected_strong_order": 0.5,
+    "dynkin_test_functions": [
+      "X[:, 1]",
+      "X[:, 0]*X[:, 1]",
+      "np.tanh((X[:, 0] - 100.0)/25.0)"
+    ],
+    "dynkin_budget_note": "At the graded num_paths = 400000 and dt = 0.002, the Dynkin ladder's finest level (dt/4, 2000 steps, 2 channels) needs a 12.8 GB increment array, above the kernel's 12 GB budget, so the kernel is expected to report dynkin_ok 'unavailable' (budget refusal). That is a correct refusal, not a solver defect; num_paths is not reduced here because 400000 is the stated grading count.",
+    "terminal_law": null,
+    "terminal_law_note": "Not declared. S_T has no closed-form law. V_T is CIR (scaled noncentral chi-square, df = 4 kappa eta/sigma^2 = 0.444) but with the Feller condition violated a correct full-truncation scheme leaves ~18% of raw V paths negative / piled near 0 at dt = 0.002, and the standardized KS test resolves that at 400000 paths; problem.md explicitly leaves the zero-boundary treatment to the scheme, so a shape gate on V would grade a choice the statement does not constrain.",
+    "constraints": [
+      {"name": "finite", "expr": "np.isfinite(X)", "gate": true,
+       "note": "every returned terminal state (S and V) finite"},
+      {"name": "spot_positive", "expr": "X[:, 0] > 0", "gate": true,
+       "note": "S is a stochastic exponential and stays strictly positive; any of Euler, log-Euler or exact-S schemes keeps it positive at dt = 0.002"},
+      {"name": "martingale", "expr": "X[..., 0]", "gate": false,
+       "note": "r = 0, rho <= 0: S is a true martingale, E[S_T] = S0 = 100 within ci_mult standard errors"}
+    ],
+    "invariants": [
+      {"name": "variance_nonnegative_report", "gate": false,
+       "note": "Diagnostic only, no expr and no tol, deliberately not checked: the exact V stays >= 0, but problem.md leaves the zero-boundary treatment to the scheme (full truncation leaves raw V-hat negative on ~18% of paths at dt = 0.002). A plan should SAY in SOLUTION.md which treatment it uses and whether terminal_paths[:, 1] reports V-hat or max(V-hat, 0); the moments differ by <0.3% between the two."},
+      {"name": "no_touch_monotone_structure", "gate": false,
+       "note": "Diagnostic only, not checked by the kernel: each no_touch value is a probability in [0, 1], and grid-only monitoring biases every one of them HIGH."}
+    ],
+    "qoi_verification_plan": {
+      "consumed_by_kernel": false,
+      "summary": "The graded quantity is the three continuous-monitoring no-touch probabilities. No closed form exists (Heston, stochastic vol). Evidence available to an evaluator: (1) Brownian-bridge consistency -- on each step, conditional on the endpoints in log S and frozen variance, the crossing probability of barrier b is exp(-2*ln(b/x_n)*ln(b/x_{n+1})/(V_n*dt)); a correct continuous-monitoring estimator removes the O(sqrt(dt)) bias, so the functional should be nearly flat in dt (compare dt and dt/2, dt/4 under CRN) while a grid-only estimator drifts upward in survival with sqrt(dt) slope; (2) the two-path-count check of evaluation_thresholds.two_path_count_check; (3) the functional_reference_pde Kolmogorov solve as an independent deterministic reference; (4) cross-plan agreement between plans of different families (e.g. bridge-corrected MC vs the PDE).",
+      "dt_sensitivity_probe": "Under CRN, |f(dt) - f(dt/4)| / f(dt/4) should be well below the 0.6% tolerance for a bridge-corrected estimator; a grid-only estimator at dt = 0.002 is biased by O(0.5826*sigma_S*sqrt(dt)) in barrier shift, i.e. several percent here."
+    },
+    "invariants_note": "Hard gates: finite (all components) and S > 0. V >= 0 is deliberately NOT gated (scheme-dependent per problem.md)."
+  },
+  "implementation_notes": "Heston SV with the Feller condition violated (2*kappa*eta = 0.22188 << sigma^2 = 1). Variance: full-truncation Euler (use V+ = max(V, 0) inside drift and sqrt) is the standard choice; reflection or a QE scheme (Andersen 2008) are alternatives; the plan must state what it does at V = 0. Spot: log-Euler, ln S_{n+1} = ln S_n - 0.5 V+ dt + sqrt(V+) dW1, keeps S > 0 and is exactly martingale-preserving; correlation via Cholesky dW2 = rho dW1 + sqrt(1-rho^2) dZ. THE CORE DIFFICULTY is continuous barrier monitoring: checking 50 < S < 150 only at grid points overstates survival with O(sqrt(dt)) error, which more steps cannot fix affordably. Use a Brownian-bridge crossing correction per step in log space with frozen variance V+_n: p_cross_b = exp(-2 * ln(b/S_n) * ln(b/S_{n+1}) / (V+_n * dt)) for each barrier b (when both endpoints are inside), survival weight *= (1 - p_lo)(1 - p_hi) (or draw a uniform per step and kill), and also kill on a grid-point breach. Note the bridge in ln S under frozen V carries drift -V/2, which does not change the bridge crossing probability (bridges are drift-free). Handle V+_n = 0 (no diffusion that step: crossing prob 0 if both ends inside). Weighting by survival probabilities (conditional MC) instead of a kill-draw reduces variance and is still a genuine estimate that changes with num_paths. Report the S0 = 100 run's terminal (S, V) unconditionally (whether or not knocked out). One V path set serves all three spots; S paths for the three spots differ only by the scaling S0 (log S + ln(S0)), so one log-return path set serves all three. dt = 0.002 (Nt = 500), num_paths = 400000, seed 42; then 100000. 0.6% relative tolerance on probabilities ~O(0.3-0.6): binomial s.e. at 400000 paths is ~0.08% relative for p ~ 0.5 and grows for small p, so S125 (lowest survival) is the tightest -- variance reduction (conditional bridge weights) helps. Memory: do not store (num_paths, Nt, 2) increments at 400000 x 500 x 2 x 8 = 3.2 GB if avoidable -- stream per step (draw per step from one rng in a fixed order). The dW/observables hooks of the extended contract (verification_manual.md section 18/20) should be supported with dW of shape (num_paths, Nt, 2) of INDEPENDENT standard increments (channel 0 -> W1, channel 1 -> Z, correlate inside the solver). Scoring: the graded quantity is the three functionals (benchmark); the pipeline kernel grades terminal moments against the exact moments in analytic_moments and does NOT currently read evaluation_thresholds.functionals on the SDE route, so the evaluator must check the functionals itself (see verification.qoi_verification_plan).",
+  "requirements": [
+    {"id": "R1", "kind": "equation", "quote": "Simulate the Heston system (Ito) with a zero interest rate:",
+     "status": "mapped", "spec_path": "equation, parameters.r, verification.generator, drift_expression"},
+    {"id": "R2", "kind": "equation", "quote": "dS = sqrt(V) * S dW1,                        S(0) = S0",
+     "status": "mapped", "spec_path": "equation, verification.generator.diffusion_matrix, drift_expression"},
+    {"id": "R3", "kind": "equation", "quote": "dV = 2.58 * (0.043 - V) dt + sqrt(V) dW2,    V(0) = 0.164",
+     "status": "mapped", "spec_path": "equation, parameters.kappa, parameters.eta, parameters.sigma, parameters.Y_0, verification.generator, verification.moment_ode"},
+    {"id": "R4", "kind": "parameter", "quote": "with corr(dW1, dW2) = -0.36",
+     "status": "mapped", "spec_path": "parameters.rho, noise_dimension, verification.generator.diffusion_matrix"},
+    {"id": "R5", "kind": "domain", "quote": "over the interval [0, 1]",
+     "status": "mapped", "spec_path": "time_interval"},
+    {"id": "R6", "kind": "other", "quote": "**The Feller condition fails**: 2*kappa*eta = 0.221880 is well below\nsigma^2 = 1, so the variance reaches zero and a scheme has to say what it does\nthere.",
+     "status": "mapped", "spec_path": "parameters.sigma, implementation_notes, verification.invariants"},
+    {"id": "R7", "kind": "other", "quote": "The initial variance is well above the long-run level 0.043, so the\nvariance decays toward it across the interval.",
+     "status": "mapped", "spec_path": "parameters.Y_0, parameters.eta, analytic_moments.mean_expression"},
+    {"id": "R8", "kind": "evaluation", "quote": "The contract pays **1 at T if S has stayed strictly inside the corridor\n(50, 150) for the whole interval**, and 0 if it ever touched or crossed either\nbarrier.",
+     "status": "mapped", "spec_path": "parameters.barrier_lo, parameters.barrier_hi, functionals_definition"},
+    {"id": "R9", "kind": "method", "quote": "Monitoring is **continuous in time, not once per step**: a path that\nleaves the corridor between two time points and returns has still knocked out.",
+     "status": "mapped", "spec_path": "functionals_definition.monitoring, implementation_notes, verification.qoi_verification_plan"},
+    {"id": "R10", "kind": "method", "quote": "Deciding the barrier only at the grid points\nmisses those excursions, overstates survival, and the error it makes shrinks\nonly as sqrt(dt) -- so it cannot be fixed by taking more steps at any affordable\ncost.",
+     "status": "mapped", "spec_path": "functionals_definition.monitoring, implementation_notes, verification.qoi_verification_plan.dt_sensitivity_probe"},
+    {"id": "R11", "kind": "evaluation", "quote": "The rate is zero, so no discounting is applied and the value is exactly the\nsurvival probability.",
+     "status": "mapped", "spec_path": "parameters.r, functionals_definition.payoff"},
+    {"id": "R12", "kind": "parameter", "quote": "S0 = 75,   S0 = 100,   S0 = 125",
+     "status": "mapped", "spec_path": "parameters.spot_75, parameters.spot_100, parameters.spot_125, functionals_definition"},
+    {"id": "R13", "kind": "evaluation", "quote": "as `no_touch_S75`, `no_touch_S100` and `no_touch_S125` in the `functionals`\ndict.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.functionals"},
+    {"id": "R14", "kind": "method", "quote": "The variance process does not depend on S, so one set of variance paths\nserves all three spots.",
+     "status": "mapped", "spec_path": "functionals_definition.shared_variance_paths, implementation_notes"},
+    {"id": "R15", "kind": "evaluation", "quote": "Return the terminal states (S, V) for **S0 = 100** in `terminal_paths`, using\nthe simulated value of S at T whether or not that path knocked out.",
+     "status": "mapped", "spec_path": "parameters.X_0, evaluation_thresholds.solver_contract, analytic_moments"},
+    {"id": "R16", "kind": "evaluation", "quote": "def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict",
+     "status": "mapped", "spec_path": "evaluation_thresholds.solver_contract"},
+    {"id": "R17", "kind": "evaluation", "quote": "solve_sde(num_paths=400000, dt=0.002, T=1, seed=42)",
+     "status": "mapped", "spec_path": "evaluation_thresholds.num_paths, evaluation_thresholds.dt, evaluation_thresholds.seed, time_interval.T"},
+    {"id": "R18", "kind": "evaluation", "quote": "and then again with `num_paths=100000`, everything else unchanged",
+     "status": "mapped", "spec_path": "evaluation_thresholds.num_paths_secondary, evaluation_thresholds.two_path_count_check"},
+    {"id": "R19", "kind": "evaluation", "quote": "Use the `dt` you are given (do not hardcode a different step).",
+     "status": "mapped", "spec_path": "evaluation_thresholds.dt, evaluation_thresholds.solver_contract"},
+    {"id": "R20", "kind": "evaluation", "quote": "`terminal_paths`: 2-D numpy array of shape `(num_paths, 2)` — the 2 state components (X, Y) at time T, in that column order",
+     "status": "mapped", "spec_path": "state_dimension, evaluation_thresholds.solver_contract, parameter_notes"},
+    {"id": "R21", "kind": "evaluation", "quote": "`empirical_variance`: list of floats, one per component (use `ddof=1`)",
+     "status": "mapped", "spec_path": "evaluation_thresholds.solver_contract"},
+    {"id": "R22", "kind": "evaluation", "quote": "`functionals`: a dict of scalar results, containing `\"no_touch_S75\"`, `\"no_touch_S100\"`, `\"no_touch_S125\"` — each a float",
+     "status": "mapped", "spec_path": "evaluation_thresholds.functionals, evaluation_thresholds.solver_contract"},
+    {"id": "R23", "kind": "method", "quote": "Seed all randomness with `np.random.default_rng(seed)` (not `np.random.seed`).",
+     "status": "mapped", "spec_path": "evaluation_thresholds.seed, evaluation_thresholds.solver_contract"},
+    {"id": "R24", "kind": "method", "quote": "Round the step count: `Nt = max(1, round(T / dt))`, then `dt = T / Nt`.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.solver_contract"},
+    {"id": "R25", "kind": "method", "quote": "Keep `solve_sde` importable — no work at module load outside `if __name__ == \"__main__\"`.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.solver_contract"},
+    {"id": "R26", "kind": "method", "quote": "Use the Python standard library and numpy only.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.solver_contract"},
+    {"id": "R27", "kind": "evaluation", "quote": "Scoring is independent of any self-report: this problem has no terminal-moment formula, so the quantity of interest below is the whole grade.",
+     "status": "ambiguous", "spec_path": "analytic_moments, evaluation_thresholds.functionals",
+     "note": "The external grade is the three functionals alone, and that is carried by evaluation_thresholds.functionals (gated). The clause 'no terminal-moment formula' is not literally true of the terminal moments: E[S_T] = S0, Var(S_T) via the exact Heston affine Riccati system (no moment explosion at omega = 2), and the CIR mean/variance of V_T are all exact, validated against verification.moment_ode to ~1e-14 and against a 200k-path simulation. They are declared in analytic_moments as SUPPORTING evidence for the pipeline's terminal-path checks only; they are not the graded quantity, and nothing here substitutes them for the functionals."},
+    {"id": "R28", "kind": "evaluation", "quote": "`no_touch_S75`, `no_touch_S100`, `no_touch_S125` must be within 0.6% (relative) of the reference value.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.functionals"},
+    {"id": "R29", "kind": "evaluation", "quote": "It is read from the `functionals` dict you return, and it is gated independently of the moments: reporting a number without a simulation behind it, or a simulation without the number, fails.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.functionals"},
+    {"id": "R30", "kind": "evaluation", "quote": "They must differ — two Monte-Carlo estimates taken at different sample sizes do — and they must agree to within the sampling noise the two counts imply.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.two_path_count_check"},
+    {"id": "R31", "kind": "evaluation", "quote": "A value that is identical at both counts is a constant, not an estimate, and fails.",
+     "status": "mapped", "spec_path": "evaluation_thresholds.two_path_count_check.must_differ"}
+  ]
+}

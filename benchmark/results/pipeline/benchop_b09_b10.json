@@ -1,0 +1,411 @@
+{
+  "config": {
+    "generated_at": "2026-10-26 18:38",
+    "claude_version": "2.1.310 (Claude Code)",
+    "command_template": "claude --plugin-dir . -p \"/conductor workspace/{slug}/problem.md\"",
+    "timeout_seconds": 5400,
+    "verify_sandbox": true,
+    "solver_timeout_s": 1800,
+    "mem_mb": 4096,
+    "work_precision": true,
+    "conductor_env": {
+      "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"
+    },
+    "n_selected": 2,
+    "agent_file_hashes": {
+      "agents/README.md": "6076499cfa2b0f77",
+      "agents/evaluator-pde.md": "eee0938465067a45",
+      "agents/evaluator-sde.md": "4cadbaffa517dd62",
+      "agents/formulator.md": "31db9b1f08766c09",
+      "agents/plan-creator-pde.md": "155e4adf193cabf5",
+      "agents/plan-creator-sde.md": "06223a6f34a19eda",
+      "agents/solver-pde.md": "26f24e1a637da3a2",
+      "agents/solver-sde.md": "7afeac0623945b35",
+      "commands/conductor.md": "a963662649415a3b",
+      "references/pde_manual.md": "a0a067e8c9ec064c",
+      "references/project_manual.md": "03af2d925c7c9607",
+      "references/sde_manual.md": "3db7a0d79747d975",
+      "references/verification_manual.md": "b69892bfe34c2fcb",
+      "verifylib/README.md": "e19e0a15a17b8e3b",
+      "verifylib/__init__.py": "cb5f54774244b3dc",
+      "verifylib/audit.py": "b4482efefe598f99",
+      "verifylib/cli.py": "acdadf62239e8a5a",
+      "verifylib/findings.py": "b9c187bb071f2f96",
+      "verifylib/gate.py": "093fb4251c946b51",
+      "verifylib/leakage.py": "31cbb56e5add04ec",
+      "verifylib/operator.py": "822873215b566841",
+      "verifylib/ranking.py": "f1916756812359fc",
+      "verifylib/reference.py": "bf3c9aa449e137fc",
+      "verifylib/review.py": "cf9dbbe762bd5185",
+      "verifylib/schema.py": "c4246d60c9a4a46d",
+      "verifylib/kernel/__init__.py": "195c01b2e40e23eb",
+      "verifylib/kernel/agreement.py": "6add76182df1660b",
+      "verifylib/kernel/degenerate.py": "75385cee18b44bad",
+      "verifylib/kernel/driver.py": "1cc67dccb811a7eb",
+      "verifylib/kernel/functionals.py": "7703afaae4b56c7d",
+      "verifylib/kernel/invariants.py": "0ec0b74069c02fdb",
+      "verifylib/kernel/ladder.py": "645a7eacda6206f9",
+      "verifylib/kernel/metrics.py": "938c7d421393535e",
+      "verifylib/kernel/mms.py": "ffe549b3384df506",
+      "verifylib/kernel/plan_meta.py": "6cc14e1f09d87c73",
+      "verifylib/kernel/residual.py": "eaf6951083a12e80",
+      "verifylib/kernel/richardson.py": "a878383a079a31f4",
+      "verifylib/kernel/sandbox.py": "57dc799479a368cb",
+      "verifylib/kernel/schema_bridge.py": "2d291842a5218d6a",
+      "verifylib/kernel/score.py": "004e2351c6535d49",
+      "verifylib/kernel/temporal.py": "f2dfedb9593d4530",
+      "verifylib/kernel/sde/__init__.py": "d5048e1182909dc6",
+      "verifylib/kernel/sde/constraints.py": "566e2eec35b9711c",
+      "verifylib/kernel/sde/crn.py": "8b167cceb1f26c5d",
+      "verifylib/kernel/sde/driver.py": "9fb3dbe7e4c59f87",
+      "verifylib/kernel/sde/dynkin.py": "1abe385fab9fe810",
+      "verifylib/kernel/sde/laws.py": "d13c89966bdee68a",
+      "verifylib/kernel/sde/surrogates.py": "7c7b5ec947f19861"
+    },
+    "invocation_seconds": 2015.8
+  },
+  "results": [
+    {
+      "id": "B09",
+      "slug": "sde_heston_dnt_hivar",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_barrier",
+      "title": "Heston double-no-touch, higher initial variance",
+      "challenge": "The same continuously monitored corridor started at a higher variance, so more paths reach the barriers and the per-step monitoring error a naive scheme makes is correspondingly larger.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 1694.8,
+        "wall_clock_seconds": 1694.8,
+        "started_at": "2026-10-26T18:38:06",
+        "ended_at": "2026-10-26T19:06:21",
+        "log": "benchmark/results/pipeline/logs/sde_heston_dnt_hivar.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "2-euler-maruyama-cir-milstein",
+        "best_score": 9,
+        "n_plans": 2,
+        "total_iters": 4,
+        "plans": {
+          "1-euler-maruyama": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": "Euler-Maruyama, full-truncation V, log-Euler S, Brownian-bridge continuous barrier correction, dt=0.002, 400k paths."
+          },
+          "2-euler-maruyama-cir-milstein": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": "Same as plan 1 with scalar Milstein correction on the V equation only (EM family)."
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 400000,
+          "dt": 0.002,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 50.088422
+        },
+        "functional_errs": {
+          "no_touch_S75": 0.0005024463111951667,
+          "no_touch_S100": 0.00025675679469477545,
+          "no_touch_S125": 0.0018104158716164462
+        },
+        "functional_abs_errs": {
+          "no_touch_S75": 0.0003974298677188459,
+          "no_touch_S100": 0.00022082116848565203,
+          "no_touch_S125": 0.0010825651817177873
+        },
+        "functional_tol": 0.006,
+        "functional_tol_used": {
+          "no_touch_S75": 0.006,
+          "no_touch_S100": 0.006,
+          "no_touch_S125": 0.006
+        },
+        "worst_functional_rel_err": 0.0018104158716164462,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 400000,
+          "num_paths_coarse": 100000,
+          "dt": 0.002,
+          "band_factor": 3.0,
+          "values": {
+            "no_touch_S75": {
+              "graded": 0.7913871512838765,
+              "coarse": 0.7901259213489521,
+              "delta": 0.0012612299349243905,
+              "band": 0.014237814985490836,
+              "moved": true,
+              "consistent": true
+            },
+            "no_touch_S100": {
+              "graded": 0.8602610345079412,
+              "coarse": 0.8599269264352564,
+              "delta": 0.00033410807268485776,
+              "band": 0.015480723840110202,
+              "moved": true,
+              "consistent": true
+            },
+            "no_touch_S125": {
+              "graded": 0.5968823547519497,
+              "coarse": 0.5976364636284777,
+              "delta": 0.0007541088765279369,
+              "band": 0.010763368558806016,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.0010920496737416893,
+          "solve_s": 11.9898,
+          "wall_s": 12.17,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 100000,
+              "dt": 0.002,
+              "rel_err": 0.0010920496737416893,
+              "solve_s": 11.9898,
+              "wall_s": 12.17,
+              "graded": false
+            },
+            {
+              "num_paths": 400000,
+              "dt": 0.002,
+              "rel_err": 0.0018104158716164462,
+              "solve_s": 50.088422,
+              "wall_s": 50.3,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace/sde_heston_dnt_hivar/plans/2-euler-maruyama-cir-milstein"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 9,
+        "provenance": "analytic",
+        "certified": false,
+        "tier": "A",
+        "bound_by": "rubric",
+        "reason": "every checked moment is within tolerance of the exact moments and the Monte Carlo is resolved, but the generator check could not run -- the ladder exceeded its memory budget, the generator could not be built from the declared drift and diffusion, or the observables run crashed. Exact terminal moments cannot separate a correct solve from a process that shares them (manual \u00a724's own argument), so this is everything measurable here passing without the one check that distinguishes this SDE -- uncertified, not suspect",
+        "agent_cap": null
+      },
+      "verdict": "UNDERCLAIM",
+      "harness_by_plan": {
+        "plans": {
+          "1-euler-maruyama": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "no_touch_S75": 0.0001732754702387765,
+                "no_touch_S100": 0.000668768284780417,
+                "no_touch_S125": 0.0017808014485119384
+              },
+              "functional_abs_errs": {
+                "no_touch_S75": 0.00013705911593242526,
+                "no_touch_S100": 0.0005751676183172183,
+                "no_touch_S125": 0.0010648567955772181
+              },
+              "functional_tol": 0.006,
+              "functional_tol_used": {
+                "no_touch_S75": 0.006,
+                "no_touch_S100": 0.006,
+                "no_touch_S125": 0.006
+              },
+              "worst_functional_rel_err": 0.0017808014485119384,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 400000,
+                "num_paths_coarse": 100000,
+                "dt": 0.002,
+                "band_factor": 3.0,
+                "values": {
+                  "no_touch_S75": {
+                    "graded": 0.7908526623002252,
+                    "coarse": 0.7902317121328523,
+                    "delta": 0.0006209501673729578,
+                    "band": 0.014237814985490836,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "no_touch_S100": {
+                    "graded": 0.8594650457211384,
+                    "coarse": 0.8587730697858683,
+                    "delta": 0.0006919759352700394,
+                    "band": 0.015480723840110202,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "no_touch_S125": {
+                    "graded": 0.5969000631380903,
+                    "coarse": 0.5960639939785407,
+                    "delta": 0.0008360691595495906,
+                    "band": 0.010763368558806016,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.003178992432093975,
+                "solve_s": 20.209779,
+                "wall_s": 20.42,
+                "level_ignored": false
+              }
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.008533,
+              "reference_outcome": "validated",
+              "invariant_max_drift": 0.0511,
+              "solve_time_s": 77.269,
+              "solver_sha256": "cfe3b17496d5e5c986286042bff41c2ecb03383fd2555e85481146e83bd5f0ad"
+            },
+            "is_winner": false,
+            "harness_error": 0.2968002414186564,
+            "harness_error_margin": 0.13454973466370404,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 9,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments and the Monte Carlo is resolved, but the generator check could not run -- the ladder exceeded its memory budget, the generator could not be built from the declared drift and diffusion, or the observables run crashed. Exact terminal moments cannot separate a correct solve from a process that shares them (manual \u00a724's own argument), so this is everything measurable here passing without the one check that distinguishes this SDE -- uncertified, not suspect",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "2-euler-maruyama-cir-milstein": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "no_touch_S75": 0.0005024463111951667,
+                "no_touch_S100": 0.00025675679469477545,
+                "no_touch_S125": 0.0018104158716164462
+              },
+              "functional_abs_errs": {
+                "no_touch_S75": 0.0003974298677188459,
+                "no_touch_S100": 0.00022082116848565203,
+                "no_touch_S125": 0.0010825651817177873
+              },
+              "functional_tol": 0.006,
+              "functional_tol_used": {
+                "no_touch_S75": 0.006,
+                "no_touch_S100": 0.006,
+                "no_touch_S125": 0.006
+              },
+              "worst_functional_rel_err": 0.0018104158716164462,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 400000,
+                "num_paths_coarse": 100000,
+                "dt": 0.002,
+                "band_factor": 3.0,
+                "values": {
+                  "no_touch_S75": {
+                    "graded": 0.7913871512838765,
+                    "coarse": 0.7901259213489521,
+                    "delta": 0.0012612299349243905,
+                    "band": 0.014237814985490836,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "no_touch_S100": {
+                    "graded": 0.8602610345079412,
+                    "coarse": 0.8599269264352564,
+                    "delta": 0.00033410807268485776,
+                    "band": 0.015480723840110202,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "no_touch_S125": {
+                    "graded": 0.5968823547519497,
+                    "coarse": 0.5976364636284777,
+                    "delta": 0.0007541088765279369,
+                    "band": 0.010763368558806016,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.0010920496737416893,
+                "solve_s": 11.9898,
+                "wall_s": 12.17,
+                "level_ignored": false
+              }
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.001805,
+              "reference_outcome": "validated",
+              "invariant_max_drift": 0.0715,
+              "solve_time_s": 51.048,
+              "solver_sha256": "8beec07daa93faa16405d436393485aa36e8d54f65e2277bc9d6a2ab9277ba12"
+            },
+            "is_winner": true,
+            "harness_error": 0.30173597860274104,
+            "harness_error_margin": 0.12136156360970385,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 9,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments and the Monte Carlo is resolved, but the generator check could not run -- the ladder exceeded its memory budget, the generator could not be built from the declared drift and diffusion, or the observables run crashed. Exact terminal moments cannot separate a correct solve from a process that shares them (manual \u00a724's own argument), so this is everything measurable here passing without the one check that distinguishes this SDE -- uncertified, not suspect",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          }
+        },
+        "winner": "2-euler-maruyama-cir-milstein",
+        "best_plan_by_harness": "1-euler-maruyama",
+        "best_harness_err": 0.2968002414186564,
+        "winner_harness_err": 0.30173597860274104,
+        "harness_error_metric": "worst functional error / its gate",
+        "harness_error_margin": 0.13454973466370404,
+        "wrong_plan_won": false
+      }
+    }
+  ]
+}

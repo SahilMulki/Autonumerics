@@ -1,0 +1,18 @@
+$ claude --plugin-dir /home/user/Autonumerics --settings /home/user/Autonumerics/benchmark/results/pipeline/logs/sde_heston_dnt_hivar.settings.json -p /conductor workspace/sde_heston_dnt_hivar/problem.md --dangerously-skip-permissions
+
+Permission deny rule (benchmark/results/pipeline/logs/sde_heston_dnt_hivar.settings.json): Write(./benchmark/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(./benchmark/**) instead (Edit rules cover all file-editing tools).
+The pipeline finished (`phase: done`), but neither plan certified, so no plan won outright. Both scored 9/10 with `analytic` provenance. The best plan is `2-euler-maruyama-cir-milstein`.
+
+- **Why 9, not 10:** the Dynkin check never produced a verdict. At 400,000 paths its finest level needs 12.8 GB, over the kernel's 12 GB budget. The spec predicted this. No solver change fixes it, and I kept the required 400,000 paths.
+- **The graded probabilities are unchecked:** the `analytic` tag covers only the terminal moments, which matched the closed forms to within 1% on variance. The kernel never reads the three no-touch probabilities that `problem.md` actually grades, so nothing independent verified them. The solvers' own checks show them flat to 0.15% when the time step is quartered. They also agree between plans to within 0.1%, but both plans are the same method family, so that is weak evidence.
+- **Why plan 2 ranks first:** it ties plan 1 on score and provenance. The quality index separates them (0.701 vs 0.563) because it solves in 51 s versus 77 s and has a smaller moment error.
+- **Cycle 2:** both solvers returned byte-identical `solver.py`, so I didn't re-run the evaluators and stopped both plans as plateaued. I recorded that in `STATE.md`.
+- **Gate and ambiguity:** the final `gate` run reported no findings. One ambiguity is recorded: the problem says there is no terminal-moment formula, but the terminal moments do have exact closed forms. They were used only as supporting evidence.
+
+`REPORT.md` lists the remaining verification gaps.
+
+Files are in `/home/user/Autonumerics/workspace/sde_heston_dnt_hivar`:
+- `REPORT.md`
+- `STATE.md`
+
+That monitor expired without firing, which doesn't matter now. The refine solvers had already finished and the run is complete (`phase: done`). Nothing is left to do.
