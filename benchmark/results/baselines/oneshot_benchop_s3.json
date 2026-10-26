@@ -17,7 +17,7 @@
     "solver_timeout_s": 1800,
     "mem_mb": 4096,
     "work_precision": true,
-    "invocation_seconds": 2648.0
+    "invocation_seconds": 3408.6
   },
   "results": [
     {
@@ -1067,6 +1067,268 @@
       "plan_dir": "workspace_oneshot/opus/sde_hhw_call_zerocorr/c0-manual/rep3",
       "verdict": "PASS",
       "_key": "sde_hhw_call_zerocorr|c0|manual|opus|3"
+    },
+    {
+      "id": "B07",
+      "slug": "sde_hhw_call_zerocorr",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_hull_white",
+      "title": "Heston-Hull-White call, rate uncorrelated with asset and variance",
+      "challenge": "The same three factors and the same ten-year horizon, with the rate decorrelated. Removing two correlations removes none of the difficulty that matters -- the Feller ratio is still 0.04 and the discount factor is still path-dependent -- but it does admit an independent check, which is why it is here beside its correlated sibling.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "manual",
+      "model": "opus",
+      "rep": 4,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 75.5,
+        "result_text": "```python\nimport numpy as np\n\n\n# Model parameters\nKAPPA_V, THETA_V, SIGMA_V, V0 = 0.5, 0.04, 1.0, 0.04\nRHO = -0.9\nA_R, B_R, SIGMA_R, R0 = 0.08, 0.10, 0.09, 0.10\nSTRIKE = 100.0\nSPOTS = (75.0, 100.0, 125.0)\n\n\ndef _rate_moments(T):\n    \"\"\"Joint Gaussian moments of (I = int_0^T R dt, R_T) for the Hull-White/Vasicek rate.\"\"\"\n    a, b, s, r0 = A_R, B_R, SIGMA_R, R0\n    eaT = np.exp(-a * T)\n    B = (1.0 - eaT) / a\n    mean_R = b + (r0 - b) * eaT\n    var_R = s * s / (2.0 * a) * (1.0 - np.exp(-2.0 * a * T))\n    mean_I = b * T + (r0 - b) * B\n    var_I = s * s / (a * a) * (T - 2.0 * B + (1.0 - np.exp(-2.0 * a * T)) / (2.0 * a))\n    cov_IR = s * s / (2.0 * a * a) * (1.0 - eaT) ** 2\n    return mean_I, var_I, mean_R, var_R, cov_IR\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    # ---- Rate factor: independent of (S, V); sample (int R, R_T) exactly (jointly Gaussian)\n    mean_I, var_I, mean_R, var_R, cov_IR = _rate_moments(T)\n    zr = rng.standard_normal((num_paths, 2))\n    sd_I = np.sqrt(var_I)\n    I = mean_I + sd_I * zr[:, 0]\n    R_T = mean_R + (cov_IR / sd_I) * zr[:, 0] + np.sqrt(max(var_R - cov_IR ** 2 / var_I, 0.0)) * zr[:, 1]\n    D = np.exp(-I)\n    P_exact = np.exp(-mean_I + 0.5 * var_I)  # exact zero-coupon bond E[D]\n\n    # ---- Heston (rate-free part) with Andersen QE scheme\n    k, th, sg, rho = KAPPA_V, THETA_V, SIGMA_V, RHO\n    e = np.exp(-k * dt)\n    c1 = sg * sg * e * (1.0 - e) / k\n    c2 = th * sg * sg * (1.0 - e) ** 2 / (2.0 * k)\n    g1 = g2 = 0.5\n    K0 = -rho * k * th * dt / sg\n    K1 = g1 * dt * (k * rho / sg - 0.5) - rho / sg\n    K2 = g2 * dt * (k * rho / sg - 0.5) + rho / sg\n    K3 = g1 * dt * (1.0 - rho * rho)\n    K4 = g2 * dt * (1.0 - rho * rho)\n    psi_c = 1.5\n\n    X_all = np.empty(num_paths)  # log(S_hat_T / S0), rate-free\n    V_all = np.empty(num_paths)\n\n    chunk = 100000\n    for start in range(0, num_paths, chunk):\n        stop = min(start + chunk, num_paths)\n        n = stop - start\n        V = np.full(n, V0)\n        X = np.zeros(n)\n        Vn = np.empty(n)\n        for _ in range(Nt):\n            Zv = rng.standard_normal(n)\n            U = rng.random(n)\n            Zs = rng.standard_normal(n)\n\n            m = th + (V - th) * e\n            s2 = V * c1 + c2\n            psi = s2 / (m * m)\n            mask = psi <= psi_c\n\n            if mask.any():\n                pm = psi[mask]\n                inv = 2.0 / pm\n                b2 = inv - 1.0 + np.sqrt(inv * (inv - 1.0))\n                a = m[mask] / (1.0 + b2)\n                Vn[mask] = a * (np.sqrt(b2) + Zv[mask]) ** 2\n            nm = ~mask\n            if nm.any():\n                pn = psi[nm]\n                p = (pn - 1.0) / (pn + 1.0)\n                beta = (1.0 - p) / m[nm]\n                u = U[nm]\n                val = np.log((1.0 - p) / (1.0 - u)) / beta\n                Vn[nm] = np.where(u <= p, 0.0, val)\n\n            X += K0 + K1 * V + K2 * Vn + np.sqrt(np.maximum(K3 * V + K4 * Vn, 0.0)) * Zs\n            V, Vn = Vn, V\n        X_all[start:stop] = X\n        V_all[start:stop] = V\n\n    eX = np.exp(X_all)\n\n    # ---- Discounted call prices with control variates:\n    # C1 = D*S_T - S0 = S0*(e^X - 1)  (mean 0),  C2 = D - P(0,T)  (mean 0)\n    C = np.column_stack((eX - 1.0, D - P_exact))\n    Cm = C.mean(axis=0)\n    Cc = C - Cm\n    CtC = Cc.T @ Cc\n\n    functionals = {}\n    for S0 in SPOTS:\n        Y = np.maximum(S0 * eX - STRIKE * D, 0.0)  # = D * (S_T - K)^+\n        Ym = Y.mean()\n        beta = np.linalg.solve(CtC, Cc.T @ (Y - Ym))\n        price = Ym - float(beta @ Cm)\n        functionals[\"price_S%d\" % int(S0)] = float(price)\n\n    S_T = 100.0 * eX * np.exp(I)\n    terminal = np.column_stack((S_T, V_all, R_T))\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(v) for v in terminal.mean(axis=0)],\n        \"empirical_variance\": [float(v) for v in terminal.var(axis=0, ddof=1)],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=20000, dt=0.004, T=10, seed=42)\n    print(res[\"functionals\"])\n    print(res[\"empirical_mean\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.22459600000000002,
+        "input_tokens": 42087,
+        "output_tokens": 7749,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 1000000,
+          "dt": 0.004,
+          "T": 10.0,
+          "seed": 42,
+          "solve_s": 234.009638
+        },
+        "functional_errs": {
+          "price_S75": 0.00023973995886477013,
+          "price_S100": 6.984486567223182e-06,
+          "price_S125": 0.00010127455203254913
+        },
+        "functional_abs_errs": {
+          "price_S75": 0.008495879939374618,
+          "price_S100": 0.00038224743699544206,
+          "price_S125": 0.007635857843794724
+        },
+        "functional_tol": 0.003,
+        "functional_tol_used": {
+          "price_S75": 0.003,
+          "price_S100": 0.003,
+          "price_S125": 0.003
+        },
+        "worst_functional_rel_err": 0.00023973995886477013,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 1000000,
+          "num_paths_coarse": 250000,
+          "dt": 0.004,
+          "band_factor": 3.0,
+          "values": {
+            "price_S75": {
+              "graded": 35.429400996345976,
+              "coarse": 35.37261080062072,
+              "delta": 0.0567901957252559,
+              "band": 0.3189410718865682,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S100": {
+              "graded": 54.7284475556665,
+              "coarse": 54.66740540728707,
+              "delta": 0.06104214837942834,
+              "band": 0.4925525877740656,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S125": {
+              "graded": 75.40523269283742,
+              "coarse": 75.34236369240071,
+              "delta": 0.06286900043670585,
+              "band": 0.6785783715149426,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.0018422672172828415,
+          "solve_s": 58.44526,
+          "wall_s": 58.62,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 250000,
+              "dt": 0.004,
+              "rel_err": 0.0018422672172828415,
+              "solve_s": 58.44526,
+              "wall_s": 58.62,
+              "graded": false
+            },
+            {
+              "num_paths": 1000000,
+              "dt": 0.004,
+              "rel_err": 0.00023973995886477013,
+              "solve_s": 234.009638,
+              "wall_s": 234.17,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_hhw_call_zerocorr/c0-manual/rep4"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_hhw_call_zerocorr/c0-manual/rep4",
+      "verdict": "PASS",
+      "_key": "sde_hhw_call_zerocorr|c0|manual|opus|4"
+    },
+    {
+      "id": "B07",
+      "slug": "sde_hhw_call_zerocorr",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_hull_white",
+      "title": "Heston-Hull-White call, rate uncorrelated with asset and variance",
+      "challenge": "The same three factors and the same ten-year horizon, with the rate decorrelated. Removing two correlations removes none of the difficulty that matters -- the Feller ratio is still 0.04 and the discount factor is still path-dependent -- but it does admit an independent check, which is why it is here beside its correlated sibling.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "manual",
+      "model": "opus",
+      "rep": 5,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 57.9,
+        "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    # Heston variance parameters\n    kappa, theta, eps, V0 = 0.5, 0.04, 1.0, 0.04\n    rho = -0.9\n    # Hull-White rate parameters\n    a_r, b_r, s_r, R0 = 0.08, 0.10, 0.09, 0.10\n    strike = 100.0\n    spots = (75.0, 100.0, 125.0)\n\n    # QE constants\n    e = np.exp(-kappa * dt)\n    c1 = eps**2 * e * (1.0 - e) / kappa\n    c2 = theta * eps**2 * (1.0 - e) ** 2 / (2.0 * kappa)\n    g1 = g2 = 0.5\n    K1 = g1 * dt * (kappa * rho / eps - 0.5) - rho / eps\n    K2 = g2 * dt * (kappa * rho / eps - 0.5) + rho / eps\n    K3 = g1 * dt * (1.0 - rho**2)\n    K4 = g2 * dt * (1.0 - rho**2)\n    A = K2 + 0.5 * K4\n    psi_c = 1.5\n\n    # Exact joint law of (R_T, integral of R over [0,T]) for Hull-White (OU)\n    eaT = np.exp(-a_r * T)\n    mR = b_r + (R0 - b_r) * eaT\n    vR = s_r**2 / (2 * a_r) * (1 - np.exp(-2 * a_r * T))\n    mI = b_r * T + (R0 - b_r) * (1 - eaT) / a_r\n    vI = s_r**2 / a_r**2 * (T - 2 * (1 - eaT) / a_r\n                            + (1 - np.exp(-2 * a_r * T)) / (2 * a_r))\n    cRI = s_r**2 / (2 * a_r**2) * (1 - eaT) ** 2\n    sR = np.sqrt(vR)\n    rho_RI = cRI / (sR * np.sqrt(vI))\n    sI_perp = np.sqrt(max(vI * (1 - rho_RI**2), 0.0))\n    bI = cRI / vR\n\n    terminal = np.empty((num_paths, 3))\n    pay_sums = np.zeros(len(spots))\n\n    chunk = 200000\n    start = 0\n    while start < num_paths:\n        nc = min(chunk, num_paths - start)\n        X = np.zeros(nc)          # log of discounted asset / S0\n        V = np.full(nc, V0)\n        for _ in range(Nt):\n            Zv = rng.standard_normal(nc)\n            U = rng.random(nc)\n            Zs = rng.standard_normal(nc)\n\n            m = theta + (V - theta) * e\n            s2 = V * c1 + c2\n            psi = s2 / (m * m)\n            quad = psi <= psi_c\n\n            pq = np.minimum(psi, psi_c)\n            t = 2.0 / pq\n            b2 = t - 1.0 + np.sqrt(t * (t - 1.0))\n            aq = m / (1.0 + b2)\n            Vq = aq * (np.sqrt(b2) + Zv) ** 2\n\n            pe = np.maximum(psi, psi_c)\n            p = (pe - 1.0) / (pe + 1.0)\n            beta = (1.0 - p) / m\n            Ve = np.maximum(np.log((1.0 - p) / (1.0 - U)) / beta, 0.0)\n            Ve = np.where(U <= p, 0.0, Ve)\n\n            Vn = np.where(quad, Vq, Ve)\n\n            one_m = 1.0 - 2.0 * A * aq\n            lnMq = A * b2 * aq / one_m - 0.5 * np.log(one_m)\n            lnMe = np.log(p + beta * (1.0 - p) / (beta - A))\n            lnM = np.where(quad, lnMq, lnMe)\n\n            X += -lnM - 0.5 * K3 * V + K2 * Vn + np.sqrt(K3 * V + K4 * Vn) * Zs\n            V = Vn\n\n        z1 = rng.standard_normal(nc)\n        z2 = rng.standard_normal(nc)\n        RT = mR + sR * z1\n        I = mI + bI * (RT - mR) + sI_perp * z2\n        disc = np.exp(-I)\n        eX = np.exp(X)\n        for j, S0 in enumerate(spots):\n            pay_sums[j] += np.sum(np.maximum(S0 * eX - strike * disc, 0.0))\n\n        sl = slice(start, start + nc)\n        terminal[sl, 0] = 100.0 * eX / disc\n        terminal[sl, 1] = V\n        terminal[sl, 2] = RT\n        start += nc\n\n    prices = pay_sums / num_paths\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(v) for v in terminal.mean(axis=0)],\n        \"empirical_variance\": [float(v) for v in terminal.var(axis=0, ddof=1)],\n        \"functionals\": {\n            \"price_S75\": float(prices[0]),\n            \"price_S100\": float(prices[1]),\n            \"price_S125\": float(prices[2]),\n        },\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=20000, dt=0.004, T=10, seed=42)\n    print(res[\"functionals\"])\n    print(res[\"empirical_mean\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.18907599999999997,
+        "input_tokens": 42087,
+        "output_tokens": 5973,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 1000000,
+          "dt": 0.004,
+          "T": 10.0,
+          "seed": 42,
+          "solve_s": 268.256724
+        },
+        "functional_errs": {
+          "price_S75": 0.00021103232979912176,
+          "price_S100": 0.00030554064835022104,
+          "price_S125": 0.0003430378437255646
+        },
+        "functional_abs_errs": {
+          "price_S75": 0.0074785419409835185,
+          "price_S100": 0.016721648557229685,
+          "price_S125": 0.02586422904036567
+        },
+        "functional_tol": 0.003,
+        "functional_tol_used": {
+          "price_S75": 0.003,
+          "price_S100": 0.003,
+          "price_S125": 0.003
+        },
+        "worst_functional_rel_err": 0.0003430378437255646,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 1000000,
+          "num_paths_coarse": 250000,
+          "dt": 0.004,
+          "band_factor": 3.0,
+          "values": {
+            "price_S75": {
+              "graded": 35.445375418226334,
+              "coarse": 35.362916017088295,
+              "delta": 0.0824594011380384,
+              "band": 0.3189410718865682,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S100": {
+              "graded": 54.74478695678673,
+              "coarse": 54.62712228103605,
+              "delta": 0.11766467575068162,
+              "band": 0.4925525877740656,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S125": {
+              "graded": 75.42346106403399,
+              "coarse": 75.2763500783091,
+              "delta": 0.14711098572489334,
+              "band": 0.6785783715149426,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.002115838291950989,
+          "solve_s": 65.040727,
+          "wall_s": 65.23,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 250000,
+              "dt": 0.004,
+              "rel_err": 0.002115838291950989,
+              "solve_s": 65.040727,
+              "wall_s": 65.23,
+              "graded": false
+            },
+            {
+              "num_paths": 1000000,
+              "dt": 0.004,
+              "rel_err": 0.0003430378437255646,
+              "solve_s": 268.256724,
+              "wall_s": 268.44,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_hhw_call_zerocorr/c0-manual/rep5"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_hhw_call_zerocorr/c0-manual/rep5",
+      "verdict": "PASS",
+      "_key": "sde_hhw_call_zerocorr|c0|manual|opus|5"
     }
   ]
 }
