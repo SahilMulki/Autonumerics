@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 54.8,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    # Parameters\n    S0, sig0 = 0.07, 0.34\n    nu, rho = 0.8, -0.6\n    rhob2 = 1.0 - rho * rho\n    strikes = {\"price_K1\": 0.051022538988,\n               \"price_K2\": 0.07,\n               \"price_K3\": 0.096035989138}\n\n    Nt = max(1, round(T / dt))\n    h = T / Nt\n    sqh = np.sqrt(h)\n\n    rng = np.random.default_rng(seed)\n\n    S = np.full(num_paths, S0, dtype=float)\n    sig = np.full(num_paths, sig0, dtype=float)\n    act = np.arange(num_paths)  # indices of non-absorbed paths\n\n    drift_ls = -0.5 * nu * nu * h\n    for n in range(Nt):\n        # exact lognormal step for sigma\n        z = rng.standard_normal(num_paths)\n        sig_new = sig * np.exp(nu * sqh * z + drift_ls)\n\n        if act.size:\n            s = S[act]\n            s0 = sig[act]\n            s1 = sig_new[act]\n            # correlated part handled by conditional shift: int sigma dW_sigma = dsigma/nu\n            St = s + (rho / nu) * np.sqrt(s) * (s1 - s0)\n            St = np.maximum(St, 0.0)\n            # independent part: squared Bessel dim 0 (CEV beta=1/2) exact transition\n            v = rhob2 * 0.5 * h * (s0 * s0 + s1 * s1)\n            v = np.maximum(v, 1e-300)\n            lam = 2.0 * St / v\n            big = lam > 1e8\n            lam_c = np.where(big, 0.0, lam)\n            N = rng.poisson(lam_c)\n            G = np.zeros(act.size)\n            m = N > 0\n            if m.any():\n                G[m] = rng.gamma(N[m].astype(float))\n            new = 0.5 * v * G\n            if big.any():\n                Sb = St[big]\n                new[big] = np.maximum(\n                    Sb + np.sqrt(Sb * v[big]) * rng.standard_normal(Sb.size), 0.0)\n            S[act] = new\n            keep = new > 0.0\n            if not keep.all():\n                act = act[keep]\n\n        sig = sig_new\n\n    X = np.column_stack([S, sig])\n    functionals = {k: float(np.mean(np.maximum(S - K, 0.0)))\n                   for k, K in strikes.items()}\n\n    return {\n        \"terminal_paths\": X,\n        \"empirical_mean\": [float(np.mean(X[:, 0])), float(np.mean(X[:, 1]))],\n        \"empirical_variance\": [float(np.var(X[:, 0], ddof=1)),\n                               float(np.var(X[:, 1], ddof=1))],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": h,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    r = solve_sde(num_paths=20000, dt=0.004, T=10, seed=42)\n    print(r[\"empirical_mean\"], r[\"functionals\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.16910559999999997,
+  "input_tokens": 42028,
+  "output_tokens": 4970,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}
