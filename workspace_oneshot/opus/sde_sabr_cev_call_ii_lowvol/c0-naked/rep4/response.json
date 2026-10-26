@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 43.5,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    S0 = 0.07\n    sig0 = 0.34\n    alpha = 0.8\n    rho = -0.6\n    strikes = {\"price_K1\": 0.051022538988,\n               \"price_K2\": 0.07,\n               \"price_K3\": 0.096035989138}\n\n    Nt = max(1, int(round(T / dt)))\n    dt = T / Nt\n    sqdt = np.sqrt(dt)\n    rhobar2 = 1.0 - rho * rho\n    drift_ls = -0.5 * alpha * alpha * dt\n    psi_c = 1.5\n\n    rng = np.random.default_rng(seed)\n    n = int(num_paths)\n    S = np.full(n, S0, dtype=np.float64)\n    sig = np.full(n, sig0, dtype=np.float64)\n\n    for _ in range(Nt):\n        # exact lognormal step for sigma\n        Z1 = rng.standard_normal(n)\n        sig_new = sig * np.exp(drift_ls + alpha * sqdt * Z1)\n\n        # correlated part: rho * sqrt(S) * int sigma dW_sigma, with\n        # int sigma dW_sigma = (sigma_{n+1} - sigma_n)/alpha exactly\n        A = S + (rho / alpha) * np.sqrt(S) * (sig_new - sig)\n        np.maximum(A, 0.0, out=A)\n\n        # orthogonal part: zero-drift CIR/BESQ0 step via Andersen QE\n        v = rhobar2 * 0.5 * (sig * sig + sig_new * sig_new) * dt\n        pos = A > 0.0\n        Asafe = np.where(pos, A, 1.0)\n        psi = v / Asafe\n\n        Z = rng.standard_normal(n)\n        U = rng.random(n)\n\n        # quadratic branch\n        psiq = np.minimum(psi, psi_c)\n        ip = 2.0 / psiq\n        b2 = ip - 1.0 + np.sqrt(ip * (ip - 1.0))\n        acoef = Asafe / (1.0 + b2)\n        Sq = acoef * (np.sqrt(b2) + Z) ** 2\n\n        # exponential branch with mass at zero\n        psie = np.maximum(psi, psi_c)\n        p = (psie - 1.0) / (psie + 1.0)\n        beta = (1.0 - p) / Asafe\n        Uc = np.minimum(U, 1.0 - 1e-16)\n        Se = np.where(Uc <= p, 0.0,\n                      np.log(np.maximum((1.0 - p) / (1.0 - Uc), 1.0)) / beta)\n\n        S = np.where(pos, np.where(psi <= psi_c, Sq, Se), 0.0)\n        sig = sig_new\n\n    terminal = np.column_stack((S, sig))\n    functionals = {}\n    for name, K in strikes.items():\n        functionals[name] = float(np.mean(np.maximum(S - K, 0.0)))\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(S)), float(np.mean(sig))],\n        \"empirical_variance\": [float(np.var(S, ddof=1)), float(np.var(sig, ddof=1))],\n        \"functionals\": functionals,\n    }\n\n\nif __name__ == \"__main__\":\n    out = solve_sde(num_paths=100000, dt=0.004, T=10, seed=42)\n    print(out[\"empirical_mean\"], out[\"functionals\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.1501562,
+  "input_tokens": 37181,
+  "output_tokens": 4071,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}

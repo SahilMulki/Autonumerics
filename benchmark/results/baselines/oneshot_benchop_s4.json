@@ -17,7 +17,7 @@
     "solver_timeout_s": 1800,
     "mem_mb": 4096,
     "work_precision": true,
-    "invocation_seconds": 1017.5
+    "invocation_seconds": 1731.6
   },
   "results": [
     {
@@ -1329,6 +1329,399 @@
       "plan_dir": "workspace_oneshot/opus/sde_heston_dnt_hivar/c0-manual/rep5",
       "verdict": "PASS",
       "_key": "sde_heston_dnt_hivar|c0|manual|opus|5"
+    },
+    {
+      "id": "B10",
+      "slug": "sde_sabr_cev_call_ii_lowvol",
+      "type": "sde",
+      "tier": 3,
+      "family": "sabr_cev",
+      "title": "SABR forward with CEV exponent 1/2, lower initial volatility",
+      "challenge": "The long-horizon SABR set started at a lower initial volatility, which moves every option value without changing the vol-of-vol, the correlation or the absorbing boundary that make it hard.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "naked",
+      "model": "opus",
+      "rep": 1,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 81.6,
+        "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    rng = np.random.default_rng(seed)\n    Nt = max(1, int(round(T / dt)))\n    dt = T / Nt\n\n    S0 = 0.07\n    sig0 = 0.34\n    nu = 0.8\n    rho = -0.6\n    rhob = np.sqrt(1.0 - rho * rho)\n    K1 = 0.051022538988\n    K2 = 0.07\n    K3 = 0.096035989138\n\n    # Paths with sqrt(S)/(sigma*sqrt(dt)) < c use an exact squared-Bessel step\n    # (dimension 0, absorbing at zero); the rest use Euler.\n    c = 5.0\n    c2dt = c * c * dt\n\n    n = num_paths\n    S = np.full(n, S0, dtype=np.float64)\n    sig = np.full(n, sig0, dtype=np.float64)\n    sq = np.sqrt(dt)\n    sig_drift = -0.5 * nu * nu * dt\n\n    for _ in range(Nt):\n        Z = rng.standard_normal((2, n))\n        dWv = Z[0] * sq                                  # increment driving sigma\n        dWp = (rho * Z[0] + rhob * Z[1]) * sq            # increment driving S\n\n        sqrtS = np.sqrt(S)\n        Snew = S + sig * sqrtS * dWp                     # Euler step\n\n        near = (S > 0.0) & (S < c2dt * sig * sig)\n        idx = np.flatnonzero(near)\n        if idx.size:\n            Sn = S[idx]\n            sg = sig[idx]\n            # correlated part as an Euler shift, then exact BESQ^0 step\n            # for the orthogonal part with variance (1-rho^2) sigma^2 dt\n            Sp = Sn + rho * sg * np.sqrt(Sn) * dWv[idx]\n            np.maximum(Sp, 0.0, out=Sp)\n            v = (1.0 - rho * rho) * sg * sg * dt\n            lam = 2.0 * Sp / v\n            N = rng.poisson(lam)\n            g = rng.gamma(np.maximum(N, 1).astype(np.float64))\n            Snew[idx] = np.where(N > 0, 0.5 * v * g, 0.0)\n\n        np.maximum(Snew, 0.0, out=Snew)\n        S = Snew\n        sig *= np.exp(nu * dWv + sig_drift)\n\n    terminal = np.column_stack([S, sig])\n    p1 = float(np.mean(np.maximum(S - K1, 0.0)))\n    p2 = float(np.mean(np.maximum(S - K2, 0.0)))\n    p3 = float(np.mean(np.maximum(S - K3, 0.0)))\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(S)), float(np.mean(sig))],\n        \"empirical_variance\": [float(np.var(S, ddof=1)), float(np.var(sig, ddof=1))],\n        \"functionals\": {\n            \"price_K1\": p1,\n            \"price_K2\": p2,\n            \"price_K3\": p3,\n        },\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=100000, dt=0.004, T=10, seed=42)\n    print(res[\"empirical_mean\"], res[\"functionals\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.24076399999999998,
+        "input_tokens": 37181,
+        "output_tokens": 7704,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 1000000,
+          "dt": 0.004,
+          "T": 10.0,
+          "seed": 42,
+          "solve_s": 117.704778
+        },
+        "functional_errs": {
+          "price_K1": 0.0042698417774515995,
+          "price_K2": 0.005062039986791393,
+          "price_K3": 0.006319811191261
+        },
+        "functional_abs_errs": {
+          "price_K1": 0.00021324399123531096,
+          "price_K2": 0.00021940957072449224,
+          "price_K3": 0.00022306476672494246
+        },
+        "functional_tol": 0.01,
+        "functional_tol_used": {
+          "price_K1": 0.01,
+          "price_K2": 0.01,
+          "price_K3": 0.01
+        },
+        "worst_functional_rel_err": 0.006319811191261,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 1000000,
+          "num_paths_coarse": 250000,
+          "dt": 0.004,
+          "band_factor": 3.0,
+          "values": {
+            "price_K1": {
+              "graded": 0.05015513934702533,
+              "coarse": 0.05028322541654543,
+              "delta": 0.0001280860695200975,
+              "band": 0.0014982568606737006,
+              "moved": true,
+              "consistent": true
+            },
+            "price_K2": {
+              "graded": 0.04356351022914616,
+              "coarse": 0.043706785313707947,
+              "delta": 0.0001432750845617864,
+              "band": 0.00130032301975265,
+              "moved": true,
+              "consistent": true
+            },
+            "price_K3": {
+              "graded": 0.03551917725713162,
+              "coarse": 0.035671114699079916,
+              "delta": 0.00015193744194829523,
+              "band": 0.0010588833747122003,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.010624462078512515,
+          "solve_s": 27.184138,
+          "wall_s": 27.35,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 250000,
+              "dt": 0.004,
+              "rel_err": 0.010624462078512515,
+              "solve_s": 27.184138,
+              "wall_s": 27.35,
+              "graded": false
+            },
+            {
+              "num_paths": 1000000,
+              "dt": 0.004,
+              "rel_err": 0.006319811191261,
+              "solve_s": 117.704778,
+              "wall_s": 117.89,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_sabr_cev_call_ii_lowvol/c0-naked/rep1"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_sabr_cev_call_ii_lowvol/c0-naked/rep1",
+      "verdict": "PASS",
+      "_key": "sde_sabr_cev_call_ii_lowvol|c0|naked|opus|1"
+    },
+    {
+      "id": "B10",
+      "slug": "sde_sabr_cev_call_ii_lowvol",
+      "type": "sde",
+      "tier": 3,
+      "family": "sabr_cev",
+      "title": "SABR forward with CEV exponent 1/2, lower initial volatility",
+      "challenge": "The long-horizon SABR set started at a lower initial volatility, which moves every option value without changing the vol-of-vol, the correlation or the absorbing boundary that make it hard.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "naked",
+      "model": "opus",
+      "rep": 2,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 60.4,
+        "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    rng = np.random.default_rng(seed)\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n\n    S0, sig0 = 0.07, 0.34\n    nu, rho = 0.8, -0.6\n    rbar2 = 1.0 - rho * rho\n    sqdt = np.sqrt(dt)\n    lam_cut = 50.0\n\n    n = int(num_paths)\n    S = np.full(n, S0, dtype=np.float64)\n    s = np.full(n, sig0, dtype=np.float64)\n\n    drift = -0.5 * nu * nu * dt\n    for _ in range(Nt):\n        z = rng.standard_normal(n)\n        sn = s * np.exp(nu * sqdt * z + drift)\n\n        # correlated part: frozen sqrt(S), exact integral of sigma dW_sigma = dsigma/nu\n        S = S + (rho / nu) * np.sqrt(S) * (sn - s)\n        np.maximum(S, 0.0, out=S)\n\n        # uncorrelated part: frozen-sigma CEV(1/2) = scaled BESQ(0), absorbing at 0\n        v = rbar2 * 0.5 * (s * s + sn * sn) * dt\n        with np.errstate(divide=\"ignore\", invalid=\"ignore\"):\n            lam = 2.0 * S / v\n        alive = S > 0.0\n        exact = alive & (lam < lam_cut)\n        approx = alive & ~exact\n\n        z2 = rng.standard_normal(n)\n        Snew = S + np.sqrt(S * v) * z2\n        np.maximum(Snew, 0.0, out=Snew)\n        Snew = np.where(approx, Snew, S)\n\n        idx = np.nonzero(exact)[0]\n        if idx.size:\n            N = rng.poisson(lam[idx])\n            G = rng.standard_gamma(N.astype(np.float64))\n            Snew[idx] = 0.5 * v[idx] * G\n\n        Snew[~alive] = 0.0\n        S = Snew\n        s = sn\n\n    K1 = 0.051022538988\n    K2 = 0.07\n    K3 = 0.096035989138\n    p1 = float(np.mean(np.maximum(S - K1, 0.0)))\n    p2 = float(np.mean(np.maximum(S - K2, 0.0)))\n    p3 = float(np.mean(np.maximum(S - K3, 0.0)))\n\n    terminal = np.column_stack([S, s])\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(S)), float(np.mean(s))],\n        \"empirical_variance\": [float(np.var(S, ddof=1)), float(np.var(s, ddof=1))],\n        \"functionals\": {\"price_K1\": p1, \"price_K2\": p2, \"price_K3\": p3},\n    }\n\n\nif __name__ == \"__main__\":\n    out = solve_sde(num_paths=100000, dt=0.004, T=10, seed=42)\n    print(out[\"functionals\"], out[\"empirical_mean\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.1776962,
+        "input_tokens": 37181,
+        "output_tokens": 5448,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 1000000,
+          "dt": 0.004,
+          "T": 10.0,
+          "seed": 42,
+          "solve_s": 164.129593
+        },
+        "functional_errs": {
+          "price_K1": 0.002775539909657696,
+          "price_K2": 0.002957497861488829,
+          "price_K3": 0.0030469511996689593
+        },
+        "functional_abs_errs": {
+          "price_K1": 0.0001386157237239713,
+          "price_K2": 0.0001281900850054682,
+          "price_K3": 0.00010754553229632563
+        },
+        "functional_tol": 0.01,
+        "functional_tol_used": {
+          "price_K1": 0.01,
+          "price_K2": 0.01,
+          "price_K3": 0.01
+        },
+        "worst_functional_rel_err": 0.0030469511996689593,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 1000000,
+          "num_paths_coarse": 250000,
+          "dt": 0.004,
+          "band_factor": 3.0,
+          "values": {
+            "price_K1": {
+              "graded": 0.050080511079513994,
+              "coarse": 0.050156684546316915,
+              "delta": 7.617346680292153e-05,
+              "band": 0.0014982568606737006,
+              "moved": true,
+              "consistent": true
+            },
+            "price_K2": {
+              "graded": 0.043472290743427136,
+              "coarse": 0.04355734730842456,
+              "delta": 8.505656499742387e-05,
+              "band": 0.00130032301975265,
+              "moved": true,
+              "consistent": true
+            },
+            "price_K3": {
+              "graded": 0.035403658022703004,
+              "coarse": 0.03549966290225562,
+              "delta": 9.6004879552615e-05,
+              "band": 0.0010588833747122003,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.005766935718608238,
+          "solve_s": 41.221954,
+          "wall_s": 41.38,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 250000,
+              "dt": 0.004,
+              "rel_err": 0.005766935718608238,
+              "solve_s": 41.221954,
+              "wall_s": 41.38,
+              "graded": false
+            },
+            {
+              "num_paths": 1000000,
+              "dt": 0.004,
+              "rel_err": 0.0030469511996689593,
+              "solve_s": 164.129593,
+              "wall_s": 164.26,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_sabr_cev_call_ii_lowvol/c0-naked/rep2"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_sabr_cev_call_ii_lowvol/c0-naked/rep2",
+      "verdict": "PASS",
+      "_key": "sde_sabr_cev_call_ii_lowvol|c0|naked|opus|2"
+    },
+    {
+      "id": "B10",
+      "slug": "sde_sabr_cev_call_ii_lowvol",
+      "type": "sde",
+      "tier": 3,
+      "family": "sabr_cev",
+      "title": "SABR forward with CEV exponent 1/2, lower initial volatility",
+      "challenge": "The long-horizon SABR set started at a lower initial volatility, which moves every option value without changing the vol-of-vol, the correlation or the absorbing boundary that make it hard.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "condition": "c0",
+      "manuals": "naked",
+      "model": "opus",
+      "rep": 3,
+      "run": {
+        "agent_status": "ok",
+        "wall_s": 72.6,
+        "result_text": "```python\nimport numpy as np\n\n\ndef _norm_cdf(x):\n    # Phi(x) = 0.5*erfc(-x/sqrt(2)), erfc via Chebyshev fit (rel. err < 1.2e-7)\n    y = -x / np.sqrt(2.0)\n    z = np.abs(y)\n    t = 1.0 / (1.0 + 0.5 * z)\n    poly = (-1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 +\n            t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 +\n            t * (-0.82215223 + t * 0.17087277)))))))))\n    ans = t * np.exp(-z * z + poly)\n    erfc = np.where(y >= 0.0, ans, 2.0 - ans)\n    return 0.5 * erfc\n\n\ndef _simulate_chunk(rng, n, Nt, dt, S0, sig0, nu, rho):\n    S = np.full(n, S0)\n    sig = np.full(n, sig0)\n    rc = np.sqrt(1.0 - rho * rho)\n    sq = np.sqrt(dt)\n    nu2dt = nu * nu * dt\n    # E[int sigma^2 ds | sigma_n] = sigma_n^2 * dt * (exp(nu^2 dt)-1)/(nu^2 dt)\n    cfac = dt * np.expm1(nu2dt) / nu2dt\n    psic = 1.5\n    for _ in range(Nt):\n        Z1 = rng.standard_normal(n)\n        Z2 = rng.standard_normal(n)\n        Z = rho * Z1 + rc * Z2\n        v = sig * sig * cfac\n        with np.errstate(divide=\"ignore\", invalid=\"ignore\"):\n            psi = v / S  # inf where S == 0\n        # Quadratic branch (moment-matched: mean S, variance S*v)\n        pl = np.minimum(psi, psic)\n        tt = 2.0 / pl\n        b2 = tt - 1.0 + np.sqrt(tt * (tt - 1.0))\n        a = S / (1.0 + b2)\n        Snew = a * (np.sqrt(b2) + Z) ** 2\n        # Exponential branch with point mass at zero (absorption)\n        idx = np.nonzero((psi > psic) & (S > 0.0))[0]\n        if idx.size:\n            ps = psi[idx]\n            Si = S[idx]\n            p = (ps - 1.0) / (ps + 1.0)\n            beta = (1.0 - p) / Si\n            tail = _norm_cdf(-Z[idx])  # 1 - U\n            q = 1.0 - p\n            with np.errstate(divide=\"ignore\", invalid=\"ignore\"):\n                val = np.log(q / tail) / beta\n            Snew[idx] = np.where(tail >= q, 0.0, val)\n        S = Snew\n        sig = sig * np.exp(nu * sq * Z1 - 0.5 * nu2dt)\n    return S, sig\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    S0 = 0.07\n    sig0 = 0.34\n    nu = 0.8\n    rho = -0.6\n\n    rng = np.random.default_rng(seed)\n    chunk = 250000\n    S_all = np.empty(num_paths)\n    sig_all = np.empty(num_paths)\n    start = 0\n    while start < num_paths:\n        n = min(chunk, num_paths - start)\n        S, sig = _simulate_chunk(rng, n, Nt, dt, S0, sig0, nu, rho)\n        S_all[start:start + n] = S\n        sig_all[start:start + n] = sig\n        start += n\n\n    terminal = np.column_stack([S_all, sig_all])\n    K1 = 0.051022538988\n    K2 = 0.07\n    K3 = 0.096035989138\n    functionals = {\n        \"price_K1\": float(np.mean(np.maximum(S_all - K1, 0.0))),\n        \"price_K2\": float(np.mean(np.maximum(S_all - K2, 0.0))),\n        \"price_K3\": float(np.mean(np.maximum(S_all - K3, 0.0))),\n    }\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(x) for x in terminal.mean(axis=0)],\n        \"empirical_variance\": [float(x) for x in terminal.var(axis=0, ddof=1)],\n        \"functionals\": functionals,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=100000, dt=0.004, T=10, seed=42)\n    print(res[\"empirical_mean\"], res[\"empirical_variance\"], res[\"functionals\"])\n```",
+        "code_text": "",
+        "code_source": "result",
+        "salvage_used": false,
+        "stop_subtype": "success",
+        "denied_tools": [],
+        "cost_usd": 0.2104562,
+        "input_tokens": 37181,
+        "output_tokens": 7086,
+        "num_turns": 1,
+        "limit_hit": false,
+        "stderr_tail": "",
+        "retries_used": 0
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 1000000,
+          "dt": 0.004,
+          "T": 10.0,
+          "seed": 42,
+          "solve_s": 118.745428
+        },
+        "functional_errs": {
+          "price_K1": 0.0034150137824508946,
+          "price_K2": 0.0033400560084559227,
+          "price_K3": 0.0034685077959611633
+        },
+        "functional_abs_errs": {
+          "price_K1": 0.0001705522609617774,
+          "price_K2": 0.000144771723835313,
+          "price_K3": 0.00012242484134013243
+        },
+        "functional_tol": 0.01,
+        "functional_tol_used": {
+          "price_K1": 0.01,
+          "price_K2": 0.01,
+          "price_K3": 0.01
+        },
+        "worst_functional_rel_err": 0.0034685077959611633,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 1000000,
+          "num_paths_coarse": 250000,
+          "dt": 0.004,
+          "band_factor": 3.0,
+          "values": {
+            "price_K1": {
+              "graded": 0.049771343094828245,
+              "coarse": 0.049679279326892006,
+              "delta": 9.206376793623877e-05,
+              "band": 0.0014982568606737006,
+              "moved": true,
+              "consistent": true
+            },
+            "price_K2": {
+              "graded": 0.043199328934586355,
+              "coarse": 0.04313467031029129,
+              "delta": 6.465862429506225e-05,
+              "band": 0.00130032301975265,
+              "moved": true,
+              "consistent": true
+            },
+            "price_K3": {
+              "graded": 0.035173687649066546,
+              "coarse": 0.035136972758830036,
+              "delta": 3.67148902365097e-05,
+              "band": 0.0010588833747122003,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.00525843136363005,
+          "solve_s": 28.804999,
+          "wall_s": 28.92,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 250000,
+              "dt": 0.004,
+              "rel_err": 0.00525843136363005,
+              "solve_s": 28.804999,
+              "wall_s": 28.92,
+              "graded": false
+            },
+            {
+              "num_paths": 1000000,
+              "dt": 0.004,
+              "rel_err": 0.0034685077959611633,
+              "solve_s": 118.745428,
+              "wall_s": 118.9,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace_oneshot/opus/sde_sabr_cev_call_ii_lowvol/c0-naked/rep3"
+      },
+      "plan_dir": "workspace_oneshot/opus/sde_sabr_cev_call_ii_lowvol/c0-naked/rep3",
+      "verdict": "PASS",
+      "_key": "sde_sabr_cev_call_ii_lowvol|c0|naked|opus|3"
     }
   ]
 }
