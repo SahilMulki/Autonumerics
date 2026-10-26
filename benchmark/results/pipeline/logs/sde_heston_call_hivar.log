@@ -1,0 +1,46 @@
+$ claude --plugin-dir /home/user/Autonumerics --settings /home/user/Autonumerics/benchmark/results/pipeline/logs/sde_heston_call_hivar.settings.json -p /conductor workspace/sde_heston_call_hivar/problem.md --dangerously-skip-permissions
+
+Permission deny rule (benchmark/results/pipeline/logs/sde_heston_call_hivar.settings.json): Write(./benchmark/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(./benchmark/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (benchmark/results/pipeline/logs/sde_heston_call_hivar.settings.json): Bash(uv run python:*workspace/sde_hhw_call_zerocorr/*) has a :* that is not at the end, so it is matched as a * wildcard (the : is literal), not as the trailing :* prefix syntax. It already matches as a * wildcard; moving :* to the end would make it a literal prefix and change which commands match.
+Permission deny rule (benchmark/results/pipeline/logs/sde_heston_call_hivar.settings.json): Bash(uv run python3:*workspace/sde_hhw_call_zerocorr/*) has a :* that is not at the end, so it is matched as a * wildcard (the : is literal), not as the trailing :* prefix syntax. It already matches as a * wildcard; moving :* to the end would make it a literal prefix and change which commands match.
+Nothing has arrived yet. The formulator is still running, and I'm waiting for its notification.
+
+The plan-creator is running in the background. I'm waiting for its notification.
+
+All three solvers are running in the background. I'll wait for their notifications.
+
+Plan 1's solver finished and its evaluator is running. I'm waiting for the other notifications.
+
+Plan 3's evaluator is running. Plan 2's solver and the evaluators for plans 1 and 3 are still outstanding, so I'm waiting for their notifications.
+
+All three evaluators are now running. I'm waiting for their notifications.
+
+Plan 1 is recorded in STATE.md. I'm waiting for the evaluators for plans 2 and 3.
+
+Plan 3 is back with the solver for a refinement cycle. Plan 2's evaluator is still running, so I'm waiting for its notification.
+
+Plans 1, 2 and 3 are all in refinement cycles now. I'm waiting for their solver notifications.
+
+Plan 1 is stopped at 9. I'm waiting for the solver notifications for plans 2 and 3.
+
+Plan 2 is stopped at 9 (solver unchanged). Waiting on plan 3's refine.
+
+Plan 3's refined solver is being re-evaluated. I'm waiting for the evaluator to finish.
+
+The pipeline finished and `STATE.md` is at `phase: done`, but no plan certified. The best plan is `1-full-truncation-euler`, scored 9 with `analytic` provenance. `REPORT.md` is written.
+
+The score is capped at 9 because the Dynkin generator check can't run. At the contract's 2,000,000 paths and dt = 0.002 it needs a 64 GB array against a 12 GB budget. That is a resource limit rather than a solver defect, and `num_paths` is a hard-gated contract value, so I did not reduce it.
+
+| Plan | Score | Status |
+|---|---|---|
+| `1-full-truncation-euler` | 9 | stopped at the plateau, solver unchanged by the refine cycle |
+| `2-andersen-qe` | 9 | stopped at the plateau, solver unchanged by the refine cycle |
+| `3-truncated-milstein` | 1 | stopped; the refine made it time out |
+
+- **Why plan 1 beat plan 2:** both scored 9 with `analytic` provenance. The quality index separated them, 0.708 against 0.556, mainly on solve time (80 s against 217 s, which is close to the 300 s timeout).
+- **Prices:** the kernel doesn't grade SDE prices, so the evaluators checked them by hand. Plans 1 and 2 are within tolerance at all three spots at 2,000,000 paths, and their 500,000-path runs agree within Monte Carlo noise.
+- **Plan 3:** its first pass was capped to 4 because `price_S100` was 0.5% low against a 0.4% tolerance. The refine fixed that in the solver's own run but pushed the solve past 300 s, so the kernel scored it 1. Its refined version was never successfully evaluated.
+
+The report also records the R30 ambiguity. `problem.md` says the problem has no terminal-moment formula, but the formulator added validated exact moments as extra evidence while keeping the three prices as the grade. The remaining verification gaps (unavailable Dynkin check, hand-graded prices, the atom at V = 0 in plan 2) are listed in the report.
+
+Everything is in `/home/user/Autonumerics/workspace/sde_heston_call_hivar`; start with `REPORT.md`.

@@ -1,0 +1,502 @@
+{
+  "id": "sde_heston_call_hivar",
+  "equation_type": "SDE",
+  "sde_family": "heston_stochastic_volatility",
+  "state_dimension": 2,
+  "noise_dimension": 2,
+  "noise_structure": "multiplicative",
+  "linear": false,
+  "stiff": false,
+  "equation": "dS = sqrt(V) * S dW1,  S(0) = S0;   dV = kappa*(eta - V) dt + sigma*sqrt(V) dW2,  V(0) = V0;   corr(dW1, dW2) = rho;  Ito;  zero interest rate (r = 0, no drift in S, no discounting)",
+  "state_components": [
+    "S",
+    "V"
+  ],
+  "parameters": {
+    "X_0": 100.0,
+    "Y_0": 0.164,
+    "kappa": 2.58,
+    "eta": 0.043,
+    "sigma": 1.0,
+    "rho": -0.36,
+    "r": 0.0,
+    "K": 100.0,
+    "spots": [
+      75.0,
+      100.0,
+      125.0
+    ]
+  },
+  "parameter_notes": {
+    "X_0": "S(0) for the returned terminal_paths, which are for S0 = 100. The prices are reported for every S0 in `spots`.",
+    "Y_0": "V(0) = 0.164, well above the long-run level eta = 0.043",
+    "sigma": "vol-of-vol: problem.md writes the V diffusion as sqrt(V) dW2, i.e. sigma = 1",
+    "feller": "2*kappa*eta = 0.22188 < sigma**2 = 1: Feller violated, V reaches 0. CIR dimension delta = 4*kappa*eta/sigma**2 = 0.44376 < 1"
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "milstein_eligible": false,
+  "milstein_ineligible_reason": "levy_area",
+  "diffusion_derivative": "Two independent channels Z1, Z2 with dW1 = dZ1, dW2 = rho dZ1 + sqrt(1-rho^2) dZ2. G = [[sqrt(V) S, 0], [sigma rho sqrt(V), sigma sqrt(1-rho^2) sqrt(V)]]. The commutativity condition L^1 G_2 = L^2 G_1 fails in the S component (L^1 G_2 has S-entry 0, L^2 G_1 has S-entry sigma sqrt(1-rho^2) S / 2 ... non-zero), so the joint 2-D Milstein scheme needs the Levy area of (Z1, Z2).",
+  "milstein_correction": "Not available for the joint system without a Levy-area treatment. Note for plans: the V equation alone is autonomous scalar CIR driven by the single combined increment dW2, so a scalar Milstein correction (sigma**2/4)*(dW2**2 - dt) on V is well defined; a plan combining that with log-Euler on S needs no Levy area and should say so through `levy_area_treatment` in its own frontmatter if it declares scheme_family milstein.",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 2,
+    "mean_X": "X_0 + 0.0*t",
+    "variance_X": "X_0**2*(np.exp(((2*kappa*eta/sigma**2)*np.log(2*np.sqrt((kappa - 2*rho*sigma)**2 - 2*sigma**2)*np.exp(((kappa - 2*rho*sigma) + np.sqrt((kappa - 2*rho*sigma)**2 - 2*sigma**2))*t/2)/(((kappa - 2*rho*sigma) + np.sqrt((kappa - 2*rho*sigma)**2 - 2*sigma**2))*(np.exp(np.sqrt((kappa - 2*rho*sigma)**2 - 2*sigma**2)*t) - 1) + 2*np.sqrt((kappa - 2*rho*sigma)**2 - 2*sigma**2)))) + (2*(np.exp(np.sqrt((kappa - 2*rho*sigma)**2 - 2*sigma**2)*t) - 1)/(((kappa - 2*rho*sigma) + np.sqrt((kappa - 2*rho*sigma)**2 - 2*sigma**2))*(np.exp(np.sqrt((kappa - 2*rho*sigma)**2 - 2*sigma**2)*t) - 1) + 2*np.sqrt((kappa - 2*rho*sigma)**2 - 2*sigma**2)))*Y_0) - 1)",
+    "mean_Y": "eta + (Y_0 - eta)*np.exp(-kappa*t)",
+    "variance_Y": "(sigma**2/kappa)*(Y_0*(np.exp(-kappa*t) - np.exp(-2*kappa*t)) + 0.5*eta*(1 - np.exp(-kappa*t))**2)",
+    "derivation": "S (component X): r = 0 so S is a martingale, E[S_t] = S0. E[S_t^2] = S0^2 E[exp(2 int sqrt(V) dW1 - int V dt)] = S0^2 E^Q[exp(int_0^t V ds)] after the change of measure with density exp(2 int sqrt(V) dW1 - 2 int V ds), under which dV = (kappa*eta - kq*V) dt + sigma sqrt(V) dW, kq = kappa - 2 rho sigma = 3.30. The CIR exponential functional is exp(a(t) + b(t) V0) with b' = 1 - kq b + sigma^2 b^2 / 2, a' = kappa eta b, a(0) = b(0) = 0; gamma = sqrt(kq^2 - 2 sigma^2) = 2.98161 is real, so no moment explosion on [0, 1]. V (component Y): CIR mean and variance (sde_manual.md #6 with X_0 -> V0, theta -> eta).",
+    "values_at_T": {
+      "mean_S": 100.0,
+      "variance_S": 768.581477379,
+      "mean_V": 0.0521686544868,
+      "variance_V": 0.0115699466208
+    },
+    "cross_checks": [
+      "verification.moment_ode integrates the CIR moments, E[SV] and the Riccati (a, b) and reproduces every expression here to 3.5e-13 over t in [0.05, 1]",
+      "E[S_T^2] from the Heston characteristic function phi(-2i) (Albrecher 'little trap' form) equals S0^2 exp(a(T) + b(T) V0) to 2e-16 -- an independent derivation",
+      "exact-V (noncentral chi-square transitions, 1000 steps) conditional Monte Carlo: E[S_T^2] = 10770.5 +- 1.1 vs closed form 10768.58 (1.7 se)"
+    ]
+  },
+  "drift_expression": [
+    "0.0*X[:, 0]",
+    "kappa*(eta - X[:, 1])"
+  ],
+  "diffusion_expression": "see diffusion_matrix_expression (2 state components, 2 independent noise channels)",
+  "diffusion_matrix_expression": [
+    [
+      "np.sqrt(np.maximum(X[:, 1], 0.0))*X[:, 0]",
+      "0.0*X[:, 0]"
+    ],
+    [
+      "sigma*rho*np.sqrt(np.maximum(X[:, 1], 0.0))",
+      "sigma*np.sqrt(1 - rho**2)*np.sqrt(np.maximum(X[:, 1], 0.0))"
+    ]
+  ],
+  "diffusion_derivative_expression": null,
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.1,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 2000000,
+    "num_paths_second": 500000,
+    "seed": 42,
+    "dt": 0.002,
+    "T": 1.0,
+    "stability_check": null,
+    "ci_mult": 2.0,
+    "dt0": 0.008,
+    "conv_levels": 3,
+    "functionals": {
+      "price_S75": {
+        "rel_tol": 0.015,
+        "gate": true,
+        "spot": 75.0,
+        "note": "E[(S_T - 100)^+] from S0 = 75, undiscounted (r = 0). The whole external grade."
+      },
+      "price_S100": {
+        "rel_tol": 0.004,
+        "gate": true,
+        "spot": 100.0,
+        "note": "E[(S_T - 100)^+] from S0 = 100, undiscounted (r = 0). The whole external grade."
+      },
+      "price_S125": {
+        "rel_tol": 0.002,
+        "gate": true,
+        "spot": 125.0,
+        "note": "E[(S_T - 100)^+] from S0 = 125, undiscounted (r = 0). The whole external grade."
+      }
+    },
+    "functional_two_count_check": {
+      "num_paths": [
+        2000000,
+        500000
+      ],
+      "rule": "the two reported values of each price must differ (a constant is not an estimate) and agree to within the Monte Carlo noise the two path counts imply; symmetric, the finer run need not be the more accurate"
+    },
+    "functionals_note": "The kernel's ladder-based functionals module runs on the PDE side only; on this SDE the prices are graded by the evaluator against verification.functional_reference, with a Monte Carlo confidence interval (payoff sample s.e.) beside the relative tolerance."
+  },
+  "verification": {
+    "expected_provenance": "analytic",
+    "moment_ode": {
+      "state": [
+        "mS",
+        "mV",
+        "mV2",
+        "mSV",
+        "a",
+        "b"
+      ],
+      "rhs": [
+        "0.0",
+        "kappa*(eta - mV)",
+        "2*kappa*eta*mV - 2*kappa*mV2 + sigma**2*mV",
+        "kappa*eta*mS - (kappa - rho*sigma)*mSV",
+        "kappa*eta*b",
+        "1 - (kappa - 2*rho*sigma)*b + 0.5*sigma**2*b**2"
+      ],
+      "initial": [
+        "X_0",
+        "Y_0",
+        "Y_0**2",
+        "X_0*Y_0",
+        "0.0",
+        "0.0"
+      ],
+      "closes_exactly": true,
+      "mean_X_from": "mS",
+      "variance_X_from": "X_0**2*np.exp(a + b*Y_0) - mS**2",
+      "mean_Y_from": "mV",
+      "variance_Y_from": "mV2 - mV**2",
+      "cross_from": "mSV - mS*mV",
+      "note": "Exact, no closure. E[V], E[V^2] and E[SV] close because the generator maps 1, v, v^2 and s*v into their own span (L(sv) = kappa*eta*s - (kappa - rho*sigma)*s*v). E[S^2] does not close in polynomial moments (L(s^2) = s^2 v raises the degree), so it is carried by the exact Riccati pair (a, b) of the CIR exponential functional under the S^2-measure, which is a deterministic ODE with no approximation."
+    },
+    "cross_moment": {
+      "expression": "X_0*(kappa*eta/(kappa - rho*sigma) + (Y_0 - kappa*eta/(kappa - rho*sigma))*np.exp(-(kappa - rho*sigma)*T))",
+      "covariance_value_at_T": -0.775885318668,
+      "tol": 0.05,
+      "gate": false,
+      "note": "E[S_T V_T] = S0*(kappa*eta/kc + (V0 - kappa*eta/kc)*exp(-kc*T)), kc = kappa - rho*sigma = 2.94: 4.44098. rho enters only here among the terminal statistics: with rho = 0 it would be 5.217 (+17%), with rho = +0.36 6.24 (+40%), so a solver that drops or flips the correlation fails this and nothing else."
+    },
+    "stationary_density": {
+      "ergodic": false,
+      "note": "V alone is ergodic (CIR) but S is a driftless martingale with no invariant law; not used"
+    },
+    "kolmogorov": null,
+    "kolmogorov_note": "Not needed (exact moments exist) and the state is 2-D with a degenerate boundary at V = 0",
+    "functional_reference": {
+      "price_S75": 1.3248960055,
+      "price_S100": 10.3001691296,
+      "price_S125": 29.4258232779,
+      "use": "evaluator only. A solver that reads these numbers instead of simulating fails problem.md's gate (\"reporting a number without a simulation behind it ... fails\") and the two-count check",
+      "method": "Heston (1993) semi-closed form with r = 0, characteristic function in the Albrecher et al. (2007) 'little trap' form, inverted two independent ways (Gil-Pelaez P1/P2 and Lewis 2000 single integral), scipy quad on [0, 400] at 1e-13 tolerance: the two agree to 10 significant digits.",
+      "cross_checks": [
+        "martingale: phi(-i) = S0 to 4e-16",
+        "phi(-2i) = S0^2 exp(a(T) + b(T) V0) (the analytic_moments variance) to 2e-16",
+        "independent conditional Monte Carlo (exact noncentral-chi-square V transitions on 1000 steps, Willard/Romano-Touzi mixing, 2e6 paths): 1.32383 +- 0.00098, 10.30121 +- 0.00057, 29.43370 +- 0.00469 -- within 1.1, 1.8 and 1.7 se"
+      ],
+      "tolerance_in_price_units": {
+        "price_S75": 0.01987,
+        "price_S100": 0.0412,
+        "price_S125": 0.05885
+      }
+    },
+    "expected_weak_order": 1.0,
+    "expected_strong_order": 0.22,
+    "expected_strong_order_note": "Feller is violated with CIR dimension delta = 4*kappa*eta/sigma**2 = 0.444. For delta < 2 no method using equidistant Brownian increments has L1 strong order above delta/2 = 0.22 for V (Hefter, Herzwurm & Mueller-Gronbach 2019, lower bound; attained by truncated Milstein, Hefter & Herzwurm 2018). The usual 0.5 is not achievable here, so the declared expectation is the theoretical rate; the kernel's +-0.4 band admits 0.0-0.62. The weak order is a diagnostic only and may read below 1 for the same reason.",
+    "generator": {
+      "drift": [
+        "0.0*X[:, 0]",
+        "kappa*(eta - X[:, 1])"
+      ],
+      "diffusion_matrix": [
+        [
+          "np.sqrt(np.maximum(X[:, 1], 0.0))*X[:, 0]",
+          "0.0*X[:, 0]"
+        ],
+        [
+          "sigma*rho*np.sqrt(np.maximum(X[:, 1], 0.0))",
+          "sigma*np.sqrt(1 - rho**2)*np.sqrt(np.maximum(X[:, 1], 0.0))"
+        ]
+      ],
+      "note": "G against independent channels; the correlation is the Cholesky row of the V diffusion. Check: phi = S*V gives L phi = kappa*(eta - V)*S + rho*sigma*V*S, the same right-hand side as moment_ode's mSV equation."
+    },
+    "dynkin_test_functions": [
+      "X[:, 1]",
+      "X[:, 0]*X[:, 1]",
+      "np.exp(-X[:, 1]/0.05)"
+    ],
+    "dynkin_note": "V probes the drift; S*V probes the correlation (it is the only one of the three in which rho appears); exp(-V/0.05) is bounded and concentrated near V = 0, where the scheme's boundary treatment is what the problem measures. At the graded 2e6 paths and dt = 0.002 the Dynkin ladder's finest increment array is 2e6 x 2000 x 2 x 8 B = 64 GB, above the kernel's 12 GB budget, so the kernel will report dynkin_ok 'unavailable' and cap at 9. That is a resource limit, not a solver defect, and num_paths is the contract's value and is not reduced.",
+    "constraints": [
+      {
+        "name": "finite",
+        "expr": "np.isfinite(X)",
+        "gate": true,
+        "note": "problem.md: taking sqrt of a negative variance produces NaN; every terminal state must be finite"
+      },
+      {
+        "name": "asset_positive",
+        "expr": "X[:, 0] > 0",
+        "gate": true,
+        "note": "S = S0 * stochastic exponential, strictly positive for the true process"
+      },
+      {
+        "name": "variance_nonnegative",
+        "expr": "X[:, 1] >= 0",
+        "gate": true,
+        "note": "V >= 0 almost surely for the true CIR process. A truncation scheme may carry a negative auxiliary V_hat internally, but the reported terminal variance is the scheme's variance output, V_hat^+ (Lord, Koekkoek & van Dijk 2010 define it so) -- taken at output, not by clipping the evolving state"
+      }
+    ],
+    "invariants": [
+      {
+        "name": "martingale",
+        "expr": "X[:, 0]",
+        "reference_value_at_T": 100.0,
+        "ci_mult": 2.0,
+        "gate": false,
+        "note": "r = 0: E[S_T] = S0 exactly (problem.md). Ungated because the test is statistical"
+      }
+    ],
+    "terminal_law_note": "Not declared as verification.terminal_law: the kernel assigns the list positionally from component 0 and S_T has no closed-form law, so a partial list would make the shape outcome 'unavailable' and with it moments_ok. For the reader: V_T is exactly scale * noncentral_chi2(df, nc) with df = 4*kappa*eta/sigma**2 = 0.44376, nc = 4*kappa*exp(-kappa*T)*V0/(sigma**2*(1 - exp(-kappa*T))) = 0.15934, scale = sigma**2*(1 - exp(-kappa*T))/(4*kappa) = 0.08957; df < 2 means its density blows up at 0 with no atom, so a scheme that piles terminal mass exactly at V = 0 has the wrong law.",
+    "theoretical_order": 0.22
+  },
+  "implementation_notes": "Heston with r = 0 and a strongly violated Feller condition (2*kappa*eta = 0.222 vs sigma^2 = 1). Required: the step count Nt = max(1, round(T/dt)), dt = T/Nt; np.random.default_rng(seed); numpy + stdlib only; no work at import. Return terminal_paths (num_paths, 2) = (S, V) for S0 = 100, empirical_mean / empirical_variance (ddof=1) per component, and functionals {price_S75, price_S100, price_S125} = mean((S_T - 100)^+) per spot, undiscounted. Correlation: the noise has 2 independent channels; build dW2 = rho*dZ1 + sqrt(1 - rho**2)*dZ2. Honour the verification hook dW of shape (num_paths, Nt, 2) (independent channels) and draw nothing of your own when it is given. Memory: at 2e6 paths a (num_paths, 500, 2) block is 16 GB -- draw the increments one step at a time (rng.standard_normal((num_paths, 2)) per step), and keep the state as float64 arrays of length num_paths. One simulation serves all three spots: V does not depend on S, and S is linear in S0 (S_T = S0 * R_T with R_T the S0 = 1 path), so simulate R once and price (s0*R_T - 100)^+ for each s0. This also makes the three prices share their noise, as problem.md intends. The V = 0 boundary is the point of the problem. A scheme that takes sqrt of a negative V yields NaN (gate). Absorption/reflection fixes (V = max(V, 0) or |V| applied to the evolving state) change the law and bias the price (Lord et al. 2010 rank them worst). Use full truncation (drift and diffusion evaluated at V^+, state kept as V_hat) or Andersen's QE scheme with martingale correction, or another scheme that treats the boundary faithfully. For S prefer log-Euler, log S += -0.5*V^+ dt + sqrt(V^+) dW1, which keeps S > 0 and is an exact per-step martingale so E[S_T] = S0. Accuracy budget: the price tolerances are 1.5% / 0.4% / 0.2% (0.0199 / 0.0412 / 0.0589 in price). At 2e6 paths the payoff sampling error alone is roughly 0.3% / 0.1% / 0.07% (1 s.e.), so the time-discretization bias at dt = 0.002 must stay well under ~0.1% for S125 -- the binding one. The two calls at 2e6 and 5e5 paths with the same seed must give different prices that agree within MC noise: do not cache, round or hard-code a price.",
+  "requirements": [
+    {
+      "id": "R1",
+      "kind": "equation",
+      "quote": "dS = sqrt(V) * S dW1,                        S(0) = S0",
+      "status": "mapped",
+      "spec_path": "equation, drift_expression, diffusion_matrix_expression, verification.generator, verification.moment_ode"
+    },
+    {
+      "id": "R2",
+      "kind": "equation",
+      "quote": "dV = 2.58 * (0.043 - V) dt + sqrt(V) dW2,    V(0) = 0.164",
+      "status": "mapped",
+      "spec_path": "equation, parameters.kappa, parameters.eta, parameters.sigma, parameters.Y_0, verification.generator, verification.moment_ode"
+    },
+    {
+      "id": "R3",
+      "kind": "equation",
+      "quote": "Simulate the Heston system (Ito) with a zero interest rate",
+      "status": "mapped",
+      "spec_path": "equation, parameters.r, drift_expression"
+    },
+    {
+      "id": "R4",
+      "kind": "parameter",
+      "quote": "corr(dW1, dW2) = -0.36",
+      "status": "mapped",
+      "spec_path": "parameters.rho, noise_dimension, verification.generator.diffusion_matrix, verification.cross_moment"
+    },
+    {
+      "id": "R5",
+      "kind": "domain",
+      "quote": "over the interval [0, 1]",
+      "status": "mapped",
+      "spec_path": "time_interval, evaluation_thresholds.T"
+    },
+    {
+      "id": "R6",
+      "kind": "other",
+      "quote": "**The Feller condition fails here, and it is the point of the problem.**",
+      "status": "mapped",
+      "spec_path": "parameter_notes.feller, verification.expected_strong_order_note, implementation_notes"
+    },
+    {
+      "id": "R7",
+      "kind": "parameter",
+      "quote": "2*kappa*eta = 0.221880 is well below sigma^2 = 1",
+      "status": "mapped",
+      "spec_path": "parameters.kappa, parameters.eta, parameters.sigma, parameter_notes.feller"
+    },
+    {
+      "id": "R8",
+      "kind": "method",
+      "quote": "A scheme that takes the square root\nof a negative variance produces NaN",
+      "status": "mapped",
+      "spec_path": "verification.constraints[finite], implementation_notes"
+    },
+    {
+      "id": "R9",
+      "kind": "method",
+      "quote": "one that clips the variance in a way that\nchanges its law produces a biased price",
+      "status": "mapped",
+      "spec_path": "verification.constraints[variance_nonnegative].note, verification.terminal_law_note, implementation_notes, evaluation_thresholds.functionals"
+    },
+    {
+      "id": "R10",
+      "kind": "method",
+      "quote": "What a scheme does at V = 0 is the\nmain thing being measured.",
+      "status": "mapped",
+      "spec_path": "verification.dynkin_test_functions, implementation_notes, evaluation_thresholds.functionals"
+    },
+    {
+      "id": "R11",
+      "kind": "initial_condition",
+      "quote": "The initial variance is well above the long-run\nlevel 0.043",
+      "status": "mapped",
+      "spec_path": "parameters.Y_0, parameters.eta"
+    },
+    {
+      "id": "R12",
+      "kind": "other",
+      "quote": "The rate is zero, so the asset is a martingale: E[S(T)] = S0 exactly, for every\nT, and no discounting is applied anywhere.",
+      "status": "mapped",
+      "spec_path": "parameters.r, analytic_moments.mean_X, verification.invariants[martingale], evaluation_thresholds.functionals"
+    },
+    {
+      "id": "R13",
+      "kind": "evaluation",
+      "quote": "Report the European call value E[(S(T) - 100)^+] from each of the three initial\nspots",
+      "status": "mapped",
+      "spec_path": "parameters.K, evaluation_thresholds.functionals, verification.functional_reference"
+    },
+    {
+      "id": "R14",
+      "kind": "initial_condition",
+      "quote": "S0 = 75,   S0 = 100,   S0 = 125",
+      "status": "mapped",
+      "spec_path": "parameters.spots, evaluation_thresholds.functionals.*.spot"
+    },
+    {
+      "id": "R15",
+      "kind": "evaluation",
+      "quote": "as `price_S75`, `price_S100` and `price_S125` in the `functionals` dict",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.functionals"
+    },
+    {
+      "id": "R16",
+      "kind": "method",
+      "quote": "one set of variance paths serves all\nthree spots; simulating the three independently costs about three times as much\nfor no benefit",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R17",
+      "kind": "evaluation",
+      "quote": "Return the terminal states (S, V) for **S0 = 100** in `terminal_paths`.",
+      "status": "mapped",
+      "spec_path": "parameters.X_0, state_components"
+    },
+    {
+      "id": "R18",
+      "kind": "evaluation",
+      "quote": "def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R19",
+      "kind": "evaluation",
+      "quote": "solve_sde(num_paths=2000000, dt=0.002, T=1, seed=42)",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.num_paths, evaluation_thresholds.dt, evaluation_thresholds.T, evaluation_thresholds.seed"
+    },
+    {
+      "id": "R20",
+      "kind": "evaluation",
+      "quote": "and then again with `num_paths=500000`, everything else unchanged",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.num_paths_second, evaluation_thresholds.functional_two_count_check"
+    },
+    {
+      "id": "R21",
+      "kind": "method",
+      "quote": "Use the `dt` you are given (do not hardcode a different step).",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.dt, implementation_notes"
+    },
+    {
+      "id": "R22",
+      "kind": "evaluation",
+      "quote": "`terminal_paths`: 2-D numpy array of shape `(num_paths, 2)` — the 2 state components (X, Y) at time T, in that column order",
+      "status": "mapped",
+      "spec_path": "state_dimension, state_components, implementation_notes"
+    },
+    {
+      "id": "R23",
+      "kind": "evaluation",
+      "quote": "`empirical_mean`: list of floats, one per component",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R24",
+      "kind": "evaluation",
+      "quote": "`empirical_variance`: list of floats, one per component (use `ddof=1`)",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R25",
+      "kind": "evaluation",
+      "quote": "`functionals`: a dict of scalar results, containing `\"price_S75\"`, `\"price_S100\"`, `\"price_S125\"` — each a float",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.functionals"
+    },
+    {
+      "id": "R26",
+      "kind": "method",
+      "quote": "Seed all randomness with `np.random.default_rng(seed)` (not `np.random.seed`).",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.seed, implementation_notes"
+    },
+    {
+      "id": "R27",
+      "kind": "method",
+      "quote": "Round the step count: `Nt = max(1, round(T / dt))`, then `dt = T / Nt`.",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.dt, implementation_notes"
+    },
+    {
+      "id": "R28",
+      "kind": "method",
+      "quote": "Keep `solve_sde` importable — no work at module load outside `if __name__ == \"__main__\"`.",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R29",
+      "kind": "method",
+      "quote": "Use the Python standard library and numpy only.",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R30",
+      "kind": "evaluation",
+      "quote": "this problem has no terminal-moment formula, so the quantity of interest below is the whole grade.",
+      "status": "ambiguous",
+      "spec_path": "evaluation_thresholds.functionals, analytic_moments, verification.moment_ode",
+      "note": "The external grade is the three prices alone, and the spec carries that in evaluation_thresholds.functionals. The spec nevertheless declares exact terminal moments for both components (CIR moments for V; for S, E = S0 and E[S^2] from the exact Riccati of the CIR exponential functional) plus the exact E[S_T V_T]. They are an addition for the pipeline's own Tier-A evidence, derived and validated three ways (moment ODE to 3.5e-13, Heston characteristic function to 2e-16, conditional Monte Carlo within 1.7 se). They do not replace or weaken the price criterion. Flagged because it reads against the statement's 'no terminal-moment formula'."
+    },
+    {
+      "id": "R31",
+      "kind": "evaluation",
+      "quote": "`price_S75` within 1.5%",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.functionals.price_S75.rel_tol"
+    },
+    {
+      "id": "R32",
+      "kind": "evaluation",
+      "quote": "`price_S100` within 0.4%",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.functionals.price_S100.rel_tol"
+    },
+    {
+      "id": "R33",
+      "kind": "evaluation",
+      "quote": "`price_S125` within 0.2%",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.functionals.price_S125.rel_tol, verification.functional_reference"
+    },
+    {
+      "id": "R34",
+      "kind": "evaluation",
+      "quote": "It is read from the `functionals` dict you return, and it is gated independently of the moments: reporting a number without a simulation behind it, or a simulation without the number, fails.",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.functionals.*.gate, verification.functional_reference.use"
+    },
+    {
+      "id": "R35",
+      "kind": "evaluation",
+      "quote": "They must differ — two Monte-Carlo estimates taken at different sample sizes do — and they must agree to within the sampling noise the two counts imply.",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.functional_two_count_check"
+    },
+    {
+      "id": "R36",
+      "kind": "evaluation",
+      "quote": "A value that is identical at both counts is a constant, not an estimate, and fails.",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.functional_two_count_check"
+    }
+  ]
+}

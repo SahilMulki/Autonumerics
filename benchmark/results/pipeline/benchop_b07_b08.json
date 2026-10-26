@@ -62,7 +62,7 @@
       "verifylib/kernel/sde/laws.py": "d13c89966bdee68a",
       "verifylib/kernel/sde/surrogates.py": "7c7b5ec947f19861"
     },
-    "invocation_seconds": 4255.1
+    "invocation_seconds": 10421.1
   },
   "results": [
     {
@@ -341,6 +341,440 @@
         "winner_harness_err": 0.29515446890781083,
         "harness_error_metric": "worst functional error / its gate",
         "harness_error_margin": 0.1776322905420515,
+        "wrong_plan_won": false
+      }
+    },
+    {
+      "id": "B08",
+      "slug": "sde_heston_call_hivar",
+      "type": "sde",
+      "tier": 3,
+      "family": "heston_feller",
+      "title": "Heston call at three spots, higher initial variance",
+      "challenge": "The Feller-violating Heston call started further from its long-run variance, so the variance path has further to travel and spends longer where the square root is delicate.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 4719.1,
+        "wall_clock_seconds": 4719.1,
+        "started_at": "2026-10-26T19:49:22",
+        "ended_at": "2026-10-26T21:08:01",
+        "log": "benchmark/results/pipeline/logs/sde_heston_call_hivar.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "1-full-truncation-euler",
+        "best_score": 9,
+        "n_plans": 3,
+        "total_iters": 6,
+        "plans": {
+          "1-full-truncation-euler": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": "Full-truncation Euler-Maruyama, log-Euler S, one path set prices all spots."
+          },
+          "2-andersen-qe": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": "Andersen Quadratic-Exponential scheme for V with martingale-corrected S."
+          },
+          "3-truncated-milstein": {
+            "iter": 2,
+            "score": 1,
+            "one_sentence": "Milstein on V alone with positivity truncation, log-Euler S."
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 2000000,
+          "dt": 0.002,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 76.724608
+        },
+        "functional_errs": {
+          "price_S75": 0.005079321106408598,
+          "price_S100": 0.0015342949598170206,
+          "price_S125": 0.0007365297444405022
+        },
+        "functional_abs_errs": {
+          "price_S75": 0.0067295722444589146,
+          "price_S100": 0.01580349758086541,
+          "price_S125": 0.021672994098793197
+        },
+        "functional_tol": 0.015,
+        "functional_tol_used": {
+          "price_S75": 0.015,
+          "price_S100": 0.004,
+          "price_S125": 0.002
+        },
+        "worst_functional_rel_err": 0.005079321106408598,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 2000000,
+          "num_paths_coarse": 500000,
+          "dt": 0.002,
+          "band_factor": 3.0,
+          "values": {
+            "price_S75": {
+              "graded": 1.3316255777299437,
+              "coarse": 1.3321358563914614,
+              "delta": 0.0005102786615176491,
+              "band": 0.05962032024684681,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S100": {
+              "graded": 10.315972627218176,
+              "coarse": 10.323503727241333,
+              "delta": 0.0075311000231561565,
+              "band": 0.12360202955564772,
+              "moved": true,
+              "consistent": true
+            },
+            "price_S125": {
+              "graded": 29.44749627195823,
+              "coarse": 29.467403736177673,
+              "delta": 0.019907464219443227,
+              "band": 0.17655493966715663,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.005464467306114073,
+          "solve_s": 17.287996,
+          "wall_s": 17.5,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 500000,
+              "dt": 0.002,
+              "rel_err": 0.005464467306114073,
+              "solve_s": 17.287996,
+              "wall_s": 17.5,
+              "graded": false
+            },
+            {
+              "num_paths": 2000000,
+              "dt": 0.002,
+              "rel_err": 0.005079321106408598,
+              "solve_s": 76.724608,
+              "wall_s": 76.98,
+              "graded": true
+            }
+          ]
+        },
+        "plan_dir": "workspace/sde_heston_call_hivar/plans/1-full-truncation-euler"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 9,
+        "provenance": "analytic",
+        "certified": false,
+        "tier": "A",
+        "bound_by": "rubric",
+        "reason": "every checked moment is within tolerance of the exact moments and the Monte Carlo is resolved, but the generator check could not run -- the ladder exceeded its memory budget, the generator could not be built from the declared drift and diffusion, or the observables run crashed. Exact terminal moments cannot separate a correct solve from a process that shares them (manual \u00a724's own argument), so this is everything measurable here passing without the one check that distinguishes this SDE -- uncertified, not suspect",
+        "agent_cap": null
+      },
+      "verdict": "UNDERCLAIM",
+      "harness_by_plan": {
+        "plans": {
+          "1-full-truncation-euler": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "price_S75": 0.005079321106408598,
+                "price_S100": 0.0015342949598170206,
+                "price_S125": 0.0007365297444405022
+              },
+              "functional_abs_errs": {
+                "price_S75": 0.0067295722444589146,
+                "price_S100": 0.01580349758086541,
+                "price_S125": 0.021672994098793197
+              },
+              "functional_tol": 0.015,
+              "functional_tol_used": {
+                "price_S75": 0.015,
+                "price_S100": 0.004,
+                "price_S125": 0.002
+              },
+              "worst_functional_rel_err": 0.005079321106408598,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 2000000,
+                "num_paths_coarse": 500000,
+                "dt": 0.002,
+                "band_factor": 3.0,
+                "values": {
+                  "price_S75": {
+                    "graded": 1.3316255777299437,
+                    "coarse": 1.3321358563914614,
+                    "delta": 0.0005102786615176491,
+                    "band": 0.05962032024684681,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_S100": {
+                    "graded": 10.315972627218176,
+                    "coarse": 10.323503727241333,
+                    "delta": 0.0075311000231561565,
+                    "band": 0.12360202955564772,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_S125": {
+                    "graded": 29.44749627195823,
+                    "coarse": 29.467403736177673,
+                    "delta": 0.019907464219443227,
+                    "band": 0.17655493966715663,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.005464467306114073,
+                "solve_s": 17.287996,
+                "wall_s": 17.5,
+                "level_ignored": false
+              }
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.002528,
+              "reference_outcome": "validated",
+              "invariant_max_drift": 0.0276,
+              "solve_time_s": 80.474,
+              "solver_sha256": "8cce19e192420749e23808cf513d7f8a0601868e00c664dacb52f460c0e89452"
+            },
+            "is_winner": true,
+            "harness_error": 0.38357373995425514,
+            "harness_error_margin": 0.10553425315008173,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 9,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments and the Monte Carlo is resolved, but the generator check could not run -- the ladder exceeded its memory budget, the generator could not be built from the declared drift and diffusion, or the observables run crashed. Exact terminal moments cannot separate a correct solve from a process that shares them (manual \u00a724's own argument), so this is everything measurable here passing without the one check that distinguishes this SDE -- uncertified, not suspect",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "2-andersen-qe": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "price_S75": 0.003655929347167783,
+                "price_S100": 0.001102555417504484,
+                "price_S125": 0.0006699460288969034
+              },
+              "functional_abs_errs": {
+                "price_S75": 0.004843726188399788,
+                "price_S100": 0.011356507275094074,
+                "price_S125": 0.019713713452023995
+              },
+              "functional_tol": 0.015,
+              "functional_tol_used": {
+                "price_S75": 0.015,
+                "price_S100": 0.004,
+                "price_S125": 0.002
+              },
+              "worst_functional_rel_err": 0.003655929347167783,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 2000000,
+                "num_paths_coarse": 500000,
+                "dt": 0.002,
+                "band_factor": 3.0,
+                "values": {
+                  "price_S75": {
+                    "graded": 1.3297397316738846,
+                    "coarse": 1.331234659319544,
+                    "delta": 0.001494927645659505,
+                    "band": 0.05962032024684681,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_S100": {
+                    "graded": 10.311525636912405,
+                    "coarse": 10.3226195600065,
+                    "delta": 0.011093923094094293,
+                    "band": 0.12360202955564772,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_S125": {
+                    "graded": 29.44553699131146,
+                    "coarse": 29.470878910318785,
+                    "delta": 0.02534191900732452,
+                    "band": 0.17655493966715663,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.004784265185958203,
+                "solve_s": 45.641049,
+                "wall_s": 45.94,
+                "level_ignored": false
+              }
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.002363,
+              "reference_outcome": "validated",
+              "invariant_max_drift": 0.0267,
+              "solve_time_s": 217.479,
+              "solver_sha256": "97ed0356a40c4fbb27b7e1425eafe43c83069ea56aaa169fd293cea78aa493e8"
+            },
+            "is_winner": false,
+            "harness_error": 0.3349730144484517,
+            "harness_error_margin": 0.24861095002343195,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 9,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments and the Monte Carlo is resolved, but the generator check could not run -- the ladder exceeded its memory budget, the generator could not be built from the declared drift and diffusion, or the observables run crashed. Exact terminal moments cannot separate a correct solve from a process that shares them (manual \u00a724's own argument), so this is everything measurable here passing without the one check that distinguishes this SDE -- uncertified, not suspect",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "3-truncated-milstein": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "price_S75": 0.0050926554548525495,
+                "price_S100": 0.0012348697913784786,
+                "price_S125": 0.0006506241963423957
+              },
+              "functional_abs_errs": {
+                "price_S75": 0.006747238869448058,
+                "price_S100": 0.012719367704278284,
+                "price_S125": 0.019145152621870665
+              },
+              "functional_tol": 0.015,
+              "functional_tol_used": {
+                "price_S75": 0.015,
+                "price_S100": 0.004,
+                "price_S125": 0.002
+              },
+              "worst_functional_rel_err": 0.0050926554548525495,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 2000000,
+                "num_paths_coarse": 500000,
+                "dt": 0.002,
+                "band_factor": 3.0,
+                "values": {
+                  "price_S75": {
+                    "graded": 1.3316432443549329,
+                    "coarse": 1.3337322555162692,
+                    "delta": 0.002089011161336307,
+                    "band": 0.05962032024684681,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_S100": {
+                    "graded": 10.31288849734159,
+                    "coarse": 10.325779963647381,
+                    "delta": 0.012891466305791965,
+                    "band": 0.12360202955564772,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "price_S125": {
+                    "graded": 29.444968430481307,
+                    "coarse": 29.47345442022208,
+                    "delta": 0.028485989740772766,
+                    "band": 0.17655493966715663,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.006669391404457044,
+                "solve_s": 75.669052,
+                "wall_s": 75.85,
+                "level_ignored": false
+              }
+            },
+            "kernel": {
+              "score": 1.0,
+              "certified": false,
+              "provenance": "none",
+              "solver_sha256": "2a4f3769477ed04cff1305a7d3e0ffcfbdc18092b4125eaba384ca09e20ffb23"
+            },
+            "is_winner": false,
+            "harness_error": 0.3395103636568366,
+            "harness_error_margin": 0.06068859499633955,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 1,
+              "provenance": "none",
+              "certified": false,
+              "tier": "none",
+              "bound_by": "rubric",
+              "reason": "the solver crashed or returned non-finite output",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          }
+        },
+        "winner": "1-full-truncation-euler",
+        "best_plan_by_harness": "2-andersen-qe",
+        "best_harness_err": 0.3349730144484517,
+        "winner_harness_err": 0.38357373995425514,
+        "harness_error_metric": "worst functional error / its gate",
+        "harness_error_margin": 0.24861095002343195,
         "wrong_plan_won": false
       }
     }

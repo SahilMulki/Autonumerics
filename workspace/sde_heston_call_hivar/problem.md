@@ -1,0 +1,66 @@
+# Heston Call at Three Spots, Feller Condition Violated
+
+Simulate the Heston system (Ito) with a zero interest rate:
+
+    dS = sqrt(V) * S dW1,                        S(0) = S0
+    dV = 2.58 * (0.043 - V) dt + sqrt(V) dW2,    V(0) = 0.164
+
+with corr(dW1, dW2) = -0.36, over the interval [0, 1].
+
+**The Feller condition fails here, and it is the point of the problem.**
+2*kappa*eta = 0.221880 is well below sigma^2 = 1, so the variance process
+reaches zero and spends real time near it. A scheme that takes the square root
+of a negative variance produces NaN; one that clips the variance in a way that
+changes its law produces a biased price. What a scheme does at V = 0 is the
+main thing being measured. The initial variance is well above the long-run
+level 0.043, so the variance decays toward it across the interval rather than
+sitting near it.
+
+The rate is zero, so the asset is a martingale: E[S(T)] = S0 exactly, for every
+T, and no discounting is applied anywhere.
+
+Report the European call value E[(S(T) - 100)^+] from each of the three initial
+spots
+
+    S0 = 75,   S0 = 100,   S0 = 125
+
+as `price_S75`, `price_S100` and `price_S125` in the `functionals` dict. The
+variance process does not depend on S, so one set of variance paths serves all
+three spots; simulating the three independently costs about three times as much
+for no benefit.
+
+Return the terminal states (S, V) for **S0 = 100** in `terminal_paths`.
+
+
+---
+
+## Solver contract (how this problem is run and scored)
+
+Implement, in `solver.py`, exactly this function:
+
+    def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict
+
+It is imported and called **twice**, with these exact arguments:
+
+    solve_sde(num_paths=2000000, dt=0.002, T=1, seed=42)
+
+and then again with `num_paths=500000`, everything else unchanged (see **Two path counts** below).
+
+Use the `dt` you are given (do not hardcode a different step). It must return a dict with:
+
+- `terminal_paths`: 2-D numpy array of shape `(num_paths, 2)` — the 2 state components (X, Y) at time T, in that column order
+- `empirical_mean`: list of floats, one per component
+- `empirical_variance`: list of floats, one per component (use `ddof=1`)
+- `functionals`: a dict of scalar results, containing `"price_S75"`, `"price_S100"`, `"price_S125"` — each a float
+
+Requirements:
+- Seed all randomness with `np.random.default_rng(seed)` (not `np.random.seed`).
+- Round the step count: `Nt = max(1, round(T / dt))`, then `dt = T / Nt`.
+- Keep `solve_sde` importable — no work at module load outside `if __name__ == "__main__"`.
+- Use the Python standard library and numpy only.
+
+Scoring is independent of any self-report: this problem has no terminal-moment formula, so the quantity of interest below is the whole grade.
+
+**Quantity of interest.** `price_S75`, `price_S100`, `price_S125` must each be within their own relative tolerance of the reference value — `price_S75` within 1.5%; `price_S100` within 0.4%; `price_S125` within 0.2%. It is read from the `functionals` dict you return, and it is gated independently of the moments: reporting a number without a simulation behind it, or a simulation without the number, fails.
+
+**Two path counts.** `solve_sde` is called a second time with `num_paths=500000` and the same `dt`, `T` and `seed`, and the two reported values of each quantity are compared. They must differ — two Monte-Carlo estimates taken at different sample sizes do — and they must agree to within the sampling noise the two counts imply. A value that is identical at both counts is a constant, not an estimate, and fails. Nothing here requires the finer run to be the more accurate one; the check is symmetric.
