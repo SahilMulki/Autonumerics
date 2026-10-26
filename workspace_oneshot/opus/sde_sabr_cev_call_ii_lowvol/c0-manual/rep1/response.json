@@ -1,0 +1,17 @@
+{
+  "agent_status": "ok",
+  "wall_s": 51.9,
+  "result_text": "```python\nimport numpy as np\n\n\ndef solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict:\n    S0, sig0 = 0.07, 0.34\n    nu, rho = 0.8, -0.6\n    strikes = {\"price_K1\": 0.051022538988,\n               \"price_K2\": 0.07,\n               \"price_K3\": 0.096035989138}\n\n    Nt = max(1, round(T / dt))\n    dt = T / Nt\n    rng = np.random.default_rng(seed)\n\n    S = np.full(num_paths, S0, dtype=float)\n    sig = np.full(num_paths, sig0, dtype=float)\n\n    rhobar2 = 1.0 - rho * rho\n    sq_dt = np.sqrt(dt)\n    drift_ln = -0.5 * nu * nu * dt\n    LAM = 200.0  # above this Poisson intensity the exact law is effectively Gaussian\n\n    for _ in range(Nt):\n        z1 = rng.standard_normal(num_paths)\n        z2 = rng.standard_normal(num_paths)\n\n        # exact lognormal step for the volatility (martingale)\n        sig_new = sig * np.exp(drift_ln + nu * sq_dt * z1)\n\n        # uncorrelated integrated variance over the step (trapezoid)\n        v = rhobar2 * 0.5 * (sig * sig + sig_new * sig_new) * dt\n        v = np.maximum(v, 1e-300)\n\n        # correlated part: rho * int sigma sqrt(S) dW_sigma ~ rho/nu sqrt(S_n) dsigma\n        St = S + (rho / nu) * np.sqrt(S) * (sig_new - sig)\n        np.maximum(St, 0.0, out=St)\n\n        # uncorrelated part: CEV(1/2) = scaled BESQ(0), absorbing at zero\n        Snew = St + np.sqrt(St * v) * z2\n        lam = 2.0 * St / v\n        small = (lam < LAM) & (St > 0.0)\n        if small.any():\n            idx = np.nonzero(small)[0]\n            Np = rng.poisson(lam[idx])\n            g = np.zeros(idx.size)\n            m = Np > 0\n            if m.any():\n                g[m] = rng.gamma(Np[m].astype(float))\n            Snew[idx] = 0.5 * v[idx] * g\n        # absorbed paths (St == 0) stay at zero\n        Snew[St <= 0.0] = 0.0\n        np.maximum(Snew, 0.0, out=Snew)\n\n        S = Snew\n        sig = sig_new\n\n    terminal = np.column_stack([S, sig])\n    functionals = {name: float(np.mean(np.maximum(S - K, 0.0)))\n                   for name, K in strikes.items()}\n\n    return {\n        \"terminal_paths\": terminal,\n        \"empirical_mean\": [float(np.mean(S)), float(np.mean(sig))],\n        \"empirical_variance\": [float(np.var(S, ddof=1)), float(np.var(sig, ddof=1))],\n        \"functionals\": functionals,\n        \"num_paths\": num_paths,\n        \"dt\": dt,\n        \"T\": T,\n    }\n\n\nif __name__ == \"__main__\":\n    res = solve_sde(num_paths=20000, dt=0.004, T=10, seed=42)\n    print(res[\"empirical_mean\"], res[\"functionals\"])\n```",
+  "code_text": "",
+  "code_source": "result",
+  "salvage_used": false,
+  "stop_subtype": "success",
+  "denied_tools": [],
+  "cost_usd": 0.22378,
+  "input_tokens": 42028,
+  "output_tokens": 4916,
+  "num_turns": 1,
+  "limit_hit": false,
+  "stderr_tail": "",
+  "retries_used": 0
+}
