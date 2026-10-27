@@ -1,0 +1,514 @@
+{
+  "id": "sde_hhw_call_corr",
+  "equation_type": "SDE",
+  "sde_family": "heston_hull_white",
+  "state_dimension": 3,
+  "noise_dimension": 3,
+  "noise_structure": "multiplicative",
+  "linear": false,
+  "stiff": false,
+  "interpretation": "ito",
+  "equation": "dS = R*S dt + sqrt(V)*S dW1,  S(0) = S0;   dV = kappa*(eta - V) dt + sigma_v*sqrt(V) dW2,  V(0) = V_0;   dR = a_r*(b_r - R) dt + sigma_r dW3,  R(0) = R_0;   with corr(dW1,dW2) = rho_SV, corr(dW1,dW3) = rho_SR, corr(dW2,dW3) = rho_VR  (Ito). State column order (S, V, R) = (X[:,0], X[:,1], X[:,2]).",
+  "parameters": {
+    "X_0": 100.0,
+    "Y_0": 0.04,
+    "Z_0": 0.1,
+    "V_0": 0.04,
+    "R_0": 0.1,
+    "S0_low": 75.0,
+    "S0_mid": 100.0,
+    "S0_high": 125.0,
+    "K": 100.0,
+    "kappa": 0.5,
+    "eta": 0.04,
+    "sigma_v": 1.0,
+    "a_r": 0.08,
+    "b_r": 0.1,
+    "sigma_r": 0.09,
+    "rho_SV": -0.9,
+    "rho_SR": 0.6,
+    "rho_VR": -0.7
+  },
+  "parameter_notes": "X_0/Y_0/Z_0 are the initial state of the three columns (S, V, R) for the terminal_paths run, which problem.md fixes at S0 = 100; they duplicate S0_mid, V_0 and R_0 because the kernel's Dynkin identity reads the X_0/Y_0/Z_0 spelling for a vector state. sigma_v = 1 and the S-diffusion coefficient 1 are implicit in problem.md ('sqrt(V) dW2', 'sqrt(V) * S dW1'). The correlation matrix [[1,-0.9,0.6],[-0.9,1,-0.7],[0.6,-0.7,1]] is positive definite (det 0.096, eigenvalues 0.0888, 0.4372, 2.4741); its lower Cholesky factor is [[1,0,0],[-0.9,0.43589,0],[0.6,-0.36707,0.71082]].",
+  "time_interval": {
+    "T0": 0.0,
+    "T": 10.0
+  },
+  "milstein_eligible": false,
+  "milstein_ineligible_reason": "levy_area",
+  "milstein_ineligible_note": "Three correlated Brownian channels with state-dependent, non-commuting diffusion columns (sqrt(V)*S on S, sqrt(V) on V): the multi-dimensional Milstein correction needs the Levy areas of the channel pairs, which cannot be sampled from the supplied increments alone. Only a plan declaring a levy_area_treatment may claim Milstein.",
+  "diffusion_derivative": "Not applicable (vector state, 3 non-commuting channels). For reference only: d/dV of sqrt(V) is 1/(2 sqrt(V)), singular at V = 0, which is where the paths spend much of their time here.",
+  "milstein_correction": null,
+  "analytic_moments": {
+    "has_analytic_solution": false,
+    "state_dimension": 3,
+    "mean_expression": null,
+    "variance_expression": null,
+    "note": "problem.md: 'this problem has no terminal-moment formula'. Correct for the asset S: with corr(dW1,dW3) and corr(dW2,dW3) both non-zero the instantaneous covariance of (log S, R) is rho_SR*sigma_r*sqrt(V), which is not affine, so (log S, V, R) is not an affine process and neither E[S_T] nor E[S_T^2] satisfies a closed moment ODE (d E[R S]/dt involves E[sqrt(V) S]). The V and R marginals DO have exact moments (V is CIR, R is Ornstein-Uhlenbeck, each autonomous): E[V_T] = eta + (V_0 - eta)*exp(-kappa*T) = 0.04, Var[V_T] = (sigma_v**2/kappa)*(V_0*(exp(-kappa*T) - exp(-2*kappa*T)) + 0.5*eta*(1 - exp(-kappa*T))**2) = 0.0399981840; E[R_T] = b_r + (R_0 - b_r)*exp(-a_r*T) = 0.10, Var[R_T] = sigma_r**2/(2*a_r)*(1 - exp(-2*a_r*T)) = 0.0404039888. They are NOT declared here as per-component moment expressions because the kernel aligns moment references to terminal_paths columns by index and column 0 (S) has none; declaring them would compare S's mean against V's. They are carried instead as ungated verification.invariants entries (martingale evaluator with reference_value_at_T), which address a column explicitly."
+  },
+  "drift_expression": [
+    "X[:, 2]*X[:, 0]",
+    "kappa*(eta - X[:, 1])",
+    "a_r*(b_r - X[:, 2])"
+  ],
+  "diffusion_expression": "diag(sqrt(V)*S, sigma_v*sqrt(V), sigma_r) @ Lc against three INDEPENDENT standard channels, where Lc is the lower Cholesky factor of the correlation matrix; sqrt(V) means sqrt(max(V, 0)) for any scheme whose state V can go negative. Machine-readable form in verification.generator.diffusion_matrix.",
+  "diffusion_matrix_expression": "G(X) = [[sqrt(V)*S, 0, 0], [sigma_v*sqrt(V)*rho_SV, sigma_v*sqrt(V)*sqrt(1 - rho_SV**2), 0], [sigma_r*rho_SR, sigma_r*c21, sigma_r*c22]] with c21 = (rho_VR - rho_SR*rho_SV)/sqrt(1 - rho_SV**2) = -0.367065, c22 = sqrt(1 - rho_SR**2 - c21**2) = 0.710819; G @ G.T reproduces the stated correlations exactly.",
+  "diffusion_derivative_expression": null,
+  "initial_condition": {
+    "law": "deterministic",
+    "value": [
+      100.0,
+      0.04,
+      0.1
+    ]
+  },
+  "solver_contract": {
+    "signature": "def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict",
+    "graded_calls": [
+      {
+        "num_paths": 1000000,
+        "dt": 0.004,
+        "T": 10,
+        "seed": 42
+      },
+      {
+        "num_paths": 250000,
+        "dt": 0.004,
+        "T": 10,
+        "seed": 42
+      }
+    ],
+    "returns": {
+      "terminal_paths": "2-D numpy array of shape (num_paths, 3): (S, V, R) at T for S0 = 100, in that column order",
+      "empirical_mean": "list of 3 floats, one per component",
+      "empirical_variance": "list of 3 floats, one per component, ddof=1",
+      "functionals": "dict with float entries price_S75, price_S100, price_S125 = E[exp(-integral_0^T R dt) * (S(T) - K)^+] for S0 = 75, 100, 125"
+    },
+    "rng": "np.random.default_rng(seed); never np.random.seed",
+    "step_rounding": "Nt = max(1, round(T / dt)); dt = T / Nt",
+    "importable": "no work at module load outside if __name__ == '__main__'",
+    "dependencies": "Python standard library and numpy only",
+    "verification_hooks": "The pipeline additionally calls solve_sde(..., dW=..., observables=...). dW has shape (num_paths, Nt, 3) and holds INDEPENDENT standard Brownian increments (already scaled by sqrt(dt)); the solver must correlate them itself with the Cholesky factor (dW_corr = dW @ Lc.T) and must draw no randomness of its own when dW is given. observables are functions of the (num_paths, 3) state; accumulate their trapezoid path integrals and return them under path_integrals."
+  },
+  "evaluation_thresholds": {
+    "num_paths": 1000000,
+    "num_paths_secondary": 250000,
+    "seed": 42,
+    "dt": 0.004,
+    "variance_rel_err_max": 0.1,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "stability_check": null,
+    "ci_mult": 2.0,
+    "dt0": 0.016,
+    "conv_levels": 3,
+    "conv_num_paths": 20000,
+    "functionals": {
+      "price_S75": {
+        "rel_tol": 0.003,
+        "gate": true,
+        "S0": 75.0,
+        "definition": "E[exp(-integral_0^T R dt) * max(S(T) - K, 0)] with S(0) = 75"
+      },
+      "price_S100": {
+        "rel_tol": 0.003,
+        "gate": true,
+        "S0": 100.0,
+        "definition": "E[exp(-integral_0^T R dt) * max(S(T) - K, 0)] with S(0) = 100"
+      },
+      "price_S125": {
+        "rel_tol": 0.003,
+        "gate": true,
+        "S0": 125.0,
+        "definition": "E[exp(-integral_0^T R dt) * max(S(T) - K, 0)] with S(0) = 125"
+      },
+      "note": "The quantity of interest is the whole external grade: each price within 0.3% relative of an independently held reference that this spec does not have and must not guess. The pipeline kernel's functionals module (verifylib/kernel/functionals.py) is a PDE-ladder self-convergence check and the SDE driver does not read this block, so inside the pipeline these entries are a declared criterion for the evaluator agent to check by hand (self-convergence of each price across dt and its MC standard error), not a kernel-computed verdict."
+    },
+    "two_count_check": {
+      "num_paths_a": 1000000,
+      "num_paths_b": 250000,
+      "must_differ": true,
+      "agreement": "|p_a - p_b| < ci_mult * sqrt(se_a**2 + se_b**2) for each of price_S75, price_S100, price_S125, with se the Monte-Carlo standard error of each run",
+      "note": "A value identical at both path counts is a constant, not an estimate, and fails; the check is symmetric (the larger run need not be the more accurate)."
+    }
+  },
+  "verification": {
+    "expected_provenance": "self_convergence",
+    "moment_ode": null,
+    "moment_ode_note": "Attempted and rejected. The V and R moment equations close exactly (CIR and OU), but the S equations do not: d E[S]/dt = E[R S], d E[R S]/dt contains rho_SR*sigma_r*E[sqrt(V) S], and no finite polynomial family closes under the sqrt(V) loading that every S and V noise column carries. A V- or R-only moment ODE is NOT declared because surrogates.moment_ode returns a single scalar reference that the kernel compares against terminal_paths column 0 (S), which would grade S's mean against V's.",
+    "kolmogorov": null,
+    "kolmogorov_note": "Attempted and rejected. The state is 3-D; even after removing S by homogeneity (E[S_T] = S0 * h(V0, R0) with h solving a 2-D backward PDE in (V, R)) the kernel's Kolmogorov route is 1-D only, and the manual forbids proposing it above 2 state dimensions.",
+    "stationary_density": {
+      "ergodic": false,
+      "note": "S grows at the stochastic rate R and has no invariant law; (V, R) is ergodic but its stationary law says nothing about the T = 10 terminal state of S or about the discounted payoff."
+    },
+    "terminal_law": null,
+    "terminal_law_note": "Exact marginal laws exist for two of the three columns and are recorded here as prose only: V_T = c * chi2'(df, nc) with c = sigma_v**2*(1 - exp(-kappa*T))/(4*kappa) = 0.496631, df = 4*kappa*eta/sigma_v**2 = 0.08, nc = V_0*exp(-kappa*T)/c = 5.4269e-4; R_T ~ Normal(0.10, 0.0404039888). Not declared as a terminal_law list because the kernel builds one law per column by index and column 0 (S) has no law; an unbuildable entry would turn the distributional verdict 'unresolved' for every plan.",
+    "generator": {
+      "drift": [
+        "X[:, 2]*X[:, 0]",
+        "kappa*(eta - X[:, 1])",
+        "a_r*(b_r - X[:, 2])"
+      ],
+      "diffusion_matrix": [
+        [
+          "np.sqrt(np.maximum(X[:, 1], 0.0))*X[:, 0]",
+          "0.0*X[:, 0]",
+          "0.0*X[:, 0]"
+        ],
+        [
+          "sigma_v*np.sqrt(np.maximum(X[:, 1], 0.0))*rho_SV",
+          "sigma_v*np.sqrt(np.maximum(X[:, 1], 0.0))*np.sqrt(1 - rho_SV**2)",
+          "0.0*X[:, 0]"
+        ],
+        [
+          "sigma_r*rho_SR + 0.0*X[:, 0]",
+          "sigma_r*((rho_VR - rho_SR*rho_SV)/np.sqrt(1 - rho_SV**2)) + 0.0*X[:, 0]",
+          "sigma_r*np.sqrt(1 - rho_SR**2 - ((rho_VR - rho_SR*rho_SV)/np.sqrt(1 - rho_SV**2))**2) + 0.0*X[:, 0]"
+        ]
+      ],
+      "note": "G is the diffusion matrix against INDEPENDENT channels; the correlation lives in G as the Cholesky factor. Validated by the formulator through verifylib's own _generator_nd on random states against hand-derived generators: phi = V*R gives V*a_r*(b_r - R) + R*kappa*(eta - V) + rho_VR*sigma_v*sigma_r*sqrt(V) (rel err 1e-9); phi = S*R gives R^2 S + S a_r (b_r - R) + rho_SR sigma_r sqrt(V) S (6e-9); phi = S*V gives R S V + S kappa (eta - V) + rho_SV sigma_v V S (2.5e-9); phi = R gives a_r (b_r - R) (1e-13); phi = S^2 gives (2R + V) S^2 (6e-8)."
+    },
+    "dynkin_test_functions": [
+      "X[:, 1]*X[:, 2]",
+      "np.tanh(X[:, 0]/100.0)*X[:, 2]",
+      "np.tanh(X[:, 0]/100.0)*X[:, 1]"
+    ],
+    "dynkin_note": "Each test function is a product of two components so that its generator contains exactly one cross-covariance term: V*R probes rho_VR, tanh(S/100)*R probes rho_SR and the stochastic-rate drift of S, tanh(S/100)*V probes rho_SV. The correlations are the hard part of the problem and no terminal statistic with a closed form sees them. tanh bounds the heavy S tail (Var S_T ~ 2e6 at S0 = 100). BUDGET WARNING: the kernel runs Dynkin at the graded num_paths (1e6) on dt, dt/2, dt/4 with 3 channels, i.e. a 1e6 x 10000 x 3 x 8 B = 240 GB increment array against a 12 GB budget, so it is expected to be refused as 'unavailable'. It is declared so that it runs if the budget or the path count used for it ever changes.",
+    "expected_weak_order": 1.0,
+    "expected_strong_order": 0.1,
+    "strong_order_by_component_measured": {
+      "S": 0.063,
+      "V": 0.158,
+      "R": 1.006
+    },
+    "strong_order_note": "The design strong order of an Euler-type scheme on this problem is set by the CIR component with Feller ratio delta = 2*kappa*eta/sigma_v**2 = 0.04: for delta < 2 no method using the Brownian values on an equidistant grid beats L1 order delta/2 = 0.02 (Hefter, Herzwurm and Mueller-Gronbach, Ann. Appl. Probab. 2019), and S inherits it through sqrt(V). Measured by the formulator with full-truncation Euler for V, log-Euler for S and Euler for R on the kernel's own crn.strong_order at 20000 paths, dt = 0.016/0.008/0.004: S 0.063 +/- 0.024, V 0.158 +/- 0.036, R 1.006 +/- 0.010 (R is additive-noise OU, where Euler is strong order 1). 0.1 is declared because it is within the 0.4 band of the two binding components. KNOWN KERNEL LIMITATION: the order study applies ONE expected order to every component and takes the worst. Measured, with the plan's scheme_family declared (two-sided band, half-width 0.4), NO single value passes all three columns: R needs > 0.606, S needs < 0.463. With the family undeclared (one-sided, floor = 0.1 - 0.4) all three pass. A per-component expected order is needed in the kernel; until then a correct plan that declares scheme_family will read orders_ok: False on the R column, and the reviewer should read that as this limitation, not as a defect.",
+    "constraints": [
+      {
+        "name": "finite",
+        "expr": "np.all(np.isfinite(X), axis=1)",
+        "gate": true,
+        "note": "every terminal state of every path must be finite"
+      },
+      {
+        "name": "shape",
+        "expr": "X.shape == (num_paths, 3)",
+        "gate": true,
+        "note": "problem.md: terminal_paths is a 2-D array of shape (num_paths, 3) in the column order (S, V, R)"
+      },
+      {
+        "name": "asset_positive",
+        "expr": "X[:, 0] > 0",
+        "gate": false,
+        "note": "S_T > 0 almost surely for the true process. Ungated because plain Euler on S can cross zero on a few of 2.5e9 steps without that being a coding bug; a log-Euler step keeps S > 0 by construction and is recommended."
+      },
+      {
+        "name": "variance_nonnegative",
+        "expr": "X[:, 1] >= 0",
+        "gate": false,
+        "note": "V_T >= 0 for the true process. Ungated on purpose: a full-truncation scheme legitimately carries a negative state V (measured ~65% of terminal V below zero at dt = 0.004) while using max(V, 0) in every coefficient, and that is a correct, standard scheme (Lord, Koekkoek and van Dijk 2010). Reflection, absorption or a QE-type step keep V >= 0. Read the reported fraction, do not gate on it."
+      }
+    ],
+    "invariants": [
+      {
+        "name": "martingale",
+        "expr": "np.stack([X[:, 2]/b_r, (X[:, 2] - b_r)**2/(sigma_r**2/(2*a_r)*(1 - np.exp(-2*a_r*T))), X[:, 1]/(eta + (V_0 - eta)*np.exp(-kappa*T))], axis=1)",
+        "reference_value_at_T": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "ci_mult": 2.0,
+        "tol": 0.02,
+        "gate": false,
+        "note": "Not a martingale: the registry's martingale evaluator is used as an 'E[M_T] = declared value' check on three exactly known marginal moments, each normalised by its exact value so one relative tol applies. Column 1: E[R_T] = b_r + (R_0 - b_r)*exp(-a_r*T) = b_r = 0.10 exactly (R_0 = b_r; Euler on OU preserves this mean exactly). Column 2: E[(R_T - b_r)^2] = Var[R_T] = sigma_r**2/(2*a_r)*(1 - exp(-2*a_r*T)) = 0.0404039888 (Euler bias ~a_r*dt/2 relative). Column 3: E[V_T] = eta + (V_0 - eta)*exp(-kappa*T) = 0.04 (CIR). tol = 2% is set by column 3, to allow the O(dt) bias of a truncated variance scheme at a Feller ratio of 0.04; the MC bar at 1e6 paths adds ~1% on column 3 and ~0.3-0.4% on columns 1-2. A miss on column 3 means the V treatment at zero is biased, which feeds directly into the price; a miss on 1-2 is a defect in the rate equation or its noise loading."
+      }
+    ],
+    "identities": [
+      {
+        "name": "zero_coupon_bond",
+        "statement": "E[exp(-integral_0^T R dt)] = P(0,T) = exp(-m_I + v_I/2) = 0.796840098784225, with m_I = b_r*T + (R_0 - b_r)*(1 - exp(-a_r*T))/a_r = 1.0 and v_I = sigma_r**2/a_r**2*(T - 2*(1 - exp(-a_r*T))/a_r + (1 - exp(-2*a_r*T))/(2*a_r)) = 1.5457975016 (Vasicek). Exact; checks the path-accumulated discount factor."
+      },
+      {
+        "name": "discounted_asset_martingale",
+        "statement": "E[exp(-integral_0^T R dt) * S_T] = S0 exactly for every S0 (the discounted asset is a martingale: d(D S) = D S sqrt(V) dW1). Checks drift, discounting and their joint discretization."
+      },
+      {
+        "name": "put_call_parity",
+        "statement": "C(S0) - P_put(S0) = S0 - K*P(0,T) = S0 - 79.6840098784 for European call/put with the same stochastic discount."
+      },
+      {
+        "name": "price_bounds",
+        "statement": "max(S0 - K*P(0,T), 0) <= C(S0) <= S0: lower bounds 0 / 20.3160 / 45.3160 and upper bounds 75 / 100 / 125 for S0 = 75 / 100 / 125. C is increasing and convex in S0."
+      },
+      {
+        "name": "spot_homogeneity",
+        "statement": "S_T(S0) = S0 * S_T(1) path by path, because the S equation is linear in S and V, R do not depend on S; so price(S0) = E[D_T * max(S0*S_T(1) - K, 0)] and a single simulation serves all three spots with identical (V, R, D) paths, as problem.md states."
+      }
+    ],
+    "identities_note": "Free-form: the kernel cannot evaluate these from terminal_paths (the discount factor is not returned). They are the evaluator agent's exact anchors for the quantity of interest; the first two are also the natural control variates.",
+    "structural_facts": {
+      "kink": "payoff kink at S(T) = K = 100",
+      "boundary": "the variance sits at the attainable boundary V = 0 for a large fraction of time (Feller ratio 2*kappa*eta/sigma_v**2 = 0.04)"
+    }
+  },
+  "implementation_notes": "Three-factor Heston-Hull-White under Ito, T = 10, graded at dt = 0.004 (Nt = 2500) with 1e6 and 2.5e5 paths. (1) Correlation: draw three independent standard normals per step and multiply by the Cholesky factor Lc of [[1,-0.9,0.6],[-0.9,1,-0.7],[0.6,-0.7,1]]; when the verification hook supplies dW of shape (num_paths, Nt, 3) those are the independent increments and must be correlated the same way. (2) Variance at zero (Feller ratio 0.04): every sqrt(V) must state its treatment. Full truncation (use max(V,0) in drift and diffusion, keep the raw state) is the standard low-bias Euler choice; reflection and absorption are more biased. Problem.md flags the alternative explicitly: sampling V from its exact noncentral-chi2 law or by Andersen's QE scheme leaves no Brownian increment W2 for the S and R correlations, and that trade 'has to be resolved, not ignored' -- e.g. by recovering the integrated variance-noise from the V update (integral sqrt(V) dW2 = V_{n+1} - V_n - kappa*eta*dt + kappa*integral V dt) and correlating the S and R increments with it, or by staying with an Euler-type V step. A V step that does not consume the supplied dW makes the CRN order study and Dynkin read noise. (3) Asset: a log-Euler step x += (R - V+/2) dt + sqrt(V+) dW1 keeps S > 0 and is recommended over plain Euler. (4) Discounting: accumulate integral R dt along each path (trapezoid on R is second order) and discount each path's payoff by exp(-integral); never discount by a constant rate. (5) One (V, R, D) path set serves all three spots: S_T(S0) = S0 * S_T(1) path by path, so simulate once with S0 = 1 (or 100) and scale. (6) Accuracy budget for the 0.3% gate: measured by the formulator at 40000 paths, the plain-MC relative standard error extrapolated to 1e6 paths is about 0.09% / 0.08% / 0.07% (S0 = 75 / 100 / 125), so 2 s.e. is ~0.17% and the discretization bias of the V treatment must stay below ~0.1%; control variates on the two exact identities E[D_T S_T] = S0 and E[D_T] = P(0,T) = 0.796840098784225 reduce the s.e. by ~25-30% and are numpy-only. Any control-variate coefficient must be estimated from the run itself so the two path counts give different estimates. (7) Cost: 1e6 paths x 2500 steps x 3 channels should be generated per step (or in path batches) rather than as one (1e6, 2500, 3) array (60 GB); expect a few minutes for the 1e6 run, which is near the kernel sandbox's default 300 s timeout. (8) Kernel caveats recorded in verification: Dynkin is expected to be refused by the 12 GB budget at 1e6 paths; the order study's single expected order cannot fit R (order 1.0) and S/V (order ~0.06-0.16) at once under a two-sided band; the SDE driver does not grade evaluation_thresholds.functionals. Expected pipeline ceiling: self_convergence, uncertified.",
+  "requirements": [
+    {
+      "id": "R1",
+      "kind": "equation",
+      "quote": "Simulate the three-factor system (Ito) in which the short rate is stochastic",
+      "status": "mapped",
+      "spec_path": "interpretation, equation, state_dimension, noise_dimension"
+    },
+    {
+      "id": "R2",
+      "kind": "equation",
+      "quote": "dS = R * S dt + sqrt(V) * S dW1",
+      "status": "mapped",
+      "spec_path": "equation, drift_expression, verification.generator.drift, verification.generator.diffusion_matrix"
+    },
+    {
+      "id": "R3",
+      "kind": "initial_condition",
+      "quote": "S(0) = S0",
+      "status": "mapped",
+      "spec_path": "parameters.X_0, parameters.S0_low, parameters.S0_mid, parameters.S0_high, initial_condition"
+    },
+    {
+      "id": "R4",
+      "kind": "equation",
+      "quote": "dV = 0.5 * (0.04 - V) dt + sqrt(V) dW2",
+      "status": "mapped",
+      "spec_path": "parameters.kappa, parameters.eta, parameters.sigma_v, drift_expression, verification.generator"
+    },
+    {
+      "id": "R5",
+      "kind": "initial_condition",
+      "quote": "V(0) = 0.04",
+      "status": "mapped",
+      "spec_path": "parameters.V_0, parameters.Y_0, initial_condition"
+    },
+    {
+      "id": "R6",
+      "kind": "equation",
+      "quote": "dR = 0.08 * (0.10 - R) dt + 0.09 dW3",
+      "status": "mapped",
+      "spec_path": "parameters.a_r, parameters.b_r, parameters.sigma_r, drift_expression, verification.generator"
+    },
+    {
+      "id": "R7",
+      "kind": "initial_condition",
+      "quote": "R(0) = 0.10",
+      "status": "mapped",
+      "spec_path": "parameters.R_0, parameters.Z_0, initial_condition"
+    },
+    {
+      "id": "R8",
+      "kind": "domain",
+      "quote": "over [0, 10]",
+      "status": "mapped",
+      "spec_path": "time_interval"
+    },
+    {
+      "id": "R9",
+      "kind": "parameter",
+      "quote": "corr(dW1, dW2) = -0.9",
+      "status": "mapped",
+      "spec_path": "parameters.rho_SV, verification.generator.diffusion_matrix"
+    },
+    {
+      "id": "R10",
+      "kind": "parameter",
+      "quote": "corr(dW1, dW3) =  0.6",
+      "status": "mapped",
+      "spec_path": "parameters.rho_SR, verification.generator.diffusion_matrix"
+    },
+    {
+      "id": "R11",
+      "kind": "parameter",
+      "quote": "corr(dW2, dW3) = -0.7",
+      "status": "mapped",
+      "spec_path": "parameters.rho_VR, verification.generator.diffusion_matrix"
+    },
+    {
+      "id": "R12",
+      "kind": "method",
+      "quote": "every square root has to say what it does there",
+      "status": "mapped",
+      "spec_path": "implementation_notes, verification.constraints, verification.structural_facts.boundary"
+    },
+    {
+      "id": "R13",
+      "kind": "method",
+      "quote": "payoff is discounted by exp(-integral of R over [0, T]), which must be",
+      "status": "mapped",
+      "spec_path": "implementation_notes, evaluation_thresholds.functionals, verification.identities",
+      "note": "Quote truncated at a line break in problem.md; the clause continues 'accumulated along each path rather than applied at the end with a constant rate.'"
+    },
+    {
+      "id": "R14",
+      "kind": "method",
+      "quote": "so the increments must be",
+      "status": "mapped",
+      "spec_path": "noise_dimension, verification.generator.diffusion_matrix, solver_contract.verification_hooks, implementation_notes",
+      "note": "Quote truncated at a line break; the clause continues 'drawn from the full 3x3 correlation structure.'"
+    },
+    {
+      "id": "R15",
+      "kind": "method",
+      "quote": "that trade has to be resolved, not ignored",
+      "status": "mapped",
+      "spec_path": "implementation_notes, milstein_ineligible_note"
+    },
+    {
+      "id": "R16",
+      "kind": "evaluation",
+      "quote": "E[exp(-integral of R dt) * (S(T) - 100)^+]",
+      "status": "mapped",
+      "spec_path": "parameters.K, evaluation_thresholds.functionals"
+    },
+    {
+      "id": "R17",
+      "kind": "parameter",
+      "quote": "S0 = 75,   S0 = 100,   S0 = 125",
+      "status": "mapped",
+      "spec_path": "parameters.S0_low, parameters.S0_mid, parameters.S0_high, evaluation_thresholds.functionals"
+    },
+    {
+      "id": "R18",
+      "kind": "evaluation",
+      "quote": "as `price_S75`, `price_S100` and `price_S125` in the `functionals` dict",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.functionals, solver_contract.returns.functionals"
+    },
+    {
+      "id": "R19",
+      "kind": "other",
+      "quote": "so one set of (V, R) paths serves all",
+      "status": "mapped",
+      "spec_path": "implementation_notes, verification.identities",
+      "note": "Quote truncated at a line break; the sentence continues 'three spots.'"
+    },
+    {
+      "id": "R20",
+      "kind": "evaluation",
+      "quote": "Return the terminal states (S, V, R) for **S0 = 100** in `terminal_paths`.",
+      "status": "mapped",
+      "spec_path": "parameters.X_0, initial_condition, solver_contract.returns.terminal_paths"
+    },
+    {
+      "id": "R21",
+      "kind": "other",
+      "quote": "def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict",
+      "status": "mapped",
+      "spec_path": "solver_contract.signature"
+    },
+    {
+      "id": "R22",
+      "kind": "evaluation",
+      "quote": "solve_sde(num_paths=1000000, dt=0.004, T=10, seed=42)",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.num_paths, evaluation_thresholds.dt, evaluation_thresholds.seed, time_interval.T"
+    },
+    {
+      "id": "R23",
+      "kind": "evaluation",
+      "quote": "and then again with `num_paths=250000`, everything else unchanged",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.num_paths_secondary, evaluation_thresholds.two_count_check"
+    },
+    {
+      "id": "R24",
+      "kind": "method",
+      "quote": "Use the `dt` you are given (do not hardcode a different step).",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.dt, solver_contract.step_rounding"
+    },
+    {
+      "id": "R25",
+      "kind": "evaluation",
+      "quote": "`terminal_paths`: 2-D numpy array of shape `(num_paths, 3)` — the 3 state components (X, Y, Z) at time T, in that column order",
+      "status": "mapped",
+      "spec_path": "verification.constraints, solver_contract.returns.terminal_paths"
+    },
+    {
+      "id": "R26",
+      "kind": "evaluation",
+      "quote": "`empirical_mean`: list of floats, one per component",
+      "status": "mapped",
+      "spec_path": "solver_contract.returns.empirical_mean"
+    },
+    {
+      "id": "R27",
+      "kind": "evaluation",
+      "quote": "`empirical_variance`: list of floats, one per component (use `ddof=1`)",
+      "status": "mapped",
+      "spec_path": "solver_contract.returns.empirical_variance"
+    },
+    {
+      "id": "R28",
+      "kind": "evaluation",
+      "quote": "`functionals`: a dict of scalar results, containing `\"price_S75\"`, `\"price_S100\"`, `\"price_S125\"` — each a float",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.functionals, solver_contract.returns.functionals"
+    },
+    {
+      "id": "R29",
+      "kind": "method",
+      "quote": "Seed all randomness with `np.random.default_rng(seed)` (not `np.random.seed`).",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.seed, solver_contract.rng"
+    },
+    {
+      "id": "R30",
+      "kind": "method",
+      "quote": "Round the step count: `Nt = max(1, round(T / dt))`, then `dt = T / Nt`.",
+      "status": "mapped",
+      "spec_path": "solver_contract.step_rounding"
+    },
+    {
+      "id": "R31",
+      "kind": "method",
+      "quote": "Keep `solve_sde` importable — no work at module load outside `if __name__ == \"__main__\"`.",
+      "status": "mapped",
+      "spec_path": "solver_contract.importable"
+    },
+    {
+      "id": "R32",
+      "kind": "method",
+      "quote": "Use the Python standard library and numpy only.",
+      "status": "mapped",
+      "spec_path": "solver_contract.dependencies"
+    },
+    {
+      "id": "R33",
+      "kind": "evaluation",
+      "quote": "this problem has no terminal-moment formula, so the quantity of interest below is the whole grade",
+      "status": "mapped",
+      "spec_path": "analytic_moments.has_analytic_solution, verification.expected_provenance, evaluation_thresholds.functionals"
+    },
+    {
+      "id": "R34",
+      "kind": "evaluation",
+      "quote": "`price_S75`, `price_S100`, `price_S125` must be within 0.3% (relative) of the reference value",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.functionals.price_S75.rel_tol, evaluation_thresholds.functionals.price_S100.rel_tol, evaluation_thresholds.functionals.price_S125.rel_tol",
+      "note": "Carried as rel_tol 0.003 with gate: true. The reference value is held outside the pipeline and is not reproduced here; the SDE kernel does not read evaluation_thresholds.functionals, so inside the pipeline this is checked by the evaluator agent (price self-convergence in dt plus MC standard error), not by a kernel verdict."
+    },
+    {
+      "id": "R35",
+      "kind": "evaluation",
+      "quote": "reporting a number without a simulation behind it, or a simulation without the number, fails",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.functionals, evaluation_thresholds.two_count_check"
+    },
+    {
+      "id": "R36",
+      "kind": "evaluation",
+      "quote": "They must differ — two Monte-Carlo estimates taken at different sample sizes do — and they must agree to within the sampling noise the two counts imply.",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.two_count_check"
+    }
+  ]
+}
