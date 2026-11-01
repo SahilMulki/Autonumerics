@@ -134,3 +134,70 @@ read by nothing in `verifylib/`. It is F0/F2's free acceptance test.
   [02-root-causes.md](02-root-causes.md) §7 gives the reason a model upgrade cannot reach most of
   them: the planner and formulator already run Opus, and the defects are in version-controlled
   Python and in the rules the manuals state.
+
+## Running the benchmark at Sonnet
+
+The BENCHOP suite is ten Tier-3 SDE problems, `B01`–`B10`. `B03`
+(`sde_heston_call_feller`) was run on 2026-11-01 and is the problem the pairing and
+martingale fixes came out of, so the command below excludes it. Drop `--only` to
+run all ten.
+
+```bash
+cd /Users/sahilmulki/Autonumerics
+caffeinate -ims uv run python benchmark/run.py --suite benchop \
+  --only sde_sabr_cev_call_i,sde_sabr_cev_call_ii,sde_heston_dnt,sde_qlsv_dnt,sde_hhw_call_corr,sde_hhw_call_zerocorr,sde_heston_call_hivar,sde_heston_dnt_hivar,sde_sabr_cev_call_ii_lowvol \
+  --model sonnet --fresh --resume --timeout 7200 \
+  --results-json benchmark/results/pipeline/benchop_sonnet.json \
+  --report benchmark/results/pipeline/BENCHOP_SONNET.md
+```
+
+### `--timeout 7200` is not optional
+
+**The default is `2400` (40 minutes) and a Tier-3 BENCHOP problem does not fit in
+it.** `B03`'s pipeline took **53.0 minutes** on the 2026-11-01 run — and that was
+*after* the conductor's polling fix cut its cost by 74%. At the default, problems
+are killed mid-pipeline and the result is a `run-error` verdict that reads as a
+pipeline failure but is only the stopwatch. Pass `--timeout 7200` (2 hours).
+
+### It does not fit in one usage window — batch it
+
+Measured on the `B03` 2026-11-01 run, per problem: **57.9 minutes**, **17.3M context
+tokens**, 212 API calls. For the nine problems above that projects to roughly **8.7
+hours** and **~156M tokens**. The Oct-31 run burned about 70% of a five-hour window on
+30.0M tokens, which puts one window near 43M — so the suite is **three to four full
+windows**, not one sitting.
+
+`--resume` skips problems already recorded as completed in `--results-json`, so run
+three or four problems per window and re-issue the *same command* each time,
+keeping the same `--results-json` path. Do not change `--results-json` between
+batches; that is the file `--resume` reads.
+
+`--fresh` clears only the workspaces it selects, so a problem left out of `--only`
+is untouched. Archive anything under `benchmark/results/pipeline/` you still want
+before a run overwrites it.
+
+### Reading the results
+
+Three things will look like regressions and are not:
+
+- **`unavailable` where a score used to appear.** A reference stating one moment for
+  a multi-component state with no slot spelling now abstains instead of assuming
+  component 0 (`driver._reference`). That is the 2026-11-01 fix working; the silent
+  wrong number it replaces is what capped every `B03` plan at 6.
+- **Scores capped at 9 with provenance `analytic_unvalidated`.** `reference.py`'s
+  `_moment_observables` pairs the moment ODE's `*_from` against claimed moments **by
+  name**, so a spec that spells `mean_from` as a scalar rather than a list produces
+  zero pairs and cannot certify however good the solver is. Measured across the four
+  specs on disk: `sde_sabr_cev_call_i` and `sde_heston_dnt` validate;
+  `sde_sabr_cev_call_ii` and `sde_heston_call_feller` do not. It is a spelling
+  dependency, not a solver property.
+- **Numbers that do not line up with the Aug-7 baseline.** Cost is gone from
+  `ranking.WEIGHTS` and from the `rank_key` tiebreak, `sqi` renormalises over 0.90,
+  and the pairing fixes change scores outright. Winner selection is on a different
+  basis; these runs are not baseline-comparable.
+
+Six of the ten (`B05`–`B10`) have never been run and have no `problem_spec.json` yet,
+so expect formulator-side findings on first contact — the known pattern is design
+effort spent on a verification route the kernel cannot execute, such as the 2-D
+Kolmogorov block `B03` proposed on two consecutive runs under two different sets of
+field names, which nothing reads either time.
