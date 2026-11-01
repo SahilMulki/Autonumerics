@@ -45,9 +45,8 @@ def test_an_unmeasurable_component_is_never_scored_zero(drop):
     this repo forbids."""
     thin = _without(drop)
     assert RK.components(thin, TOL)[drop] is None
-    zeroed = sum(RK.WEIGHTS[k] * (v or 0.0)
-                 for k, v in RK.components(thin, TOL).items()
-                 if k != "cost") / sum(RK.WEIGHTS[k] for k in RK.CERT_COMPONENTS)
+    zeroed = sum(RK.WEIGHTS[k] * (RK.components(thin, TOL)[k] or 0.0)
+                 for k in RK.CERT_COMPONENTS) / sum(RK.WEIGHTS.values())
     assert sqi(thin) > zeroed
 
 
@@ -89,13 +88,29 @@ def test_skipping_a_weak_check_cannot_buy_a_better_rank_than_the_score_allows():
 
 def test_an_index_with_nothing_measurable_is_none_not_zero():
     index, parts = RK.sqi({}, TOL)
-    assert index is None and set(parts) == set(RK.WEIGHTS)
+    # `parts` carries `cost` for the report even though the index never reads it.
+    assert index is None and set(parts) == set(RK.WEIGHTS) | {"cost"}
 
 
-def test_weights_are_a_partition_of_one():
-    assert sum(RK.WEIGHTS.values()) == pytest.approx(1.0)
-    assert set(RK.CERT_COMPONENTS) < set(RK.WEIGHTS)
-    assert "cost" not in RK.CERT_COMPONENTS      # a certification cannot read the pool
+def test_the_weights_cover_exactly_the_index_components():
+    """The partition is over the index's components, which since 2026-11-01 means
+    cost is in neither set. The weights no longer sum to 1.0 and do not need to:
+    :func:`sqi` divides by the sum of the *measured* weights, so the index is
+    invariant under scaling all of them -- asserted below so that nobody
+    "restores" the sum by rescaling and believes they changed something."""
+    assert set(RK.WEIGHTS) == set(RK.CERT_COMPONENTS)
+    assert "cost" not in RK.WEIGHTS
+    assert "cost" not in RK.CERT_COMPONENTS
+
+    base = dict(RK.WEIGHTS)
+    index = sqi(FULL)
+    try:
+        RK.WEIGHTS.update({k: v / sum(base.values()) for k, v in base.items()})
+        assert sum(RK.WEIGHTS.values()) == pytest.approx(1.0)
+        assert sqi(FULL) == pytest.approx(index)
+    finally:
+        RK.WEIGHTS.clear()
+        RK.WEIGHTS.update(base)
 
 
 # --- accuracy -----------------------------------------------------------------
@@ -266,13 +281,27 @@ def test_quality_decides_a_tie_that_used_to_be_decided_on_noise():
     assert ranked[0] is better
 
 
-def test_the_pool_breaks_a_genuine_tie_on_cost():
-    """The sentence the index exists to express: equally accurate within the error
-    bars, so take the cheaper one."""
+def test_a_genuine_tie_is_reported_as_a_tie_and_not_given_to_the_faster_plan():
+    """The inversion of what this used to assert, and the point of the 2026-11-01
+    change. Two plans equally accurate within their own error bars, one a hundred
+    times faster: the ranker must say they are indistinguishable rather than ship
+    the quick one. Cost does not measure whether a plan is right, so it does not
+    get to choose between plans -- and a tiebreak is the most decisive form of
+    choosing there is.
+
+    What replaced it: `solve_time_s` is still measured and still reported in the
+    pool's `cost` column, so a reader who cares about their own budget has the
+    number. They just are not handed it as a verdict."""
     fast = _entry(10, "analytic", estimated_rel_error=1.010e-4, solve_time_s=0.1)
     slow = _entry(10, "analytic", estimated_rel_error=1.010e-4, solve_time_s=10.0)
     pool = [fast["kernel"]["summary"], slow["kernel"]["summary"]]
-    assert RK.rank_key(fast, pool) < RK.rank_key(slow, pool)
+    assert RK.rank_key(fast, pool) == RK.rank_key(slow, pool)
+    assert RK.decided_by(fast, slow, pool) == "tie"
+    assert "solve_time_s" not in RK.RANK_KEYS
+
+    # ...and the 100x difference is still visible as a diagnostic.
+    assert RK.cost(pool[0], pool) == pytest.approx(1.0)
+    assert RK.cost(pool[1], pool) == pytest.approx(0.0)
 
 
 def test_an_unscored_entry_sorts_last():
@@ -313,10 +342,18 @@ def test_rank_command_orders_a_workspace_and_names_its_missing_inputs(tmp_path, 
                                "estimated_rel_error": "1.023e-04", "solve_time_s": 0.1})
     assert cli.main(["rank", str(tmp_path)]) == 0
     out = capsys.readouterr().out
-    # Tied on accuracy inside the noise, so the cheaper plan wins -- which is the
-    # whole point, and the opposite of what the old `estimated_rel_error` key did.
-    assert "best: 2-fast" in out
+    # The 2026-11-01 change, in the smallest case that shows it. `1-slow` is the
+    # more accurate plan (1.010e-04 against 1.023e-04) and takes 100x as long. With
+    # cost in the index at weight 0.10 its 0.000 against `2-fast`'s 1.000 was worth
+    # more than the accuracy gap, so the index read 0.332 against 0.333 the other
+    # way and the command printed `best: 2-fast` -- the speed did not break a tie,
+    # it *created* one and then won it. With cost out of the index the accuracy
+    # decides, as it always should have.
+    assert "best: 1-slow" in out
+    assert "decided_by: sqi" in out
     assert "order, structure" in out          # neither block carries those inputs
+    # The 100x is still printed, as a diagnostic rather than a verdict.
+    assert "cost" in out and "10.000" in out
 
 
 def test_rank_command_reports_json_and_refuses_an_empty_workspace(tmp_path, capsys):

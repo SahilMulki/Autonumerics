@@ -194,7 +194,7 @@ different mechanism:
 | **B08** | cost at weight 0.10 beat accuracy at weight 0.35 | the winner must change |
 | **B01** | the kernel score itself inverted, 9 vs 8 against accuracy ([F11](05-fix-loop-and-harness.md#f11)) | diagnose before running |
 
-**[rev] B02 belongs in the subset too** (tracked as [F15](#f15)). At 0.9594 it is within 4% of failing the external gate
+**[rev] B02 belongs in the subset too** (tracked as [F15](05-fix-loop-and-harness.md#f15)). At 0.9594 it is within 4% of failing the external gate
 and it is the only plan on the suite anywhere near it — the closest thing here to an actual
 failure. ~~It is dismissed as an implementation-quality gap and left out.~~ It is not a selection
 problem and F1–F4 will not move it, which is exactly why it needs diagnosing separately rather than
@@ -293,7 +293,7 @@ knowing which four is how a regression hides.
 | failing test | what it is | bearing on this plan |
 |---|---|---|
 | `test_spec_field_coverage::test_no_sde_spec_field_is_declared_and_unread_without_a_reason` | the nine BENCHOP functionals are declared and read by nothing in `verifylib/` | **This is M1, already named by the suite.** [F0](03-fix-selection.md)/[F2](03-fix-selection.md) are its fix and it is their acceptance test |
-| `test_review::test_no_false_positives_on_archived_reviews` | 1 of 115: B02's `2-exact-vol-em-absorbed` has `observed_order 0.235` in its review prose disagreeing with its `<metrics>` | **Caused by the step-10 runs**, not a code regression — a BENCHOP plan tripped the transcription-drift check. On B02, the problem closest to failing the gate ([F15](#f15)) |
+| `test_review::test_no_false_positives_on_archived_reviews` | 1 of 115: B02's `2-exact-vol-em-absorbed` has `observed_order 0.235` in its review prose disagreeing with its `<metrics>` | **Caused by the step-10 runs**, not a code regression — a BENCHOP plan tripped the transcription-drift check. On B02, the problem closest to failing the gate ([F15](05-fix-loop-and-harness.md#f15)) |
 | `test_certified::test_frozen_records_fall_back_to_the_old_test_unchanged` | `only 28 frozen pipeline records checked`, against `assert seen > 50` | A **coverage threshold**, not a correctness failure: the frozen corpus shrank below the bar, most likely when `results/` was reorganised in c21077e. This is the decision outstanding from an earlier step — fix the corpus path or lower the bar |
 | `test_work_precision::test_an_sde_sweep_moves_both_axes_and_orders_by_paths_times_steps` | asserts `solve_s` rises monotonically across the sweep; got 0.0633 before 0.0538 on sub-100 ms solves | **A timing flake**, and pointedly the same class of defect [F4](03-fix-selection.md#f4) identifies: wall-clock used as a signal. Either seed it with a synthetic clock or compare with a tolerance |
 

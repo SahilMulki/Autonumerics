@@ -216,7 +216,15 @@ def test_an_sde_sweep_moves_both_axes_and_orders_by_paths_times_steps(gbm):
     pts = out["work_precision"]["points"]
     assert [(p["num_paths"], p["dt"]) for p in pts] == [
         (5000, 0.05), (20000, 0.01), (50000, 0.01), (50000, 0.0025)]
-    assert [p["solve_s"] for p in pts] == sorted(p["solve_s"] for p in pts)
+    # Wall time on sub-100 ms solves carries more jitter than the gap between two
+    # adjacent levels, so the cost axis is asserted to a tolerance rather than
+    # exactly: the ordering above is the claim, this only checks it is not inverted
+    # by a real margin. (F4 reads the same field and the same caveat applies there.)
+    times = [p["solve_s"] for p in pts]
+    jitter = 0.05
+    for earlier, later in zip(times, times[1:]):
+        assert later >= earlier - max(jitter, 0.25 * earlier), (
+            f"cost axis inverted beyond timing jitter: {times}")
     assert len(solves(log)) == 4
 
 

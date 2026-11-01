@@ -155,10 +155,23 @@ def conductor_command(slug, skip_permissions, permission_mode, model, settings=N
 # while the harness graded both of those plans a verified pass at 1.0e-3 against a
 # 4e-3 gate. A zero that means "the CLI stopped waiting" is indistinguishable in the
 # C2 column from a zero that means "the pipeline failed", and `best_plan` among plans
-# tied at 0 is arbitrary, which is what `wrong_plan_won` is computed from. Setting the
-# ceiling to 0 disables that sweep entirely (in 2.1.226: `ceilingExceeded = Uh > 0 &&
-# ...`), leaving `--timeout` as the one bound on a run.
-CONDUCTOR_ENV = {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"}
+# tied at 0 is arbitrary, which is what `wrong_plan_won` is computed from.
+#
+# The first fix set the ceiling to 0, which disables the sweep entirely (in 2.1.226:
+# `ceilingExceeded = Uh > 0 && ...`). That is too strong, and it cost a Sonnet run of
+# B03 (2026-10-30) a whole session for zero completed solve<->evaluate cycles. With no
+# sweep nothing holds a *subagent* open either: a solver or evaluator that launches the
+# 2e6-path grading-scale solve in the background and ends its turn simply returns
+# unfinished, and the conductor has to notice and resume it over SendMessage. Each
+# resume replays that subagent's whole context, so one solver took 129 turns and 14.1M
+# cache-read tokens to produce a single solver.py. Opus waited inline and never tripped
+# this; Sonnet reaches for a background monitor, so the knob was silently
+# model-dependent.
+#
+# A long positive ceiling keeps the B01 fix (nothing is killed at 600 s) without
+# disabling the hold that keeps subagents from returning mid-task. --timeout remains
+# the outer bound on a run, and is expected to bind first.
+CONDUCTOR_ENV = {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "1800000"}  # 30 min
 
 
 def run_conductor(slug, timeout, skip_permissions, permission_mode, model):

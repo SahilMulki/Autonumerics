@@ -85,7 +85,17 @@ def _declared_keys(node, prefix="", out=None):
 #: Subtrees whose keys are **values**, not field names. ``parameters`` holds the
 #: problem's constants and they reach the kernel through an evaluation namespace, so
 #: ``kappa`` never appears in kernel source and should not.
-VALUE_SUBTREES = ("parameters.", "requirements.")
+#:
+#: ``evaluation_thresholds.functionals`` joined them with F0/F2. Its keys are the
+#: problem's own quantity names -- ``price_K1``, ``no_touch_S75`` -- and the kernel
+#: reads the whole map generically: ``functionals.declared`` takes every entry,
+#: ``functionals._series`` carries each name up the ladder, and the SDE driver calls
+#: both. A literal search for ``price_K1`` in kernel source can never succeed and
+#: should not; what matters is that *something* consumes the map, and until F0
+#: carried ``functionals`` across the SDE sandbox boundary nothing did, which is
+#: what nine names in this failure message were telling us.
+VALUE_SUBTREES = ("parameters.", "requirements.",
+                  "evaluation_thresholds.functionals.")
 
 #: Keys assembled at the call site, which a literal search cannot see.
 #: ``reference._moment_observables`` builds ``f"{kind}_{comp}_from"`` and
@@ -140,6 +150,61 @@ UNREAD = {
         "narrows the set the spec cares about, and the kernel checks every declared "
         "moment of every component regardless. Reading it could only ever make the "
         "comparison weaker than the spec's own declarations",
+    # --- a 2-D Kolmogorov route the scalar surrogate declines -------------------
+    # The formulator proposed one and wrote its own note calling it a "best-effort
+    # 2-D extension of the documented 1-D Kolmogorov route". `surrogates.kolmogorov`
+    # is scalar: it refuses a per-dimension `bounds` and refuses any spec whose
+    # `state_dimension != 1`, so the whole block is unreachable and these fields
+    # have nowhere to be read. Recorded rather than given consumers, because the
+    # consumer is a 2-D Kolmogorov solver and that is a feature, not a fix.
+    #
+    # The finding is now stronger than when it was first written on 2026-10-31. The
+    # formulator proposed a 2-D Kolmogorov block on **two consecutive runs of the
+    # same problem, under different field names** -- `state_vars` / `read_at` on the
+    # Oct-31 run, `evaluate_at` / `functional_names` / `Ny` on the Nov-01 one -- so
+    # this exemption churns with every re-run while the underlying waste stays put.
+    # Nothing tells the formulator the route cannot be run, so it keeps paying for
+    # the design and keeps spelling it differently. The fix is a signal to the
+    # formulator, not a line in this table; until then the table tracks whichever
+    # spelling the current workspace happens to carry.
+    "evaluate_at": "a 2-D kolmogorov block's evaluation points. The scalar route "
+                   "refuses the block outright, so they have no reader. Declared by "
+                   "`sde_heston_call_feller`, 2026-11-01",
+    "functional_names": "the names a 2-D kolmogorov block would price. Same "
+                        "unreachable block; `price_S75`/`price_S100`/`price_S125` "
+                        "are graded through `evaluation_thresholds.functionals` "
+                        "instead, which is read",
+    "Ny": "the second-axis grid count for the same unreachable 2-D block. `Nx` and "
+          "`Nt` have scalar-route readers; a second spatial axis does not",
+    # --- the replication knobs: a decision deferred, with its evidence ---------
+    # These four are the declared place to configure a second solve at a different
+    # path count, and nothing re-solves. Measured 2026-10-29 by re-solving the
+    # eleven BENCHOP B01-B04 plans at two further seeds: per-plan harness error
+    # carries 9% to 97% relative spread, median ~35%, and on one problem the shipped
+    # plan clears the external gate at two seeds of three. So a replication gate is
+    # worth building and these are the fields it will read -- but it costs a second
+    # graded-scale solve per plan, which is a budget decision and not a bug fix.
+    "num_paths_replicate": "declared replication knob, no consumer yet; the gate "
+                           "that will read it is the one the seed study argues for",
+    "num_paths_secondary": "declared replication knob, no consumer yet; see "
+                           "num_paths_replicate",
+    "replication_check": "a declared check with no consumer. The kernel replicates "
+                         "only the Dynkin residual (`seed_replicates`), which is a "
+                         "different question from whether the graded answer is "
+                         "stable across seeds",
+    # --- structural facts the kernel reaches by another route -----------------
+    # Retired 2026-10-31. `second_call_num_paths` and `attainable_boundary` were
+    # declared only by the October Opus `sde_heston_call_feller` spec, which a
+    # `--fresh` re-run replaced with one that declares neither -- so both exemptions
+    # had become the dead weight this table's own guard test exists to catch. Removed
+    # rather than kept as documentation: a formulator that reinvents either should
+    # meet the guard and have the question reopened, not find a stale pass waiting.
+    # `second_call_num_paths` has a live successor that *is* read --
+    # `graded_num_paths`, which the memory projection in `sde/driver.py` consumes.
+    "feller_condition": "guidance: it tells the plan-creator whether the variance "
+                        "process can reach zero and therefore which scheme to "
+                        "propose. The kernel grades the resulting moments and the "
+                        "declared domain invariant, not the classification",
 }
 
 #: A key whose name ends -- or begins -- with one of these is prose by convention.

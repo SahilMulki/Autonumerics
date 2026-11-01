@@ -296,10 +296,17 @@ early-exit and `benchmark/report.py`'s `VERIFIED_PASS` have always been asking. 
 `rel_l2_err_max` certifies exactly as one three decades inside it does, and does not score the same.
 Rank on `score`; exit and gate on `certified`.
 
-**`solve_time_s`, not `wall_time_s`, is the cost.** `wall_time_s` is the whole evaluation — the
-ladder, MMS, D1, the temporal probe — which `verification_manual.md` §24 prices between 1.0× and 35×
-depending on evidence path and which Stage-2 checks ran. Two plans on one problem can differ in it by
-an order of magnitude for reasons that have nothing to do with their solvers.
+**`solve_time_s`, not `wall_time_s`, is the cost — and cost is a diagnostic, not a ranking key.**
+`wall_time_s` is the whole evaluation — the ladder, MMS, D1, the temporal probe — which
+`verification_manual.md` §24 prices between 1.0× and 35× depending on evidence path and which
+Stage-2 checks ran. Two plans on one problem can differ in it by an order of magnitude for reasons
+that have nothing to do with their solvers, which is why `solve_time_s` is the one reported.
+
+Since 2026-11-01 neither enters the selection. Cost left `ranking.WEIGHTS` and `solve_time_s` left
+`ranking.RANK_KEYS`: **cost does not measure whether a plan is right, so it does not choose between
+plans.** Report it — a reader weighing their own compute budget needs the number — and rank on
+`score`, `provenance`, `sqi` and `iter` only. See `commands/conductor.md` Phase 3 step 2 for the two
+measurements that settled it.
 
 **`design_order`, not `order_floor`, is what an observed order should be read against.**
 `order_floor` is a pass bar — 1.0, and 0.0 on `pde_kuramoto_sivashinsky` — so

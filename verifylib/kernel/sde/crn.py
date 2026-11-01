@@ -155,17 +155,115 @@ def _median_order(d0, d1):
 ORDER_CI_MULT = 2.0
 
 
+#: The abstention a plan earns by declaring ``exact_sampling_components`` (F18).
+#: Stated once because it is also what the metrics block carries, so a reader sees
+#: the same sentence the kernel acted on.
+EXACT_SAMPLING_REASON = (
+    "the plan declares this component's transition to be sampled exactly, so it "
+    "draws from the exact conditional law instead of consuming the supplied "
+    "Brownian increment: the CRN levels decorrelate, the pathwise differences do "
+    "not shrink, and the ratio measures the auxiliary randomness rather than a "
+    "discretization that is not there")
+
+
+#: Families whose step generates its own auxiliary randomness instead of consuming the
+#: supplied Brownian increments, so a near-zero strong order is the expected reading
+#: rather than a defect.
+#:
+#: Keyed on **non-consumption, not exactness**, and that distinction is the whole
+#: finding. `quadratic-exponential` is in the set although QE is explicitly *not*
+#: exact sampling -- its variance leg is a moment-matched approximation to the
+#: non-central chi-squared transition -- because it draws `Z_V` and `U` fresh each
+#: step and therefore cannot consume the increments either way. B03's QE plan read
+#: `sde_manual.md`, correctly concluded it was not doing exact sampling, and declined
+#: the declaration on that basis; the field's name and the manual's old wording both
+#: pointed at exactness while the kernel's use of it was always about consumption.
+#:
+#: This set does **not** grant the abstention -- :func:`abstention` still requires the
+#: plan's own ``exact_sampling_components``, because "ignores the supplied increments"
+#: is a real defect on every other family and the kernel cannot tell the two apart by
+#: measurement. What the set does is make the missing declaration *sayable*: when the
+#: family implies exact sampling, nothing is declared, and the order comes back near
+#: zero, :func:`undeclared_exact_sampling` produces the sentence the plan needs to act
+#: on, and the evaluator reports it instead of the bare "erratic in dt".
+#:
+#: Measured on `sde_heston_call_feller` (B03, Sonnet, 2026-10-31): a correct Andersen-QE
+#: plan declared `scheme_family: quadratic-exponential`, read a strong order of -0.0021,
+#: and was scored **3** for "the estimator is erratic in dt". Its three prices were all
+#: inside their gates -- the harness passed it 10/10 -- and the 3 cost it the selection
+#: to a plain Euler plan that could not allocate at grading scale. The plan had found
+#: the field and written "do **not** declare `exact_sampling_components` for this plan"
+#: in its own SOLUTION.md, reasoning from the manual that QE is not literal exact
+#: sampling. It was right about that and wrong about the rule, which is why the fix is
+#: the wording in three places and not a new mechanism.
+EXACT_SAMPLING_FAMILIES = frozenset({"exact-transition", "quadratic-exponential"})
+
+#: How close to zero the strong order has to read before the missing declaration is
+#: worth raising. Wide, because the point is to prompt a declaration the plan either
+#: makes or refuses, not to decide anything: `guards` still fails the plan.
+NEAR_ZERO_ORDER = 0.25
+
+
+def undeclared_exact_sampling(family, strong, exact_sampling):
+    """The hint for a plan whose family implies exact sampling but declares none.
+
+    ``None`` when the question does not arise: a family outside
+    :data:`EXACT_SAMPLING_FAMILIES`, a declaration already present, or a strong order
+    far enough from zero that the ladder plainly measured something.
+    """
+    if exact_sampling:
+        return None
+    if str(family or "").strip().lower() not in EXACT_SAMPLING_FAMILIES:
+        return None
+    if strong is None or not np.isfinite(strong):
+        pass
+    elif abs(float(strong)) > NEAR_ZERO_ORDER:
+        return None
+    reading = ('non-finite' if strong is None or not np.isfinite(strong)
+               else f'{float(strong):.4g}')
+    return (f"the plan declares scheme_family {family!r}, whose step generates its "
+            f"own randomness rather than consuming the supplied Brownian increments, "
+            f"and the strong order reads {reading} -- the reading the CRN ladder "
+            f"gives in exactly that case. The test for "
+            f"`exact_sampling_components` is **non-consumption, not exactness**: if "
+            f"this component draws its own normals or uniforms each step, declare "
+            f"its index in SOLUTION.md's frontmatter as "
+            f"`exact_sampling_components: <i>, <j>` and the order study will abstain "
+            f"on it instead of failing it. That holds for a moment-matched "
+            f"approximation such as Andersen QE just as it does for a literally "
+            f"exact draw -- QE is not exact sampling and still qualifies, because it "
+            f"cannot consume the increments either way. An abstention is not a pass: "
+            f"it forfeits the order check's evidence rather than charging a penalty. "
+            f"If instead this component *was* stepped with the supplied increments, "
+            f"the near-zero order is a real defect and declaring it would hide it: "
+            f"fix the solver")
+
+
 def abstention(strong, detail, *, floor_mult=2.0, band=STRONG_BAND,
-               ci_mult=ORDER_CI_MULT):
+               ci_mult=ORDER_CI_MULT, exact_sampling=False):
     """Why the strong order carries no verdict, or ``None`` when it does.
 
-    Three reasons, and all three are "the estimator could not measure this", never
+    Four reasons, and all four are "the estimator could not measure this", never
     "the solver is wrong". Plan §11 D8: ``"unavailable"`` is in
     :data:`..metrics.SKIPS`, so ``passed()`` and ``failed()`` both refuse it and the
     plan keeps the score it has -- an unmeasurable strong order on heavy-tailed
     multiplicative noise is a property of the kernel's estimator, and charging it to
     the solver is the false hard-fail on correct work this repo keeps rediscovering.
+
+    ``exact_sampling`` is the fourth, and the only declared one. The three measured
+    hatches all detect an unmeasurable order by the estimate being *small* or
+    *uncertain*; an exactly-sampled transition fails every one of them, because its
+    differences are large and its estimate is tight. Measured on
+    ``sde_sabr_cev_call_i``: an exact Poisson-mixed BESQ(0) step reads
+    ``-0.0251 +/- 0.0126``, a confident interval around a meaningless number, and
+    ``score.rubric_sde`` drops the plan from 9 to 7 for "the solver does not consume
+    the supplied Brownian increments". The plan had predicted exactly that penalty
+    in its own SOLUTION.md before it was implemented, and nothing downstream could
+    read the declaration. It is checked first, because the measured hatches cannot
+    reach a case they were never able to see.
     """
+    if exact_sampling:
+        return EXACT_SAMPLING_REASON
     if strong is None or not np.isfinite(strong):
         return (detail.get("reason")
                 or "the strong-order estimate is not a finite number")
@@ -275,7 +373,7 @@ def expected_orders(verification, scheme_family, *, declared=True):
 
 
 def guards(strong, weak, expected_strong, expected_weak, detail, *,
-           declared=True, candidates=()):
+           declared=True, candidates=(), exact_sampling=False):
     """§19's guards.
 
     ``orders_ok`` is **three-valued**: ``True``, ``False``, or the literal
@@ -317,7 +415,14 @@ def guards(strong, weak, expected_strong, expected_weak, detail, *,
     # forgiveness one line below belongs to the **weak** order and nothing mirrored
     # it for the strong one. So an exactly-integrating scheme was failed rather than
     # excused, which is live today on `dX = dW`.
-    abstained = abstention(strong, detail)
+    abstained = abstention(strong, detail, exact_sampling=exact_sampling)
+    if strong is None or not np.isfinite(strong):
+        # The band arithmetic below needs a number. Before the exact-sampling hatch
+        # the only way to reach `abstained` with a non-finite estimate was the first
+        # hatch, which the `shrinking` comparison tolerated; a declared exemption can
+        # now abstain on a `None`, so the verdict is settled here instead.
+        return _abstained(strong, weak, expected_strong, expected_weak,
+                          candidates, declared, abstained)
     if declared:
         s_ok = shrinking and abs(strong - float(expected_strong)) < STRONG_BAND
     else:
@@ -345,7 +450,26 @@ def guards(strong, weak, expected_strong, expected_weak, detail, *,
            "orders_ok": s_ok}
     if abstained:
         out["abstained"] = abstained
+    if exact_sampling:
+        out["exact_sampling"] = True
     return out
+
+
+def _abstained(strong, weak, expected_strong, expected_weak, candidates, declared,
+               reason):
+    """``guards``' return for an estimate there is no band arithmetic to do on."""
+    w_ok = weak is None or (0.5 * float(expected_weak) <= weak
+                            <= float(expected_weak) + 0.75)
+    return {"strong_ok": "unresolved", "weak_ok": bool(w_ok),
+            "weak_order_out_of_band": bool(weak is not None and not w_ok),
+            "strong_order": strong, "weak_order": weak,
+            "expected_strong_order": float(expected_strong),
+            "expected_strong_candidates": [float(c) for c in candidates],
+            "strong_band": "two-sided" if declared else "one-sided (scheme family "
+                                                        "undeclared in the plan)",
+            "band_half_width": float(STRONG_BAND),
+            "expected_weak_order": float(expected_weak),
+            "orders_ok": "unresolved", "abstained": reason}
 
 
 def richardson_moment(terminals, weak, component=0, *, ci_mult=2.0):

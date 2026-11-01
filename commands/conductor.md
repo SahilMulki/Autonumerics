@@ -84,7 +84,7 @@ If `STATE.phase == init`:
 
 After Phase 1 (or on resume), before entering the loop:
 
-If any plan has `state: await_evaluator`, note each such plan's current `score` (its previous score), then dispatch the appropriate evaluator for those plans in parallel (`run_in_background: true`). After each returns, read the score from `<review score=X>` and the `provenance` / `estimated_rel_error` from the `<metrics>` block in that plan's SOLUTION.md, write them to STATE.md, and increment `iter` (this completes the interrupted cycle). Then set the plan's state by the same early-stop rules used in the loop: `certified: true` → winner; else `iter >= 2` and no improvement over the previous score → `state: stopped`; else `state: await_solver`.
+If any plan has `state: await_evaluator`, note each such plan's current `score` (its previous score), then dispatch the appropriate evaluator for those plans in parallel — all of them as `Agent` calls in **one** message, which runs them concurrently and returns them together. After they return, read the score from `<review score=X>` and the `provenance` / `estimated_rel_error` from the `<metrics>` block in that plan's SOLUTION.md, write them to STATE.md, and increment `iter` (this completes the interrupted cycle). Then set the plan's state by the same early-stop rules used in the loop: `certified: true` → winner; else `iter >= 2` and no improvement over the previous score → `state: stopped`; else `state: await_solver`.
 
 This handles: (a) crash recovery mid-cycle; (b) fresh plans left needing evaluation.
 
@@ -116,11 +116,17 @@ Run solver↔evaluator cycles until a plan **wins** (`certified: true`) or every
 
 **Plateau early-stop**: a plan is *plateaued* when it has completed at least 2 cycles (`iter >= 2`) and its most recent evaluator score did **not** improve on its previous score. Mark a plateaued plan `state: stopped` — it is terminal and gets no further cycles. A plan whose score has stopped rising across a full refine cycle is very unlikely to ever cross the passing bar, and cycling every such plan to max_iter is exactly how a genuinely-unpassable problem (e.g. a shock no conservative scheme resolves to <1% L2) burns an entire usage budget for zero score gain.
 
+**An unresolved measurement blocks the stop.** A plan whose `<metrics>` block records `resolved: false` — the kernel could not resolve its own accuracy statistic against the sampling noise at the path count it ran — may **not** be marked `state: stopped` on the plateau rule until that has been acted on once. A plateau there says the evaluator found nothing to fix, and it is right: the defect is not in the scheme, it is that the run did not measure anything. Instead:
+
+- Dispatch the solver once with the single instruction to **raise `num_paths`** (or to add the variance reduction the plan already describes) until `mc_se_rel` is below the accuracy the problem's tolerance demands, changing nothing else. Record `unresolved_retry: true` under the plan in STATE.md.
+- If the next evaluation still reports `resolved: false`, *then* mark it `state: stopped`, and say so in REPORT.md as **"stopped unresolved"** rather than as a plateau. The two are different outcomes and the record must not conflate them: one is "this is as good as the scheme gets", the other is "nobody found out".
+- Never rank or ship an `unresolved` plan as though its error estimate were a measurement. On `sde_sabr_cev_call_ii` all three plans recorded `resolved: false` with a Monte-Carlo standard error 23–38× larger than the error they reported, all three plateaued at `iter: 2` with the evaluator finding no defect, and the shipped plan fails the external gate at one seed in three. Every signal the pipeline needed was recorded; nothing read it.
+
 A plan is **eligible** for a new cycle iff it is **not** `certified` AND `iter < max_iter` AND `state != stopped`.
 
 **Fill the pool**:
 
-First check for a winner: if any plan already has `certified: true` (on Path B: *and* the early-exit gate above is satisfied), launch no cycles — go straight to Phase 3. Otherwise take the **eligible** plans, sort them by `(score asc, iter asc)`, take up to `parallelism` of them, and start one cycle for each — all cycles run in parallel with `run_in_background: true`. If no plan is eligible, go straight to Phase 3.
+First check for a winner: if any plan already has `certified: true` (on Path B: *and* the early-exit gate above is satisfied), launch no cycles — go straight to Phase 3. Otherwise take the **eligible** plans, sort them by `(score asc, iter asc)`, take up to `parallelism` of them, and start one cycle for each — issue the round's `Agent` calls in **one** message so they run concurrently and return together. Do not background them and do not poll; see Key Rules. If no plan is eligible, go straight to Phase 3.
 
 **One cycle for a single plan**:
 
@@ -177,10 +183,33 @@ When the loop exits:
       on a formula nobody could check. They are different claims and the tag is how they stay
       distinguishable.
    3. **`sqi` descending** — the quality index: accuracy headroom (0.35), order fidelity against the
-      scheme's *design* rate (0.25), structural margin (0.20), residual slope (0.10) and solver cost
-      (0.10), each in [0, 1] and renormalised over whichever were measurable.
-   4. `solve_time_s` ascending — the solver at the graded grid, not `wall_time_s`.
-   5. fewest iterations
+      scheme's *design* rate (0.25), structural margin (0.20) and residual slope (0.10), each in
+      [0, 1] and renormalised over whichever were measurable.
+   4. fewest iterations
+
+   **Cost is measured, reported, and never ranked on.** `solve_time_s` used to be a fifth of the
+   index at weight 0.10 and a fourth ranking key below it, and it is now neither. It appears in the
+   `cost` column of `cli.py rank` as a diagnostic — a reader weighing their own compute budget needs
+   the number — but nothing in the selection reads it. **Cost does not measure whether a plan is
+   right, so it does not choose between plans.** A slower scheme that resolves the problem is the
+   better plan; speed is a separate question answered afterwards.
+
+   Two measurements settled it. On `pde_heat_2d` the rule used to be defended as "equally accurate
+   within the error bars, so take the cheaper one" — but on `sde_heston_call_feller` (2026-11-01)
+   the accuracy component came back **0.000 for all three plans**, because at the kernel's
+   diagnostic path count the Monte-Carlo noise is an order of magnitude wider than the tightest
+   price gate and the graded quantity is not resolvable there. Cost then ran 0.980 / 0.000 / 1.000
+   across the pool: a full-range discriminator decided by a 0.5s-vs-2.6s solve, standing in for an
+   accuracy nobody could measure. And in the two-plan case the index did not merely break ties — at
+   weight 0.10 a 100× speed advantage outweighed a real accuracy gap and **created** the tie it then
+   won, ranking the more accurate plan second.
+
+   **Read the `decided_by:` line the ranker prints.** It names the key that actually separated the
+   winner from the runner-up. Where it reads `iter` or `tie`, the ranker did not rank: score,
+   provenance and the index are all equal and the pool is indistinguishable on everything the kernel
+   can measure. Quote it in REPORT.md, and prefer spending one more measurement on the pool —
+   `compare` at the sampling error, or a solver cycle that raises `num_paths` — over shipping a
+   default and calling it the best plan.
 
    Keys 1 and 2 are claims about *what was established* and stay lexicographic: a weighted sum must
    never trade a validated-analytic 9 against a self-convergence 10. Everything below them is
@@ -190,9 +219,10 @@ When the loop exits:
    order margin, then `wall_time_s`. On `pde_heat_2d` three second-order plans certified at
    1.010e-04, 1.019e-04 and 1.023e-04 against a 1% tolerance, and the winner was decided on the 0.9%
    gap between the first two — inside the noise. On a log scale that gap is 0.0005 of a point, the
-   three tie, and the index falls through to cost, which separates them 3.8× (0.40 s / 0.81 s /
-   1.51 s) and picks the ADI scheme. That is the answer a numerical analyst would give: **equally
-   accurate within the error bars, so take the cheaper one.** The order margin was measured against
+   three tie. The index used to fall through to cost there, which separates them 3.8× (0.40 s /
+   0.81 s / 1.51 s) and picks the ADI scheme — defensible on that pool and wrong as a general rule,
+   for the reasons above; such a pool is now reported as the tie it is. The order margin was
+   measured against
    `order_floor`, a pass bar rather than a target — and on an SDE, where `order_floor` carries the
    *expected strong order* and the gate is two-sided, ranking its margin descending sorted by
    distance from the correct answer. `wall_time_s` timed the whole evaluation, which on one KdV pool
@@ -204,7 +234,8 @@ When the loop exits:
    - Any `ambiguities` recorded in Phase 1 — quote each and say what the formulator chose. Put this near the top: it tells the reader where the solved problem may differ from the one they described.
    - **The provenance of the scoring**, also near the top — whether the winner was measured against a closed form (`analytic`), a derived deterministic surrogate (`surrogate`), a manufactured solution (`manufactured`), or only its own convergence behaviour (`self_convergence`). A 10 earned by self-convergence is a materially weaker claim than a 10 earned against an exact solution, and the reader must not have to dig to tell them apart.
    - Each plan: scheme, final score, provenance, estimated error (flagging whether it was measured or estimated), observed order, iter count, and key metrics from the last Results section
-   - Best plan recommendation and why, citing the ranking criterion that decided it
+   - Best plan recommendation and why, **quoting the ranker's `decided_by:` line verbatim**. Where it is `iter` or `tie`, say plainly that the pool was indistinguishable on quality and the winner is a default rather than a measurement
+   - **Any plan whose `<metrics>` block records `resolved: false`**, or whose `mc_se_rel` is larger than its own `estimated_rel_error` — name it and say the accuracy was unmeasured at the path count it ran, never that it was good
    - Any plans that did not certify — their last score and remaining errors, and whether they hit max_iter, were `stopped` (plateaued — score stopped improving), or were left unfinished because another plan already certified
    - **Verification gaps** — any check that could not be run: a missing verification plan, a faulty MMS probe, an untrustworthy surrogate, an MC-inconclusive result, an invariant with no trace reported, and every name in the metrics block's
      `invariants_not_reported` — a declared invariant the kernel has no evaluator for is a
@@ -235,7 +266,58 @@ When the loop exits:
 - Never read `problem.md` yourself. Never write solver code or evaluate results.
 - Read only `equation_type`, `requirements` and the path field (`analytic_solution` / `analytic_moments.has_analytic_solution`, for whether it is null) from `problem_spec.json` — do not analyze the problem yourself. You check the ledger's *structure* (statuses and `spec_path`s), never whether the mathematics in it is right; that is the formulator's job and not yours to second-guess.
 - STATE.md is your sole responsibility — keep it accurate after every dispatch.
-- Always use `run_in_background: true` in the solving loop.
+- **Dispatch a round's agents as parallel calls in a single message, and let that
+  message block until they all return. Never use `run_in_background: true`, and
+  never schedule a wake-up, heartbeat or timer to poll for them.** Several `Agent`
+  calls issued in one message run concurrently, so a round of three plans costs one
+  dispatch turn and one return, with the parallelism intact. Background mode gives
+  the same concurrency and takes the return away, which is the whole problem:
+  nothing hands you the results, so you are left polling for them.
+
+  Measured on the 2026-10-31 `sde_heston_call_feller` Sonnet run, which exhausted
+  its usage window after 88 minutes with 0/1 problems finished. The conductor made
+  **90 API calls for 10.3M tokens of context**, against 282 calls and 22.2M across
+  all 21 subagents -- so a third of a run that produced nothing was the
+  orchestrator. Of those 90 calls:
+
+  | conductor call | calls | context | share |
+  |---|---|---|---|
+  | **text only, no tool** | **25** | **2.85M** | **27.7%** |
+  | **`ScheduleWakeup` heartbeat** | **22** | **2.84M** | **27.5%** |
+  | `Bash` (STATE.md, gate, kernel) | 9 | 0.94M | 9.2% |
+  | `Agent` dispatches (alone or combined) | 15 | 1.86M | 18.1% |
+  | everything else | 19 | 1.81M | 17.5% |
+
+  **47 of 90 calls and 55% of the conductor's cost was waiting.** Every one of the
+  22 heartbeats described itself in its own `reason` field as "waiting on ...", and
+  the 25 text-only calls each woke, re-read a ~115k-token context, wrote a sentence
+  of the form "still waiting on plan 2's evaluator", and stopped. For scale, every
+  subagent report the conductor read all run totalled 91 KB; the context it re-read
+  to not act on them was two orders of magnitude larger.
+
+  The subagents, by contrast, spend 57% of their cost on `Bash` and only 9.8% on
+  text-only calls -- the foreground-solve rules in `solver-sde.md` and
+  `evaluator-sde.md` are holding. This rule is the conductor's half of the same
+  lesson.
+
+  This rule used to read, in full, "Always use `run_in_background: true` in the
+  solving loop", while the dispatch steps below said "Wait for return". Those
+  cannot both be followed -- a backgrounded agent does not return to the turn that
+  launched it -- and the conductor resolved the contradiction by inventing a
+  polling loop, which is the most expensive reading available.
+
+  This is **not** the problem `CONDUCTOR_ENV`'s 30-minute
+  `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` already fixed (see `benchmark/run.py`).
+  That ceiling holds a *subagent* open so a solver running a long grading-scale
+  solve cannot return unfinished, and it worked: the run above shows only 2
+  `SendMessage` resumes, against the 129-turn single-solver resume loop it was
+  written for. The conductor's own dispatch is a separate loop and the ceiling
+  never touched it.
+- **While a dispatched round is outstanding, write nothing.** A completion
+  notification for one plan of three is not an event worth a turn: if any agent of
+  the round is still out, emit no text and take no action. Act once, when the round
+  is complete. Narrating progress costs a full context read per sentence and there
+  is no interactive user reading it.
 - When reading the score: parse the `<metrics>` block for `score`, `certified`, `provenance`, `estimated_rel_error` and `observed_order`. `score` and `provenance` are **computed by the kernel**, not written by the evaluator, so they are the fields to rank on; `<review score=X>` is a transcription of the same number and `verifylib` rejects a review where the two disagree. Carrying `provenance` through to REPORT.md is not optional.
 - If a plan's metrics carry `agent_cap`, the evaluator lowered the score below what the checks computed and recorded a reason. Report both the capped score and the reason in REPORT.md — a cap is a finding, not a formality. A cap can only ever lower a score.
 - Do not second-guess a `provenance` tag or re-derive an error yourself. Record what the kernel computed.

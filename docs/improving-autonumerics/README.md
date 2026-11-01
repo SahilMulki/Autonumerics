@@ -1,8 +1,18 @@
 # Improving AutoNumerics — what BENCHOP-SLV measured, and what to change
 
-**Status:** **proposal, written 2026-10-28, revised the same day against
-[07-review.md](07-review.md), and revised again 2026-10-29 against the free measurements in
-[08-free-measurements.md](08-free-measurements.md).** Nothing here is implemented.
+**Status:** **written 2026-10-28, revised the same day against [07-review.md](07-review.md),
+revised again 2026-10-29 against the free measurements in
+[08-free-measurements.md](08-free-measurements.md), and
+[implemented](09-implementation.md) the same day.** ~~Nothing here is implemented.~~
+
+> **[I, 2026-10-29]** Everything in the fix table below except F9 (withdrawn) and F14 (untouched)
+> is now in the working tree, with 26 acceptance tests in
+> [`verifylib/tests/test_benchop_fixes.py`](../../verifylib/tests/test_benchop_fixes.py) and three
+> of [06](06-retest-protocol.md) §7a's four baseline failures turned green.
+> **[09-implementation.md](09-implementation.md)** is the record: what each fix became, the one
+> design decision worth arguing with (§2), what was deliberately *not* done (§3), and what is still
+> unmeasured (§5). Nothing has been through the pipeline yet — the ranking changes are visible
+> offline today, the kernel changes need a re-evaluation of B01–B04.
 
 > **[M, 2026-10-29]** The offline measurements [06](06-retest-protocol.md) §1 said to run before
 > implementing anything have been run, and **one of them disconfirmed the plan's central
@@ -78,11 +88,11 @@ Effort is a rough engineering estimate; "evidence" names the measurement in
 | **F1** | Compare the functionals across plans **at the sampling error, not at the gate** | [`verifylib/cli.py:360`](../../verifylib/cli.py#L360) | **M** | B10's plans agree on both moments to 14 digits and differ on price at 3.4–4.5σ | A disagreement detector below the gate. **It cannot order a pool** |
 | **F2** | Run the functional self-convergence check on the SDE path | [`verifylib/kernel/sde/driver.py`](../../verifylib/kernel/sde/driver.py) | **S** | `functionals.py` exists and is PDE-only | A gated functional that has not converged stops certifying |
 | **F5** | Widen the SDE scheme menu past Euler–Maruyama | [`agents/plan-creator-sde.md:21`](../../agents/plan-creator-sde.md#L21), [`references/sde_manual.md:166`](../../references/sde_manual.md#L166) | **M** | C0 chose exact/QE on 9/10 | Puts the winning schemes on the menu. **Needed before the Sonnet switch** |
-| **F6** | Give `scheme_family` real values for QE and exact transitions | [`agents/plan-creator-sde.md:62`](../../agents/plan-creator-sde.md#L62), [`verifylib/kernel/sde/crn.py:221`](../../verifylib/kernel/sde/crn.py#L221) | **M** | code reading only — **this suite does not measure its cost** | Stops judging an exact scheme against Euler's 0.5 floor |
+| **F6** | Give `scheme_family` real values for QE and exact transitions | [`agents/plan-creator-sde.md:62`](../../agents/plan-creator-sde.md#L88), [`verifylib/kernel/sde/crn.py:221`](../../verifylib/kernel/sde/crn.py#L221) | **M** | code reading only — **this suite does not measure its cost** | Stops judging an exact scheme against Euler's 0.5 floor |
 | **F8** | Register the solver module in `sys.modules` — and **leave it registered** | [`benchmark/runner.py:157`](../../benchmark/runner.py#L157) | **S** | `PicklingError` on `2-qe-log-euler` | Forking solvers stop crashing. Blocked on the process-model decision in F4 |
 | **F10** | Report the per-plan harness error, `decided_by` and the margin | [`benchmark/report.py:552`](../../benchmark/report.py#L552) | **S** | reads `rel_l2_err`, which does not exist on a functional-graded problem | Makes the next run's failure analysis free |
 | ~~**F11**~~ | ~~Investigate B01~~ — **answered** ([08](08-free-measurements.md) §4): the CRN order study reads −0.0251 on an exact BESQ(0) step and `score.rubric_sde` docks it. Superseded by **F18** | — | — | the plan predicted its own penalty in SOLUTION.md before implementation | Closed |
-| **F7** | ~~Break the plan-ordering bias~~ → **report the tie** rather than break it invisibly | [`commands/conductor.md:123`](../../commands/conductor.md#L123) | **S** | ~~7/10 winners were plan 1~~ position, family and cost are collinear here | An audit trail, not a fix for a measured bias |
+| **F7** | ~~Break the plan-ordering bias~~ → **report the tie** rather than break it invisibly | [`commands/conductor.md:123`](../../commands/conductor.md#L129) | **S** | ~~7/10 winners were plan 1~~ position, family and cost are collinear here | An audit trail, not a fix for a measured bias |
 | **F14** | Decide what to do about the evaluator, which no other fix touches | [`agents/evaluator-sde.md`](../../agents/evaluator-sde.md) | **?** | no plan's score improved on cycle 2, anywhere | Currently a hoped-for side effect of F1–F3 |
 | ~~**F15**~~ | ~~Diagnose B02~~ — **answered** ([08](08-free-measurements.md) §5): it **fails the external gate at 1 of 3 seeds**, every plan recorded `resolved: false`, and nothing acts on it. Superseded by **F19** | — | — | shipped plan 1.1380 at seed 202; `mc_se_rel` 25–38× the reported estimate | Closed |
 | ~~**F9**~~ | ~~Cut `max_iter` 5 → 2~~ — **withdrawn**, it saves nothing | — | — | every plan already stopped at `iter: 2` | **Zero.** The plan-count increase is a cost *rise*, proposed separately |
@@ -105,6 +115,7 @@ read by nothing in `verifylib/`. It is F0/F2's free acceptance test.
 | [05-fix-loop-and-harness.md](05-fix-loop-and-harness.md) | F8–F11: the refine loop's iteration budget and the four harness defects the runs exposed |
 | [06-retest-protocol.md](06-retest-protocol.md) | The all-Sonnet retest: what to hold fixed, what counts as success, what the budget buys, and the artefact question that has to be settled first |
 | [07-review.md](07-review.md) | **An independent review of everything above**, recomputed from the records: three wrong numbers in §2 of 01, the half of the selection loss that is Monte-Carlo luck, why F1 and F3 cannot work as specified, why F9 saves nothing, what is no longer on disk, and what will not generalize past BENCHOP. Every correction above traces to a numbered section of it; one of its findings is rejected in [01](01-what-was-measured.md) §1a |
+| [09-implementation.md](09-implementation.md) | **What was implemented.** Every fix, the file it landed in, the F16 design decision and the two readings of it that are wrong, what was deliberately left undone and why, the test state against [06](06-retest-protocol.md) §7a's baseline, and the three measurements still outstanding |
 | [08-free-measurements.md](08-free-measurements.md) | **The four free measurements, run.** The quality index is anti-correlated with accuracy (8 of 30 within-pool pairs, p = 0.008); seed replication puts the selection loss at **1.69×**; F11 and F15 answered; F6's 104× unsupported |
 
 ## What this folder does not claim

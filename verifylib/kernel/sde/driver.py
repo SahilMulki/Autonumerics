@@ -15,7 +15,7 @@ import time
 import numpy as np
 
 from ...operator import evaluate
-from .. import agreement, metrics, plan_meta, sandbox
+from .. import agreement, functionals, metrics, plan_meta, sandbox
 from ..invariants import SdeContext, run_declared
 from ..score import certify
 from . import constraints as C
@@ -78,8 +78,19 @@ def evaluate_sde(spec, plan_dir, agent):
     from ..driver import solver_sha256
     m["solver_sha256"] = solver_sha256(plan_dir)
 
+    # The peak over *every* solve this plan performs -- the graded call, each CRN
+    # level, the Dynkin replicates. Each entry is measured inside its own child
+    # (`sandbox._self_peak_mb`), so this is a max over exact per-solve figures rather
+    # than the parent's cross-plan high-water mark, which is the distinction that
+    # made the first cut cap unrelated plans under pytest.
+    peaks: list[float] = []
+
     def solve(call, **kw):
-        return sandbox.run(plan_dir, "sde", call, timeout_s=timeout_s, **kw)
+        out = sandbox.run(plan_dir, "sde", call, timeout_s=timeout_s, **kw)
+        peak = out.get("peak_mem_mb")
+        if isinstance(peak, (int, float)) and peak > 0.0:
+            peaks.append(float(peak))
+        return out
 
     base_call = {"num_paths": num_paths, "dt": dt, "T": T, "seed": seed}
     got = solve(base_call)
@@ -89,10 +100,45 @@ def evaluate_sde(spec, plan_dir, agent):
     # the CRN ladder, the Dynkin ladder and the surrogate solve on top). For an SDE
     # the graded call is a single solve at the declared (num_paths, dt, T, seed), so
     # this is exactly the work-precision cost at the point the error is quoted.
-    if isinstance(got.get("wall_s"), (int, float)):
-        m["summary"]["solve_time_s"] = round(float(got["wall_s"]), 3)
+    # F4: CPU time where the sandbox could measure it, wall time otherwise -- and
+    # `cost_source` says which, because the two are not comparable and a pool that
+    # mixes them is ranking on the measurement rather than on the solver. Until
+    # this landed the SDE path set `solve_time_s` from `wall_s` outright, which
+    # contradicts `ranking.cost`'s own docstring and is contaminated by the
+    # `parallelism = 3` contention between a pool's own plans.
+    cpu, wall = got.get("cpu_s"), got.get("wall_s")
+    if isinstance(cpu, (int, float)) and cpu > 0.0:
+        m["summary"]["solve_time_s"] = round(float(cpu), 3)
+        m["summary"]["cost_source"] = "cpu"
+    elif isinstance(wall, (int, float)):
+        m["summary"]["solve_time_s"] = round(float(wall), 3)
+        m["summary"]["cost_source"] = "wall"
+    if isinstance(wall, (int, float)):
+        m["summary"]["solve_wall_s"] = round(float(wall), 3)
+    # **The graded call's own peak, and the cap reads only this one.** The kernel's CRN
+    # ladder refines to 2^(levels-1) times as many steps, so its finest level needs
+    # several times the graded solve's memory -- that is the kernel's own cost choice
+    # and not something the grader asks of the solver. Capping on a max over every
+    # solve charged a plan for the ladder: the frozen `sde_ignores_crn` canary, whose
+    # graded call is comfortable, peaks at 4.6 GB on the finest level and was dropped
+    # from 8 to 4 by a memory finding that has nothing to do with what it tests.
+    #
+    # `peak_mem_mb` below is the max over every solve and stays *reported*, because a
+    # plan whose ladder cannot run is worth seeing even though it is not a finding.
+    graded_peak = got.get("peak_mem_mb")
+    limit = got.get("mem_mb_limit")
+    if isinstance(graded_peak, (int, float)) and isinstance(limit, (int, float)) \
+            and limit > 0:
+        m["summary"]["graded_peak_mem_mb"] = float(graded_peak)
+        m["summary"]["mem_mb_limit"] = float(limit)
+        m["summary"]["mem_fraction_used"] = round(float(graded_peak) / float(limit), 3)
     if m_plan.get("scheme_family"):
         m["summary"]["scheme_family"] = m_plan["scheme_family"]
+    # F18, declared and never inferred, and carried into the metrics so a reader
+    # sees which components the order study was excused on and can disagree.
+    exact_sampling = tuple(m_plan.get("exact_sampling_components") or ())
+    if exact_sampling:
+        m["summary"]["exact_sampling_components"] = list(exact_sampling)
     result = got["result"]
     X = np.asarray(result["terminal_paths"], dtype=float)
     if not np.all(np.isfinite(X)):
@@ -122,10 +168,26 @@ def evaluate_sde(spec, plan_dir, agent):
                        k: v for k, v in ref_detail.items() if k != "route"})
 
     if reference and reference.get("variance"):
-        per = [C.resolution(st, ref, var_tol, ci_mult)
-               for st, ref in zip(stats, reference["variance"], strict=False)]
-        resolved_detail = {"resolved": all(p["resolved"] for p in per), "per_component": per}
-        metrics.record(m, "resolved", bool(resolved_detail["resolved"]), **resolved_detail)
+        # Paired by the component each reference value describes, never positionally.
+        # `zip(stats, reference["variance"], strict=False)` silently paired
+        # component 0 with a reference scoped to component 1 on every multi-component
+        # Path-B spec; see `surrogates.applies_to` for what that measured.
+        pairs = _paired(stats, reference, "variance", ref_detail.get("components"))
+        per = [{"component": i, **C.resolution(st, ref, var_tol, ci_mult)}
+               for i, st, ref in pairs]
+        resolved_detail = {"resolved": all(p["resolved"] for p in per),
+                           "per_component": per}
+        if not per:
+            # A reference scoped to a component the solver did not return is no
+            # reference at all. `"unavailable"` and not `False`: nothing was
+            # measured, which is the distinction §14 turns on.
+            resolved_detail = {"resolved": False,
+                               "reason": "no reference variance could be paired with a "
+                                         "state component the solver returned"}
+            metrics.record(m, "resolved", "unavailable", **resolved_detail)
+        else:
+            metrics.record(m, "resolved", bool(resolved_detail["resolved"]),
+                           **resolved_detail)
     else:
         resolved_detail = {"resolved": False,
                            "reason": "no reference variance to resolve against"}
@@ -160,7 +222,8 @@ def evaluate_sde(spec, plan_dir, agent):
     cross = _cross_moments(spec, X, T, ci_mult)
     shape = _distribution(verification, X, stats, T, spec.get("parameters"), ci_mult)
     moments_ok, moment_detail = _compare(reference, stats, mean_tol, var_tol, near_zero,
-                                         ci_mult, cross=cross, shape=shape)
+                                         ci_mult, cross=cross, shape=shape,
+                                         components=ref_detail.get("components"))
     metrics.record(m, "moments_ok", moments_ok, **moment_detail)
     if cross is not None:
         metrics.record(m, "cross_moment_ok", cross[0], **cross[1])
@@ -249,16 +312,26 @@ def evaluate_sde(spec, plan_dir, agent):
                                  thresholds.get("dynkin_levels"), 3))
 
     if run_orders:
-        orders, order_detail = _orders(plan_dir, solve, conv_paths, dt0, T, levels, seed,
-                                       expected_strong, expected_weak,
-                                       declared=family_declared,
-                                       candidates=strong_candidates, m=noise_dim,
-                                       components=len(stats))
+        orders, order_detail, ladder = _orders(
+            plan_dir, solve, conv_paths, dt0, T, levels, seed,
+            expected_strong, expected_weak, declared=family_declared,
+            candidates=strong_candidates, m=noise_dim, components=len(stats),
+            exact_sampling=exact_sampling)
     else:
+        ladder = []
         orders, order_detail = "not_run", {
             "reason": "the moments match an exact reference and the scheme's strong order "
                       "is below 1, so the order study cannot distinguish anything the "
                       "moment comparison has not already settled"}
+    # F18's discovery gap. `guards` can only abstain on a declaration the plan made,
+    # and a plan that does not know the field exists reads the bare "erratic in dt"
+    # and has nowhere to go -- measured on B03, where it cost a correct QE plan the
+    # selection. The hint names the field; it changes no verdict.
+    hint = crn.undeclared_exact_sampling(
+        m_plan.get("scheme_family"), order_detail.get("strong_order"), exact_sampling)
+    if hint is not None:
+        order_detail = {**order_detail, "undeclared_exact_sampling": hint}
+        m["summary"]["undeclared_exact_sampling"] = hint
     metrics.record(m, "orders_ok", orders, **order_detail)
     richardson = order_detail.get("richardson") if isinstance(
         order_detail.get("richardson"), dict) else None
@@ -266,6 +339,21 @@ def evaluate_sde(spec, plan_dir, agent):
                    richardson["stable"] if richardson else "unavailable")
     m["summary"]["observed_order"] = order_detail.get("strong_order")
     m["summary"]["order_floor"] = expected_strong
+    # F17. `ranking.order` needs a *design* rate to measure the observed one
+    # against, and `kernel/driver.py` sets `design_order` from the plan's declared
+    # `spatial_order` on the PDE path only. Nothing set it here, so across all 88
+    # metrics blocks on disk -- 23 SDE and 65 PDE -- `ranking.order` returned None
+    # for every one, and a quarter of the quality index has never once fired.
+    #
+    # The SDE counterpart of a declared spatial order is the expected *strong*
+    # order, and the same declared-never-inferred rule applies: it is published only
+    # where the spec stated `expected_strong_order` or the plan stated its
+    # `scheme_family`. The kernel's 0.5 default is not a design rate -- it is a
+    # floor the kernel chose, and ranking a plan against it would be ranking it
+    # against the kernel's own guess.
+    if family_declared or isinstance(verification.get("expected_strong_order"),
+                                     (int, float)):
+        m["summary"]["design_order"] = expected_strong
     # The estimate's own bar, and the state that says whether it carries a verdict.
     # `ranking.order` reads the second one: scoring a plan's rank on an estimate the
     # kernel just declined to gate on would reintroduce the defect one layer up,
@@ -299,6 +387,31 @@ def evaluate_sde(spec, plan_dir, agent):
         # the direct analogue of the GCI on the PDE side.
         e_fine = richardson["relative_shift"]
         m["summary"]["estimated_rel_error"] = e_fine
+
+    # --- F2: the declared quantities of interest, on this path too -----------
+    # `functionals.run_declared` has existed since the PDE side needed it and was
+    # called from `evaluate_pde` alone -- M1, and the reason nine BENCHOP prices sit
+    # in live specs read by nothing. The ladder here is the CRN dt ladder: num_paths
+    # is held at `conv_paths` and dt halves, which is the one-axis refinement
+    # `estimate_error` assumes, and because every level is a coarsening of one
+    # Brownian path the sampling error largely cancels, so the level-to-level
+    # difference is the discretization bias rather than noise.
+    #
+    # Three things this is deliberately *not*. It is a pass/fail gate, never a
+    # continuous accuracy statistic: the ladder runs at 8k-20k paths against graded
+    # counts up to 1e6, so an error inferred across it is not the graded error (F3
+    # takes a different route). It is a no-op where nothing is declared or the
+    # ladder did not run. And it cannot be read as "this price is right" -- only as
+    # "this price has stopped moving with dt".
+    fn = functionals.run_declared(thresholds, [{"result": r} for r in ladder])
+    m["functionals"] = fn
+    metrics.record(m, "functionals_ok", fn["functionals_ok"],
+                   outcomes=fn["outcomes"], errors=fn["errors"], values=fn["values"],
+                   gate_failed=fn["gate_failed"], not_reported=fn["not_reported"],
+                   ladder_num_paths=conv_paths, ladder_dts=order_detail.get("dts"))
+    if fn["not_reported"]:
+        m["summary"]["functionals_not_reported"] = list(fn["not_reported"])
+    _graded_functionals(m, thresholds, result, fn)
 
     replicates = int(cfg.pick("seed_replicates", agent, thresholds.get("seed_replicates"),
                               DYNKIN_REPLICATES))
@@ -342,6 +455,50 @@ def evaluate_sde(spec, plan_dir, agent):
 
     # --- the score ----------------------------------------------------------
     from ..driver import _headroom_decades, _headroom_fraction, _quality
+    # The peak over the whole plan -- ladder levels and replicates included -- as a
+    # *diagnostic*. `mem_fraction_used`, which `score.certify` caps on, keeps the
+    # graded call's figure that `_measure` wrote; see the note there for why the
+    # ladder's own refinement must not count against the plan.
+    final_peak = max(peaks) if peaks else None
+    if isinstance(final_peak, (int, float)) and m["summary"].get("mem_mb_limit"):
+        limit = float(m["summary"]["mem_mb_limit"])
+        m["summary"]["peak_mem_mb"] = float(final_peak)
+        m["summary"]["ladder_mem_fraction"] = round(float(final_peak) / limit, 3)
+        # The remaining half of the B03 memory finding. The measured overrun catches a
+        # solver already over the ceiling at the path count the *spec* declares; it
+        # cannot catch one that fits at 500k and needs 12 GB at the 2M it is graded
+        # on, which is the same defect one factor of four earlier. `graded_num_paths`
+        # is the count the problem states it is scored at, and the projection is
+        # linear in it -- true for a pre-allocated (num_paths, Nt, m) block and for
+        # per-step state arrays alike, since both scale with the path count.
+        #
+        # **Reported, never capped.** The projection scales the whole peak, interpreter
+        # and numpy overhead included, so it over-estimates -- and this repo's standing
+        # rule is that an inference must never make a test stricter. The measured
+        # overrun is what caps (`score.certify`'s `memory` entry); this is the warning
+        # that arrives while the plan can still act on it.
+        graded_paths = thresholds.get("graded_num_paths")
+        declared_paths = m["summary"].get("num_paths") or thresholds.get("num_paths")
+        try:
+            ratio = float(graded_paths) / float(declared_paths)
+        except (TypeError, ValueError, ZeroDivisionError):
+            ratio = None
+        if ratio is not None and ratio > 1.0:
+            graded_peak = float(m["summary"].get("graded_peak_mem_mb") or final_peak)
+            projected = graded_peak * ratio
+            m["summary"]["graded_num_paths"] = int(float(graded_paths))
+            m["summary"]["projected_peak_mem_mb"] = round(projected, 1)
+            if projected > limit:
+                m["summary"]["projected_mem_over_ceiling"] = (
+                    f"peak memory was {graded_peak:.0f} MB at num_paths="
+                    f"{int(float(declared_paths))}, which scales to about "
+                    f"{projected:.0f} MB at the graded num_paths="
+                    f"{int(float(graded_paths))} -- past the {limit:.0f} MB ceiling "
+                    f"the solver is graded under. The projection scales in proportion and "
+                    f"over-estimates, so it is a warning and not a finding, but a "
+                    f"solver that pre-allocates its noise block will hit this exactly. "
+                    f"Draw the Brownian increments per step instead")
+
     evidence = {
         "kind": "sde", "path": path, "crashed": False,
         "has_reference": path == "A",
@@ -373,6 +530,9 @@ def evaluate_sde(spec, plan_dir, agent):
         "stability_ok": m["checks"].get("stability_ok", "unavailable"),
         "observed_order": m["summary"].get("observed_order"),
         "order_floor": m["summary"].get("order_floor"),
+        "peak_mem_mb": m["summary"].get("peak_mem_mb"),
+        "mem_mb_limit": m["summary"].get("mem_mb_limit"),
+        "mem_fraction_used": m["summary"].get("mem_fraction_used"),
         "moments_ok": m["checks"]["moments_ok"],
         "variance_ok": m["checks"]["variance_ok"],
         "resolved": m["checks"]["resolved"],
@@ -381,8 +541,15 @@ def evaluate_sde(spec, plan_dir, agent):
         "richardson_stable": m["checks"]["richardson_stable"],
         "constraints_ok": m["checks"]["constraints_ok"],
         "invariants_ok": m["checks"]["invariants_ok"],
-        "converged": (m["checks"]["moments_ok"] if reference
-                      else m["checks"]["richardson_stable"]),
+        # F2: a *gated* functional that has not converged to its own tolerance makes
+        # the run not converged, on this path as on the PDE path. The problem is
+        # scored on that number, so "converged" cannot mean the moments alone. An
+        # `unavailable` or absent declaration folds in as a no-op.
+        "converged": (False if metrics.failed(m["checks"]["functionals_ok"])
+                      else (m["checks"]["moments_ok"] if reference
+                            else m["checks"]["richardson_stable"])),
+        "functionals_ok": m["checks"]["functionals_ok"],
+        "not_reported_functionals": fn["not_reported_gated"],
         # Tier C on the SDE side is the CRN ladder plus the strong/weak orders
         # (plan §4a), so an order study that ran is a measurement even when no
         # reference exists. Reading only the moment comparison here reported "no
@@ -454,29 +621,79 @@ def _crashed(m, got, started):
     return m
 
 
-def _claimed(moments, kind):
-    """The claimed moment as a **list**, one entry per state component.
+def _claimed_pairs(moments, kind):
+    """``[(component, expression), ...]`` for one moment kind, or ``None``.
 
-    Four shapes are in use across ``workspace/`` and all four are real:
-    a bare string (scalar), a list of per-component strings, the
-    ``mean_X`` / ``mean_Y`` spelling ``sde_gbm_2d_high_corr`` uses, and a
-    ``{kind}_value_at_T`` **literal**. Reading only the first of those made a
-    correct 2-D solver report "no test in the manual could be run" and score 2.
+    The four shapes in use across ``workspace/`` are all real: a bare string
+    (scalar), a list of per-component strings, the ``mean_X`` / ``mean_Y``
+    spelling, and a ``{kind}_value_at_T`` **literal**. Reading only the first of
+    those made a correct 2-D solver report "no test in the manual could be run"
+    and score 2.
 
-    The literal is last because an expression is better evidence -- it is checkable
-    at every ``t``, which is what ``check_moment_ode_consistency`` does with it --
-    but it is still a number the formulator committed to, and discarding it
-    reported "the variance check fails" where no variance check had run.
+    This returns the component index **with** each expression rather than a bare
+    list, because the index is the part that was being lost. The ``X`` / ``Y`` /
+    ``Z`` spelling is positional and a missing slot is a *hole*, not an absence:
+    compacting ``[None, variance_Y]`` to ``[variance_Y]`` turns component 1's
+    reference into component 0's.
+
+    Measured on ``sde_heston_call_feller`` (2026-11-01, the third run). The spec
+    declares ``variance_X: null`` -- there is no closed form for ``Var[S_T]`` --
+    beside an exact ``variance_Y``. The compaction handed V's CIR variance
+    (0.010213) to component 0, which is ``S``, whose empirical variance is 606.84,
+    and the kernel reported ``variance_rel_err: 5.942e+04`` on all three plans,
+    held ``resolved`` false, and capped every plan at 6 on a problem the harness
+    then graded a pass at 0.408 of tolerance. All three evaluators diagnosed it
+    correctly, including the arithmetic behind ``ci_width_rel``, and were overruled
+    by their own grader. This is the same defect class as
+    ``surrogates.applies_to`` -- "which component does this reference describe" --
+    reached by the other path.
+
+    The most *complete* spelling wins, not the first one found. ``sde_multichannel_stiff_m13``
+    declares a bare ``mean_expression`` **and** ``mean_X`` / ``mean_Y``, and the
+    bare string -- a duplicate of ``mean_X`` -- was shadowing the pair, so
+    component 1's reference was discarded and only half that spec was ever graded.
+    Expressions still beat the ``value_at_T`` literal at equal coverage, because an
+    expression is checkable at every ``t``, which is what
+    ``check_moment_ode_consistency`` does with it; but a literal that covers two
+    components beats a string that covers one.
     """
+    candidates = []
+
     expr = moments.get(f"{kind}_expression")
     if isinstance(expr, str):
-        return [expr]
-    if isinstance(expr, list) and expr:
-        return list(expr)
+        candidates.append((1, 1, [(0, expr)]))
+    elif isinstance(expr, list) and expr:
+        candidates.append((len(expr), 1, list(enumerate(expr))))
+
     per_component = [moments.get(f"{kind}_{c}") or moments.get(f"{kind}_{c}_expression")
                      for c in ("X", "Y", "Z")]
-    found = [e for e in per_component if isinstance(e, (str, int, float))]
-    return found or _value_at_T(moments, kind)
+    found = [(i, e) for i, e in enumerate(per_component)
+             if isinstance(e, (str, int, float))]
+    if found:
+        candidates.append((len(found), 1, found))
+
+    literal = _value_at_T(moments, kind)
+    if literal is not None:
+        candidates.append((len(literal), 0, list(enumerate(literal))))
+
+    if not candidates:
+        return None
+    # Widest coverage first, then expression over literal. `max` is stable, so the
+    # declaration order above breaks a remaining tie.
+    return max(candidates, key=lambda c: (c[0], c[1]))[2]
+
+
+def _claimed(moments, kind):
+    """The claimed moment as a plain **list**, one entry per *declared* component.
+
+    A thin reader over :func:`_claimed_pairs` that drops the component indices.
+    It is kept because the four-shapes contract is worth asserting on its own, but
+    anything that *pairs* a reference against an empirical moment wants the pairs:
+    this list cannot say whether a one-entry variance describes component 0 or
+    component 1, and assuming the former is the bug ``_claimed_pairs`` records.
+    """
+    pairs = _claimed_pairs(moments, kind)
+    return None if pairs is None else [e for _, e in pairs]
 
 
 def _value_at_T(moments, kind):
@@ -500,12 +717,37 @@ def _value_at_T(moments, kind):
     return None
 
 
+def _slotted(moments, kind):
+    """Does any spelling for ``kind`` say *which* component it describes?
+
+    True for the ``{kind}_X`` / ``{kind}_Y`` / ``{kind}_Z`` spelling and for a
+    list-valued ``{kind}_expression`` or ``{kind}_value_at_T``, all of which are
+    positional. False for a bare string or a scalar literal, which on a
+    one-component spec is unambiguous and on a multi-component spec is a reference
+    with no stated owner. :func:`_reference` abstains on the latter rather than
+    assuming component 0.
+    """
+    if any(isinstance(moments.get(f"{kind}_{c}")
+                      or moments.get(f"{kind}_{c}_expression"), (str, int, float))
+           for c in ("X", "Y", "Z")):
+        return True
+    return any(isinstance(moments.get(f"{kind}_{suffix}"), list)
+               for suffix in ("expression", "value_at_T"))
+
+
 def _reference(spec, path, var_tol):
     """``(values, detail, surrogate_ok)``. Path A takes the exact moments; Path B
     exhausts §15-17 before anything falls back to self-convergence.
 
-    ``values`` is ``{"mean": [...], "variance": [...]}`` -- lists, one per state
-    component, on both paths. **Either key may be absent**: the two moments are
+    ``values`` is ``{"mean": [...], "variance": [...]}`` -- lists, one entry per
+    *graded* component, on both paths. Which component each entry describes is
+    ``detail["components"]``, a ``{kind: [index, ...]}`` mapping parallel to those
+    lists: it stays out of ``values`` because ``values`` is a moment-name-to-numbers
+    mapping that callers iterate and float. It is keyed **by kind** because the two
+    kinds need not cover the same components -- a spec with an exact variance for
+    one component and no closed form for the other is the common case, not an edge
+    one. A Path-B surrogate produces one marginal for one component and the spec
+    says which. **Either moment key may be absent**: the two moments are
     evaluated independently, so one non-evaluable expression no longer discards the
     other. It used to return ``None`` for both, which made every downstream check
     ``"unavailable"`` and landed the plan at tier ``A_unavailable`` with the reason
@@ -516,15 +758,30 @@ def _reference(spec, path, var_tol):
         moments = spec.get("analytic_moments") or {}
         params = dict(spec.get("parameters") or {})
         T = float((spec.get("time_interval") or {}).get("T", 1.0))
-        out, reasons, fallbacks = {}, {}, {}
+        dim = int(spec.get("state_dimension", 1) or 1)
+        out, comps, reasons, fallbacks = {}, {}, {}, {}
         for kind in ("mean", "variance"):
-            claimed = _claimed(moments, kind)
+            claimed = _claimed_pairs(moments, kind)
             if claimed is None:
                 reasons[kind] = f"analytic_moments declares no {kind}"
                 continue
+            if dim > 1 and len(claimed) == 1 and not _slotted(moments, kind):
+                # One reference value, several state components, and no spelling
+                # that says which component it describes. The identity is a *guess*,
+                # and a wrong guess here does not read as a missing check -- it reads
+                # as a confident four-figure relative error, which is what capped
+                # every plan on `sde_heston_call_feller`. Abstaining on this kind
+                # leaves the other kind, and every structural check, standing.
+                reasons[kind] = (
+                    f"analytic_moments states one {kind} for a {dim}-component state "
+                    f"without saying which component it describes; declare "
+                    f"{kind}_X / {kind}_Y or a {kind}_expression list, one entry per "
+                    f"component, using null for a component with no closed form")
+                continue
             try:
                 out[kind] = [float(evaluate(e, {**params, "t": T}))
-                             if isinstance(e, str) else float(e) for e in claimed]
+                             if isinstance(e, str) else float(e) for _, e in claimed]
+                comps[kind] = [c for c, _ in claimed]
                 continue
             except Exception as exc:  # noqa: BLE001
                 reasons[kind] = f"the claimed {kind} is not evaluable: {exc}"
@@ -537,6 +794,7 @@ def _reference(spec, path, var_tol):
                 continue
             try:
                 out[kind] = [float(v) for v in literal]
+                comps[kind] = list(range(len(out[kind])))
                 fallbacks[kind] = f"{kind}_value_at_T"
             except Exception as exc:  # noqa: BLE001
                 reasons[kind] = f"{reasons[kind]}; nor is {kind}_value_at_T: {exc}"
@@ -548,7 +806,13 @@ def _reference(spec, path, var_tol):
             return None, {"reason": "no reference was evaluable: " + "; ".join(
                 reasons.get(k, "") for k in ("mean", "variance") if reasons.get(k)),
                 "per_moment": reasons}, "unavailable"
-        detail = {"route": "analytic_moments", "moments_evaluated": sorted(out)}
+        # Which component each reference value describes, **per moment kind**. It
+        # used to be one list shared by both, computed as `range(max(len(v)))`, so a
+        # one-entry variance inherited a two-entry mean's pairing and V's variance
+        # was read against S. The kinds are evaluated independently and they are
+        # paired independently.
+        detail = {"route": "analytic_moments", "moments_evaluated": sorted(out),
+                  "components": comps}
         if reasons:
             # A reference with one usable moment is weaker evidence than one with two
             # and much stronger than none, so the *reason* the other is missing is
@@ -561,11 +825,41 @@ def _reference(spec, path, var_tol):
     got, detail = surrogates.best(spec, trust_tol=var_tol)
     if got is None:
         return None, detail, "unavailable"
-    return {k: [v] for k, v in got.items()}, detail, True
+    # One marginal reference, for **one** state component -- which one is the
+    # spec's to say, and `surrogates.applies_to` reads it.
+    return ({k: [v] for k, v in got.items()},
+            {**detail, "components": {k: [detail["component"]] for k in got}}, True)
+
+
+def _paired(stats, reference, name, components=None):
+    """``[(component, stats[component], value)]`` for one moment kind.
+
+    The single place the kernel decides which empirical moment answers which
+    reference value. ``components`` is parallel to ``reference[name]`` and comes
+    from ``_reference``'s detail; ``None`` means the identity, which is what a
+    caller with no pairing information should assume. A component the solver did
+    not return is dropped rather than mispaired, which is the whole point -- the
+    predecessor was ``zip(stats, reference[name], strict=False)``, and positional
+    pairing on a spec whose reference covers component 1 reads component 0's
+    moments against it.
+    """
+    values = reference.get(name) or []
+    if isinstance(components, dict):
+        # `_reference` hands over one list per moment kind; a caller that passes a
+        # bare list for a single kind still works, and that is what the Path-B
+        # tests exercise directly.
+        components = components.get(name)
+    if components is None:
+        components = list(range(len(values)))
+    out = []
+    for value, component in zip(values, components, strict=False):
+        if 0 <= int(component) < len(stats):
+            out.append((int(component), stats[int(component)], value))
+    return out
 
 
 def _compare(reference, stats, mean_tol, var_tol, near_zero, ci_mult, cross=None,
-             shape=None):
+             shape=None, components=None):
     """Every declared moment of every component, against its own confidence
     interval. The worst outcome wins -- ``required_components`` narrows the set the
     spec cares about, but a moment that is declared is a moment that is checked.
@@ -606,11 +900,9 @@ def _compare(reference, stats, mean_tol, var_tol, near_zero, ci_mult, cross=None
         if not values:
             continue
         per, kind_outcomes = [], []
-        for i, ref in enumerate(values):
-            if i >= len(stats):
-                break
+        for i, st, ref in _paired(stats, reference, name, components):
             outcome, sub = C.compare_moment(
-                stats[i][name], stats[i][f"se_{name}"], ref, tol,
+                st[name], st[f"se_{name}"], ref, tol,
                 near_zero=near_zero if name == "mean" else None, ci_mult=ci_mult)
             per.append({"component": i, "outcome": outcome, **sub})
             kind_outcomes.append(outcome)
@@ -838,7 +1130,8 @@ def _distribution(verification, X, stats, T, parameters, ci_mult):
 
 
 def _orders(plan_dir, solve, num_paths, dt0, T, levels, seed, expected_strong,
-            expected_weak, *, declared=True, candidates=(), m=None, components=1):
+            expected_weak, *, declared=True, candidates=(), m=None, components=1,
+            exact_sampling=()):
     """The CRN ladder. Every level is a coarsening of one Brownian path.
 
     ``m`` is the declared noise dimension and decides the *shape* of the increments
@@ -847,34 +1140,66 @@ def _orders(plan_dir, solve, num_paths, dt0, T, levels, seed, expected_strong,
     already does for the moments. Reducing to component 0 left component 1 of every
     two-component system out of every order estimate and out of every Richardson
     error estimate (Finding 11).
+
+    Returns ``(orders_ok, detail, ladder)``. The third value is each level's full
+    solver result, coarse to fine, which is the dt ladder ``functionals.run_declared``
+    reads (F2). It is returned even on a crashed level, so a partial ladder reports
+    ``unavailable`` rather than losing the levels that did run.
     """
     payloads = crn.ladder_spec(num_paths, dt0, T, levels=levels, seed=seed, m=m)
-    runs = []
+    runs, ladder = [], []
     for payload in payloads:
         got = solve({"num_paths": num_paths, "dt": payload["dt"], "T": T, "seed": seed},
                     crn=payload)
         if got["status"] != "ok":
             return "unavailable", {"reason": f"the CRN level at dt={payload['dt']:.3g} "
                                              f"crashed: {got.get('reason')}: "
-                                             f"{got.get('error')}"}
+                                             f"{got.get('error')}"}, ladder
+        ladder.append(got["result"])
         runs.append(got["result"]["terminal_paths"])
     if len(runs) < 3:
-        return "unavailable", {"reason": "the CRN ladder needs three levels"}
+        return "unavailable", {"reason": "the CRN ladder needs three levels"}, ladder
     per = []
     for component in range(max(int(components), 1)):
         strong, strong_detail = crn.strong_order(runs, component)
         weak, weak_detail = crn.weak_order(runs, component=component)
         checks = crn.guards(strong, weak, expected_strong, expected_weak, strong_detail,
-                            declared=declared, candidates=candidates)
+                            declared=declared, candidates=candidates,
+                            exact_sampling=component in exact_sampling)
         per.append({**checks, "component": component, "strong_detail": strong_detail,
                     "weak_detail": weak_detail,
                     "richardson": crn.richardson_moment(runs, weak, component)})
     binding = _worst_component(per, expected_strong)
     detail = {**binding, "dts": [p["dt"] for p in payloads]}
+    if binding.get("abstained"):
+        # The verdict binds to the abstaining component, which is right -- a
+        # component the estimator could not read is not evidence that the others are
+        # fine. The *scalar* must not. Measured on `sde_heston_call_feller`: the
+        # exact lognormal volatility leg abstains at the roundoff floor and the
+        # number carried into the metrics block was its `-1.0772`, which is roundoff
+        # noise, not an order -- published as if it were a measurement, and
+        # identical to four decimals on a second plan with a different scheme, which
+        # is what gives it away. The S component's real 0.235 +/- 0.1305 was in the
+        # review prose and nowhere a machine could read it.
+        measured = [e for e in per if not e.get("abstained")
+                    and _num_or_none(e.get("strong_order")) is not None]
+        detail["strong_order"] = (
+            _worst_component(measured, expected_strong)["strong_order"]
+            if measured else None)
+        detail["strong_order_source"] = (
+            f"component {_worst_component(measured, expected_strong)['component']}"
+            if measured else "none: every component abstained")
+        detail["abstaining_component_order"] = binding.get("strong_order")
     if len(per) > 1:
         detail["per_component"] = per
         detail["components"] = len(per)
-    return binding["orders_ok"], detail
+    return binding["orders_ok"], detail, ladder
+
+
+def _num_or_none(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if value == value and abs(value) != float("inf") else None
 
 
 #: Worst first. A verdict of failure beats an abstention beats a pass, which is
@@ -1130,6 +1455,65 @@ def _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult, levels=3, m=
 REPORTED_MOMENT_RTOL = 1e-6
 
 
+def _graded_functionals(m, thresholds, result, fn):
+    """Publish the graded run's own functional values, error bars and binding gate.
+
+    `run_declared` grades the *ladder*, at `conv_paths`. What ranking and the report
+    need is the number the problem is actually scored on: the value the graded call
+    returned, its reported Monte-Carlo standard error (F12), and the declared
+    tolerance it is measured against. Those three are what `ranking.accuracy` reads
+    on an SDE once a functional is declared (F3); without them it falls back to the
+    moment error, which is the behaviour on every problem that declares none.
+
+    The binding functional is the worst `rel_se / rel_tol` among the **gated** ones,
+    which is the same worst-ratio rule `_functional_tols` uses on the harness side.
+    A declared functional the solver returned no standard error for is reported
+    without one -- a measurement, not a crash.
+    """
+    decl = functionals.declared(thresholds)
+    if not decl:
+        return
+    values = (result or {}).get("functionals")
+    ses = (result or {}).get("functional_se")
+    values = values if isinstance(values, dict) else {}
+    ses = ses if isinstance(ses, dict) else {}
+    if values:
+        m["summary"]["functional_values"] = {k: float(v) for k, v in values.items()
+                                             if k in decl}
+    binding, worst = None, None
+    for name, cfg in sorted(decl.items()):
+        if not bool(cfg.get("gate", False)) or name not in values:
+            continue
+        try:
+            tol = float(cfg.get("rel_tol"))
+        except (TypeError, ValueError):
+            continue
+        scale = abs(float(values[name]))
+        if not scale or tol <= 0.0:
+            continue
+        # The bias term the ladder measured, and the sampling term the solver
+        # reported, both relative and both in the same units as `rel_tol`. They add:
+        # one is what dt costs and the other is what the path count costs, and a
+        # plan is only as accurate as their sum (F3).
+        bias = fn["errors"].get(name)
+        se_rel = abs(float(ses[name])) / scale if name in ses else None
+        err = (bias or 0.0) + (se_rel or 0.0)
+        if bias is None and se_rel is None:
+            continue
+        if worst is None or err / tol > worst:
+            worst, binding = err / tol, (name, tol, err, bias, se_rel)
+    if binding is None:
+        return
+    name, tol, err, bias, se_rel = binding
+    m["summary"]["functional_name"] = name
+    m["summary"]["functional_rel_tol"] = tol
+    m["summary"]["functional_rel_error"] = err
+    if bias is not None:
+        m["summary"]["functional_bias_rel"] = bias
+    if se_rel is not None:
+        m["summary"]["functional_se_rel"] = se_rel
+
+
 def _reported_moments(result, stats):
     """``{...}`` comparing the solver's own moments against the kernel's, or ``None``.
 
@@ -1181,7 +1565,7 @@ def _milstein_claim(spec, m_plan):
     three live specs. The cap belongs on the Levy-area reason alone, which is what
     the spec now says explicitly rather than leaving the field to mean two things.
     """
-    if not spec.get("milstein_eligible", True) is False:
+    if spec.get("milstein_eligible", True) is not False:
         return None
     if spec.get("milstein_ineligible_reason") != MILSTEIN_LEVY_REASON:
         return None

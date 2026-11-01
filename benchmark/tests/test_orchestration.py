@@ -315,12 +315,18 @@ def test_the_runner_refuses_before_it_reads_or_writes_anything(capsys):
 
 # --- E8: the conductor's background tasks are not swept mid-cycle (step 10) -------
 
-def test_the_conductor_is_given_an_unbounded_background_wait(monkeypatch, tmp_path):
+def test_the_conductor_is_given_a_long_background_wait_not_none_at_all(monkeypatch, tmp_path):
     """Headless `claude -p` terminates still-running background tasks 600 s after
     the main thread closes. On this suite one evaluator pass costs minutes, so the
     first BENCHOP run came back with phase `running` and self-score 0 on a problem
     whose plans the harness then graded a verified pass -- a zero that says nothing
-    about the pipeline. The run is bounded by `--timeout` instead."""
+    about the pipeline.
+
+    The ceiling has to be *long*, not absent. 0 disables the sweep, and with no sweep
+    nothing holds a subagent open either: a Sonnet solver that backgrounded the
+    grading-scale solve returned mid-task and had to be resumed over SendMessage,
+    replaying its whole context each time. Both failures are ceiling bugs in opposite
+    directions, so the assertion pins the interval rather than a single value."""
     seen = {}
 
     def fake_run(cmd, **kw):
@@ -332,8 +338,11 @@ def test_the_conductor_is_given_an_unbounded_background_wait(monkeypatch, tmp_pa
     monkeypatch.setattr(subprocess, "run", fake_run)
     run = RUN.run_conductor("sde_heston_dnt", 3600, True, None, None)
 
-    assert seen["env"]["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] == "0"
-    # 0 disables the sweep; any other number would be a new, smaller ceiling.
+    ceiling = int(seen["env"]["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"])
+    # Not 0 -- that disables the sweep and stops holding subagents open. Comfortably
+    # above the 600 s default that truncated B01, and below `--timeout`, which is
+    # meant to be the binding bound on a run.
+    assert 600_000 < ceiling <= 3600_000
     assert seen["timeout"] == 3600
     assert run["status"] == "completed"
     # The rest of the environment is inherited, not replaced -- PATH included, or
@@ -344,4 +353,4 @@ def test_the_conductor_is_given_an_unbounded_background_wait(monkeypatch, tmp_pa
 def test_the_run_config_says_which_ceiling_the_sweep_was_made_under():
     """A sweep made under the default ceiling can have been cut off mid-cycle, and
     nothing else in the record distinguishes it from one that was not."""
-    assert RUN.CONDUCTOR_ENV == {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"}
+    assert RUN.CONDUCTOR_ENV == {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "1800000"}

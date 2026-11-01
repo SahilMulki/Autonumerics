@@ -167,7 +167,7 @@ implementation-quality gaps, and they are where a stronger solver model actually
 
 ### The problem
 
-[`agents/plan-creator-sde.md:62`](../../agents/plan-creator-sde.md#L62):
+[`agents/plan-creator-sde.md:62`](../../agents/plan-creator-sde.md#L88):
 
 ```
 scheme:        euler-maruyama | milstein
@@ -209,7 +209,7 @@ the true thing in. **No model upgrade reaches it.**
 
 Three coordinated edits, and they must land together or the schema checks will fail:
 
-1. **Extend the enum** in [`plan-creator-sde.md:62`](../../agents/plan-creator-sde.md#L62) with
+1. **Extend the enum** in [`plan-creator-sde.md:62`](../../agents/plan-creator-sde.md#L88) with
    `quadratic-exponential`, `exact-transition` and `conditional`. Keep `other` as the honest
    fallback it is meant to be.
 2. **Extend `FAMILY_ORDER_KEY`** so each new family selects its own declared floor — e.g.

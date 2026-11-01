@@ -165,11 +165,75 @@ exact_variance_Y = sigma**2 / 2 * (t + np.sin(t) * np.cos(t))
 
 ## Scheme Selection Rules
 
-1. **`noise_structure == "additive"` OR `state_dimension > 1`** → EM only. Milstein adds no value for additive noise (dg/dX = 0) and is not well-defined for multi-D without Lévy areas.
+**Read rule 0 first.** Rules 1–3 are about Euler–Maruyama and Milstein because those were the only
+two schemes in this manual, and rule 1 sends every multi-dimensional problem to EM. That rule is
+correct about *Milstein* and was being read as a rule about everything else: on a ten-problem
+option-pricing suite where all ten problems are multi-dimensional, it says "EM only" ten times, and
+a single untooled model completion chose an exact transition or Andersen QE on nine of them and was
+more accurate on seven.
+
+0. **Where the transition law is known in closed form, sample it.** A scheme that draws
+   `X_{t+Δ} | X_t` from its exact conditional law carries **no discretization error at all**, at any
+   `dt`, and no amount of step refinement makes a discretised scheme competitive with it. This is
+   not an exotic option — it covers a large share of the SDEs anyone prices:
+
+   | SDE | exact transition |
+   |---|---|
+   | CIR / Heston variance | non-central χ², or the Poisson-mixed central χ² form |
+   | squared Bessel, BESQ(0) | `½·v·Γ(N)` with `N ~ Poisson(2S/v)` |
+   | GBM, Black–Scholes | lognormal — exact in one step |
+   | OU, Vasicek | Gaussian with the exact conditional mean and variance |
+   | Heston as a pair | Broadie–Kaya, or Andersen's QE as the practical approximation |
+
+   Key the choice on the spec, not on recall: `analytic_moments.has_analytic_solution`,
+   `verification.terminal_law`, and the problem's own `implementation_notes` say when a law is
+   available. Where it is, propose at least one plan that uses it, and keep a discretised plan in
+   the pool as the cross-check.
+
+   **Declare it.** The test is **whether the step consumes the Brownian increments the evaluator
+   supplies**, not whether its draw is exact. A step that generates its own auxiliary randomness
+   cannot consume them, so the common-random-number order study reads a strong order near zero on a
+   scheme that has no order to measure. Put the affected state components in the frontmatter:
+
+   ```yaml
+   scheme_family: other
+   exact_sampling_components: 0        # S draws its own randomness; the vol leg is stepped
+   ```
+
+   The kernel then **abstains** on those components rather than failing them. An abstention is not
+   a pass: it costs the plan the order check's evidence instead of charging it a penalty it did not
+   earn. Declaring it on a component you discretised buys nothing and loses the check.
+
+   **This covers moment-matched schemes, not only literally exact ones — Andersen's QE included.**
+   The field is named for the case it was written for and the name reads narrower than the rule.
+   QE's variance leg draws `Z_V` and `U` fresh each step as a moment-matched approximation to the
+   non-central chi-squared transition; it is therefore *not* exact sampling, and it is *equally*
+   unable to consume the supplied increments. Declare it. Broadie–Kaya, a Poisson-mixed BESQ(0)
+   draw and an exact log-normal step all qualify for the same reason.
+
+   Measured on `sde_heston_call_feller` (2026-10-31): a correct Andersen-QE plan read this section,
+   reasoned that QE is "a moment-matched approximation, not literal inversion sampling", and wrote
+   in its own SOLUTION.md "do **not** declare `exact_sampling_components` for this plan". The
+   reasoning was right about exactness and wrong about the rule. Its strong order came back
+   -0.0021, the order study **failed** it, and the plan scored 3 with all three of its prices
+   inside their gates — then lost the selection to a plain Euler plan that could not allocate at
+   grading scale. With the declaration the same plan scores 7 and wins. The one thing never to do
+   is declare it for a component you actually stepped with the supplied increments: there a
+   near-zero order is a real defect and the declaration hides it.
+
+1. **`noise_structure == "additive"` OR `state_dimension > 1`** → **Milstein** adds no value for
+   additive noise (dg/dX = 0) and is not well-defined for multi-D without Lévy areas. This rule
+   rules Milstein out; it does **not** rule everything but EM in — see rule 0, and consider an
+   implicit or split-step treatment of a stiff component.
 
 2. **`noise_structure == "multiplicative"` AND `state_dimension == 1`** → propose both EM and Milstein. Milstein achieves strong order 1.0 vs EM's 0.5.
 
 3. **`stiff == true`** → implicit or semi-implicit scheme required. Not yet supported; document the limitation.
+
+4. **Variance reduction is a scheme choice too.** An antithetic pair or a control variate on a
+   correlated analytically-priced instrument cuts the standard error at the same path count, and
+   `functional_se` is where that shows up. It is the one axis on which two plans running the same
+   scheme at the same `dt` are distinguishable without an answer key.
 
 ---
 
@@ -220,6 +284,13 @@ def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42,
     }
     if observables:
         out["path_integrals"] = acc
+    # The quantity of interest, wherever the spec declares one, and its own error
+    # bar. Two lines, and they are the only thing that tells a kernel with no answer
+    # key that your control variate was worth writing.
+    payoff = np.exp(-r * T) * np.maximum(X - K, 0.0)        # the problem's own payoff
+    out["functionals"] = {"price_K1": float(np.mean(payoff))}
+    out["functional_se"] = {
+        "price_K1": float(np.std(payoff, ddof=1) / np.sqrt(num_paths))}
     return out
 
 if __name__ == "__main__":

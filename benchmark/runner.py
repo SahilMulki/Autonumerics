@@ -159,10 +159,25 @@ def _import_solver(solver_path):
     _scan_for_leakage(solver_path)
     spec = importlib.util.spec_from_file_location("_sandbox_solver", solver_path)
     mod = importlib.util.module_from_spec(spec)
+    # F8. A module executed from a file and never registered in `sys.modules` has no
+    # importable name, so anything that pickles a reference to it -- a top-level
+    # function handed to `multiprocessing.Pool`, which is what B07's solver was
+    # doing when it crashed -- raises `PicklingError: Can't pickle <function ...>:
+    # import of module '_sandbox_solver' failed`. Registering it before
+    # `exec_module` is the documented order: the module has to be findable while its
+    # own body is still running, because that is when it defines the functions a
+    # worker will later import by name.
+    #
+    # And it stays registered. Removing it in a `finally` would reinstate the bug
+    # one call later, when the pool forks and the child looks the name up again.
+    sys.modules[spec.name] = mod
     plan_dir = os.path.dirname(solver_path)
     sys.path.insert(0, plan_dir)
     try:
         spec.loader.exec_module(mod)
+    except BaseException:
+        sys.modules.pop(spec.name, None)   # a module that never finished importing
+        raise
     finally:
         sys.path.remove(plan_dir)
     return mod

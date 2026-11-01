@@ -73,6 +73,15 @@ def kolmogorov(spec, *, widen=1.5):
     bounds = kol.get("bounds")
     if not (isinstance(bounds, (list, tuple)) and len(bounds) == 2):
         return None, {"reason": "no kolmogorov.bounds declared"}
+    if any(isinstance(b, (list, tuple)) for b in bounds):
+        # A per-dimension `[[0, 400], [0, 1.5]]` passes the length check -- two
+        # entries -- and then every scalar consumer downstream floats them.
+        # B03's 2-D block was caught by the dimension check below only by
+        # ordering; `_widen` raised `TypeError: float() argument must be ... not
+        # 'list'` the moment anything reached it directly. The shape is checked
+        # where it is assumed, not left to a neighbouring guard.
+        return None, {"reason": f"kolmogorov.bounds is per-dimension ({bounds!r}); the "
+                                f"route is scalar and takes a single [lo, hi]"}
     if int(spec.get("state_dimension", 1) or 1) != 1:
         return None, {"reason": "the Kolmogorov route is 1-D here; the formulator should "
                                 "not propose it above 2 state dimensions"}
@@ -230,6 +239,19 @@ def stationary(spec):
     stat = (spec.get("verification") or {}).get("stationary_density") or {}
     if not stat.get("ergodic"):
         return None, {"reason": "the spec does not declare the process ergodic"}
+    # This route integrates `drift_expression` and `diffusion_expression` in the
+    # single variable `X`, which on a multi-component spec is the *system's*
+    # coefficients and not the component's. Where the spec scopes the density to one
+    # component of several, the scalar coefficients it would need are not separately
+    # declared, so the honest answer is to decline. B03's spec declares
+    # `applies_to_component: 1` on a 2-D state, and this route reached the
+    # `evaluate` call and survived only because that spec's drift happens to be
+    # prose; an evaluable one would have produced a confident wrong number.
+    dim = int(spec.get("state_dimension", 1) or 1)
+    if dim > 1:
+        return None, {"reason": f"the stationary route is scalar; this spec declares "
+                                f"{dim} state components and no per-component drift "
+                                f"and diffusion expression to integrate"}
     support = stat.get("support")
     if not (isinstance(support, (list, tuple)) and len(support) == 2):
         return None, {"reason": "no normalizable support declared"}
@@ -257,6 +279,50 @@ def stationary(spec):
              "support": [float(support[0]), float(support[1])]})
 
 
+def applies_to(spec, route):
+    """Which state component this route's reference describes. ``(index, detail)``.
+
+    A Path-B surrogate produces **one** marginal reference, not one per state
+    component, and on a multi-component problem the component it describes is a
+    property of the spec rather than of the list it comes back in. The formulator
+    says which: ``verification.<route>.applies_to_component``, alongside an
+    ``applies_to_name`` for the reader. Absent, the answer is component 0, which is
+    the whole state on the scalar problems this route was written for.
+
+    Measured on ``sde_heston_call_feller`` (2026-11-01). The spec declared
+    ``moment_ode.applies_to_component: 1`` with a note saying in as many words
+    "Covers ONLY the V column of terminal_paths (index 1)", and nothing in the
+    kernel or the harness read the field. The reference ``(0.0484, 0.0102)`` -- V's
+    exact CIR moments -- was then compared positionally against component 0, which
+    is ``S``, whose empirical moments are ``(100.17, 603.59)``. That reported
+    ``mean_rel_err: 2069.4452`` and ``variance_rel_err: 5.910e+04`` on three plans
+    whose V moments all sat inside tolerance, capped every one of them at 6, held
+    ``resolved`` false, and triggered the mandated unresolved-retry on all three at
+    once. The run exhausted its usage window grading ``S`` against ``V``'s answer
+    key.
+    """
+    block = (spec.get("verification") or {}).get(route) or {}
+    declared = block.get("applies_to_component")
+    if declared is None:
+        return 0, {}
+    try:
+        index = int(declared)
+    except (TypeError, ValueError):
+        return 0, {"applies_to_component_ignored":
+                   f"{declared!r} is not a state component index"}
+    dim = int(spec.get("state_dimension", 1) or 1)
+    if not 0 <= index < dim:
+        # Out of range is a formulator defect and the reference is not usable: a
+        # silent clamp to 0 is exactly the mispairing this function exists to end.
+        return None, {"applies_to_component_invalid":
+                      f"{route} declares applies_to_component {index}, outside the "
+                      f"{dim} state component(s) the spec declares"}
+    detail = {"applies_to_component": index}
+    if isinstance(block.get("applies_to_name"), str):
+        detail["applies_to_name"] = block["applies_to_name"]
+    return index, detail
+
+
 #: In the order §13 says to exhaust them.
 ROUTES = (("moment_ode", moment_ode), ("kolmogorov", kolmogorov),
           ("stationary_density", stationary))
@@ -280,5 +346,12 @@ def best(spec, *, trust_tol=None):
                 tried[name] = (f"the truncation guard failed: widening the domain moved "
                                f"the answer by {max(shifts):.2e}")
                 continue
-        return got, {**detail, "attempted": tried}
+        component, where = applies_to(spec, name)
+        if component is None:
+            # An unusable component index demotes the route rather than the whole
+            # inquiry -- the next route may be fine, and §13's order is about
+            # strength, not about this one failure.
+            tried[name] = next(iter(where.values()))
+            continue
+        return got, {**detail, **where, "component": component, "attempted": tried}
     return None, {"reason": "no surrogate route produced a reference", "attempted": tried}

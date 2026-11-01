@@ -60,7 +60,26 @@ import uuid  # noqa: E402
 #: else, so this is deliberately generous -- it is the guarantee that a runaway
 #: dies, not a performance target.
 DEFAULT_TIMEOUT_S = 300
-DEFAULT_MEM_MB = 8192
+
+#: Address-space ceiling for one solve, and it is **the grader's ceiling, not a
+#: generous one**. `benchmark/run.py` verifies every solver under `mem_mb: 4096`; the
+#: kernel sat at 8192, so there was a band in which a plan passed its own evaluation
+#: and could not run where it was graded, and nothing in the kernel's output hinted
+#: at it.
+#:
+#: Measured on `sde_heston_call_feller` (B03, Sonnet, 2026-10-31): the winning plan
+#: pre-allocated its whole noise block as `(num_paths, Nt, 2)`. At the spec's declared
+#: 500k paths that is 4.0 GB -- inside 8192, so the kernel scored it 3 with
+#: `solve_time_s: 49.7` -- and at the 2M paths the problem is graded on it is 16 GB,
+#: where the harness spent its entire 300 s budget thrashing and returned `crashed`.
+#: The plan's own `__main__` ran at 500k too, so no one involved ever saw it.
+#:
+#: Lowering this cannot fail a solver the grader would have accepted, which is the
+#: direction that makes it safe to change: anything that fits in the harness fits
+#: here. It does newly fail solvers that were passing the kernel and failing the
+#: harness, which is the point -- the finding arrives as `reason: "oom"` from the
+#: plan's own evaluation, where the solver agent can act on it.
+DEFAULT_MEM_MB = 4096
 
 #: Library parity with the solver agents, so the kernel measures the same code the
 #: pipeline runs. ``solver-pde.md`` grants numpy + scipy.sparse; ``solver-sde.md``
@@ -265,22 +284,7 @@ def _dump_pde(res, out):
         scalars["trace_keys"] = list(trace)
         for k, v in trace.items():
             arrays[f"trace__{k}"] = np.asarray(v, dtype=float).ravel()
-    # A declared scalar quantity of interest -- an eigenvalue, a drag coefficient.
-    # It rides back as a scalar rather than an array. A non-numeric, non-scalar or
-    # non-finite entry is dropped here rather than crashing the solve: the check that
-    # consumes it then reports `not_reported`, which is a measurement, where a raised
-    # exception would report `crashed` and blame the solver for the wrong thing.
-    funcs = res.get("functionals")
-    if isinstance(funcs, dict) and funcs:
-        kept = {}
-        for k, v in funcs.items():
-            try:
-                if np.ndim(v) == 0 and np.isfinite(float(v)):
-                    kept[str(k)] = float(v)
-            except (TypeError, ValueError):
-                continue
-        if kept:
-            scalars["functionals"] = kept
+    _carry_functionals(res, scalars)
     snaps = res.get("snapshots")
     if isinstance(snaps, (list, tuple)) and snaps:
         times, keys = [], []
@@ -302,6 +306,39 @@ def _dump_pde(res, out):
     _write(out, scalars, arrays)
 
 
+def _carry_functionals(res, scalars):
+    """Carry the declared quantities of interest, and their error bars, across.
+
+    A declared scalar quantity of interest -- an eigenvalue, a drag coefficient, an
+    option price. It rides back as a scalar rather than an array. A non-numeric,
+    non-scalar or non-finite entry is dropped here rather than crashing the solve:
+    the check that consumes it then reports `not_reported`, which is a measurement,
+    where a raised exception would report `crashed` and blame the solver for the
+    wrong thing.
+
+    ``functional_se`` is the Monte-Carlo standard error of each returned functional
+    (F12). It is optional and absent on a deterministic solve; a name present in it
+    but not in ``functionals`` is dropped, because an error bar on a value that did
+    not cross the boundary is not about anything.
+    """
+    import numpy as np
+    for key in ("functionals", "functional_se"):
+        block = res.get(key)
+        if not isinstance(block, dict) or not block:
+            continue
+        kept = {}
+        for name, value in block.items():
+            try:
+                if np.ndim(value) == 0 and np.isfinite(float(value)):
+                    kept[str(name)] = float(value)
+            except (TypeError, ValueError):
+                continue
+        if key == "functional_se":
+            kept = {k: v for k, v in kept.items() if k in scalars.get("functionals", {})}
+        if kept:
+            scalars[key] = kept
+
+
 def _dump_sde(res, out):
     import numpy as np
     if not isinstance(res, dict):
@@ -320,7 +357,32 @@ def _dump_sde(res, out):
         scalars["integral_keys"] = list(integrals)
         for k, v in integrals.items():
             arrays[f"integral__{k}"] = np.asarray(v, dtype=float)
+    _carry_functionals(res, scalars)
     _write(out, scalars, arrays)
+
+
+def _self_peak_mb():
+    """This process's own peak resident size in MB, or ``None``.
+
+    Measured in the **child**, which is what makes it a per-solve number. The first
+    cut read ``RUSAGE_CHILDREN`` in the parent instead, and that is a high-water mark
+    over every child the parent has ever reaped -- so under pytest, where one process
+    evaluates dozens of plans in sequence, it reported the largest solve in the whole
+    session for every plan after it. Two Path-B tests with tiny solvers were capped
+    for a 7.8 GB allocation in an unrelated test. A high-water mark is only a per-run
+    figure in a process that performs exactly one run, and the child is that process.
+
+    Linux reports kilobytes, macOS and the BSDs bytes.
+    """
+    try:
+        import resource
+        maxrss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    except (ImportError, OSError, ValueError):
+        return None
+    if maxrss <= 0.0:
+        return None
+    scale = 1024.0 * 1024.0 if sys.platform == "darwin" else 1024.0
+    return round(maxrss / scale, 1)
 
 
 def _write(out, scalars, arrays):
@@ -328,7 +390,7 @@ def _write(out, scalars, arrays):
     np.savez(out + ".npz", **arrays)
     with open(out + ".meta.json", "w") as fh:
         json.dump({"status": "ok", "reason": None, "scalars": scalars,
-                   "array_keys": list(arrays)}, fh)
+                   "array_keys": list(arrays), "peak_mem_mb": _self_peak_mb()}, fh)
 
 
 def _child_main(spec_path):
@@ -483,6 +545,7 @@ def run(plan_dir, kind, call, *, override=None, crn=None, observables=None,
         json.dump(spec, fh)
 
     started = time.monotonic()
+    cpu_before = _child_cpu()
     stderr, timed_out = "", False
     try:
         proc = subprocess.run([sys.executable, os.path.abspath(__file__), "--child", paths[0]],
@@ -491,31 +554,67 @@ def run(plan_dir, kind, call, *, override=None, crn=None, observables=None,
     except subprocess.TimeoutExpired:
         timed_out = True
     wall = round(time.monotonic() - started, 3)
+    cpu = _child_cpu()
+    cpu = round(cpu - cpu_before, 3) if (cpu is not None
+                                         and cpu_before is not None) else None
 
     try:
         if timed_out:
             return {"status": "crashed", "reason": "timeout",
                     "error": f"solver exceeded the {timeout_s}s wall-clock budget",
-                    "wall_s": wall}
+                    "wall_s": wall, "cpu_s": cpu, "mem_mb_limit": mem_mb}
         if not os.path.exists(paths[1]):
             return {"status": "crashed",
                     "reason": "oom" if "MemoryError" in stderr else "exception",
                     "error": f"child exited without writing results; stderr:\n{stderr}",
-                    "wall_s": wall}
+                    "wall_s": wall, "cpu_s": cpu, "mem_mb_limit": mem_mb}
         with open(paths[1]) as fh:
             meta = json.load(fh)
         if meta.get("status") != "ok":
             return {"status": "crashed", "reason": meta.get("reason", "exception"),
                     "error": meta.get("error"), "traceback": meta.get("traceback"),
-                    "wall_s": wall}
+                    "wall_s": wall, "cpu_s": cpu, "mem_mb_limit": mem_mb}
         with np.load(paths[2]) as npz:
             arrays = {k: npz[k] for k in meta["array_keys"]}
         return {"status": "ok", "result": _reconstruct(kind, meta["scalars"], arrays),
-                "wall_s": wall}
+                "wall_s": wall, "cpu_s": cpu,
+                "peak_mem_mb": meta.get("peak_mem_mb"), "mem_mb_limit": mem_mb}
     finally:
         for path in paths:
             with contextlib.suppress(OSError):
                 os.remove(path)
+
+
+def _restore_functionals(scalars, out):
+    for key in ("functionals", "functional_se"):
+        if scalars.get(key):
+            out[key] = dict(scalars[key])
+
+
+def _child_cpu():
+    """Cumulative user+system CPU seconds of all reaped children, or None.
+
+    The cost field every ranking reads was wall time (F4), which three things
+    corrupt and all three are live here: plans in a pool are evaluated at
+    `parallelism = 3` and contend for CPU, so a slowdown is not uniform and the
+    log-scale pool-relative form does not cancel it; a solver that forks workers
+    divides its wall time by its worker count, which turns the cost component into
+    a reward for parallelism the moment F8 lets a forking solver run at all; and
+    the machine's other load is in it. CPU time is immune to all three and is what
+    "this scheme costs more" was always meant to say.
+
+    Measured as a delta over `RUSAGE_CHILDREN`, which the parent already has and
+    which counts the child's own forks. It is a delta over *all* children reaped in
+    the window, so it is only this solve while solves are sequential, which they
+    are: one `run()` call, one child, and the kernel does not overlap them within a
+    plan.
+    """
+    try:
+        import resource
+        usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    except (ImportError, OSError, ValueError):
+        return None
+    return float(usage.ru_utime) + float(usage.ru_stime)
 
 
 def _reconstruct(kind, scalars, arrays):
@@ -527,6 +626,7 @@ def _reconstruct(kind, scalars, arrays):
         if scalars.get("integral_keys"):
             out["path_integrals"] = {k: arrays[f"integral__{k}"]
                                      for k in scalars["integral_keys"]}
+        _restore_functionals(scalars, out)
         return out
     out = {"grid": {k: arrays[f"grid__{k}"] for k in scalars.get("grid_keys", [])},
            "fields": {k: arrays[f"field__{k}"] for k in scalars.get("field_keys", [])}}
@@ -535,8 +635,7 @@ def _reconstruct(kind, scalars, arrays):
             out[key] = scalars[key]
     if scalars.get("trace_keys"):
         out["invariant_trace"] = {k: arrays[f"trace__{k}"] for k in scalars["trace_keys"]}
-    if scalars.get("functionals"):
-        out["functionals"] = dict(scalars["functionals"])
+    _restore_functionals(scalars, out)
     if scalars.get("snapshot_keys"):
         times = arrays["snap__t"]
         snaps = [{"t": float(t), "fields": {}} for t in times]

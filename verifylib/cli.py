@@ -9,6 +9,7 @@
     ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py evaluate <plan_dir> [--json]
     ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py compare <plan_a> <plan_b> [--N=<int>] [--no-record] [--json]
     ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py rank <workspace_dir> [--json]
+    ${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py spec-vocabulary [--json]
 
 Exit codes follow the hook contract measured in ``tests/hookprobe/FINDINGS.md``:
 2 is the blocking/feedback code the agent sees on stderr, 0 is pass. Only
@@ -357,6 +358,13 @@ def _compare(plan_a, plan_b, *, N=None, no_record=False, as_json=False) -> int:
     return PASS if entry["agree"] else BLOCK
 
 
+#: Sigmas of separation on the graded quantity past which two plans are not
+#: confirming each other (F1). Three, which is the bar a cross-family circularity
+#: break is worth withdrawing over and is comfortably past what a pair of
+#: 50 000-path estimators produces by chance.
+FUNCTIONAL_Z_BAR = 3.0
+
+
 def _compare_sde(spec, thresholds, cfg, plan_a, plan_b, *, no_record=False, as_json=False):
     """The SDE half of ``compare``: a difference in moment space, with the
     Monte-Carlo interval deciding between agree / disagree / inconclusive.
@@ -410,6 +418,11 @@ def _compare_sde(spec, thresholds, cfg, plan_a, plan_b, *, no_record=False, as_j
         X = X.reshape(X.shape[0], -1) if X.ndim > 1 else X.reshape(-1, 1)
         n = X.shape[0]
         return {
+            # F1: the declared quantity of interest and its own error bar, which
+            # cross the sandbox boundary since F0/F12 and are what the problem is
+            # scored on. `{}` where the solver declares none, which is a no-op.
+            "functionals": dict((got["result"].get("functionals") or {})),
+            "functional_se": dict((got["result"].get("functional_se") or {})),
             "mean": X.mean(axis=0), "variance": X.var(axis=0, ddof=1),
             "se_mean": X.std(axis=0, ddof=1) / np.sqrt(n),
             # se of a variance estimate, from the fourth central moment.
@@ -453,6 +466,51 @@ def _compare_sde(spec, thresholds, cfg, plan_a, plan_b, *, no_record=False, as_j
             outcome = None
         return rows, outcome, max(bits, key=lambda p: p["rel_diff"] / (p["tol"] or 1.0))
 
+    def compare_functionals(sa, sb):
+        """F1. The graded quantity, compared **at the combined sampling error**.
+
+        `compare_pair` above judges the moments against the tolerance, and on a
+        suite where every plan passes the external gate two plans' values are within
+        `2 x tol` of each other by construction -- so a comparison at the gate cannot
+        disagree, and on BENCHOP-SLV it never did. The signal it cannot see is
+        below the gate: on `sde_dupire_local_vol_dnt` the two plans agree on both
+        moments **to fourteen digits** and differ on the graded price at 3.4 to 4.5
+        sigma. Fourteen digits of moment agreement is two schemes getting for free
+        what the problem does not score, and the thing it does score is where they
+        part.
+
+        `z = |a - b| / hypot(se_a, se_b)`, conservatively as if the two runs were
+        independent -- the same discipline the moment rows use, applied to the
+        quantity of interest. The worst functional decides.
+
+        This **removes** confidence from a pool; it does not order one. An agreement
+        verdict is symmetric and says nothing about which plan to ship, and ranking
+        a plan on its distance from its siblings is the pool-dependence `sqi`'s
+        docstring forbids. What it does is refuse a circularity break that two plans
+        disagreeing on the graded price have not earned.
+        """
+        rows, zs = [], []
+        names = sorted(set(sa["functionals"]) & set(sb["functionals"]))
+        for name in names:
+            a, b = float(sa["functionals"][name]), float(sb["functionals"][name])
+            se_a, se_b = sa["functional_se"].get(name), sb["functional_se"].get(name)
+            row = {"functional": name, "a": a, "b": b,
+                   "rel_diff": abs(a - b) / (0.5 * (abs(a) + abs(b)) + 1e-300)}
+            if se_a is None or se_b is None:
+                # F12: a value with no error bar cannot be compared at one. Reported
+                # rather than silently treated as exact, which is the direction that
+                # turns a missing measurement into a pass.
+                row["z"] = None
+                row["reason"] = "the solver reported no functional_se for this name"
+            else:
+                se = float(np.hypot(float(se_a), float(se_b)))
+                row["se"] = se
+                row["z"] = abs(a - b) / se if se > 0.0 else None
+                if row["z"] is not None:
+                    zs.append(row["z"])
+            rows.append(row)
+        return rows, (max(zs) if zs else None)
+
     # An independent seed for plan B, derived from the graded one so the comparison
     # is reproducible: a SeedSequence child, not `seed + 1`.
     seed_b = int(np.random.SeedSequence(seed).generate_state(1, dtype=np.uint32)[0])
@@ -480,10 +538,25 @@ def _compare_sde(spec, thresholds, cfg, plan_a, plan_b, *, no_record=False, as_j
     else:
         verdict, code = "INCONCLUSIVE", INCONCLUSIVE
 
+    # F1, on the independent-seed pair -- the one that would have granted the break.
+    fn_rows, fn_z = compare_functionals(sa, runs[("b", seed_b)])
+    fn_disagree = fn_z is not None and fn_z > FUNCTIONAL_Z_BAR
+    if fn_disagree and agree is True:
+        # Both facts, and they are different facts: the plans agree at the gate and
+        # disagree at the sampling error on the quantity the problem is scored on.
+        # The gate verdict stands -- it is a true statement about the tolerance --
+        # and the circularity break does not, because two plans several sigma apart
+        # on the graded price are not confirming each other on it.
+        agree, verdict, code = None, "AGREE AT THE GATE, DISAGREE AT THE SAMPLING ERROR", \
+            INCONCLUSIVE
+
     meta_a, meta_b = plan_meta.read(plan_a), plan_meta.read(plan_b)
     fam_a, fam_b = meta_a.get("scheme_family"), meta_b.get("scheme_family")
     entry = {"a": os.path.basename(plan_a), "b": os.path.basename(plan_b), "N": None,
              "t_final": T, "rel_diff": rel, "tol": worst_tol, "metric": "moments",
+             "functional_z": fn_z, "functional_z_bar": FUNCTIONAL_Z_BAR,
+             "functional_disagreement": bool(fn_disagree),
+             "per_functional": fn_rows,
              "agree": agree, "family_a": fam_a, "family_b": fam_b,
              "different_family": bool(fam_a and fam_b and fam_a != fam_b),
              "sha_a": solver_sha256(plan_a), "sha_b": solver_sha256(plan_b),
@@ -511,6 +584,17 @@ def _compare_sde(spec, thresholds, cfg, plan_a, plan_b, *, no_record=False, as_j
               f"seeds {seed} / {seed_b}; families {fam_a} / {fam_b}"
               f"{' -- different, counts as a circularity break' if entry['different_family'] and agree else ''}"
               f"{' -- the Monte-Carlo interval straddles the tolerance, so this is neither a break nor a cap' if agree is None else ''}")
+        if fn_z is not None:
+            worst_fn = max((r for r in fn_rows if r.get("z") is not None),
+                           key=lambda r: r["z"])
+            print(f"  functionals: worst {worst_fn['functional']} differs by "
+                  f"{worst_fn['rel_diff']:.3e} relative = {fn_z:.2f} sigma"
+                  + (f" -- above the {FUNCTIONAL_Z_BAR:g}-sigma bar, so no "
+                     "circularity break is earned on the graded quantity"
+                     if fn_disagree else " -- within the sampling error"))
+        elif fn_rows:
+            print("  functionals: no functional_se reported, so the graded quantity "
+                  "could not be compared at its sampling error (F12)")
         if not no_record:
             print(f"recorded in {entry['recorded_in']}")
     return code
@@ -587,7 +671,41 @@ def _rank(workspace, *, as_json=False) -> int:
               + "".join(cell(c[n]) for n in ("accuracy", "order", "structure",
                                              "consistency", "cost"))
               + cell(s.get("solve_time_s")))
-    print(f"\nbest: {entries[0]['plan']}")
+    best = entries[0]
+    # F7. An exhausted ranking key is not a ranking. Where the key that separated
+    # the winner from the runner-up is `solve_time_s`, the ranker reported that the
+    # pool is indistinguishable on everything it can measure and then shipped the
+    # fastest plan -- which is a defensible default and an indefensible silence. It
+    # decided three of the ten BENCHOP winners, and its absence from the record is
+    # what made the analysis that found it expensive.
+    decided = (ranking.decided_by(best, entries[1], pool) if len(entries) > 1
+               else "sole plan")
+    print(f"\nbest: {best['plan']}   decided_by: {decided}")
+    if decided in ("solve_time_s", "iter", "tie"):
+        print(f"warning: the winner was not chosen on quality -- score, provenance "
+              f"and the index are all tied and `{decided}` broke it. Spend one "
+              f"measurement on the pool rather than reading this as a ranking.")
+
+    # F13. The snap in `ranking.headroom_decades` already refuses an error estimate
+    # finer than the plan's own sampling noise, and it does it silently, inside a
+    # component. Where the gap is large the plan did not measure its own accuracy at
+    # all -- on `sde_sabr_cev_call_ii` the Monte-Carlo standard error on the graded
+    # moment is 18-28% relative against a reported estimate 25-38x smaller, every
+    # plan recorded `resolved: false`, and the pool shipped anyway. Say it here,
+    # where a human reads it.
+    for entry in entries:
+        summary = entry["kernel"]["summary"]
+        est, se = summary.get("estimated_rel_error"), summary.get("mc_se_rel")
+        if not isinstance(est, (int, float)) or not isinstance(se, (int, float)):
+            continue
+        if est > 0.0 and se > 2.0 * est:
+            print(f"warning: {entry['plan']} reports estimated_rel_error "
+                  f"{est:.3g} against a Monte-Carlo standard error of {se:.3g} "
+                  f"({se / est:.0f}x larger)" + (
+                      " and resolved: false" if summary.get("resolved") is False
+                      else "") + " -- its accuracy is unmeasured at this path count, "
+                  "not good")
+
     # A block written before a field existed is not a plan that lacks the property,
     # and a ranking run on one is reading less than it looks like it is. Say which
     # inputs were missing rather than printing a confident order over `-` columns.
@@ -598,7 +716,156 @@ def _rank(workspace, *, as_json=False) -> int:
     if stale:
         print(f"note: no plan's <metrics> block carries the input for {', '.join(stale)}"
               f" -- the index is the mean of the rest. Re-run `evaluate` to refresh.")
+    # ...except that on an SDE "re-run evaluate" was false advice until F17. The
+    # field was set by the PDE driver alone, so `design_order` was absent from all
+    # 88 metrics blocks in `workspace/` and `ranking.order` -- a quarter of the
+    # index by weight -- had never fired on anything. A plan evaluated before F17
+    # needs its `scheme_family` declared as well as a re-evaluate.
+    if "order" in stale and any(str(p.get("kind") or "") == "sde"
+                                or p.get("mc_se_rel") is not None for p in pool):
+        print("note: on an SDE `design_order` comes from a declared `scheme_family` "
+              "or a spec `expected_strong_order` -- re-running `evaluate` alone will "
+              "not supply it (F17).")
     return 0
+
+
+#: The shape of each ``evaluation_thresholds`` key whose value is a nested
+#: declaration instead of a number, keyed by the name the kernel reads. Scanned out
+#: of source like the scalar keys, but the *shape* cannot be, so it is stated here
+#: and :func:`_spec_vocabulary` reports only keys the scan actually found -- an entry
+#: that stops being read disappears from the output rather than going stale.
+STRUCTURED_THRESHOLDS = {
+    "functionals": ('{"<name>": {"rel_tol": <float>, "gate": <bool>}} -- a scalar '
+                    'the solver reports in its `functionals` dict, checked across '
+                    'the dt ladder. Use this for any quantity the problem states '
+                    'its own tolerance on (a price, a hitting probability, an '
+                    'integrated flux). `gate: true` makes a breach a hard finding; '
+                    '`rel_tol` is that quantity\'s own tolerance, not the '
+                    'moment tolerance.'),
+}
+
+
+#: Fields a plan declares in its own ``SOLUTION.md`` frontmatter, which the kernel
+#: reads through ``plan_meta.read``. Reported alongside the spec vocabulary because
+#: the agent asking "what may I declare?" does not care which file the answer lives
+#: in, and because one of these was undiscoverable in practice: see
+#: ``crn.EXACT_SAMPLING_FAMILIES`` for the B03 run where a correct Andersen-QE plan
+#: was scored 3 for a near-zero strong order it could have had excused.
+PLAN_FRONTMATTER = {
+    "scheme_family": ("one of the families below. Declared and never inferred from "
+                      "the plan slug; an undeclared family widens the order band "
+                      "to one-sided rather than earning anything."),
+    "spatial_order": "PDE only: the scheme's design order, an integer.",
+    "exact_sampling_components": (
+        "state indices whose step draws its own randomness instead of consuming the "
+        "supplied Brownian increment -- `0, 1` or `[0]`. THE TEST IS "
+        "NON-CONSUMPTION, NOT EXACTNESS: the name reads narrower than the rule. "
+        "Declare it for `exact-transition` and `quadratic-exponential` schemes alike "
+        "-- non-central chi-squared, Broadie-Kaya, and Andersen QE's variance leg, "
+        "which is a moment-matched approximation to the exact law and not an exact "
+        "draw from it, yet samples fresh normals and uniforms each step and so "
+        "cannot consume the increment either way. Such a step makes the CRN ladder "
+        "read a strong order near zero on a scheme carrying no discretization error "
+        "at all, and the order study FAILS the plan unless this is declared. "
+        "Declaring it makes the order study abstain on those components -- which "
+        "forfeits its evidence and is not a pass, but is far better than the "
+        "failure. Never declare it for a component you stepped with the supplied "
+        "increments: there the near-zero order is a real defect."),
+}
+
+
+def _kernel_sources():
+    """Every non-test kernel module, for the registries scanned out of source."""
+    import glob
+    root = os.path.dirname(os.path.abspath(__file__))
+    return [path for path in sorted(glob.glob(os.path.join(root, "**", "*.py"),
+                                              recursive=True))
+            if f"{os.sep}tests{os.sep}" not in path]
+
+
+def _spec_vocabulary(as_json) -> int:
+    """Print the closed sets a spec may name, read out of the kernel itself.
+
+    The formulator is told that a gated invariant must be a name the kernel
+    implements, that a terminal law must be one it can build, and that a threshold it
+    sets has to be one something reads. It was never told *which*, so it went and read
+    ``verifylib/`` to find out: on the B03 Sonnet run that cost 56 shell calls and
+    about 130k tokens of accumulated context, re-billed on every one of its 119 turns.
+    This command answers the same question in one call, and because it reports the
+    live registries rather than a hand-kept list it cannot drift away from them.
+    """
+    from verifylib.kernel import invariants, plan_meta
+    from verifylib.kernel.sde import laws
+
+    # Two shapes, and missing the second one had a cost. The scalar keys are read as
+    # `thresholds.get("key")` / `cfg.pick("key")`; the *structured* ones are read as
+    # `(thresholds or {}).get("key")` and carry a nested declaration rather than a
+    # number. The first cut of this command matched only the scalar shape, so
+    # `functionals` -- which both drivers wire into `functionals.run_declared` -- was
+    # absent from the output. Measured on the B03 Sonnet run: the formulator ran this
+    # command, did not find a per-functional tolerance key, and recorded B03's three
+    # price gates as `ambiguous` R23/R24 ("No evaluation_thresholds key exists"). The
+    # kernel then never measured the only quantity the problem is graded on, which
+    # left two plans tied at score 3 and sent the tie to a ladder self-estimate that
+    # preferred the worse scheme. A vocabulary that under-reports is worse than none:
+    # the agent trusts it and stops looking.
+    scalar = re.compile(r'(?:thresholds\.get|cfg\.pick)\("([a-z_0-9]+)"')
+    structured = re.compile(r'\(\s*thresholds\s+or\s+\{\}\s*\)\.get\("([a-z_0-9]+)"')
+    thresholds, nested = set(), set()
+    for path in _kernel_sources():
+        with open(path) as fh:
+            text = fh.read()
+        thresholds.update(scalar.findall(text))
+        nested.update(structured.findall(text))
+    thresholds = sorted(thresholds | nested)
+    vocab = {
+        "invariants": {
+            name: {"side": inv.side, "needs": inv.needs,
+                   "parameters": sorted(inv.params),
+                   "default_tol": inv.default_tol,
+                   "summary": inv.summary}
+            for name, inv in sorted(invariants.INVARIANTS.items())
+        },
+        "terminal_laws": sorted(laws.BUILDERS),
+        "scheme_families": {"pde": list(plan_meta.PDE_FAMILIES),
+                            "sde": list(plan_meta.SDE_FAMILIES)},
+        "evaluation_threshold_keys": thresholds,
+        "plan_frontmatter": dict(PLAN_FRONTMATTER),
+        "structured_threshold_keys": {
+            key: STRUCTURED_THRESHOLDS[key]
+            for key in sorted(nested) if key in STRUCTURED_THRESHOLDS
+        },
+    }
+
+    if as_json:
+        print(json.dumps(vocab, indent=2, sort_keys=True))
+        return PASS
+
+    print("Gateable invariant names (verification.invariants[].name).")
+    print("Anything not on this list is not gateable -- record it as `ambiguous`.\n")
+    for name, inv in vocab["invariants"].items():
+        print(f"  {name:24s} [{inv['side']}, needs {inv['needs']}, "
+              f"tol {inv['default_tol']:g}]")
+        print(f"      {inv['summary']}")
+        print(f"      parameters: {', '.join(inv['parameters'])}")
+    print(f"\nTerminal laws (verification.terminal_law.type): "
+          f"{', '.join(vocab['terminal_laws'])}")
+    print("\nFields the plan declares in SOLUTION.md frontmatter:")
+    for key, help_text in vocab["plan_frontmatter"].items():
+        print(f"  {key}: {help_text}")
+    print(f"\nScheme families -- PDE: {', '.join(vocab['scheme_families']['pde'])}")
+    print(f"                  SDE: {', '.join(vocab['scheme_families']['sde'])}")
+    print("\nevaluation_thresholds keys the kernel reads. A key not listed here is "
+          "written\nand never read, so setting it changes nothing:")
+    for key in vocab["evaluation_threshold_keys"]:
+        print(f"  {key}")
+    if vocab["structured_threshold_keys"]:
+        print("\nOf those, these take a nested declaration rather than a number. A "
+              "quantity the\nproblem states a tolerance on is carried here -- it is "
+              "not `ambiguous` just because\nit is not a scalar threshold:")
+        for key, help_text in vocab["structured_threshold_keys"].items():
+            print(f"  {key}: {help_text}")
+    return PASS
 
 
 def main(argv=None) -> int:
@@ -635,6 +902,8 @@ def main(argv=None) -> int:
             print("evaluate takes a plan directory", file=sys.stderr)
             return 1
         return _evaluate(args[0], as_json)
+    if command == "spec-vocabulary":
+        return _spec_vocabulary(as_json)
     if command == "rank":
         return _rank(args[0] if args else "workspace", as_json=as_json)
     if command == "compare":

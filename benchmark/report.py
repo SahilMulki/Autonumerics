@@ -79,6 +79,48 @@ _ONESHOT_VERDICT_ORDER = ("PASS", "STABLE_PASS", "FAIL", "CONSTRAINT_VIOLATION",
 # --- verdict logic ----------------------------------------------------------
 
 
+def harness_error(ver):
+    """How far past its gate a verified result sits, as a multiple of the gate.
+
+    One number for every grading shape, because the three readers of it in this file
+    each had their own and one of them had none. ``1.0`` is the pass line, so ``0.4``
+    is comfortable and ``1.2`` failed; `None` where nothing gradeable was recorded.
+
+    F10. The per-plan table read ``rel_l2_err``, which **does not exist on a
+    functional-graded problem**: every BENCHOP-SLV problem is scored on declared
+    option prices, carried in ``functional_errs`` against the per-value gates in
+    ``functional_tol_used``, and the whole suite printed ``-`` in the error column.
+    Reconstructing those numbers by hand is what made the first analysis of that run
+    expensive, and the fix is one function.
+
+    Returns ``(value, label)``.
+    """
+    ver = ver or {}
+    errs = ver.get("functional_errs") or {}
+    if errs:
+        # Per value, because the gate is widened per value where the reference's own
+        # error demands it -- `verify._functional_tols`' rule, read rather than
+        # re-derived. The worst functional decides, the way the pass does.
+        tols = ver.get("functional_tol_used") or {}
+        default = ver.get("functional_tol")
+        ratios = [e / tols.get(n, default) for n, e in errs.items()
+                  if isinstance(e, (int, float))
+                  and isinstance(tols.get(n, default), (int, float))
+                  and tols.get(n, default) > 0.0]
+        if ratios:
+            return max(ratios), "functional"
+    if isinstance(ver.get("rel_l2_err"), (int, float)):
+        tol = ver.get("rel_l2_tol") or ver.get("tol")
+        if isinstance(tol, (int, float)) and tol > 0.0:
+            return ver["rel_l2_err"] / tol, "rel_l2"
+        return None, "rel_l2"
+    if isinstance(ver.get("worst_variance_rel_err"), (int, float)):
+        tol = ver.get("variance_rel_err_max")
+        if isinstance(tol, (int, float)) and tol > 0.0:
+            return ver["worst_variance_rel_err"] / tol, "variance"
+    return None, "none"
+
+
 def _pipeline_claimed_pass(rec):
     """Did the pipeline claim this problem solved?
 
@@ -466,6 +508,13 @@ def generate_report(results, config=None):
                 detail.append(f"verify: {ver['error']}")
             if "rel_l2_err" in ver:
                 detail.append(f"rel L2 = {ver['rel_l2_err']:.3e}")
+            margin, label = harness_error(ver)
+            if label == "functional" and margin is not None:
+                # F10: on a functional-graded problem there is no `rel_l2_err` and
+                # the failure line above printed nothing about the error at all.
+                worst = max((ver.get("functional_errs") or {}).items(),
+                            key=lambda kv: kv[1], default=(None, None))[0]
+                detail.append(f"worst functional {worst} at {margin:.3f} of its gate")
             if "worst_variance_rel_err" in ver:
                 detail.append(f"var err = {ver['worst_variance_rel_err']:.1%}")
             if ver.get("gt_kind") == "stability":
@@ -550,15 +599,21 @@ def generate_report(results, config=None):
             for name, entry in sorted(r["harness_by_plan"]["plans"].items()):
                 k, h = entry.get("kernel") or {}, entry.get("harness") or {}
                 err = h.get("rel_l2_err")
+                margin, _label = harness_error(h)
                 drift = h.get("solver_drift")
                 rows.append([
                     r["slug"], name + (" *" if entry.get("is_winner") else ""),
                     str(k.get("score", "-")), k.get("provenance") or "-",
                     (f"{err:.3e}" if isinstance(err, (int, float)) else "-")
                     + (" (drifted)" if drift else ""),
+                    # The gate-relative number, which is the one a reader compares
+                    # across problems: the per-value tolerances on this suite span
+                    # 0.002 to 0.015, so two raw errors are not comparable and two
+                    # margins are (F10).
+                    (f"{margin:.3f}" if isinstance(margin, (int, float)) else "-"),
                     VERDICT_LABEL.get(entry.get("verdict"), entry.get("verdict") or "-")])
         ap(_table(["problem", "plan (* winner)", "kernel score", "provenance",
-                   "harness rel err", "verdict"], rows))
+                   "harness rel err", "harness err / gate", "verdict"], rows))
         ap("")
 
     # ---- methodology ------------------------------------------------------

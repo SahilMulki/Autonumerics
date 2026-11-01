@@ -70,6 +70,10 @@ This lets the evaluator test Dynkin's identity `E[φ(X_T)] = φ(X_0) + E[∫₀�
 - `dt`: float (actual dt used, after rounding T/dt — or `T / dW.shape[1]` when `dW` was supplied)
 - `T`: float
 - `path_integrals`: dict of name → `(num_paths,)` array — **only when `observables` was passed**
+- `functionals`: dict of name → float — **the quantity the problem is actually scored on**, whenever `problem_spec.json` declares `evaluation_thresholds.functionals`. An option price, an exceedance probability, a first-passage time. Return every declared name. The kernel has no reference value for it and never will; what it does with it is ask whether it has stopped moving with `dt` and how far it sits from its own declared `rel_tol`.
+- `functional_se`: dict of name → float — **the Monte-Carlo standard error of each returned functional**, in the same absolute units. For a plain mean-of-payoffs estimator that is `np.std(payoff, ddof=1) / np.sqrt(num_paths)`, which the estimator already has in hand; for a control variate or an antithetic pair it is the standard error of the *combined* estimator, which is the point of using one. Omit a name you cannot bound and the kernel reports it as unbounded rather than treating the estimate as exact.
+
+  **This is the only number in the whole return that prices variance reduction.** Two plans with the same scheme and the same `dt` differ in exactly one way a kernel with no answer key can see, and it is this one. A solver that returns a price with no error bar is asking to be ranked as though its price were exact.
 
 **Implementation checklist**:
 - Use `np.random.default_rng(seed)` — NOT `np.random.seed()` or `random.seed()`
@@ -95,7 +99,7 @@ Address the specific issue. Common fixes:
 - **Multi-D mean wrong**: ensure `np.mean(X, axis=0)` not `np.mean(X)`
 - **"Strong order is 0.5 but the plan claims Milstein"**: the correction term is missing, has the wrong sign, or is being applied with the post-step `X` instead of the pre-step one. The correction uses `X_n`, not `X_{n+1}`.
 - **"Convergence study failed — solver ignored dW"**: when `dW` is passed you must use those exact increments and take `Nt` from `dW.shape[1]`. Drawing your own noise breaks the shared Brownian path and makes the order estimate garbage.
-- **"MC-inconclusive"**: this is *not* a bug in your code. The error bars are wider than the tolerance, so the check cannot be decided. Raise `num_paths`; do not change the scheme or `dt`.
+- **"MC-inconclusive"**, or **`resolved: false`** in the metrics block: this is *not* a bug in your code. The error bars are wider than the tolerance, so the check cannot be decided. Raise `num_paths`; do not change the scheme or `dt`. Do this even when the evaluator reports no other defect — a plan that plateaus at an unresolved measurement has not been measured, and shipping it reports the seed rather than the solver.
 - **"Positivity violated"**: report and fix the *scheme* — a bare `np.maximum(X, 0)` clip at the end hides the defect rather than fixing it, and the evaluator checks `solver.py` for exactly that.
 
 ### After writing or fixing the code: run it
@@ -105,6 +109,14 @@ uv run python workspace/{problem_slug}/plans/{id}-{plan_slug}/solver.py
 ```
 
 If it raises an exception: analyse the traceback, fix, and run again. Only proceed when it runs without error.
+
+**Run it in the foreground, and pass `timeout: 600000` on the Bash call.** At the declared
+path count this takes minutes, and that is expected rather than a reason to background it.
+The Bash tool's default is 120 s, and when the run exceeds it the command is moved to the
+background whatever you intended -- after which the Results section has nothing to carry,
+because the numbers it must report have not been printed yet, and the conductor has to
+resume you and replay this whole context. Set the timeout explicitly, do not pass
+`run_in_background`, and do not end your turn while the solve is in flight.
 
 ## Output
 

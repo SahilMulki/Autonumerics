@@ -24,7 +24,21 @@
       "Bash(uv run python benchmark/*)",
       "Bash(uv run python3 benchmark/*)",
       "Bash(python benchmark/*)",
-      "Bash(python3 benchmark/*)"
+      "Bash(python3 benchmark/*)",
+      "Read(./docs/**)",
+      "Read(//Users/**/Autonumerics/docs/**)",
+      "Bash(cat docs/*)",
+      "Bash(cat ./docs/*)",
+      "Bash(head docs/*)",
+      "Bash(head ./docs/*)",
+      "Bash(tail docs/*)",
+      "Bash(tail ./docs/*)",
+      "Bash(less docs/*)",
+      "Bash(more docs/*)",
+      "Bash(sed docs/*)",
+      "Bash(awk docs/*)",
+      "Bash(grep:*docs/*)",
+      "Bash(rg:*docs/*)"
     ]
   }
 }

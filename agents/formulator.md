@@ -16,7 +16,19 @@ The argument is the workspace path (e.g. `workspace/{problem_slug}`). Before you
 - Read `${CLAUDE_PLUGIN_ROOT}/references/project_manual.md` to understand the file handoff protocol. **Required.** You are `formulator` in the pipeline.
 - Read `${CLAUDE_PLUGIN_ROOT}/references/sde_manual.md` for SDE analytic moment formulas. **Required.**
 - Read `${CLAUDE_PLUGIN_ROOT}/references/pde_manual.md` for PDE families, boundary conditions, and analytic solutions. **Required.**
-- Read `${CLAUDE_PLUGIN_ROOT}/references/verification_manual.md` for the ladder of evidence and the shape of every `verification` block field. **Required** — you author these blocks.
+- Read `${CLAUDE_PLUGIN_ROOT}/references/verification_manual.md` for the ladder of evidence and the shape of every `verification` block field. **Required** — you author these blocks. It is ~2000 lines and a whole-file read costs more than it returns: read **§1** (the ladder) first, then only the sections for the routes you actually take. §8 (what converges to the wrong equation), §20 (Dynkin), §21 (constraints), §23 (the SDE rubric), §26 and §27 (the invariant registry) are the ones this role usually needs. Each is reachable on its own:
+
+  ```bash
+  awk '/^## 20\./{f=1} f && /^## 21\./{exit} f' "${CLAUDE_PLUGIN_ROOT}/references/verification_manual.md"
+  ```
+
+- **Run the vocabulary command once, and treat its output as the closed sets.** It prints, straight out of the live kernel, every gateable invariant name with the parameters and default tolerance each accepts, the terminal laws that can be built, the scheme families, and the `evaluation_thresholds` keys that are actually read:
+
+  ```bash
+  uv run python "${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py" spec-vocabulary
+  ```
+
+  **Do not read `verifylib/` source.** Everything you may legitimately declare is in that output, it is generated from the registries themselves so it cannot be stale, and ~4 KB of it replaces the dozens of `grep`/`sed` calls into the kernel that answering these questions by hand takes — each of which then rides along in your context for the rest of the run. If you need a fact that the command does not report, you have found a genuine gap: record it as an `ambiguous` requirement entry and move on. Do not go looking for it in the implementation, and do not read `docs/`.
 - Read `${CLAUDE_PLUGIN_ROOT}/templates/problem_spec-example-sde.json` and `${CLAUDE_PLUGIN_ROOT}/templates/problem_spec-example-pde.json` for the two JSON schemas. **Required.** For a multi-field system / 3-D problem, also read `${CLAUDE_PLUGIN_ROOT}/templates/problem_spec-example-pde-system.json` (the extended schema: `analytic_solution.fields`, `evaluation_thresholds.fields/primary_field/required_fields/gauge_fields/metric/axes/domain_mask/diagnostics`).
 - Read `workspace/{problem_slug}/problem.md`. This is the user's problem statement.
 
@@ -187,6 +199,11 @@ Rules:
 - Every scoring rule in the Solver contract — tolerance, resolution, order floor, per-field requirement, structural gate, stability criterion — gets an entry.
 - A requirement about *how* the problem is scored must map to a field in `evaluation_thresholds`, never to `implementation_notes` alone. Prose is not a threshold.
 - **A stated grading resolution is a requirement, not an ambiguity.** When the contract says the harness calls the solver at `N = 64` and `N = 128` and grades accuracy "at the finer grid", that is `kind: evaluation`, `status: mapped`, and it maps to **`evaluation_thresholds.graded_N: 128`** (the grid the accuracy statement names) beside `grid_N` (the base of the ladder). The kernel reads `graded_N` to know which ladder level it is certifying: the top-level GCI measures the *order*, and the pair difference at the graded level is the error at the grid the problem is actually scored on. Do **not** ledger "ladder 64/127/253 vs the stated 64/128" as an ambiguity — the ladder's endpoint arithmetic is the solver's, and the kernel matches `graded_N` to a level within one node of it.
+- **A stated tolerance on a named scalar is a requirement, not an ambiguity — it maps to `evaluation_thresholds.functionals`.** When the contract gates a *quantity the solver reports* rather than a moment — an option price, a hitting probability, an integrated flux, a maximum displacement — each one gets an entry at `evaluation_thresholds.functionals.<name>` with its own `rel_tol` and `gate: true`. That is a real spec field on both the SDE and PDE drivers, and it takes a nested object, not a number: `{"price_S100": {"rel_tol": 0.004, "gate": true}}`. The vocabulary command lists it under the structured keys.
+
+  **A stated grading path count is a requirement too.** When the contract says the harness calls the solver at `num_paths = 2000000` and again at `500000`, set `evaluation_thresholds.num_paths` to the count the kernel should evaluate at and **`evaluation_thresholds.graded_num_paths` to the larger count the problem is scored at**. The kernel reads it to project the solver's measured peak memory to the scale it will actually be graded under, and warns when that projection crosses the grading memory ceiling. Without it, a solver that fits at the evaluated count and cannot allocate at the graded one looks fine until the harness runs it and reports `crashed` -- which is exactly what B03's winning plan did.
+
+  **Measured, and this is why the rule is stated twice:** on the B03 Sonnet run (2026-10-31) the contract gated three Heston prices at 1.5% / 0.4% / 0.2%, the ledger recorded all three as `ambiguous` with the note *"No `evaluation_thresholds` key exists for a per-functional price tolerance"*, and so the kernel never measured **the only quantity the problem is scored on**. Two plans then tied at score 3 with no accuracy signal between them, the tie fell through to the order study, and it picked the plan whose scheme was worse. A moment tolerance is not a substitute: `variance_rel_err_max` says nothing about a call price. If the problem names a number and a tolerance, that pair belongs in `functionals`.
 - **A periodic domain's endpoint convention is not an ambiguity either.** `problem.md` now states that both `np.linspace(a, b, N)` and `np.linspace(a, b, N, endpoint=False)` are accepted and scored identically on a periodic domain. Do not ledger it; the solver chooses.
 - Do not weaken a stated value to something more convenient to solve. If `eps = 1e-3` makes the problem hard, the spec still says `1e-3`.
 
@@ -469,8 +486,9 @@ converging cleanly to the *wrong* equation. See §8 of `verification_manual.md` 
 ]
 ```
 
-**A name the kernel does not recognize is not checked at all.** The registry in
-`verifylib/kernel/invariants.py` evaluates a fixed set of names (`mass_conservation`,
+**A name the kernel does not recognize is not checked at all.** `cli.py spec-vocabulary`
+prints the registry in full, and it is the authority -- do not open the module it reports
+on. It evaluates a fixed set of names (`mass_conservation`,
 `energy_conservation`, `maximum_principle`, `positivity`, `symmetry`, `divergence_free`,
 `total_variation`, `boundary_consistency`, …). Anything else — `kdv_third_invariant`,
 `gaussianity` — reports `not_reported`, which for an ungated entry caps nothing and checks
@@ -499,9 +517,9 @@ Set `gate: true` only for properties the PDE *mathematically guarantees* — a v
 definite bug. Mark `requires_trace: true` for anything needing a time history rather than the final
 snapshot; the solver returns those under `invariant_trace`.
 
-**A gated invariant must be a name the kernel implements.** `verification_manual.md` §27 holds the
-closed registry, and `check-spec` errors on a gated entry whose name is not in it and which carries
-no evaluable `expr`. This is not bureaucracy: `{"name": "physically_reasonable", "gate": true}` used
+**A gated invariant must be a name the kernel implements.** `cli.py spec-vocabulary` prints the
+closed registry (`verification_manual.md` §27 describes it in prose), and `check-spec` errors on a
+gated entry whose name is not in it and which carries no evaluable `expr`. This is not bureaucracy: `{"name": "physically_reasonable", "gate": true}` used
 to pass the schema, match nothing, and read downstream as a gate that had been satisfied. Ungated
 entries stay free-form — write whatever diagnostic is useful.
 

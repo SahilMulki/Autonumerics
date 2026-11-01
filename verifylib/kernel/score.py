@@ -755,6 +755,35 @@ def certify(evidence):
                      "reason": f"declared functional(s) {not_reported_fn} carry "
                                f"gate: true but the solver reported no value for them, "
                                f"so the gate could not be evaluated"})
+    over = evidence.get("mem_fraction_used")
+    if isinstance(over, (int, float)) and float(over) > 1.0:
+        # A plan that cannot fit in the grader's memory ceiling has not been shown to
+        # work, however good its moments are: the run that produces the graded answer
+        # is the one that has to complete. `sandbox.DEFAULT_MEM_MB` is the same 4096 MB
+        # `benchmark/run.py` verifies under, but `RLIMIT_AS` is advisory on macOS and
+        # ignored outright for most allocations, so the ceiling cannot be *enforced*
+        # here -- only measured. This is the measurement binding.
+        #
+        # Capped at 4 rather than failed: the arithmetic is real and the plan may be
+        # numerically correct, so this is "not demonstrated at the graded scale",
+        # which is a cap's job. 4 is below the 6 an MC-inconclusive run keeps,
+        # because that one needs more paths and this one cannot be given them.
+        #
+        # Measured on `sde_heston_call_feller` (B03, Sonnet, 2026-10-31): the winning
+        # plan pre-allocated `(num_paths, Nt, 2)` and peaked at 7881 MB -- 1.92x the
+        # ceiling -- at the spec's 500k paths, while the problem is graded at 2M,
+        # where the same allocation is 16 GB. The harness spent its whole 300 s budget
+        # thrashing and returned `crashed`; the kernel had scored it 3 on other
+        # grounds and said nothing about the memory at all. Draw the increments per
+        # step instead of pre-allocating the block.
+        caps.append({"source": "memory", "score": 4,
+                     "reason": f"peak memory was {float(over):.2f}x the grading memory "
+                               f"ceiling ({evidence.get('peak_mem_mb')} MB against "
+                               f"{evidence.get('mem_mb_limit')} MB). The solver cannot "
+                               f"run where it is graded, and the path count it is "
+                               f"graded on is larger than the one measured here. Draw "
+                               f"the Brownian increments per step rather than "
+                               f"pre-allocating the whole (num_paths, Nt, m) block"})
     if evidence.get("interpolated"):
         caps.append({"source": "interpolated", "score": 9,
                      "reason": "the ladder did not nest, so the order estimate rests on "

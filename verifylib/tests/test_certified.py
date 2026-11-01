@@ -9,6 +9,7 @@ back clean -- so the score is free to move and neither behaviour does.
 The whole point is that it is **inert today**: these tests pin that, and they are
 what a later change to the score has to keep passing.
 """
+import glob
 import json
 import os
 
@@ -87,21 +88,30 @@ def test_frozen_records_fall_back_to_the_old_test_unchanged():
     read exactly as it was. This is the inertness claim, run against the real files
     rather than a fixture."""
     seen = 0
-    for name in os.listdir(RESULTS):
-        if not name.endswith(".json") or ".bak" in name or "selection" in name:
+    files = 0
+    # c21077e moved most of the corpus into subdirectories of results/, so a flat
+    # listing sees only results.json and the bar below reads as a regression.
+    for path in sorted(glob.glob(os.path.join(RESULTS, "**", "*.json"), recursive=True)):
+        name = os.path.relpath(path, RESULTS)
+        if ".bak" in name or "selection" in name:
             continue
         try:
-            with open(os.path.join(RESULTS, name)) as fh:
+            with open(path) as fh:
                 payload = json.load(fh)
         except (json.JSONDecodeError, UnicodeDecodeError):
             continue
+        files += 1
         for rec in (payload.get("results") if isinstance(payload, dict) else None) or []:
             if "pipeline" not in rec:
                 continue        # a baseline unit: no self-score to read
-            assert "certified" not in (rec.get("pipeline") or {})
+            if any(isinstance((rec.get(k) or {}).get("certified"), bool)
+                   for k in ("pipeline", "kernel")):
+                continue        # written after the split: not a frozen record
             expected = (rec["pipeline"].get("best_score") or 0) >= 10
             assert R._pipeline_claimed_pass(rec) is expected, f"{name}:{rec['slug']}"
             seen += 1
+    if not files:
+        pytest.skip("no result corpus on this checkout -- results/ is gitignored")
     assert seen > 50, f"only {seen} frozen pipeline records checked"
 
 

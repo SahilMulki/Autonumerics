@@ -123,14 +123,29 @@ def evaluate_pde(spec, plan_dir, agent):
     # MMS run solves a different problem, and the invariant solver re-solves with a
     # shifted IC.
     solve_times: dict[int, float] = {}
+    cost_source: set[str] = set()
+    #: Per-solve peaks, each measured inside its own sandbox child. Overridden solves
+    #: count: an MMS or invariant re-solve allocates on the same grid, and the
+    #: question here is whether this plan ever needs more than the grader allows.
+    solve_peaks: list[float] = []
 
     def solve(N, override=None, in_arrays=None):
         out = sandbox.run(plan_dir, "pde", {"N": N}, override=override,
                           in_arrays=in_arrays, timeout_s=timeout_s)
         if override is None and in_arrays is None:
-            wall = out.get("wall_s")
-            if isinstance(wall, (int, float)):
+            # F4: CPU where the sandbox could read it. Wall time divides by a
+            # forking solver's worker count and is contaminated by the contention
+            # between a pool's own plans; CPU time is neither.
+            cpu, wall = out.get("cpu_s"), out.get("wall_s")
+            if isinstance(cpu, (int, float)) and cpu > 0.0:
+                solve_times[int(N)] = float(cpu)
+                cost_source.add("cpu")
+            elif isinstance(wall, (int, float)):
                 solve_times[int(N)] = float(wall)
+                cost_source.add("wall")
+        peak = out.get("peak_mem_mb")
+        if isinstance(peak, (int, float)) and peak > 0.0:
+            solve_peaks.append(float(peak))
         return out
 
     # --- Stage 1: the ladder ------------------------------------------------
@@ -391,6 +406,22 @@ def evaluate_pde(spec, plan_dir, agent):
     m["summary"]["resolution_evidence"] = "not_used_as_accuracy_evidence"
     m["summary"]["wall_time_s"] = round(time.monotonic() - started, 2)
     m["summary"]["solve_time_s"] = _graded_solve_time(solve_times, graded_N)
+    # The PDE half of B03's memory finding. Same ceiling, same rule, and the PDE side
+    # needs it for the same reason: the grading grid is finer than the ladder's base,
+    # so a solver that fits at N can be over the ceiling at the N it is scored on.
+    # Each figure is measured inside its own child, so the max over them is the peak
+    # for this plan and nothing else -- see `sandbox._self_peak_mb`.
+    peak = max(solve_peaks) if solve_peaks else None
+    if isinstance(peak, (int, float)):
+        m["summary"]["peak_mem_mb"] = float(peak)
+        m["summary"]["mem_mb_limit"] = float(sandbox.DEFAULT_MEM_MB)
+        m["summary"]["mem_fraction_used"] = round(
+            float(peak) / float(sandbox.DEFAULT_MEM_MB), 3)
+    if cost_source:
+        # "cpu" or "wall", and never both silently: a pool that mixes them is
+        # ranking on the measurement rather than on the solver (F4).
+        m["summary"]["cost_source"] = "mixed" if len(cost_source) > 1 \
+            else next(iter(cost_source))
     m["solve_times"] = solve_times
     return metrics.finalize(m, cfg)
 
@@ -1184,6 +1215,9 @@ def _evidence(spec, m, path, tol, e_fine, d1, d2, tier_b, agent, chaotic):
         "headroom_decades": _headroom_decades(m["summary"], tol),
         "headroom_fraction": _headroom_fraction(m["summary"], tol),
         "agent_cap": _agent_cap(agent),
+        "peak_mem_mb": m["summary"].get("peak_mem_mb"),
+        "mem_mb_limit": m["summary"].get("mem_mb_limit"),
+        "mem_fraction_used": m["summary"].get("mem_fraction_used"),
     }
 
 

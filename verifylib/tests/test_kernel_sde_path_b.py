@@ -801,7 +801,10 @@ def test_the_live_specs_pin_exactly_one_boundary_between_them():
             continue
         spec = json.load(open(path))
         bounds = ((spec.get("verification") or {}).get("kolmogorov") or {}).get("bounds")
-        if not bounds:
+        if not bounds or any(isinstance(b, (list, tuple)) for b in bounds):
+            # `_widen` is scalar, and so is the route that calls it; a
+            # per-dimension `[[0, 400], [0, 1.5]]` (B03, 2026-11-01) is declined by
+            # `kolmogorov` itself and is not this guard's subject.
             continue
         seen[name] = _widen(bounds, 1.5, declared_support(spec))
         seen[name] = (seen[name][0], seen[name][1])
@@ -844,8 +847,9 @@ def test_each_component_gets_its_own_order_estimate():
     def solve(call, **kw):
         return {"status": "ok", "result": {"terminal_paths": runs.pop(0)}}
 
-    outcome, detail = _orders(".", solve, 20000, 0.004, 1.0, 3, 42, 1.0, 1.0,
-                              declared=True, candidates=[1.0], components=2)
+    outcome, detail, _ladder = _orders(
+        ".", solve, 20000, 0.004, 1.0, 3, 42, 1.0, 1.0,
+        declared=True, candidates=[1.0], components=2)
     assert detail["components"] == 2
     assert [e["component"] for e in detail["per_component"]] == [0, 1]
     assert detail["per_component"][0]["orders_ok"] is True

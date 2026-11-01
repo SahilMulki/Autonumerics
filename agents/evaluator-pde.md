@@ -35,6 +35,12 @@ The argument is a single plan directory (e.g. `workspace/{problem_slug}/plans/{i
 "${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py" evaluate workspace/{problem_slug}/plans/{id}-{plan_slug} --json
 ```
 
+**Run it in the foreground, and pass `timeout: 600000` on the Bash call.** The Bash tool's
+default is 120 s and a kernel pass can take longer; when a command exceeds the default the
+tool moves it to the background whatever you intended, your turn ends with no `score`
+computed, and the conductor has to resume you and replay this whole context. Do not pass
+`run_in_background`, and do not end your turn while the pass is in flight.
+
 That is the whole measurement. It selects the path (A when the spec carries a closed form, B
 otherwise), runs the grid ladder, measures the error and the observed order, applies the
 asymptotic-range guards, checks every declared invariant, runs the D1 operator residual and the

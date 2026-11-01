@@ -63,13 +63,38 @@ STRUCTURE_DECADES = 3.0
 #:   larger local error beats a higher-order one over long horizons because the
 #:   energy error stays bounded instead of drifting;
 #: * **consistency** is real but already priced into the *score*, where a clean D1 is
-#:   worth a full point of certification, so weighting it heavily double-counts;
-#: * **cost** is subordinate to correctness and decisive between equals.
-WEIGHTS = {"accuracy": 0.35, "order": 0.25, "structure": 0.20,
-           "consistency": 0.10, "cost": 0.10}
+#:   worth a full point of certification, so weighting it heavily double-counts.
+#:
+#: **Cost is not among them.** It was, at 0.10, "subordinate to correctness and
+#: decisive between equals", and it is now measured and reported but never ranked
+#: on -- the pool's `cost` column in `cli.py rank` is a diagnostic and nothing
+#: more. The weights below are unchanged in value; dropping the fifth means
+#: :func:`sqi` renormalises over 0.90 instead of 1.00, which is exactly what
+#: ``sqi_cert`` already did, so a certification's index is unchanged by this.
+WEIGHTS = {"accuracy": 0.35, "order": 0.25, "structure": 0.20, "consistency": 0.10}
 
-#: Cost is a property of the *pool*, not of a plan, and a certification must not
-#: depend on how fast a sibling ran. ``SQI_cert`` drops it and renormalises.
+#: The index's components -- all of them. Named separately from :data:`WEIGHTS`
+#: because :func:`components` still *computes* ``cost`` for the report, and this
+#: tuple is what :func:`sqi` is allowed to read.
+#:
+#: Cost is excluded for two independent reasons, and the second is the one that
+#: settles it. First, cost is a property of the *pool*, not of a plan, and a
+#: certification must not depend on how fast a sibling ran. Second, and
+#: decisively: **cost is not a measure of whether a plan is right, so it has no
+#: business choosing between plans at all.** A slower scheme that resolves the
+#: problem is the better plan, full stop; speed is something the reader weighs
+#: afterwards against their own budget, and the ranking's job is to say which
+#: answer to trust.
+#:
+#: Measured on `sde_heston_call_feller`, 2026-11-01, after the component-pairing
+#: fix. Accuracy came back 0.000 for all three plans -- at the kernel's diagnostic
+#: 50k paths the Monte-Carlo noise (`mc_se_rel` 0.022) is an order of magnitude
+#: wider than the tightest price gate (0.002), so the graded quantity is not
+#: measurable there and the one component that matters is structurally flat. The
+#: index then fell through to order fidelity and `cost`, and `cost` ran 0.980 /
+#: 0.000 / 1.000 across the pool: a full-range discriminator, decided entirely by
+#: a 0.5s-vs-2.6s solve time, standing in for an accuracy nobody could measure.
+#: The winner happened to be right that day. It was not right *for* that reason.
 CERT_COMPONENTS = ("accuracy", "order", "structure", "consistency")
 
 
@@ -113,6 +138,14 @@ def accuracy(summary, tol):
     0.177 -- accuracy contributing almost nothing and the ranking falling to the other
     components -- are 0.69 to 0.73 of the way to their ceiling.
     """
+    # F3. Where the problem declares a gated quantity of interest and the kernel
+    # measured it, *that* is what the problem is scored on, and the moment error is
+    # a proxy for it at best. `functional_rel_error` is the sum of a dt-bias term
+    # and the solver's reported sampling term, so unlike the moment error it is
+    # never below its own noise -- the noise is inside it rather than under it.
+    fn = _functional_fraction(summary)
+    if fn is not None:
+        return _clip01(fn)
     # On a chaotic problem the graded horizon is the one the problem asks about, and
     # where `graded_N` is declared the graded grid is what it is scored on. Both are
     # worse-case in `headroom_decades`, never better: an error quoted at a reference
@@ -120,7 +153,58 @@ def accuracy(summary, tol):
     # back None there -- it is the signature of a solver whose output did not respond
     # to the grid at all (`baseline_select.looks_n_independent`), so it is unmeasured
     # rather than perfect.
+    #
+    # F16. The snap below turns an error inside its own error bar into a tie, which
+    # is right, and `achievable_decades` then divides by *the same half-width*, which
+    # places that tie at exactly 1.0 -- the component's ceiling. Measured across the
+    # eleven BENCHOP B01-B04 plans, every one of them snaps and every one scores
+    # 1.000, so 0.35 of the index orders nothing and is renormalised onto structure
+    # and cost. A tie at the ceiling is not a tie, it is a claim; what the kernel
+    # actually knows here is that the error was **not resolved** at this budget, and
+    # the vocabulary for that is None.
+    if noise_limited(summary):
+        return None
     return _clip01(headroom_fraction(summary, tol))
+
+
+#: Decades below the declared gate that a Monte-Carlo functional could plausibly
+#: reach. Two, because a hundredfold improvement on a sampling-limited estimate
+#: costs ten thousand times the paths.
+#:
+#: Fixed, and deliberately **not** the plan's own ``achievable_decades``. A ceiling
+#: computed from each plan's own error bar divides out the quantity that separates
+#: plans: a noisy plan gets a low ceiling and scores the same fraction as a tight one
+#: with the same bias, and a plan that bought its accuracy with a control variate --
+#: the axis C0 beat the pipeline on -- is rewarded with a *higher* bar. The ceiling
+#: has to be a property of the problem for the fraction to order anything.
+FUNCTIONAL_DECADES = 2.0
+
+
+def _functional_fraction(summary):
+    """Accuracy headroom on the declared quantity of interest, or None.
+
+    ``functional_rel_error`` and ``functional_rel_tol`` are written by the kernel
+    where the spec declares a gated functional and the solver returned a value for
+    it; both are relative and in the same units, so the headroom is the ratio's log.
+    """
+    err = _num(summary.get("functional_rel_error"))
+    tol = _num(summary.get("functional_rel_tol"))
+    if err is None or tol is None or tol <= 0.0 or err <= 0.0:
+        return None
+    return math.log10(tol / err) / FUNCTIONAL_DECADES
+
+
+def noise_limited(summary):
+    """Is the reported error smaller than the plan's own error bar?
+
+    True where the kernel's accuracy statistic sits inside the sampling noise that
+    produced it, so the plan's real error is somewhere in ``[0, half_width]`` and the
+    estimate does not locate it. False where the error is resolved, and False where
+    there is no error bar to compare against (every PDE Path A plan).
+    """
+    err = _num(summary.get("estimated_rel_error"))
+    half_width = uncertainty(summary)
+    return err is not None and half_width is not None and err < half_width
 
 
 def headroom_decades(summary, tol):
@@ -310,7 +394,8 @@ def order(summary):
 
 
 _SDE_FAMILIES = frozenset({"euler-maruyama", "milstein", "tamed-euler-maruyama",
-                           "tamed-milstein", "implicit"})
+                           "tamed-milstein", "implicit", "exact-transition",
+                           "quadratic-exponential"})
 
 #: §26's outcomes as a graded component. ``clean`` is the residual falling at or past
 #: the design rate, or sitting at the round-off floor; ``slow`` falls but
@@ -373,8 +458,18 @@ def cost(summary, pool):
     Reads ``solve_time_s`` -- the solver at the grid the error is quoted on -- never
     ``wall_time_s``. Returns None for a single-plan pool, where there is nothing to
     be relative to.
+
+    **And None for a pool that mixes cost sources** (F4). ``solve_time_s`` is CPU
+    time where the sandbox could measure it and wall time where it could not, and
+    those are not the same quantity: a forking solver's wall time is divided by its
+    worker count. A pool holding one of each would be ranked on which measurement
+    it got, so it is not ranked on cost at all. ``cost_source`` is absent on every
+    metrics block written before this landed, and a pool of those is uniform.
     """
     mine = _num(summary.get("solve_time_s"))
+    sources = {s.get("cost_source") for s in pool if isinstance(s, dict)}
+    if len({s for s in sources if s}) > 1 or "mixed" in sources:
+        return None
     times = sorted(t for t in (_num(s.get("solve_time_s")) for s in pool)
                    if t is not None and t > 0.0)
     if mine is None or mine <= 0.0 or len(times) < 2 or times[0] == times[-1]:
@@ -385,10 +480,33 @@ def cost(summary, pool):
 # --- the index ---------------------------------------------------------------
 
 
+def cost_admissible(tol, pool):
+    """May cost contribute to the index at all in this pool? (F4)
+
+    Only where **every** plan in the pool had its accuracy measured. Cost is
+    subordinate to correctness and decisive between equals, and that second clause
+    is the whole justification for the weight: the plans have to be equals, which
+    means the comparison that would have separated them has to have been made.
+
+    Where it has not been -- where the errors all sit inside their own Monte-Carlo
+    noise, which is all eleven BENCHOP B01-B04 plans -- renormalisation hands
+    accuracy's 0.35 to the components that remain, and cost goes from a tenth of the
+    index to a third of it. Measured there, in four pools of four, the most accurate
+    plan is the slowest and the index ranks it last. A component promoted by the
+    absence of the one it is subordinate to is not breaking a tie, it is deciding.
+
+    A single-plan pool is admissible and `cost` returns None for it anyway.
+    """
+    summaries = [s for s in pool if isinstance(s, dict)]
+    if len(summaries) < 2:
+        return True
+    return all(accuracy(s, tol) is not None for s in summaries)
+
+
 def components(summary, tol, pool=()):
     return {"accuracy": accuracy(summary, tol), "order": order(summary),
             "structure": structure(summary), "consistency": consistency(summary),
-            "cost": cost(summary, pool)}
+            "cost": cost(summary, pool) if cost_admissible(tol, pool) else None}
 
 
 def sqi(summary, tol, pool=(), *, keys=None):
@@ -416,9 +534,11 @@ def sqi(summary, tol, pool=(), *, keys=None):
     improve the rank.
     """
     parts = components(summary, tol, pool)
-    if keys is not None:
-        parts = {k: v for k, v in parts.items() if k in keys}
-    measured = {k: v for k, v in parts.items() if v is not None}
+    # `parts` is returned whole -- `cli.py rank` prints every component, `cost`
+    # included, and removing it from the *report* would hide a measurement rather
+    # than decline to rank on it. Only the weighted sum is restricted.
+    ranked = CERT_COMPONENTS if keys is None else keys
+    measured = {k: v for k, v in parts.items() if v is not None and k in ranked}
     if not measured:
         return None, parts
     total = sum(WEIGHTS[k] for k in measured)
@@ -426,8 +546,14 @@ def sqi(summary, tol, pool=(), *, keys=None):
 
 
 def sqi_cert(summary, tol):
-    """The index the certification reads: no cost component (see
-    :data:`CERT_COMPONENTS`)."""
+    """The index the certification reads.
+
+    Identical to :func:`sqi` since 2026-11-01, when cost left the index entirely
+    (see :data:`CERT_COMPONENTS`). Kept as its own name because the callers mean
+    different things by it -- `kernel/driver.py` wants "the index a certification
+    may depend on", and that it now coincides with the ranking index is a fact
+    about the weights, not something those callers should have to know.
+    """
     return sqi(summary, tol, keys=CERT_COMPONENTS)[0]
 
 
@@ -449,15 +575,49 @@ def rank_key(entry, pool=()):
     if not m:
         return (1, 0, 0, 0.0, float("inf"), 0)
     summary = m.get("summary") or m
-    index, _ = sqi(summary, _tol_of(summary, m), pool)
+    tol = _tol_of(summary, m)
+    index, _ = sqi(summary, tol, pool)
+    # `solve_time_s` used to sit here, below the index, breaking exact ties
+    # outright -- which is how three of the ten BENCHOP winners were chosen. It is
+    # gone for the reason :data:`CERT_COMPONENTS` gives: cost does not measure
+    # whether a plan is right, so it does not get to choose between plans, and a
+    # tiebreak is the most decisive form of choosing there is. Where score,
+    # provenance and the index all tie, `iter` decides; where that ties too the
+    # plans are genuinely indistinguishable on everything this kernel measures,
+    # and `decided_by` says so rather than reaching for the stopwatch (F7).
     return (
         0,
         -(_num(m.get("score")) or 0.0),            # score descending
         provenance_rank(m.get("provenance")),      # provenance order
         -(index if index is not None else -1.0),   # quality descending; unscored last
-        _num(summary.get("solve_time_s")) or float("inf"),   # cost ascending
         _num(entry.get("iter")) or 0.0,            # fewest iterations
     )
+
+
+#: The lexicographic keys :func:`rank_key` returns, in order, after the leading
+#: "was this scorable at all" flag. :func:`decided_by` names the first one that
+#: separated two entries.
+RANK_KEYS = ("score", "provenance", "sqi", "iter")
+
+
+def decided_by(winner, runner_up, pool=()):
+    """Which ranking key actually chose the winner over the runner-up. (F7)
+
+    An exhausted key is not a ranking. Where score, provenance, the index and
+    ``iter`` all tie, the ranker did not rank -- the pool is indistinguishable on
+    everything it can measure, and saying so is the whole point of this function.
+    It used to reach ``solve_time_s`` at that position and ship the fastest plan,
+    which was a defensible default and an indefensible silence; its absence from
+    the record is what made the BENCHOP analysis expensive. Since 2026-11-01 the
+    stopwatch is not consulted at all and the answer there is ``"tie"``.
+
+    Returns the key's name, or ``"tie"`` where every key is equal.
+    """
+    a, b = rank_key(winner, pool), rank_key(runner_up, pool)
+    for name, left, right in zip(RANK_KEYS, a[1:], b[1:], strict=True):
+        if left != right:
+            return name
+    return "tie"
 
 
 def _tol_of(summary, metrics):

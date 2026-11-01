@@ -611,6 +611,21 @@ def _martingale_stats(entry, ctx):
     m0 = entry.get("reference_value_at_T", ctx.initial_value())
     if m0 is None:
         return None, None
+    if isinstance(m0, str):
+        # `reference_value_at_T` is a *parameter name* at least as often as a
+        # literal -- the natural way to write "E[S_T] = S_0" is `"S_0"` -- and it
+        # was being handed straight to `float()`. Measured on
+        # `sde_heston_call_feller` across all three runs (2026-10-30, 10-31, 11-01):
+        # the spec declares `reference_value_at_T: "S_0"` with `parameters.S_0 =
+        # 100.0`, `float("S_0")` raised, and the martingale gate came back
+        # `not_reported` on every plan every time. `problem.md` headlines that
+        # check by name -- "the asset is a martingale: E[S(T)] = S0 exactly" -- so
+        # the one invariant the problem statement leads with had never run.
+        try:
+            m0 = np.asarray(evaluate(m0, ctx.expr_namespace())).tolist()
+        except Exception as exc:  # noqa: BLE001
+            return None, (f"reference_value_at_T {entry['reference_value_at_T']!r} is "
+                          f"neither a number nor evaluable against parameters: {exc}")
     reference = m0 if isinstance(m0, (list, tuple)) else [m0] * values.shape[1]
     out = []
     for i in range(values.shape[1]):

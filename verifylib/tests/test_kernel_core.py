@@ -250,7 +250,11 @@ def test_an_undeclared_plan_falls_back_rather_than_guessing(tmp_path):
         "---\nid: 1\nscheme_family: fd\nspatial_order: 6\n---\n")
     got = plan_meta.read(str(tmp_path))
     assert got == {"scheme_family": "fd", "spatial_order": 6, "scheme": None,
-                   "scheme_family_source": "declared", "declared": True}
+                   "scheme_family_source": "declared", "declared": True,
+                   # F18, and empty on a PDE plan: an exactly *sampled* transition
+                   # is an SDE notion, and the whole-dict comparison is kept rather
+                   # than loosened so a new field has to be acknowledged here.
+                   "exact_sampling_components": ()}
 
 
 # --- the asymptotic guards depend on the scheme family ------------------------

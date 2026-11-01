@@ -195,7 +195,7 @@ Follow the scheme selection rules in `sde_manual.md`:
   propose EM with a note on stability risk
 ```
 
-backed by [`references/sde_manual.md:168`](../../references/sde_manual.md#L168):
+backed by [`references/sde_manual.md:168`](../../references/sde_manual.md#L207):
 
 ```
 1. `noise_structure == "additive"` OR `state_dimension > 1` → EM only.
@@ -235,7 +235,7 @@ rule puts Euler first; the ranker ties; position decides.
 ## M5 — `scheme_family: other` penalises the schemes that are off-menu
 
 The frontmatter enum at
-[`agents/plan-creator-sde.md:62`](../../agents/plan-creator-sde.md#L62):
+[`agents/plan-creator-sde.md:62`](../../agents/plan-creator-sde.md#L88):
 
 ```
 scheme:        euler-maruyama | milstein
