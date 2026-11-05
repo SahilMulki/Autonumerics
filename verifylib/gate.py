@@ -18,7 +18,7 @@ import contextlib
 import json
 import os
 
-from . import leakage, review, schema
+from . import leakage, pool, review, schema
 from .findings import Finding, error, errors, warning
 
 #: Files each check owns, matched on basename.
@@ -151,6 +151,15 @@ def check_workspace(root, *, with_reference=True) -> list[Finding]:
             if filename in owned:
                 found.extend(check_path(os.path.join(directory, filename),
                                         with_reference=with_reference))
+        # ...and, where this directory *is* a problem, the checks that read the spec
+        # and all three plans together. Nothing per-file can see a pool that does not
+        # contain a good solver, which is the gap `pool.py` exists for: a declared
+        # exact transition no plan draws from, a conditionally tractable component no
+        # plan integrates out, a declared boundary no plan treats, or three plans that
+        # are two schemes. All warnings -- a thin pool is a fact about what the run
+        # established, never an invalid artifact.
+        if SPEC_FILE in filenames:
+            found.extend(pool.check_problem(directory))
     return found
 
 

@@ -310,13 +310,36 @@ def uncertainty(summary):
 
 
 def order(summary):
-    """Order fidelity against the scheme's **design** rate, two-sided.
+    """Order fidelity against the scheme's **design** rate, one-sided.
 
-    Two-sided because overshoot is not a bonus. A 2nd-order scheme measuring 4.0 has
-    a ladder outside its asymptotic range or a problem whose symmetry flattered it;
-    ``p_sane`` already refuses to call that asymptotic. A spectral scheme is the one
-    exception -- it converges faster than any algebraic rate, so exceeding the
-    declared order is expected and only falling short counts.
+    **Only a shortfall counts.** This was two-sided, on the argument that overshoot is
+    not a bonus: a 2nd-order scheme measuring 4.0 has a ladder outside its asymptotic
+    range or a problem whose symmetry flattered it. That argument is sound and belongs
+    somewhere else. ``richardson.guards``' ``p_sane`` already refuses to call such a
+    ladder asymptotic and the *score* already pays for it, so charging it again here
+    punishes one reading twice -- and does it in the rank key, where no acceptance
+    criterion can see the result, because it moves ranks rather than scores.
+
+    What the two-sided distance actually measured was distance from a **pass bar**.
+    ``order_floor`` is a floor -- 1.0, 0.0 on ``pde_kuramoto_sivashinsky``, and a
+    kernel-defaulted 0.5 on most SDEs -- and a scheme is not better for landing on it
+    exactly. Measured on ``sde_hhw_call_corr``: three Euler-Maruyama schemes read
+    ``observed_order`` 1.0078, 0.9924 and 1.0054 against a declared floor of 0.5, and
+    the two-sided branch ranked them 0.0000, 0.0152 and 0.0000 -- the plan furthest
+    below 1.0 winning, on a pool whose true errors were 0.0474, 0.7445 and 0.5017. The
+    component was anti-correlated with quality, which it is on any problem whose floor
+    sits below the scheme's real rate: the common case for additive and near-additive
+    noise. The module's own §19 rule already said so -- *an order above the theoretical
+    one is noise rather than a bonus* -- and noise is not a penalty either.
+
+    This also retires the ``order_band`` branch, and with it the last reader of a field
+    the ``<metrics>`` block did not carry (11-sde-accuracy-fixes.md §1, §3). The band
+    is still reported, because it is what ``crn.guards`` applied in deciding whether
+    the order *passed*; it just no longer decides a rank. One rule, and now one side.
+
+    A spectral scheme stays the one case that is not measurable at all -- not generous,
+    None: it converges faster than any algebraic rate, so a ladder order fitted off it
+    has no design target to be a fraction of.
 
     Returns None where the check was waived (`order_check: waived_spec` /
     `waived_chaotic`), where an SDE order study **abstained**
@@ -353,27 +376,12 @@ def order(summary):
     if observed is None or design is None or design <= 0.0:
         return None
     if summary.get("kind") == "sde" or summary.get("scheme_family") in _SDE_FAMILIES:
-        # `order_floor` carries the expected strong order, and the band around it is
-        # **the same band `crn.guards` applied** -- read off `order_band`, which the
-        # SDE driver copies from the guard's own `strong_band`, rather than re-derived
-        # here. One rule, three call sites (plan §11 D12): a second derivation is how
-        # this branch came to carry a two-sided penalty after `guards` stopped
-        # applying one, and it is invisible to every acceptance criterion because it
-        # moves ranks rather than scores.
-        #
-        # Two-sided when the band is absent, which is what every pre-D12 metrics file
-        # and every PDE summary carries: a missing field must not silently change how
-        # an existing artifact ranks.
+        # `order_floor` carries the expected strong order on an SDE, which is the bar
+        # `crn.guards` judged the plan against, so it is the bar a shortfall is
+        # measured from. `max(target, 0.5)` keeps the scale from collapsing on a
+        # floor of zero.
         target = _num(summary.get("order_floor")) or design
-        if str(summary.get("order_band") or "").startswith("one-sided"):
-            # Only a shortfall counts. Measured: a correct additive-noise
-            # Euler-Maruyama has strong order 1 and a defaulted floor of 0.5, so the
-            # two-sided distance scored it 0.028 -- last in its pool, on a right
-            # answer. `expected_orders`' own rule is that an inference must never
-            # make a test stricter, and §19's is that an order above the theoretical
-            # one is noise rather than a bonus.
-            return _clip01(1.0 - max(0.0, target - observed) / max(target, 0.5))
-        return _clip01(1.0 - abs(observed - target) / max(target, 0.5))
+        return _clip01(1.0 - _shortfall(observed, target) / max(target, 0.5))
     if summary.get("scheme_family") == "spectral":
         # Not measurable, and not for want of numbers. A spectral method's error is
         # not C*h^p, so an order fitted off the ladder is a local slope with no
@@ -390,7 +398,12 @@ def order(summary):
         # `richardson.guards` applies its own spectral branch (`p >= theoretical_
         # order`), and a failed `asymptotic` caps the score at 4 (manual §4).
         return None
-    return _clip01(1.0 - abs(observed - design) / design)
+    return _clip01(1.0 - _shortfall(observed, design) / design)
+
+
+def _shortfall(observed, target):
+    """How far ``observed`` falls short of ``target``, never how far it exceeds it."""
+    return max(0.0, target - observed)
 
 
 _SDE_FAMILIES = frozenset({"euler-maruyama", "milstein", "tamed-euler-maruyama",

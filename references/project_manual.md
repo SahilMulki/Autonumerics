@@ -253,31 +253,56 @@ parses it to rank plans when scores tie.
 
 ```
 <metrics>
+kind: sde | pde            # which kernel graded this plan; `ranking.order` branches on it
 score: 9
 certified: true            # every gate this evidence path requires came back clean
 provenance: analytic | analytic_unvalidated | surrogate | manufactured | manufactured_partial | self_convergence | none
 estimated_rel_error: 3.10e-03
 error_is_estimate: false
+error_horizon: 5.0                 # chaotic only -- where the error above was measured
+estimated_rel_error_T: 8.4e-01     # chaotic only -- the same statistic at the requested T
+graded_N: 256                      # the ladder level `problem.md` grades on...
+estimated_rel_error_graded: 2.9e-03  # ...and the pair-difference estimate there
 observed_order: 1.98
 order_floor: 1.50
+order_band: two-sided | one-sided (<reason>)   # which side of the floor counts, from `crn.guards`
 design_order: 2            # the scheme's own declared rate, from SOLUTION.md frontmatter
 scheme_family: fd
 invariants_ok: true
 constraints_ok: true
+cross_check_ok: true       # the spec's declared ordering between functionals held
+cross_check_violations: ["price_S75 (30) < price_S100 (12)"]   # ...and which did not
+functionals_ok: true       # did every *gated* declared functional converge on the ladder
 invariant_max_drift: 4.2e-12
+invariant_worst_headroom: 3.1      # the worst invariant's margin below its own bar, in decades
+invariants_not_reported: ["gaussianity"]   # declared invariants the kernel could not evaluate
 d1_outcome: clean | slow | stalled | unresolved | unavailable
 d1_slope: 1.98
 operator_validated: true
 reference_outcome: validated       # what the reference check said about the closed form
+analytic_numerical: series(64 terms)   # a closed form that discretizes a sum or quadrature
+mean_rel_err: 1.2e-03      # SDE only -- `estimated_rel_error` is the worst of these two
+variance_rel_err: 3.1e-03  # SDE only
+functional_name: price_K1          # the declared quantity of interest that binds...
+functional_rel_tol: 3.0e-03        # ...the tolerance it is graded against...
+functional_rel_error: 7.0e-04      # ...and its dt bias plus its sampling term
+functional_bias_rel: 4.0e-04       # the same error split: what `dt` costs...
+functional_se_rel: 3.0e-04         # ...and what the path count costs
+functional_limited_by: sampling | bias | both | unavailable   # which of the two binds
+error_fs: 1.25             # Roache's factor of safety, divided back out before ranking
 order_check: true | waived_spec | waived_chaotic
 asymptotic_source: ladder | probe
 mc_se_rel: 0.0041          # SDE only
 resolved: true             # SDE only
 dynkin_z: 1.4              # SDE only -- extrapolated generator residual, in its own s.e.
+dynkin_bar: 2.43           # SDE only -- the family-wise bar that `z` is judged against
+ci_mult: 2.0               # SDE only -- the multiplier on a reported standard error
 resolution_evidence: not_used_as_accuracy_evidence
 agent_cap: {"score": 3, "reason": "..."}   # only when the evaluator capped downward
+solver_sha256: 3f9c...     # the solver the score belongs to
 solve_time_s: 0.83         # the solver, at the graded grid
 wall_time_s: 12.4          # the whole evaluation
+cost_source: cpu | wall | mixed    # which of the two `solve_time_s` is
 </metrics>
 ```
 
@@ -296,6 +321,17 @@ early-exit and `benchmark/report.py`'s `VERIFIED_PASS` have always been asking. 
 `rel_l2_err_max` certifies exactly as one three decades inside it does, and does not score the same.
 Rank on `score`; exit and gate on `certified`.
 
+**`resolved` and `functional_limited_by` answer different questions, and the retry reads the second.**
+`resolved` is a **moment-space** claim: did the variance estimate separate from its reference by more
+than the sampling noise at the path count that ran. It bears on the score, and `score.rubric_sde`
+reads it. It says nothing about the quantity the problem is graded on where that is a declared
+functional — the two can disagree in both directions, and once accuracy is ranked on the functional
+(see `ranking.accuracy`) a gate on `resolved` is gating on a different number than the one being
+selected. So the kernel publishes the graded quantity's own verdict beside it:
+`functional_limited_by` names which half of `functional_rel_error` binds, and it — not `resolved` —
+is what decides whether the fix is paths or `dt`. Neither field replaces the other, and neither
+should be read as the other.
+
 **`solve_time_s`, not `wall_time_s`, is the cost — and cost is a diagnostic, not a ranking key.**
 `wall_time_s` is the whole evaluation — the ladder, MMS, D1, the temporal probe — which
 `verification_manual.md` §24 prices between 1.0× and 35× depending on evidence path and which
@@ -312,8 +348,17 @@ measurements that settled it.
 `order_floor` is a pass bar — 1.0, and 0.0 on `pde_kuramoto_sivashinsky` — so
 `observed_order − order_floor` is not a quality margin, and on an algebraic scheme a large positive
 one is evidence the ladder is *not* asymptotic (`richardson.guards`' `p_sane`). On the SDE side
-`order_floor` carries the expected **strong** order, which is a target with a two-sided band, not a
-floor: the quantity to compare is `|observed_order − order_floor|`, and smaller is better.
+`order_floor` carries the expected **strong** order.
+
+**Only a shortfall counts, on both sides.** Since 2026-11-05 `ranking.order` charges
+`max(0, target − observed)` and never `|observed − target|`: over-performance caps the component at
+1.0. A ladder running *above* its design rate is not asymptotic and that is already paid for in the
+score, by `p_sane`; charging it again in the rank key punishes one reading twice, in the one place no
+acceptance criterion can see the result. Measured on `sde_hhw_call_corr`, the two-sided reading
+ranked three Euler-Maruyama schemes reading 1.0078 / 0.9924 / 1.0054 against a declared floor of 0.5
+as 0.0000 / 0.0152 / 0.0000 — the plan furthest below 1.0 winning, against true errors of 0.0474 /
+0.7445 / 0.5017. `order_band` records which band the order *check* applied and is no longer read by
+the ranking.
 
 ## Evaluation Thresholds
 

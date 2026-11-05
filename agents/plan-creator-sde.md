@@ -30,6 +30,20 @@ Follow the scheme selection rules in `sde_manual.md`, **starting with rule 0**:
   `exact_sampling_components: <indices>`. An exact transition carries no discretization error at
   any `dt`, which no amount of step refinement buys back.
   Key this on the spec fields, never on recall of which SDEs have closed transition laws.
+  **`scheme_family: exact-transition` is what makes this count.** `exact_sampling_components` alone
+  tests non-consumption of the supplied increments, which a moment-matched approximation such as
+  Andersen QE satisfies while still carrying a discretization bias — so a QE plan declaring the
+  component does *not* discharge this obligation, and `verifylib/pool.py` reports the pool as having
+  left the declared law unused. QE is still worth proposing and still must declare the component;
+  it is not a substitute for a plan that draws from the law.
+- **Step 1a′ — is one component tractable given the others?** `sde_manual.md` rule 0b. Read
+  `verification.generator`: where a component's own drift and diffusion row are of degree at most
+  one in it, and no other component's coefficients read it, its conditional law is closed form and
+  it can be **integrated out instead of sampled** — conditional Monte Carlo, which removes that
+  leg's sampling variance entirely rather than reducing it. Propose one plan that does, and declare
+  the integrated-out component in `exact_sampling_components`, since it is not stepped with the
+  supplied increments at all. This appeared in zero of thirty plans on a suite where it was
+  available and worth 37× on one strike.
 - **Step 1b — Milstein eligibility**, which is what the rules below are about:
   - **Additive noise OR multi-D** → Milstein is ruled out (no Lévy areas). This rules out
     *Milstein*; it does **not** mean "Euler-Maruyama only". Rule 0 and step 1c still apply.
@@ -40,6 +54,19 @@ Follow the scheme selection rules in `sde_manual.md`, **starting with rule 0**:
   an antithetic pair or a control variate on a correlated analytically-priced instrument, and
   report the combined estimator's `functional_se`. This is the only axis on which two plans running
   the same scheme at the same `dt` are distinguishable to a kernel with no answer key.
+
+  **Do not spend a plan slot on it.** Apply the variance reduction to a scheme already in the pool
+  rather than proposing *scheme X* and *scheme X plus a control variate* as two plans. A wrapper
+  does not change the pathwise dynamics, so the CRN ladder measures the same strong order on both —
+  identically — and the pool reads as three plans while being two. Four of the ten pools on the
+  BENCHOP suite were in exactly that state, and `verifylib/pool.py` now reports it.
+- **Step 1d — a declared boundary.** Where `verification.structural_facts.barrier` or
+  `.absorbing_boundary` is declared, at least one plan must treat the crossing explicitly and
+  declare `boundary_treatment:` in its frontmatter. Discrete monitoring of a continuous crossing is
+  wrong at O(√dt) whatever the step scheme's order, so no refinement reaches it; the treatments are
+  a Brownian-bridge crossing probability, an exact absorption rule, or a reflection argument.
+  `boundary_treatment: none` plus the argument for why the payoff is insensitive is a legitimate
+  answer; silence is what the gate reports.
 - **Keep a discretised plan in every pool** as the cross-check. Agreement between an exact-transition
   plan and a discretised one on the graded price is a genuine circularity break; agreement between
   two plans of the same family is not.
@@ -87,6 +114,7 @@ plan_slug: {kebab-slug}
 scheme: euler-maruyama | milstein | exact-transition | quadratic-exponential | ...
 scheme_family: euler-maruyama | milstein | tamed-euler-maruyama | tamed-milstein | implicit | exact-transition | quadratic-exponential | other
 exact_sampling_components: {comma-separated state indices, omit where none}
+boundary_treatment: {brownian-bridge | absorption | reflection | none — only where the spec declares a barrier or absorbing boundary}
 strategy: {one-sentence summary}
 ---
 

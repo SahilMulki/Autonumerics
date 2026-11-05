@@ -184,14 +184,22 @@ UNREAD = {
     # plan clears the external gate at two seeds of three. So a replication gate is
     # worth building and these are the fields it will read -- but it costs a second
     # graded-scale solve per plan, which is a budget decision and not a bug fix.
-    "num_paths_replicate": "declared replication knob, no consumer yet; the gate "
-                           "that will read it is the one the seed study argues for",
-    "num_paths_secondary": "declared replication knob, no consumer yet; see "
-                           "num_paths_replicate",
-    "replication_check": "a declared check with no consumer. The kernel replicates "
-                         "only the Dynkin residual (`seed_replicates`), which is a "
-                         "different question from whether the graded answer is "
-                         "stable across seeds",
+    # Retired 2026-11-05, and the argument kept because only the *exemption* went
+    # stale. `num_paths_replicate`, `num_paths_secondary` and `replication_check` are
+    # the declared place to configure a second solve at a different path count, and
+    # nothing re-solves. No live spec declares any of the three any more -- the
+    # BENCHOP corpus turned over -- so the entries had become the dead weight this
+    # file's own guard test exists to catch: an exemption for a field no spec carries
+    # reads as a known gap in a check that is not missing.
+    #
+    # The evidence has not aged, only the spelling. Measured 2026-10-29 by re-solving
+    # the eleven BENCHOP B01-B04 plans at two further seeds: per-plan harness error
+    # carries 9% to 97% relative spread, median ~35%, and on one problem the shipped
+    # plan clears the external gate at two seeds of three. So a replication gate is
+    # still worth building and these are still the fields it will read; it costs a
+    # second graded-scale solve per plan, which is a budget decision rather than a bug
+    # fix. A formulator that declares them again will meet the guard and reopen the
+    # question on this paragraph, which is what the table is for.
     # --- structural facts the kernel reaches by another route -----------------
     # Retired 2026-10-31. `second_call_num_paths` and `attainable_boundary` were
     # declared only by the October Opus `sde_heston_call_feller` spec, which a
@@ -201,10 +209,14 @@ UNREAD = {
     # meet the guard and have the question reopened, not find a stale pass waiting.
     # `second_call_num_paths` has a live successor that *is* read --
     # `graded_num_paths`, which the memory projection in `sde/driver.py` consumes.
-    "feller_condition": "guidance: it tells the plan-creator whether the variance "
-                        "process can reach zero and therefore which scheme to "
-                        "propose. The kernel grades the resulting moments and the "
-                        "declared domain invariant, not the classification",
+    # `feller_condition` was retired on the same date and for the same reason: no live
+    # spec declares it. Its argument also stands -- it was guidance telling the
+    # plan-creator whether the variance process can reach zero and therefore which
+    # scheme to propose, and the kernel grades the resulting moments and the declared
+    # domain invariant rather than the classification. What the current corpus states
+    # instead is `verification.structural_facts.boundary` ("Feller condition violated:
+    # 2*kappa*eta = 0.22188 < sigma^2 = 1, V attains zero"), in prose, which is the
+    # same fact one field over.
 }
 
 #: A key whose name ends -- or begins -- with one of these is prose by convention.
@@ -316,3 +328,136 @@ def test_the_unread_table_names_only_fields_some_live_spec_declares():
         _declared_keys(json.load(open(path)), out=(d := {}))
         declared |= set(d)
     assert set(UNREAD) <= declared, sorted(set(UNREAD) - declared)
+
+
+# --- the third direction: read by the ranker, never carried to it -------------
+#
+# `11-sde-accuracy-fixes.md` §1. The two directions above are about the *kernel*:
+# a spec field nothing reads, and a metrics key nothing reads. This one is about
+# the reporting boundary between the kernel and selection, and it was open the
+# whole time the other two were guarded.
+#
+# `ranking.py` takes a `summary` dict. The only summary it is ever handed in
+# production is `review.parse_metrics(SOLUTION.md)` -- the rendered `<metrics>`
+# block, which `metrics.render_block` filters through the `BLOCK_KEYS` whitelist.
+# So a key `ranking.py` reads that is not on that whitelist is read from a dict
+# that cannot contain it: the component silently returns None and its weight is
+# renormalised onto the others.
+#
+# Measured when this test was written: four keys were in that state --
+# `functional_rel_error`, `functional_rel_tol`, `order_band` and `kind`. The first
+# two are the whole of F3, so `ranking.accuracy` had never once scored the quantity
+# a BENCHOP problem is graded on, on any of the thirty plans on disk; it fell
+# through to a state moment instead. It had happened twice, to two separate
+# findings' fields, and nothing could see it, because adding a key to one list and
+# not the other moves ranks rather than scores and no acceptance criterion reads
+# ranks.
+
+#: Keys ``ranking.py`` reads through a variable rather than a literal, which the
+#: AST walk below cannot see. One entry, in :func:`ranking.headroom_decades`, which
+#: builds ``keys`` and then calls ``summary.get(key)`` in a loop.
+RANKING_INDIRECT_READS = ("estimated_rel_error_graded", "estimated_rel_error_T")
+
+
+def _ranking_summary_reads():
+    """Every ``summary`` key :mod:`verifylib.ranking` reads by literal name."""
+    path = os.path.join(REPO, "verifylib", "ranking.py")
+    with open(path, encoding="utf-8") as fh:
+        tree = _strip_docstrings(ast.parse(fh.read()))
+    found = set()
+
+    def _name(node):
+        return node.id if isinstance(node, ast.Name) else None
+
+    for node in ast.walk(tree):
+        # `summary.get("x")`, and the same read off a pool member (`s.get("x")`).
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get" and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+                and _name(node.func.value) in ("summary", "s")):
+            found.add(node.args[0].value)
+        # `summary["x"]`
+        if (isinstance(node, ast.Subscript) and _name(node.value) in ("summary", "s")
+                and isinstance(node.slice, ast.Constant)
+                and isinstance(node.slice.value, str)):
+            found.add(node.slice.value)
+    return found
+
+
+def test_ranking_inputs_are_all_on_the_metrics_block():
+    """Every key the ranker reads is a key the block carries.
+
+    The failure this exists to catch is structural and silent: `ranking.py` and
+    `BLOCK_KEYS` are two lists that have to agree, and until now nothing made them.
+    """
+    from verifylib.kernel.metrics import BLOCK_KEYS
+
+    reads = _ranking_summary_reads() | set(RANKING_INDIRECT_READS)
+    missing = sorted(reads - set(BLOCK_KEYS))
+    assert not missing, (
+        "ranking.py reads summary keys that `metrics.BLOCK_KEYS` does not carry, so "
+        "they are never in the dict it is handed and the components that read them "
+        f"return None on every plan: {missing}. Add them to BLOCK_KEYS (and to "
+        "`references/project_manual.md`'s block specification), or stop reading "
+        "them.")
+    # The walk has to actually find things; a regex-shaped refactor of `ranking.py`
+    # that hid every read would make this test vacuously green.
+    assert len(reads) >= 18, f"the AST walk found only {len(reads)} reads"
+
+
+def test_the_indirect_ranking_reads_are_still_indirect():
+    """:data:`RANKING_INDIRECT_READS` is a hand-maintained escape hatch, so it needs
+    its own guard: an entry that has become a literal read is covered by the walk and
+    should be dropped, and an entry naming a key `ranking.py` no longer reads at all
+    is dead weight that reads as a known gap."""
+    path = os.path.join(REPO, "verifylib", "ranking.py")
+    with open(path, encoding="utf-8") as fh:
+        source = ast.unparse(_strip_docstrings(ast.parse(fh.read())))
+    direct = _ranking_summary_reads()
+    for key in RANKING_INDIRECT_READS:
+        assert key not in direct, f"{key} is read by literal now; drop the exemption"
+        assert re.search(r"\b" + key + r"\b", source), (
+            f"{key} is no longer read by ranking.py at all; drop the exemption")
+
+
+#: The block's second home. ``verification_manual.md`` §2 says the fields are
+#: specified **once**, in ``project_manual.md`` -- *The `<metrics>` Block* -- and
+#: emitted by ``BLOCK_KEYS``; it says so because the two copies had already drifted
+#: once and "a schema with two homes is a schema with none". Saying it was not
+#: enough: measured when this test was written, the manual carried 24 of the then-38
+#: keys, missing `graded_N`, `mean_rel_err`, `variance_rel_err`, `solver_sha256` and
+#: ten others. A prose rule about one list needs a test, like any other.
+MANUAL = os.path.join(REPO, "references", "project_manual.md")
+_MANUAL_BLOCK_RE = re.compile(
+    r"## The `<metrics>` Block.*?```\n<metrics>\n(.*?)\n</metrics>\n```", re.S)
+
+
+def _manual_block_keys():
+    with open(MANUAL, encoding="utf-8") as fh:
+        text = fh.read()
+    match = _MANUAL_BLOCK_RE.search(text)
+    assert match, f"no `<metrics>` example block found in {MANUAL}"
+    out = []
+    for line in match.group(1).splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line and ":" in line:
+            out.append(line.split(":", 1)[0].strip())
+    return out
+
+
+def test_the_manual_and_block_keys_name_the_same_fields_in_the_same_order():
+    """The example block in ``project_manual.md`` *is* the specification, so it has to
+    be the whole specification. Order too: the manual is what a reader learns the
+    block from, and a field in a different place reads as a different field."""
+    from verifylib.kernel.metrics import BLOCK_KEYS
+
+    manual, keys = _manual_block_keys(), list(BLOCK_KEYS)
+    assert sorted(set(manual)) == sorted(set(keys)), (
+        "`references/project_manual.md`'s `<metrics>` block and "
+        "`metrics.BLOCK_KEYS` disagree.\n"
+        f"  in BLOCK_KEYS, not in the manual: {[k for k in keys if k not in manual]}\n"
+        f"  in the manual, not in BLOCK_KEYS: {[k for k in manual if k not in keys]}")
+    assert manual == keys, (
+        "same fields, different order; the manual is read top to bottom\n"
+        f"  manual: {manual}\n  BLOCK_KEYS: {keys}")

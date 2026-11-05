@@ -204,6 +204,14 @@ more accurate on seven.
    a pass: it costs the plan the order check's evidence instead of charging it a penalty it did not
    earn. Declaring it on a component you discretised buys nothing and loses the check.
 
+   The *graded functional's* dt-bias term abstains too, but only where **every** component is
+   declared exact — there the whole state is drawn from its exact law and there is no discretization
+   anywhere. A partially exact plan is charged its bias in full, because the graded quantity depends
+   on the whole state and one discretised leg biases it however exactly the others are drawn.
+   Measured on `sde_sabr_cev_call_i` plan 1 (forward exact, volatility stepped): its ladder reads
+   observed orders 1.90–2.29 with clean factor-of-four difference ratios, a real second-order
+   convergence, and abstaining on it promoted the plan over one 2.3× more accurate.
+
    **This covers moment-matched schemes, not only literally exact ones — Andersen's QE included.**
    The field is named for the case it was written for and the name reads narrower than the rule.
    QE's variance leg draws `Z_V` and `U` fresh each step as a moment-matched approximation to the
@@ -221,6 +229,39 @@ more accurate on seven.
    is declare it for a component you actually stepped with the supplied increments: there a
    near-zero order is a real defect and the declaration hides it.
 
+0b. **Where one component is tractable given the others, integrate it out instead of sampling it.**
+   This is conditional Monte Carlo, also called Rao–Blackwellisation, and it is a different
+   technique from a control variate: a control variate *reduces* a component's sampling variance,
+   conditioning removes it **entirely**, replacing the sampled leg with its conditional
+   expectation.
+
+   The triggering condition is structural and readable off `verification.generator`, which states
+   the drift and the diffusion matrix as expressions in `X[:, i]`. Component *i* qualifies when
+   both hold:
+
+   - its own drift and every entry of its diffusion row are **of degree at most one in `X[:, i]`**,
+     so with the other components' paths fixed its equation integrates in closed form — a
+     time-changed geometric Brownian motion, or an Ornstein–Uhlenbeck bridge;
+   - **no other component's coefficients read `X[:, i]`**, so those paths can be generated first.
+
+   Heston is the standard instance: the asset's diffusion is `sqrt(max(V, 0)) · S`, degree one in
+   `S`, and the variance leg never reads `S`. So given the variance path, `S_T` is lognormal with
+   known integrated variance, and the call price is a Black–Scholes formula averaged over variance
+   paths — the asset leg's sampling error is gone rather than halved. The same shape covers
+   Heston–Hull–White, SABR with a tractable forward leg, and any stochastic-volatility model whose
+   volatility process is autonomous.
+
+   Where it holds, propose at least one plan that conditions, and declare the integrated-out
+   component in `exact_sampling_components` — it is not stepped with the supplied increments at all,
+   which is what that field tests. `verifylib/pool.py` detects the condition from the declared
+   generator and reports a pool where no plan takes it, so this is checked rather than suggested.
+
+   Measured: conditional Monte Carlo appeared in **zero of the thirty** plans on the BENCHOP suite,
+   and in the best unaided model draw on `sde_heston_call_feller`, where it is responsible for a 37×
+   accuracy gap on the out-of-the-money strike. No path count reaches it: that pool's own
+   work-precision study went 500k → 2M paths and the error got *worse*, 0.003647 → 0.004019, because
+   the estimator is bias-dominated and more paths tighten the term that is not binding.
+
 1. **`noise_structure == "additive"` OR `state_dimension > 1`** → **Milstein** adds no value for
    additive noise (dg/dX = 0) and is not well-defined for multi-D without Lévy areas. This rule
    rules Milstein out; it does **not** rule everything but EM in — see rule 0, and consider an
@@ -234,6 +275,38 @@ more accurate on seven.
    correlated analytically-priced instrument cuts the standard error at the same path count, and
    `functional_se` is where that shows up. It is the one axis on which two plans running the same
    scheme at the same `dt` are distinguishable without an answer key.
+
+   **But a variance-reduced copy is not a third plan.** A wrapper does not change the pathwise
+   dynamics, so the common-random-number ladder measures the same strong order on *scheme X* and on
+   *scheme X plus a control variate* — identically, to the last digit — and every other statistic
+   the kernel computes on the pair agrees too. Measured: **four of the ten** BENCHOP pools contained
+   such a pair (orders 0.4862, 1.0078, 1.0036, 0.5445, each shared by two plans of one family), so a
+   three-plan pool was a two-plan pool and nothing detected it until `verifylib/pool.py` did. Where
+   a third *scheme* is available — rule 0, rule 0b, a Milstein where it is eligible, an implicit
+   treatment of a stiff leg — propose that, and apply the variance reduction to one of the schemes
+   already in the pool rather than spending a plan slot on it.
+
+5. **Where the spec declares a boundary the answer is sensitive to, treat the crossing explicitly.**
+   `verification.structural_facts.barrier` and `.absorbing_boundary` are declarations that the
+   problem has one: a continuous barrier the payoff is monitored against, or a level the state
+   reaches and stays at.
+
+   Discrete monitoring of a continuous crossing is wrong at **O(√dt)** whatever the step scheme's
+   order, because the path can cross and return between two grid points. That error does not respond
+   to a better step scheme and is not what `dt` refinement buys — a second-order scheme monitored
+   discretely still carries it. The treatments are a Brownian-bridge crossing probability applied
+   per step, an exact absorption rule for a level the state cannot leave, or a reflection argument.
+
+   Declare which, in the frontmatter:
+
+   ```yaml
+   boundary_treatment: brownian-bridge    # or: absorption | reflection | none
+   ```
+
+   `boundary_treatment: none` is a legitimate declaration where the plan has the argument that the
+   payoff is insensitive to the crossing — say the argument in the Implementation Notes. What is not
+   legitimate is silence, which is what `verifylib/pool.py` reports: a pool where a declared barrier
+   or absorbing boundary is named by the spec and by no plan.
 
 ---
 

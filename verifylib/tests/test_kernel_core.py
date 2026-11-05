@@ -254,7 +254,13 @@ def test_an_undeclared_plan_falls_back_rather_than_guessing(tmp_path):
                    # F18, and empty on a PDE plan: an exactly *sampled* transition
                    # is an SDE notion, and the whole-dict comparison is kept rather
                    # than loosened so a new field has to be acknowledged here.
-                   "exact_sampling_components": ()}
+                   "exact_sampling_components": (),
+                   # ...which is what this line is: acknowledged 2026-11-05. How the
+                   # plan treats a boundary the spec declared the answer to be
+                   # sensitive to, read by `pool.check_boundary_facts`. Also an SDE
+                   # notion, and also None rather than absent on a PDE plan, so the
+                   # shape of this dict does not depend on which kernel reads it.
+                   "boundary_treatment": None}
 
 
 # --- the asymptotic guards depend on the scheme family ------------------------

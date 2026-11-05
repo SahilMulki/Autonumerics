@@ -10,6 +10,7 @@ faithfully would be a failure, not a pass.
 Plan §12a (3) makes the achievable half explicit: reproduce every metric whose
 inputs exist, and enumerate the plans where they do not, naming the missing input.
 """
+import contextlib
 import glob
 import json
 import os
@@ -112,6 +113,41 @@ def test_the_cli_is_the_entry_point_and_emits_a_pasteable_metrics_block():
     # Criterion 12a(1): every configured value carries where it came from.
     assert all(set(v) == {"value", "source"} for v in metrics["config"].values())
     assert metrics["config"]["grid_N"]["source"] == "spec"
+
+
+def test_the_evaluation_leaves_its_full_metrics_beside_the_plan():
+    """Fix 0 of `11-sde-accuracy-fixes.md` §9.2. `render_block` keeps a whitelist and
+    the rest of what the kernel measured is gone when the evaluator's turn ends, so
+    nothing on disk records it.
+
+    That is not a hypothetical cost. Answering "did F3 ever fire?" took ten solver
+    re-runs rather than a grep; three documents in `docs/improving-autonumerics/` have
+    failed to reproduce against `workspace/` and none of the three could be
+    attributed. `evaluation.json` is cheap, and it is the same root cause as the
+    whitelist itself -- information discarded at a reporting boundary.
+    """
+    directory = os.path.join(WORKSPACE, "pde_heat_1d", "plans", "3-fd4-rk4")
+    if not os.path.isdir(directory):
+        pytest.skip("pde_heat_1d not staged")
+    recorded = os.path.join(directory, "evaluation.json")
+    with contextlib.suppress(OSError):
+        os.remove(recorded)
+    cli = os.path.join(REPO, "verifylib", "cli.py")
+    got = subprocess.run([sys.executable, cli, "evaluate", directory],
+                         capture_output=True, text=True, check=False, cwd=REPO)
+    assert got.returncode == 0, got.stderr
+    assert os.path.exists(recorded), "the kernel's own measurements were not recorded"
+    assert recorded in got.stdout, "the path is not reported, so nobody will find it"
+    with open(recorded, encoding="utf-8") as fh:
+        saved = json.load(fh)
+    # The whole dict, not the block: the detail is the point.
+    assert saved["score"] == 10
+    assert saved["checks"] and saved["detail"], "only the summary was kept"
+    # Every key the block would have rendered is in here too, so the record is a
+    # superset of what a reader has today rather than a different view of it.
+    from verifylib.kernel.metrics import flatten
+    flat = flatten(saved)
+    assert "order_ok" in flat and "estimated_rel_error" in flat
 
 
 def test_the_config_records_the_source_of_every_value():

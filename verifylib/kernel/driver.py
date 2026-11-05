@@ -257,7 +257,8 @@ def evaluate_pde(spec, plan_dir, agent):
     # run not converged: the problem is scored on that number, so "converged" cannot
     # mean the field alone. Absent a declaration this is `unavailable` and folds in as
     # a no-op -- only an explicit failure downgrades.
-    fn = functionals.run_declared(thresholds, runs)
+    fn = functionals.run_declared(thresholds, runs,
+                                  design_order=m["summary"].get("design_order"))
     m["functionals"] = fn
     metrics.record(m, "functionals_ok", fn["functionals_ok"],
                    outcomes=fn["outcomes"], errors=fn["errors"], values=fn["values"],

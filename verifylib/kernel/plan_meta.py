@@ -14,6 +14,7 @@ So the plan-creators now declare two fields, and this reads them::
     scheme_family: fd | spectral | fv | fe | other
     spatial_order: 2
     exact_sampling_components: 0, 1
+    boundary_treatment: brownian-bridge
 
 **Parse the frontmatter block, never grep for ``^scheme:``.** A body line beginning
 ``scheme:`` already exists in
@@ -156,6 +157,7 @@ def read(plan_dir):
     except OSError:
         return {"scheme_family": None, "spatial_order": None, "scheme": None,
                 "scheme_family_source": "unknown", "declared": False,
+                "boundary_treatment": None,
                 "exact_sampling_components": ()}
     front = parse_frontmatter(head)
     family = (front.get("scheme_family") or "").strip().lower() or None
@@ -172,6 +174,17 @@ def read(plan_dir):
             "scheme": scheme,
             "exact_sampling_components": parse_components(
                 front.get("exact_sampling_components")),
+            # How this plan handles a boundary the spec declared the answer to be
+            # sensitive to: a Brownian-bridge crossing correction, an exact absorption
+            # rule, or the word `none` with the plan's argument for why the payoff is
+            # insensitive. Declared and never inferred, like `scheme_family`: a
+            # crossing treatment is a fact about the scheme that the kernel must trust,
+            # and inferring one from a plan's slug would let a plan rename itself into
+            # a clean pool report. `pool.check_boundary_facts` is the reader, and until
+            # 2026-11-05 `verification.structural_facts.barrier` and
+            # `.absorbing_boundary` were declared in live specs and read by nothing.
+            "boundary_treatment": (front.get("boundary_treatment") or "").strip()
+                                  or None,
             "scheme_family_source": ("declared" if family else
                                      "inferred" if inferred else "unknown"),
             "declared": bool(family is not None or order is not None)}

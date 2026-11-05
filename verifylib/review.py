@@ -39,6 +39,12 @@ BOUND_KEYS = (
     "error", "estimated_rel_error", "rel_error", "fine_grid_error", "tolerance",
     "observed_order", "order", "order_floor",
     "variance_rel_err", "mean_rel_err", "mc_se_rel", "wall_time_s",
+    # The graded quantity of interest, which `evaluator-sde.md`'s template now asks
+    # for and which is the accuracy claim wherever the spec declares one. Bindable
+    # only since the `<metrics>` block started carrying the field: before that this
+    # key would have produced the *other* finding below -- "a quantity the block does
+    # not carry" -- on every SDE review that reported it correctly.
+    "functional_rel_error",
 )
 
 _SECTION_RE = re.compile(r"^#{2,4}\s*(.+?)\s*$", re.M)

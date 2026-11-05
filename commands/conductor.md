@@ -74,6 +74,37 @@ If `STATE.phase == init`:
    - PDE: `plan-creator-pde` with argument `workspace/{problem_slug}`
    - Wait for return.
 7. Read `workspace/{problem_slug}/plans/` to enumerate plan directories.
+
+   **Then check the pool, before any solver runs.** Run
+
+   ```bash
+   uv run python "${CLAUDE_PLUGIN_ROOT}/verifylib/cli.py" gate workspace/{problem_slug}
+   ```
+
+   and read every `warning: pool [...]` line. These are findings about the **set** of plans rather
+   than about any one of them, and they are the cheapest thing in the pipeline to act on here and
+   the most expensive to act on later — a thin pool costs three full solve-evaluate-refine cycles
+   before anything can notice. Four kinds:
+
+   | the warning says | what to do |
+   |---|---|
+   | a declared `terminal_law` that no plan draws from | re-dispatch the plan-creator for **one** replacement plan that declares `scheme_family: exact-transition` plus that component. An exact draw carries no discretisation error at any `dt`, which no step refinement buys back |
+   | a **conditionally tractable** component no plan integrates out | re-dispatch for one plan that conditions on the driving components. This removes that leg's sampling variance entirely, which is a different thing from a control variate and unreachable by raising the path count |
+   | a declared **barrier or absorbing boundary** no plan treats | re-dispatch for one plan declaring a `boundary_treatment:`. Discrete monitoring is wrong at O(√dt) whatever the step scheme's order |
+   | two plans that are **the same scheme measured twice** | re-dispatch for a third *scheme*, not a third estimator. Fold the variance reduction into one of the schemes already in the pool |
+
+   Re-dispatch at most once, record what the pool was missing under `pool_findings:` in STATE.md,
+   and proceed either way — a warning is a fact about what the run can establish, never a block. If
+   the plan-creator cannot supply the technique, say so in STATE.md and carry it through to
+   REPORT.md as a verification gap: the reader needs to know the pool's ceiling was set here.
+
+   **Why this is a phase and not advice.** `sde_heston_call_feller` and `sde_heston_call_hivar` are
+   the same problem class under the same code and declare the same `terminal_law`. One pool
+   contained an exact non-central χ² transition; the other contained three discretisations of it and
+   a pool ceiling 15× behind a single unaided model draw. The difference was which spec's free-text
+   notes happened to mention the scheme — so plan quality was a lottery on prose, and the structured
+   field that should have decided it was read by nothing. See
+   `docs/improving-autonumerics/11-sde-accuracy-fixes.md` §4.
 8. Update STATE.md to `phase: running`, with each plan initialized:
    - `state: await_solver`
    - `iter: 0`
@@ -118,7 +149,18 @@ Run solver↔evaluator cycles until a plan **wins** (`certified: true`) or every
 
 **An unresolved measurement blocks the stop.** A plan whose `<metrics>` block records `resolved: false` — the kernel could not resolve its own accuracy statistic against the sampling noise at the path count it ran — may **not** be marked `state: stopped` on the plateau rule until that has been acted on once. A plateau there says the evaluator found nothing to fix, and it is right: the defect is not in the scheme, it is that the run did not measure anything. Instead:
 
-- Dispatch the solver once with the single instruction to **raise `num_paths`** (or to add the variance reduction the plan already describes) until `mc_se_rel` is below the accuracy the problem's tolerance demands, changing nothing else. Record `unresolved_retry: true` under the plan in STATE.md.
+- Dispatch the solver once with a single instruction, **and read `functional_limited_by` in the `<metrics>` block to decide which instruction it is.** The kernel splits the graded functional's error into a `dt` bias and a sampling term and names the one that binds:
+
+  | `functional_limited_by` | the plan is | the instruction |
+  |---|---|---|
+  | `sampling` | sampling-limited | **raise `num_paths`**, or add the variance reduction the plan already describes, until `functional_se_rel` is below the tolerance — changing nothing else |
+  | `bias` | discretisation-limited | **reduce `dt`**, or move to a scheme that carries less bias (an exact transition where the problem's law admits one) — changing nothing else. More paths cannot touch this term |
+  | `both` | limited by both | say so, and ask for both. Neither alone gets under the gate |
+  | `unavailable`, or no functional declared | not split | fall back to **raise `num_paths`** until `mc_se_rel` is below the accuracy the tolerance demands |
+
+  Record `unresolved_retry: true` under the plan in STATE.md, and record which instruction was given.
+
+  **Why this is not unconditionally "raise `num_paths`".** It was, and on a bias-dominated plan that spends a solver cycle on the term that is not binding. Measured on `sde_heston_call_feller`: its work-precision study went 500k → 2M paths and the error got **worse**, 0.003647 → 0.004019. The bias and sampling halves were already in the kernel and the retry did not read them.
 - If the next evaluation still reports `resolved: false`, *then* mark it `state: stopped`, and say so in REPORT.md as **"stopped unresolved"** rather than as a plateau. The two are different outcomes and the record must not conflate them: one is "this is as good as the scheme gets", the other is "nobody found out".
 - Never rank or ship an `unresolved` plan as though its error estimate were a measurement. On `sde_sabr_cev_call_ii` all three plans recorded `resolved: false` with a Monte-Carlo standard error 23–38× larger than the error they reported, all three plateaued at `iter: 2` with the evaluator finding no defect, and the shipped plan fails the external gate at one seed in three. Every signal the pipeline needed was recorded; nothing read it.
 
@@ -187,6 +229,22 @@ When the loop exits:
       [0, 1] and renormalised over whichever were measurable.
    4. fewest iterations
 
+   **Accuracy headroom reads the declared functional where the problem has one.** Wherever the spec
+   declares a gated quantity of interest, the plan's accuracy is `functional_rel_error` against
+   `functional_rel_tol` — the error on the number the problem is *scored* on — and the state moment
+   errors are context. Only where no functional is declared does it fall back to
+   `estimated_rel_error`.
+
+   This was the intent since F3 and it had never once happened: the kernel computed both fields on
+   every plan and `metrics.BLOCK_KEYS`, the whitelist that renders the `<metrics>` block, did not
+   carry either, so the ranker read them from a dict that could not contain them and fell through to
+   a state moment on all thirty plans of the BENCHOP suite — a martingale identity satisfied by
+   construction on some, a moment the spec says does not close on others. Measured on
+   `sde_hhw_call_corr`: the functional errors order the pool perfectly against its true errors
+   (0.0474 / 0.7445 / 0.5017) and the fallback ordered it backwards, shipping the pool's worst plan.
+   Four more ranker inputs were in the same state — `order_band`, `kind`, `cost_source`, and the
+   tolerance above. See `docs/improving-autonumerics/11-sde-accuracy-fixes.md` §1.
+
    **Cost is measured, reported, and never ranked on.** `solve_time_s` used to be a fifth of the
    index at weight 0.10 and a fourth ranking key below it, and it is now neither. It appears in the
    `cost` column of `cli.py rank` as a diagnostic — a reader weighing their own compute budget needs
@@ -224,9 +282,17 @@ When the loop exits:
    for the reasons above; such a pool is now reported as the tie it is. The order margin was
    measured against
    `order_floor`, a pass bar rather than a target — and on an SDE, where `order_floor` carries the
-   *expected strong order* and the gate is two-sided, ranking its margin descending sorted by
-   distance from the correct answer. `wall_time_s` timed the whole evaluation, which on one KdV pool
-   ran 7.9× to 12.5× the solve.
+   *expected strong order*, ranking its margin descending sorted by distance from the correct
+   answer. `wall_time_s` timed the whole evaluation, which on one KdV pool ran 7.9× to 12.5× the
+   solve.
+
+   **Order fidelity charges a shortfall and never an overshoot** (since 2026-11-05). A ladder running
+   *above* its design rate is not asymptotic, which is a real finding — and it is already paid for in
+   the score by `richardson.guards`' `p_sane`, so charging it again in the rank key punishes one
+   reading twice in the one place no acceptance criterion can see the result. The two-sided reading
+   ranked three Euler–Maruyama plans reading 1.0078 / 0.9924 / 1.0054 against a declared floor of 0.5
+   as 0.0000 / 0.0152 / 0.0000 — the plan furthest *below* 1.0 winning, on a pool whose true errors
+   ran 0.0474 / 0.7445 / 0.5017.
 
    Iteration count says nothing about which solution is better — use it only as the final tiebreak.
 3. Write `workspace/{problem_slug}/REPORT.md` summarizing:
@@ -236,6 +302,13 @@ When the loop exits:
    - Each plan: scheme, final score, provenance, estimated error (flagging whether it was measured or estimated), observed order, iter count, and key metrics from the last Results section
    - Best plan recommendation and why, **quoting the ranker's `decided_by:` line verbatim**. Where it is `iter` or `tie`, say plainly that the pool was indistinguishable on quality and the winner is a default rather than a measurement
    - **Any plan whose `<metrics>` block records `resolved: false`**, or whose `mc_se_rel` is larger than its own `estimated_rel_error` — name it and say the accuracy was unmeasured at the path count it ran, never that it was good
+   - **Where the spec declares a gated functional, the winner's `functional_rel_error` against its
+     `functional_rel_tol`, with the `functional_bias_rel` / `functional_se_rel` split and the
+     `functional_name` that bound.** This is the error on the quantity the problem asked about, so it
+     is the accuracy number the report leads with; `estimated_rel_error` is a state-moment proxy and
+     must not be presented as the answer's error where a functional exists. If the bias term is
+     absent because the plan declared `exact_sampling_components`, say that the ladder abstained and
+     that the sampling term stands alone — an abstention is not a pass
    - Any plans that did not certify — their last score and remaining errors, and whether they hit max_iter, were `stopped` (plateaued — score stopped improving), or were left unfinished because another plan already certified
    - **Verification gaps** — any check that could not be run: a missing verification plan, a faulty MMS probe, an untrustworthy surrogate, an MC-inconclusive result, an invariant with no trace reported, and every name in the metrics block's
      `invariants_not_reported` — a declared invariant the kernel has no evaluator for is a
@@ -318,7 +391,7 @@ When the loop exits:
   the round is still out, emit no text and take no action. Act once, when the round
   is complete. Narrating progress costs a full context read per sentence and there
   is no interactive user reading it.
-- When reading the score: parse the `<metrics>` block for `score`, `certified`, `provenance`, `estimated_rel_error` and `observed_order`. `score` and `provenance` are **computed by the kernel**, not written by the evaluator, so they are the fields to rank on; `<review score=X>` is a transcription of the same number and `verifylib` rejects a review where the two disagree. Carrying `provenance` through to REPORT.md is not optional.
+- When reading the score: parse the `<metrics>` block for `score`, `certified`, `provenance`, `estimated_rel_error` and `observed_order` — plus `functional_rel_error` and `functional_rel_tol` wherever the spec declares a gated functional, since those are what the accuracy component ranks on there. `score` and `provenance` are **computed by the kernel**, not written by the evaluator, so they are the fields to rank on; `<review score=X>` is a transcription of the same number and `verifylib` rejects a review where the two disagree. Carrying `provenance` through to REPORT.md is not optional.
 - If a plan's metrics carry `agent_cap`, the evaluator lowered the score below what the checks computed and recorded a reason. Report both the capped score and the reason in REPORT.md — a cap is a finding, not a formality. A cap can only ever lower a score.
 - Do not second-guess a `provenance` tag or re-derive an error yourself. Record what the kernel computed.
 - `manufactured_partial` and `analytic_unvalidated` are real provenance values and must survive into STATE.md and REPORT.md unchanged. They mean "one circularity break" and "a closed form nobody could check" respectively, and flattening either to its neighbour destroys the distinction the tag exists for.

@@ -155,6 +155,12 @@ def note(metrics, text):
 #: dict is available as JSON; this is the flat view the conductor and
 #: ``review.py`` parse.
 BLOCK_KEYS = (
+    # Which kernel graded this plan. `ranking.order` branches on it and fell back to
+    # matching `scheme_family` against a hard-coded family list when it was absent --
+    # so an SDE whose plan declared an unlisted family was ranked by the *PDE* rule,
+    # two-sidedly against a design order that is a strong order. One of the four
+    # ranker inputs this whitelist did not carry (11-sde-accuracy-fixes.md §1).
+    "kind",
     "score",
     # Whether every gate this problem's evidence path requires came back clean --
     # what the winner early-exit and `benchmark/report.py`'s VERIFIED_PASS actually
@@ -178,6 +184,14 @@ BLOCK_KEYS = (
     # this measures the grid the problem is graded on (findings F4).
     "graded_N", "estimated_rel_error_graded",
     "observed_order", "order_floor",
+    # Which side of `order_floor` the *pass* decision counted, as `crn.guards` decided
+    # it: "two-sided", or "one-sided (...)" with the reason. Reporting only. It was
+    # read by `ranking.order` and absent from this list, so the one-sided branch could
+    # never fire; both halves of that are now closed -- the key is carried, and the
+    # ranking is one-sided unconditionally so there is nothing conditional left to read
+    # (11-sde-accuracy-fixes.md §3). A reader still needs it to know which band the
+    # order check itself applied.
+    "order_band",
     # The scheme's own declared rate (`spatial_order` from SOLUTION.md frontmatter).
     # `order_floor` is a pass bar -- 1.0, and 0.0 on pde_kuramoto_sivashinsky -- so
     # `observed_order - order_floor` is not a quality margin. Against the *design*
@@ -185,6 +199,21 @@ BLOCK_KEYS = (
     # asymptotic range, which is what `richardson.guards`' `p_sane` already says.
     "design_order", "scheme_family",
     "invariants_ok", "constraints_ok",
+    # The declared ordering between functionals held, or "unavailable" where no
+    # ordering was declared or none could be read out of the declaration. Reported,
+    # never scored: an ordering is a stronger claim about a multi-functional solver
+    # than any one tolerance -- three prices can each sit inside their own gate while
+    # being out of order, which is a mis-wired strike rather than an accuracy problem
+    # -- and it is specific enough that naming it is the whole value.
+    "cross_check_ok",
+    # The relations that did not hold, so the block names them rather than making a
+    # reader open the JSON to find out which ordering broke.
+    "cross_check_violations",
+    # F2's verdict: did every *gated* declared functional converge on the ladder.
+    # A promoted check outcome like its two neighbours, and part of what
+    # `converged` is computed from, so a reader of the block can tell a plan that
+    # failed a functional gate from one that failed a moment check.
+    "functionals_ok",
     # The largest drift any declared invariant reported. `invariants_ok: true` says
     # each one cleared its own tolerance, not whether it cleared by a hair or by six
     # decades. Reporting only: drifts of different invariants are not on one scale.
@@ -211,6 +240,34 @@ BLOCK_KEYS = (
     # say which. These name both, so the block corroborates an evaluator that
     # reports them and a reader can tell the two apart. Reporting only.
     "mean_rel_err", "variance_rel_err",
+    # The graded quantity of interest: the one the problem is *scored* on wherever a
+    # gated functional is declared (F3). `functional_rel_error` is the ladder's dt
+    # bias plus the solver's reported sampling term, measured against the
+    # functional's own `rel_tol`; the two are what `ranking.accuracy` prefers over
+    # the moment error, and `functional_name` says which functional bound.
+    #
+    # These were computed by `sde/driver._graded_functionals` on every plan and
+    # dropped here, so `ranking._functional_fraction` returned None always and
+    # accuracy fell through to a state moment -- a martingale identity true by
+    # construction, or a moment the spec says does not close. F3 and F12 were
+    # implemented in the kernel and never reached selection
+    # (11-sde-accuracy-fixes.md §1). Adding a ranker input to `ranking.py` without
+    # adding it here is silent and moves ranks rather than scores, which is why
+    # `test_ranking_inputs_are_on_the_block` now fails when the two lists disagree.
+    "functional_name", "functional_rel_tol", "functional_rel_error",
+    # The same error split into what `dt` costs and what the path count costs.
+    # Reporting only -- `ranking` does not read them -- but the split is what tells a
+    # refine loop whether to halve `dt` or buy paths (§5), and it is the only field
+    # that distinguishes a "scheme X" plan from its "scheme X + variance reduction"
+    # sibling, four of which are otherwise bit-identical across this suite (§4).
+    "functional_bias_rel", "functional_se_rel",
+    # ...and the one-word verdict that split implies: "sampling" | "bias" | "both" |
+    # "unavailable". F19's retry instruction branches on it. It read "raise num_paths"
+    # unconditionally, which is the wrong instruction on a bias-dominated plan -- more
+    # paths tighten the term that is not binding, and on `sde_heston_call_feller`
+    # 500k -> 2M paths moved the error the wrong way, 0.003647 -> 0.004019. See
+    # `sde/driver._limited_by`.
+    "functional_limited_by",
     # Roache's factor of safety on the reported error: 1.25 for a measured order,
     # 3.0 for one imported from an MMS probe (§7a). It sets the *pass* bar, not the
     # solver's quality, so the band placement divides it back out.
@@ -235,6 +292,15 @@ BLOCK_KEYS = (
     # comparison ("equally accurate within the error bars, so take the cheaper one")
     # actually needs.
     "solve_time_s", "wall_time_s",
+    # Whether `solve_time_s` is CPU or wall time ("cpu" | "wall" | "mixed"). F4's
+    # own guard: `ranking.cost` returns None for a pool that mixes the two, because
+    # a forking solver's wall time is divided by its worker count and ranking a
+    # mixed pool on cost ranks it on which measurement each plan happened to get.
+    # Both drivers write it and it was not on the block, so the set `cost.pool` reads
+    # was `{None}` on every pool and the guard has never fired -- found by
+    # `test_ranking_inputs_are_all_on_the_metrics_block`, not by inspection, which is
+    # the case for that test existing (11-sde-accuracy-fixes.md §1).
+    "cost_source",
 )
 
 

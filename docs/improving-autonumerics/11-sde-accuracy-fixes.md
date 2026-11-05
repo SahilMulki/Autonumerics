@@ -3,8 +3,19 @@
 **Status:** written 2026-11-04, replacing [10](10-sonnet-retest.md) §6's fix list; the four open
 decisions settled 2026-11-05 and recorded in §9.1. Every claim below is measured by **re-running the
 shipped kernel on the solvers already on disk** at the current commit (`c832572`), not inferred from
-the run records. **Nothing here is implemented yet** — §7 is the order of work and §9 is what has to
-be true before it starts.
+the run records.
+
+> **[I, 2026-11-05]** ~~Nothing here is implemented yet.~~ **Fix 0 through Fix 6 are implemented**,
+> with the three homes of the `<metrics>` block moved together, the agent obligations written, and
+> §9.2's test maintenance done. [12-implementation.md](12-implementation.md) is the record.
+>
+> **Two things in this document were corrected by the acceptance test, and one of them is a decision
+> §9.1 called settled.** Fix 2b's scope — §9.1 decision 3, *abstain whenever any component is exactly
+> sampled* — threw away a real, cleanly converging second-order bias on B01's plan 1 and cost that
+> pool the selection; the shipped rule abstains only where *every* component is exactly sampled. And
+> §1's count of unreachable ranker inputs is **five, not four**: the structural test Fix 1 asked for
+> found `cost_source` on its first run, which means F4's mixed-cost guard has never fired either.
+> Both are in [12](12-implementation.md) §1.
 
 The goal this list is written against: **AutoNumerics should be at least as accurate as a single
 model draw on the same problem, and ideally better.** [10](10-sonnet-retest.md) §8 says it is not —
@@ -201,17 +212,26 @@ family of schemes that is most accurate, which is the opposite of what Fix 4 is 
 **Fix (settled 2026-11-05):** `run_declared` takes the declared components and abstains on the bias
 term, leaving the sampling term to stand alone.
 
-**Scope: abstain whenever *any* state component is exactly sampled.** This is the conservative cut,
-it is what `crn.py` already does, and it is a few lines. The precise version — abstaining only for
-functionals that actually *depend* on an exactly-sampled component — is correct but requires knowing
-which components each functional reads, and nothing declares that today. Ship the conservative cut
-and **record the narrower version as a known approximation** in the detail block, so a plan whose
-functional reads only discretised legs is visibly over-abstained rather than silently so. Abstention
-costs the bias evidence; it does not fabricate a pass.
+**Scope, as planned: abstain whenever *any* state component is exactly sampled** — the conservative
+cut, matching `crn.py`, with the narrower version recorded as a known approximation.
 
-While there: the field is spelled two ways on disk, `exact_sampling_components: 0, 1` and
-`exact_sampling_components: [0, 1]`. Accept both or reject one loudly; silently parsing one of them
-as empty would reintroduce the whole defect.
+**Scope, as shipped: abstain only where *every* state component is exactly sampled.** The planned
+cut was implemented, measured against §0's re-runs, and found to be wrong — see
+[12](12-implementation.md) §2. In one line: `crn.py`'s cut is right for an *order study*, because a
+ladder that cannot see one leg cannot see the order, and wrong for a *functional*, because the graded
+quantity depends on the whole state and one discretised leg biases it however exactly the others are
+drawn. B01's plan 1 draws the forward exactly (component 0 of 2) and steps the volatility; its ladder
+reads observed orders 1.90–2.29 at clean factor-of-four difference ratios — a real second-order
+convergence worth 5.7e-04 to 1.5e-03 — and abstaining on it promoted the plan over one 2.3× more
+accurate. B07's plan 1 declares all three of three and still abstains, so the ~50× case this fix
+exists for is unaffected.
+
+That also retires the B10 line above: its plan 2 declares one component of two, so *"charged a ladder
+bias on a leg that cannot have one"* was wrong. The bias enters through the other leg.
+
+The two spellings on disk, `exact_sampling_components: 0, 1` and `[0, 1]`, both already parse —
+`plan_meta.parse_components` splits on `[,\s\[\]]+` and voids the declaration on any unparseable
+entry. Checked, not changed.
 
 ### And a figure to retire: B10 was never a selection miss
 
@@ -406,6 +426,8 @@ the bias half trustworthy.
 
 ## §7 Order of work
 
+Implemented 2026-11-05 in the order below; see [12-implementation.md](12-implementation.md).
+
 | # | fix | cost | expected accuracy effect |
 |---|---|---|---|
 | **0** | persist the kernel's `--json` per plan (§9.2) | small | none directly — it is what makes every row below verifiable by diff instead of by re-running solvers |
@@ -439,9 +461,23 @@ the harder half and the one with no measured gain attached to it yet.
    is the graded quantity; `resolved` should follow it, and F19's gate reads `resolved`.
 4. ~~Whether to require a `variance_reduction:` declaration.~~ **Settled**: no new field, see §9.1
    decision 4.
-5. **Whether `score`'s primacy survives a working accuracy component.** §9.1 decision 1 defers this
-   to a re-measurement of B07 after Fix 2b. It is the one open *design* question here.
-6. **Three documents have now failed to reproduce against `workspace/`**: [09](09-implementation.md)
+5. ~~**Whether `score`'s primacy survives a working accuracy component.**~~ **Settled 2026-11-05:
+   it does.** B07 re-measured after Fix 2b — accuracy-first is 1.24× worse, sqi-first 1.23× worse
+   ([12](12-implementation.md) §6.3). What replaces it as the open question is narrower and sharper:
+   **the functional error's resolving power.** On B07 it spans 1.3× across plans whose true errors
+   span 4.5×, because most of the estimate is the sampling term, so it ranks the pool's best plan
+   second. A finer accuracy signal — more graded paths, or a sampling term the ranker discounts —
+   is the next thing worth measuring on the selection side.
+6. **B07 is a generation problem, not a selection one** ([12](12-implementation.md) §6.3). Its pool
+   best, 0.0388, is held by `3-em-control-variate-antithetic` — one of the duplicate pairs Fix 5
+   reports — and no ordering of the rank key reaches it.
+7. **The work-precision flake is fixed by argument, not by a repro.** §9.2 diagnosed
+   `test_work_precision::test_an_sde_sweep_moves_both_axes_...` as load-dependent; its cost-axis
+   check is now end-to-end over a 200× work span instead of between adjacent levels
+   ([12](12-implementation.md) §6.4). It would not reproduce here — it passed in every run after
+   the change set, including one under fifteen concurrent kernel evaluations — so the change rests
+   on the adjacent-pair assertion being unsound at those solve times, which it is either way.
+8. **Three documents have now failed to reproduce against `workspace/`**: [09](09-implementation.md)
    §4's test baseline (§9.2), [10](10-sonnet-retest.md) §6's claim that `functional_rel_error` was
    not being written (§1), and B03's kernel record (§0). Each was accurate when written and each was
    invalidated by a gitignored corpus turning over underneath it. That is the standing argument for
@@ -453,7 +489,18 @@ the harder half and the one with no measured gain attached to it yet.
 
 ### §9.1 Four decisions, settled 2026-11-05
 
-**1. Score keeps its primacy over accuracy — deferred, not affirmed.** The question was whether a
+**1. Score keeps its primacy over accuracy — ~~deferred, not affirmed~~ affirmed on measurement
+2026-11-05.** Re-opened after Fix 2b exactly as this decision required, and resolved against
+accuracy-first: see [12](12-implementation.md) §6.3. Fix 2b worked on the plan in question — B07's
+plan 1 went from a charged 0.0130 to 1.593e-03 and its `accuracy` from 0.000 to 0.137 — and
+accuracy-first still measures **1.24× worse** than score-first across the five re-evaluated pools,
+with a quality-index-first key 1.23× worse. The conflict did not survive a working component. What
+binds instead is the component's *resolving power*: on B07 the three functional errors span 1.3× on
+plans whose true errors span 4.5×, so accuracy ranks the genuinely best plan second. The caveat
+below about resolving power is now the live constraint rather than a footnote. The original argument
+follows, unchanged.
+
+The question was whether a
 large accuracy gap should outvote a score gap, which is B07: `decided_by: score`, 6 against 3,
 shipping 0.0780 over a 0.0388. The decision is **leave the key order alone and re-open the question
 after Fix 2b**, for three measured reasons.

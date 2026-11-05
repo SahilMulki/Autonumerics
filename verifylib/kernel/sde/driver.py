@@ -403,7 +403,18 @@ def evaluate_sde(spec, plan_dir, agent):
     # takes a different route). It is a no-op where nothing is declared or the
     # ladder did not run. And it cannot be read as "this price is right" -- only as
     # "this price has stopped moving with dt".
-    fn = functionals.run_declared(thresholds, [{"result": r} for r in ladder])
+    #
+    # Two things the ladder is given about the plan, both declared and neither
+    # inferred. `design_order` sets the floor the inferred order must clear before
+    # the Richardson denominator is trusted, and `exact_sampling` makes the bias term
+    # abstain where there is no discretization to measure -- the same declaration
+    # `crn.abstention` has honoured since F18 and that this call did not pass on, so
+    # the ladder went on charging a bias to the schemes least able to have one.
+    fn = functionals.run_declared(
+        thresholds, [{"result": r} for r in ladder],
+        design_order=m["summary"].get("design_order"),
+        exact_sampling=exact_sampling,
+        state_dimension=spec.get("state_dimension"))
     m["functionals"] = fn
     metrics.record(m, "functionals_ok", fn["functionals_ok"],
                    outcomes=fn["outcomes"], errors=fn["errors"], values=fn["values"],
@@ -412,6 +423,19 @@ def evaluate_sde(spec, plan_dir, agent):
     if fn["not_reported"]:
         m["summary"]["functionals_not_reported"] = list(fn["not_reported"])
     _graded_functionals(m, thresholds, result, fn)
+    # The declared ordering between functionals, which is a different claim from any
+    # one of their tolerances: three prices from one set of paths can each sit inside
+    # their own gate while being out of order, and that is a mis-wired strike or a
+    # payoff read at the wrong spot. Reported, not scored -- like
+    # `reported_moments_agree`, it is a diagnostic whose absence says nothing and whose
+    # failure is specific enough to act on. `verification.expected_cross_check` was
+    # declared in a live spec and read by nothing until 2026-11-05.
+    cross_outcome, cross_detail = functionals.cross_check(
+        verification.get("expected_cross_check"),
+        (result or {}).get("functionals") or {})
+    metrics.record(m, "cross_check_ok", cross_outcome, **cross_detail)
+    if cross_detail["violations"]:
+        m["summary"]["cross_check_violations"] = list(cross_detail["violations"])
 
     replicates = int(cfg.pick("seed_replicates", agent, thresholds.get("seed_replicates"),
                               DYNKIN_REPLICATES))
@@ -1455,6 +1479,45 @@ def _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult, levels=3, m=
 REPORTED_MOMENT_RTOL = 1e-6
 
 
+#: How many times one term of the functional error has to exceed the other before the
+#: error is called *limited* by it. Three, because the two terms add: at 3x, removing
+#: the whole of the smaller one buys 25% of the total, which is not the fix. Checked
+#: against the splits on disk -- `sde_hhw_call_corr` plan 1 at 3.36e-05 bias against
+#: 8.76e-04 sampling is 26x and sampling-limited; its plan 2 at 1.61e-03 / 1.38e-03 and
+#: `sde_heston_call_feller` plan 1 at 1.2524e-03 / 1.2504e-03 are both balanced, and
+#: the second is the plan whose path count went 500k -> 2M and whose error got *worse*.
+FUNCTIONAL_DOMINANCE = 3.0
+
+
+def _limited_by(bias, se_rel, abstained):
+    """Which half of the functional error binds: the closed vocabulary F19's retry
+    instruction branches on.
+
+    ``"sampling"`` means more paths (or variance reduction) is the fix, ``"bias"``
+    means a smaller ``dt`` or a scheme that carries less of it, ``"both"`` means
+    neither alone gets under the gate. The distinction is not cosmetic: F19's retry
+    told the solver to raise ``num_paths`` unconditionally, and on a bias-dominated
+    plan more paths tighten the term that is not binding -- measured on
+    `sde_heston_call_feller`, where 500k to 2M paths moved the error from 0.003647 to
+    0.004019, the wrong way.
+
+    ``"unavailable"`` where only one term was measured and the other is merely
+    missing, which is not the same as being small. The exception is an abstained bias:
+    an exactly-sampled transition has no discretization error to measure at any ``dt``
+    (F18), so sampling is not just the only term measured, it is the only term there
+    is.
+    """
+    if bias is None and abstained and se_rel is not None:
+        return "sampling"
+    if bias is None or se_rel is None:
+        return "unavailable"
+    if se_rel >= FUNCTIONAL_DOMINANCE * bias:
+        return "sampling"
+    if bias >= FUNCTIONAL_DOMINANCE * se_rel:
+        return "bias"
+    return "both"
+
+
 def _graded_functionals(m, thresholds, result, fn):
     """Publish the graded run's own functional values, error bars and binding gate.
 
@@ -1512,6 +1575,12 @@ def _graded_functionals(m, thresholds, result, fn):
         m["summary"]["functional_bias_rel"] = bias
     if se_rel is not None:
         m["summary"]["functional_se_rel"] = se_rel
+    # One verdict, computed once. The split is two numbers and the instruction that
+    # follows from it is one word; deriving the word at each reader -- the conductor's
+    # retry, the evaluator's feedback, REPORT.md -- is how a rule with three call sites
+    # drifts, which this repo has now measured twice.
+    abstained = "bias_abstained" in (fn["detail"].get(name) or {})
+    m["summary"]["functional_limited_by"] = _limited_by(bias, se_rel, abstained)
 
 
 def _reported_moments(result, stats):

@@ -176,6 +176,38 @@ def _report(found, as_json):
     return BLOCK if errors(found) else PASS
 
 
+#: Where :func:`_evaluate` leaves the kernel's own dict, next to the plan it graded.
+#: Read by nothing in the pipeline -- it exists so that a question about what the
+#: kernel measured can be answered by a ``grep`` instead of by re-running a solver.
+EVALUATION_JSON = "evaluation.json"
+
+
+def _persist_evaluation(plan_dir, metrics) -> str | None:
+    """Write the kernel's full metrics dict into the plan directory.
+
+    ``render_block`` keeps only the keys of :data:`~verifylib.kernel.metrics.BLOCK_KEYS`
+    and everything else the kernel measured is discarded when the evaluator's turn
+    ends. That is the same defect as the block being a whitelist the ranker reads
+    through (``docs/improving-autonumerics/11-sde-accuracy-fixes.md`` §1): information
+    thrown away at a reporting boundary. Three documents in that folder have since
+    failed to reproduce against ``workspace/``, and none of the three could be
+    attributed, because nothing on disk recorded what the kernel had seen.
+
+    Best-effort by design. A read-only or vanished plan directory is a perfectly good
+    reason not to have a record, and never a reason to fail an evaluation that
+    already ran -- the block on stdout is the deliverable.
+    """
+    path = os.path.join(plan_dir, EVALUATION_JSON)
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(metrics, fh, indent=2, default=_jsonable, sort_keys=True)
+            fh.write("\n")
+    except OSError as exc:
+        print(f"note: could not write {path}: {exc}", file=sys.stderr)
+        return None
+    return path
+
+
 def _evaluate(plan_dir, as_json) -> int:
     """Run the numerical kernel on one plan directory.
 
@@ -208,6 +240,7 @@ def _evaluate(plan_dir, as_json) -> int:
             return 1
 
     metrics = run(spec, plan_dir, config)
+    recorded = _persist_evaluation(plan_dir, metrics)
     if as_json:
         print(json.dumps(metrics, indent=2, default=_jsonable))
     else:
@@ -220,6 +253,8 @@ def _evaluate(plan_dir, as_json) -> int:
             print(f"  {name:26s} {outcome}")
         for line in metrics.get("notes", []):
             print(f"  note: {line}")
+        if recorded:
+            print(f"full metrics: {recorded}")
     # 0 whatever the score: a low score is a measurement, not a tool failure. Only a
     # kernel that could not run at all is an error, and that raises.
     return PASS

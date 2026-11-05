@@ -165,16 +165,29 @@ def test_an_sde_error_snaps_up_to_its_confidence_half_width():
 
 # --- order fidelity -----------------------------------------------------------
 
-def test_order_is_two_sided_for_an_algebraic_scheme():
-    """A 2nd-order scheme measuring 4.0 is a ladder outside its asymptotic range,
-    which `p_sane` already refuses to call asymptotic. Overshoot is not a bonus."""
+def test_order_charges_a_shortfall_and_never_an_overshoot():
+    """Reversed 2026-11-05 (11-sde-accuracy-fixes.md §3). This asserted the opposite
+    -- that a 2nd-order scheme measuring 4.0 scores 0.0, because a ladder outside its
+    asymptotic range is not a better ladder.
+
+    That is true and it is not this component's to charge. `richardson.guards`'
+    `p_sane` already refuses to call such a ladder asymptotic and the *score* pays for
+    it there, where an acceptance criterion can see the result; repeating the charge in
+    the rank key punishes one reading twice and does it where nothing looks. What the
+    two-sided distance measured in practice was distance from a **pass bar**, and a
+    scheme is not better for landing on its floor exactly -- see
+    `test_an_sde_converging_faster_than_its_floor_is_not_marked_down` for the pool
+    where that cost the selection.
+    """
     at = {"observed_order": 2.0, "design_order": 2, "scheme_family": "fd"}
-    over = {**at, "observed_order": 3.0}      # one order above
-    under = {**at, "observed_order": 1.0}     # one order below
+    under = {**at, "observed_order": 1.0}
     assert RK.order(at) == pytest.approx(1.0)
-    assert RK.order(over) < RK.order(at)
-    assert RK.order(under) == pytest.approx(RK.order(over))   # equal distance, equal credit
-    assert RK.order({**at, "observed_order": 4.0}) == pytest.approx(0.0)
+    # Overshoot: capped at the ceiling, not charged, however far above it goes.
+    assert RK.order({**at, "observed_order": 3.0}) == pytest.approx(1.0)
+    assert RK.order({**at, "observed_order": 4.0}) == pytest.approx(1.0)
+    # A shortfall is still charged, in proportion, and that is the whole point.
+    assert RK.order(under) == pytest.approx(0.5)
+    assert RK.order({**at, "observed_order": 0.0}) == pytest.approx(0.0)
 
 
 def test_a_spectral_scheme_has_no_order_to_be_faithful_to():
@@ -187,14 +200,17 @@ def test_a_spectral_scheme_has_no_order_to_be_faithful_to():
     assert RK.order({**spec, "observed_order": 12.0}) is None
 
 
-def test_the_sde_strong_order_band_is_two_sided_around_the_expectation():
-    """The old key's sign error. `order_floor` on an SDE is the *expected* strong
-    order and `strong_ok` is |g - g_exp| < 0.4, so a margin of +0.39 was sorting
-    ahead of 0.00 -- ranking by distance from the correct answer."""
+def test_an_sde_at_or_above_its_expected_strong_order_scores_the_ceiling():
+    """Also reversed 2026-11-05. This asserted `order(high) < order(em)` -- that a
+    strong order of 0.89 against an expectation of 0.5 ranked *below* one of exactly
+    0.5. The two-sided reading it encoded was itself a correction of a sign error that
+    had sorted +0.39 ahead of 0.00, so the direction was right and the destination was
+    one step too far: the fix for "distance from the correct answer, with the sign
+    wrong" is a shortfall, not a distance."""
     em = {"kind": "sde", "observed_order": 0.5, "order_floor": 0.5, "design_order": 0.5}
-    high = {**em, "observed_order": 0.89}
     assert RK.order(em) == pytest.approx(1.0)
-    assert RK.order(high) < RK.order(em)
+    assert RK.order({**em, "observed_order": 0.89}) == pytest.approx(1.0)
+    assert RK.order({**em, "observed_order": 0.25}) == pytest.approx(0.5)
 
 
 def test_a_waived_order_check_is_not_measurable():
@@ -367,26 +383,37 @@ def test_rank_command_reports_json_and_refuses_an_empty_workspace(tmp_path, caps
     assert payload["ranking"][0]["components"]["cost"] is None    # a pool of one
 
 
-def test_the_sde_order_band_follows_the_band_the_guard_applied():
-    """[REV 34] / [REV 43] / D12. `order_margin`'s SDE branch carried a two-sided
-    distance from the floor, the same shape `crn.guards` had -- so a correct
-    additive-noise Euler-Maruyama, whose strong order is 1 against a defaulted floor
-    of 0.5, scored `1 - |0.986 - 0.5|/0.5 = 0.028`: last in its pool, on a right
-    answer. The branch is unreachable today (`design_order` is set only by the PDE
-    driver), which is why no score-based acceptance criterion can see it and why
-    this is asserted by calling `order` directly.
+def test_an_sde_converging_faster_than_its_floor_is_not_marked_down():
+    """[REV 34] / [REV 43] / D12, and its conclusion reversed 2026-11-05.
 
-    The band is not re-derived here. `crn.guards` computes it once and the SDE
-    driver copies it into `summary["order_band"]`, so there is one rule and three
-    call sites.
+    Those revisions made the band *conditional*: `crn.guards` computed `strong_band`
+    and `ranking.order` read it off `summary["order_band"]`, so there was one rule and
+    three call sites. The rule was right and the condition never fired, for two
+    independent reasons found by measurement (11-sde-accuracy-fixes.md §3). On
+    `sde_hhw_call_corr` the spec *declares* `expected_strong_order: 0.5` and the plans
+    declare `scheme_family: euler-maruyama`, so D12 correctly reads the floor as
+    declared and keeps the band two-sided -- and `order_band` was not in `BLOCK_KEYS`,
+    so a one-sided verdict could not have reached the ranker either way.
+
+    The pool that settled it: three Euler-Maruyama schemes reading 1.0078, 0.9924 and
+    1.0054 against a declared floor of 0.5, scored 0.0000 / 0.0152 / 0.0000 -- the plan
+    furthest *below* 1.0 winning, against true harness errors of 0.0474, 0.7445 and
+    0.5017. So the component was anti-correlated with quality, which it is on any
+    problem whose floor sits under the scheme's real rate.
+
+    One side, unconditionally, and `order_band` is now reported rather than read.
     """
     em = {"kind": "sde", "observed_order": 0.986, "order_floor": 0.5, "design_order": 0.5}
-    assert RK.order(em) == pytest.approx(0.028, abs=0.01)          # two-sided, the default
-    one_sided = {**em, "order_band": "one-sided (scheme family undeclared in the plan)"}
-    assert RK.order(one_sided) > 0.9
-    # One-sided still penalises a genuine shortfall, which is the defect the band exists
-    # for: an order near zero is a solver that ignores its increments.
-    assert RK.order({**one_sided, "observed_order": 0.1}) == pytest.approx(0.2, abs=0.01)
+    assert RK.order(em) == pytest.approx(1.0)
+    # And it does not matter which band the guard applied, because nothing reads it.
+    for band in ("two-sided", "one-sided (scheme family undeclared in the plan)", None):
+        assert RK.order({**em, "order_band": band}) == pytest.approx(1.0)
+    # A genuine shortfall is still charged -- an order near zero is a solver that
+    # ignores the increments it was handed, and that is the defect the check is for.
+    assert RK.order({**em, "observed_order": 0.1}) == pytest.approx(0.2, abs=0.01)
+    # The B06 pool, in the order the component now puts it: no inversion left.
+    pool = [1.0078, 0.9924, 1.0054]
+    assert [RK.order({**em, "observed_order": p}) for p in pool] == [1.0, 1.0, 1.0]
 
 
 def test_an_abstained_sde_order_is_not_ranked_on():

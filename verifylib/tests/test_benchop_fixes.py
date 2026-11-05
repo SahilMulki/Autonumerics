@@ -941,3 +941,113 @@ def test_a_martingale_reference_naming_a_parameter_is_resolved_not_floated():
     bad = {**entry, "reference_value_at_T": "not_a_parameter"}
     stats, reason = I._martingale_stats(bad, ctx)
     assert stats is None and "neither a number nor evaluable" in reason
+
+
+# --- F19's retry reads the split, not `resolved` (11-sde-accuracy-fixes.md §5) --
+
+
+def test_the_binding_half_of_the_functional_error_is_named():
+    """The conductor's retry instruction branches on one word, so the kernel computes
+    the word. Thresholds from `FUNCTIONAL_DOMINANCE`: 3x, because the two terms add
+    and removing the whole of the smaller one at 3x buys 25% of the total."""
+    from verifylib.kernel.sde.driver import _limited_by
+
+    assert _limited_by(1e-5, 1e-3, False) == "sampling"
+    assert _limited_by(1e-3, 1e-5, False) == "bias"
+    assert _limited_by(1.0e-3, 1.1e-3, False) == "both"
+    # Exactly at the threshold counts as dominance, on both sides.
+    assert _limited_by(1.0, 3.0, False) == "sampling"
+    assert _limited_by(3.0, 1.0, False) == "bias"
+    assert _limited_by(3.0, 1.01, False) == "both"
+
+
+def test_the_splits_measured_on_disk_get_the_diagnoses_they_earned():
+    """The three splits `11-sde-accuracy-fixes.md` §5 records, which is what the
+    threshold was chosen against. The last is the plan whose path count went 500k to
+    2M and whose error got worse: 'both', so paths alone was never going to do it."""
+    from verifylib.kernel.sde.driver import _limited_by
+
+    assert _limited_by(3.36e-05, 8.76e-04, False) == "sampling"   # B06 plan 1
+    assert _limited_by(1.61e-03, 1.38e-03, False) == "both"       # B06 plan 2
+    assert _limited_by(1.2524e-03, 1.2504e-03, False) == "both"   # B03 plan 1
+
+
+def test_one_term_missing_is_not_the_other_term_being_small():
+    from verifylib.kernel.sde.driver import _limited_by
+
+    assert _limited_by(None, 1e-3, False) == "unavailable"
+    assert _limited_by(1e-3, None, False) == "unavailable"
+    assert _limited_by(None, None, False) == "unavailable"
+
+
+def test_an_abstained_bias_is_sampling_limited_rather_than_unavailable():
+    """F18's abstention is not a gap in the measurement -- a plan whose *whole state*
+    is drawn exactly has no discretization error at any dt, so sampling is not merely
+    the only term measured, it is the only term there is. (A partially exact plan is
+    not abstained on at all; see
+    `test_kernel_functionals.test_a_partially_exact_plan_is_still_charged_its_bias`.)"""
+    from verifylib.kernel.sde.driver import _limited_by
+
+    assert _limited_by(None, 1e-3, True) == "sampling"
+    # ...and with no sampling term either, there is still nothing to instruct on.
+    assert _limited_by(None, None, True) == "unavailable"
+
+
+# --- the production path, end to end (11-sde-accuracy-fixes.md §1) ------------
+#
+# Every F3 test above hands `ranking.accuracy` a summary dict built by hand. All of
+# them passed from the day F3 landed, and none of them could fail, because the dict
+# they build is one the production path could not produce: the kernel's metrics go
+# through `metrics.render_block` -- a whitelist -- and then back through
+# `review.parse_metrics`, and the whitelist carried neither functional field. So
+# `_functional_fraction` returned None on all thirty plans of the BENCHOP suite and
+# accuracy fell through to a state moment.
+#
+# The lesson is about the seam, not the fields: a unit test that constructs the input
+# cannot see a reporting boundary that drops it. These two go through the seam.
+
+
+def _sde_metrics(**summary):
+    """A kernel metrics dict shaped as the drivers build one."""
+    return {"kind": "sde", "score": 9, "provenance": "self_convergence",
+            "checks": {"functionals_ok": True}, "notes": [],
+            "summary": {"functional_name": "price_S100", "functional_rel_tol": 0.003,
+                        "functional_rel_error": 7.0e-04, "functional_bias_rel": 4.0e-04,
+                        "functional_se_rel": 3.0e-04, "functional_limited_by": "both",
+                        "estimated_rel_error": 8.47e-16, "mc_se_rel": 0.03,
+                        "ci_mult": 2.0, **summary}}
+
+
+def test_the_functional_error_survives_the_round_trip_through_the_block():
+    """`render_block` -> `parse_metrics` -> `ranking` is the only path by which a
+    measurement reaches selection. What does not survive it does not exist."""
+    from verifylib.kernel.metrics import render_block
+    from verifylib.review import parse_metrics
+
+    block = parse_metrics(render_block(_sde_metrics()))
+    for key in ("functional_rel_error", "functional_rel_tol", "functional_name",
+                "functional_bias_rel", "functional_se_rel", "functional_limited_by",
+                "functionals_ok", "kind"):
+        assert key in block, f"{key} does not survive the block"
+    assert ranking._functional_fraction(block) is not None
+    assert ranking.accuracy(block, 0.1) > 0.0
+
+
+def test_the_moment_fallback_is_what_the_block_used_to_force():
+    """The failure, reproduced by removing exactly the two fields. `8.47e-16` is a
+    martingale identity satisfied by construction -- it scores the ceiling and orders
+    nothing, which is how 0.35 of the index came to rank by accident on a suite scored
+    on prices."""
+    from verifylib.kernel.metrics import render_block
+    from verifylib.review import parse_metrics
+
+    block = parse_metrics(render_block(_sde_metrics()))
+    stripped = {k: v for k, v in block.items() if not k.startswith("functional")}
+    assert ranking._functional_fraction(stripped) is None
+    # Two genuinely different plans, indistinguishable once the fields are gone.
+    tight = parse_metrics(render_block(_sde_metrics(functional_rel_error=9.1e-04)))
+    loose = parse_metrics(render_block(_sde_metrics(functional_rel_error=2.99e-03)))
+    assert ranking.accuracy(tight, 0.1) > ranking.accuracy(loose, 0.1)
+    for pair in (tight, loose):
+        bare = {k: v for k, v in pair.items() if not k.startswith("functional")}
+        assert ranking.accuracy(bare, 0.1) == ranking.accuracy(stripped, 0.1)

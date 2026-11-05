@@ -610,6 +610,14 @@ def solution_metrics(plan_dir):
         "score", "certified", "provenance", "estimated_rel_error",
         "estimated_rel_error_T", "error_horizon", "d1_outcome", "reference_outcome",
         "design_order", "invariant_max_drift", "dynkin_z", "solve_time_s",
+        # The graded quantity of interest, where the spec declares one: the error on
+        # the number the problem is *scored* on, its own tolerance, and which half of
+        # it binds. `estimated_rel_error` beside them is a state-moment proxy, which
+        # on a priced problem is not the answer's error at all -- so a report that
+        # quotes only the proxy is quoting the wrong number
+        # (docs/improving-autonumerics/11-sde-accuracy-fixes.md §1).
+        "functional_name", "functional_rel_tol", "functional_rel_error",
+        "functional_bias_rel", "functional_se_rel", "functional_limited_by",
         "solver_sha256") if k in block}
 
 
