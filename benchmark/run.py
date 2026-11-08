@@ -225,8 +225,31 @@ def run_conductor(slug, timeout, skip_permissions, permission_mode, model):
 # problem would fail the same way, so the runner stops and tells you to resume after
 # the reset rather than burning through the rest of the queue.
 _LIMIT_PHRASES = ("spend limit", "usage limit", "rate limit", "session limit",
-                  "hit your monthly", "hit your session", "limit reached", "resets at",
-                  "· resets", "insufficient credit", "quota")
+                  "hour limit", "hit your monthly", "hit your session",
+                  "limit reached", "resets at", "· resets",
+                  "insufficient credit", "quota")
+
+
+def _phrase_pattern(phrase):
+    r"""Word-boundary-anchor a phrase only on edges that are word characters.
+
+    An unconditional ``\b`` beside a non-word edge can never match, which made
+    "· resets" dead: in "limit · resets 9:20pm" the character before "·" is a
+    space, and two non-word characters have no boundary between them. On
+    2026-11-05 a nine-problem run met "You've hit your 5-hour limit · resets
+    9:20pm", matched none of the eleven phrases, and burned the eight remaining
+    units at 1 s each instead of halting for --resume. "hour limit" covers the
+    wording itself; this function makes the "·" phrase able to fire at all.
+    """
+    left = r"\b" if phrase[0].isalnum() else ""
+    right = r"\b" if phrase[-1].isalnum() else ""
+    return left + re.escape(phrase) + right
+
+
+# Phrases stay whole words where they can: the kernel's own vocabulary contains
+# "degene|rate limit", and a successful transcript that names its Tier-B route
+# must not read as a usage limit -- on a timed-out run that would halt the queue.
+_LIMIT_RE = re.compile("|".join(_phrase_pattern(p) for p in _LIMIT_PHRASES))
 
 
 def _looks_like_limit(log_path):
@@ -235,10 +258,7 @@ def _looks_like_limit(log_path):
             text = fh.read().lower()
     except OSError:
         return False
-    # Whole words only: the kernel's own vocabulary contains "degene|rate limit",
-    # and a successful transcript that names its tier-B route must not read as a
-    # usage limit -- on a timed-out run that would halt the whole queue.
-    return any(re.search(r"\b" + re.escape(phrase) + r"\b", text) for phrase in _LIMIT_PHRASES)
+    return bool(_LIMIT_RE.search(text))
 
 
 # --- pipeline-state summary -------------------------------------------------

@@ -16,6 +16,17 @@ import numpy as np
 
 from ...operator import evaluate
 
+#: What to say when ``mean_from``/``variance_from`` arrive as lists. Named because
+#: the evaluator agent acts on this string: it has to name the field, the shape, and
+#: the scalar form that replaces it, or the re-dispatch guesses.
+MOMENT_ODE_LIST_REASON = (
+    "the moment ODE declares {keys} as a list, and this route produces one marginal "
+    "reference rather than one per state component. Give a scalar expression string "
+    "and name the component it describes with "
+    "verification.moment_ode.applies_to_component (0-based), e.g. "
+    '"mean_from": "m_S", "variance_from": "m_SS - m_S**2", "applies_to_component": 0'
+)
+
 
 def moment_ode(spec):
     """§15. Exact for polynomial diffusions, and only when ``closes_exactly``.
@@ -47,11 +58,38 @@ def moment_ode(spec):
         return None, {"reason": f"the moment ODE integration failed: {sol.message}"}
     ns = {**params, "t": T, **dict(zip(state, sol.y[:, -1], strict=True))}
     out = {}
+    # A list here is the natural thing to write on a multi-component state -- one
+    # expression per component -- and it is not the contract: this route produces
+    # ONE marginal reference, chosen by `applies_to_component` (see
+    # `component_of`), so the selector has to be a scalar string.
+    #
+    # It used to be rejected by silence. `isinstance(..., str)` simply skipped a
+    # list, and with both keys listed `out` came back empty and the reason read
+    # "declares no mean_from or variance_from" -- of a spec that declares both.
+    # Measured on `sde_sabr_cev_call_i` (B01, Sonnet, 2026-11-05): the formulator
+    # wrote `mean_from: ["m_S", "m_sig"]`, every plan in the pool scored 2 for want
+    # of a surrogate, and the run spent its first 31 minutes and a whole evaluate
+    # cycle on it before a re-dispatch with this finding fixed it in one minute.
+    # The shape is reported as itself so the next one costs a re-dispatch, not a
+    # cycle.
+    listed = [k for k in ("mean_from", "variance_from")
+              if isinstance(mo.get(k), (list, tuple))]
     for key, target in (("mean_from", "mean"), ("variance_from", "variance")):
         if isinstance(mo.get(key), str):
             out[target] = float(evaluate(mo[key], ns))
     if not out:
+        if listed:
+            return None, {"reason": MOMENT_ODE_LIST_REASON.format(keys=", ".join(listed)),
+                          "moment_ode_listed_selectors": listed}
         return None, {"reason": "the moment ODE declares no mean_from or variance_from"}
+    if listed:
+        # One of the two is usable, so this is not fatal -- but the listed one was
+        # dropped, and a half-read surrogate must not look like a whole one.
+        return out, {"route": "moment_ode", "T": T,
+                     "moment_ode_listed_selectors": listed,
+                     "moment_ode_listed_warning":
+                         MOMENT_ODE_LIST_REASON.format(keys=", ".join(listed)),
+                     "state": dict(zip(state, sol.y[:, -1].tolist(), strict=True))}
     return out, {"route": "moment_ode", "T": T, "state": dict(zip(state, sol.y[:, -1].tolist(),
                                                                  strict=True))}
 

@@ -206,11 +206,32 @@ def initial_moments(spec, phis):
         return _law_moments(spec, phis, declared, params)
     value = _initial_state(spec, declared, params)
     if value is None:
+        # Name the `*_0` parameters the spec *does* carry. A multi-component spec
+        # routinely names its initial state for the domain -- `sde_hhw_call_corr`
+        # (B06) declares `S_0`, `V_0`, `R_0` -- while `_initial_state` reads only the
+        # canonical `X_0`/`Y_0`/`Z_0`. The state is perfectly deterministic and the
+        # old message said "no deterministic initial value is declared", which reads
+        # as a modelling statement about the problem rather than a spelling mismatch
+        # in the spec. Naming the keys turns it into a one-line fix.
+        #
+        # The order is *not* inferred from them: `{S_0, V_0, R_0}` does not say
+        # whether the state is (S, V, R) or (V, R, S), and a silent guess here is the
+        # positional mispairing `component_of` exists to end. The spec states the
+        # order; this only says where to state it.
+        candidates = sorted(k for k in params if k.endswith("_0"))
+        hint = ""
+        if candidates:
+            hint = (f" The spec declares {', '.join(candidates)}, which this reader "
+                    f"does not match: it takes X_0/Y_0/Z_0, or an explicit "
+                    f"initial_condition: {{value: [...]}} listing the components in "
+                    f"state order.")
         return None, {"reason": "no deterministic initial value is declared and no "
                                 "initial_condition law is given, so E[phi(X_0)] cannot "
                                 "be formed. The Dynkin identity needs the initial "
                                 "state's law, not a default of zero -- declare "
-                                "initial_condition: {law, ...} or parameters.X_0",
+                                "initial_condition: {law, ...} or parameters.X_0."
+                                + hint,
+                      "initial_value_candidates": candidates,
                       "random_initial_condition": True}
     state = np.asarray(value, dtype=float).reshape(1, -1)
     if state.shape[1] == 1:

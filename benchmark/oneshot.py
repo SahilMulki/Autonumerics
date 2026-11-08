@@ -72,8 +72,9 @@ MANUAL_FILES = {"sde": "references/sde_manual.md", "pde": "references/pde_manual
 # cleanly (--resume continues after the reset) instead of recording spurious
 # failures for every remaining unit.
 _LIMIT_PHRASES = ("spend limit", "usage limit", "rate limit", "session limit",
-                  "hit your monthly", "hit your session", "limit reached", "resets at",
-                  "· resets", "insufficient credit", "quota")
+                  "hour limit", "hit your monthly", "hit your session",
+                  "limit reached", "resets at", "· resets",
+                  "insufficient credit", "quota")
 
 
 # --- prompt construction ----------------------------------------------------

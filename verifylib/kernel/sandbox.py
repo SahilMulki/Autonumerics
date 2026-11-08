@@ -191,6 +191,18 @@ def _build_override(payload, arrays):
     return override or None
 
 
+#: How much of one CRN level to hold at a time, in bytes, while it is being built.
+#:
+#: Not a correctness knob -- any value gives bit-identical increments -- so it is set
+#: for the allocator rather than for the mathematics: large enough that the per-block
+#: Python overhead is lost against the draw (a 256 MB block of float64 normals is
+#: ~32M values, tens of milliseconds of numpy), small enough that a coarse level
+#: never has the fine array resident. The finest level still has to return its whole
+#: array, because the solver is handed all of it at once; what this bounds is the
+#: *extra* copy on top of it.
+CRN_BLOCK_BYTES = 256 * 1024 ** 2
+
+
 def _crn_increments(crn):
     """Rebuild one level of the §18 CRN ladder from its seed, not from a 160 MB
     array shipped through a file. Deterministic, so the child's increments are the
@@ -198,12 +210,51 @@ def _crn_increments(crn):
     import numpy as np
     rng = np.random.default_rng(int(crn["seed"]))
     paths, fine, T = int(crn["num_paths"]), int(crn["Nt_fine"]), float(crn["T"])
-    shape = (paths, fine) if not crn.get("m") else (paths, fine, int(crn["m"]))
-    dW = np.sqrt(T / fine) * rng.standard_normal(shape)
+    m = int(crn["m"]) if crn.get("m") else None
+    tail = (m,) if m else ()
     aggregate = int(crn["aggregate"])
-    if aggregate > 1:
-        dW = dW.reshape(paths, -1, aggregate, *shape[2:]).sum(axis=2)
-    return dW
+    scale = np.sqrt(T / fine)
+
+    # Built in **path blocks**, not as one array.
+    #
+    # The ladder's finest level is `num_paths * Nt_fine * m * 8` bytes, and the old
+    # form -- `np.sqrt(T / fine) * rng.standard_normal(shape)` -- held it twice at
+    # once, because the draw and the scaled product are separate arrays. Measured on
+    # `sde_sabr_cev_call_i` (B01, 2026-11-05), whose finest level is 200 000 paths x
+    # 1600 steps x 2 channels = 5.12 GB: the three levels took 74 s / 148 s / >300 s
+    # on a 17.2 GB machine and the finest tripped the 300 s solver budget, so
+    # `dynkin_ok` returned `unavailable` on two of three plans *after* spending the
+    # whole budget. `RLIMIT_AS` is not enforced on Darwin, so nothing failed fast --
+    # it swapped, which also makes the failure depend on what else is resident.
+    #
+    # Blocking is exact rather than an approximation of the monolithic draw. Paths
+    # are the outermost axis, and `standard_normal` fills C-order, so consuming the
+    # stream one path block at a time consumes it in precisely the order one whole
+    # draw would. The values are bit-identical; only the high-water mark changes.
+    # The aggregation is applied per block, so a coarse level never materialises the
+    # fine array at all.
+    out_steps, remainder = divmod(fine, max(aggregate, 1))
+    if remainder:
+        # `ladder_spec` makes `fine` a power-of-two multiple of the level's step
+        # count, so this cannot happen from the ladder; a hand-built payload could.
+        dW = rng.standard_normal((paths, fine) + tail)
+        dW *= scale
+        if aggregate > 1:
+            dW = dW.reshape(paths, -1, aggregate, *tail).sum(axis=2)
+        return dW
+
+    block = max(1, int(CRN_BLOCK_BYTES // (fine * (m or 1) * 8)))
+    out = np.empty((paths, out_steps) + tail, dtype=float)
+    for lo in range(0, paths, block):
+        hi = min(lo + block, paths)
+        chunk = rng.standard_normal((hi - lo, fine) + tail)
+        chunk *= scale
+        if aggregate > 1:
+            out[lo:hi] = chunk.reshape(hi - lo, out_steps, aggregate, *tail).sum(axis=2)
+        else:
+            out[lo:hi] = chunk
+        del chunk
+    return out
 
 
 def _generator_nd(item, phi, np, evaluate):

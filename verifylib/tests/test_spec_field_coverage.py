@@ -94,8 +94,22 @@ def _declared_keys(node, prefix="", out=None):
 #: should not; what matters is that *something* consumes the map, and until F0
 #: carried ``functionals`` across the SDE sandbox boundary nothing did, which is
 #: what nine names in this failure message were telling us.
+#: ``verification.structural_facts`` is the same shape one step further: its *keys*
+#: are the formulator's own names for the problem's structural features, and the
+#: value is prose for the solver agent. `pool.check_boundary_facts` reads the names
+#: it knows -- `pool.BOUNDARY_FACTS` -- and deliberately treats the rest as
+#: description rather than instruction, because a key that implies a technique and a
+#: key that merely classifies the problem are not interchangeable.
+#:
+#: Entered as a subtree after four runs coined four names in two days:
+#: `variance_boundary` (B04), `feller_violated` (B05), `degenerate_boundary` (B07)
+#: and, under `functional_notes`, `expected_ordering` (B06). Listing them one at a
+#: time makes this test flap on every run without telling anyone anything new; the
+#: question worth asking is whether `pool.BOUNDARY_FACTS` should grow, and that is a
+#: design decision, not a census entry.
 VALUE_SUBTREES = ("parameters.", "requirements.",
-                  "evaluation_thresholds.functionals.")
+                  "evaluation_thresholds.functionals.",
+                  "verification.structural_facts.")
 
 #: Keys assembled at the call site, which a literal search cannot see.
 #: ``reference._moment_observables`` builds ``f"{kind}_{comp}_from"`` and
@@ -107,6 +121,26 @@ CONSTRUCTED = (re.compile(r"^(mean|variance)_[XYZ]?_?(from|expression|value_at_T
 #: guard rather than a freeze. Each entry is a decision, and two of them name the
 #: step that will remove them.
 UNREAD = {
+    # --- invented by a formulator, 2026-11-06 ---------------------------------
+    # Two fields the BENCHOP SDE run coined for itself that are not prose and not
+    # covered by a VALUE_SUBTREES entry. Recorded rather than consumed, with what
+    # each one would be good for, because a consumer is a design decision and this
+    # test's job is only to stop them going unnoticed.
+    "state_components": (
+        "sde_heston_dnt: [\"S\", \"V\"], the state vector's component names. Worth a "
+        "consumer: `surrogates.component_of` takes `applies_to_component` as a bare "
+        "index and `dynkin._initial_state` reads only X_0/Y_0/Z_0, so a spec that "
+        "names its components in domain terms (S_0, V_0) cannot be matched to "
+        "positions -- which is how B06 lost its generator check. This field is "
+        "exactly the missing map, but using it to reorder anything is the positional "
+        "mispairing `component_of` exists to prevent, so it needs a design pass"),
+    "expected_ordering": (
+        "sde_hhw_call_corr, inside verification.functional_notes: "
+        "'price_S75 < price_S100 < price_S125'. This is a *valid* "
+        "`functionals.cross_check` claim written under a key the formulator invented, "
+        "because `verification.expected_cross_check` was documented nowhere. The "
+        "prompt now names that field; this stays until the corpus is re-made"),
+
     # --- guidance for the solver agent, by design -----------------------------
     "implementation_notes": "guidance prose for the solver agent (schema.GUIDANCE_PATHS' class)",
     "output_contract": "guidance prose: the return shape the solver must produce",
@@ -167,15 +201,21 @@ UNREAD = {
     # the design and keeps spelling it differently. The fix is a signal to the
     # formulator, not a line in this table; until then the table tracks whichever
     # spelling the current workspace happens to carry.
-    "evaluate_at": "a 2-D kolmogorov block's evaluation points. The scalar route "
-                   "refuses the block outright, so they have no reader. Declared by "
-                   "`sde_heston_call_feller`, 2026-11-01",
-    "functional_names": "the names a 2-D kolmogorov block would price. Same "
-                        "unreachable block; `price_S75`/`price_S100`/`price_S125` "
-                        "are graded through `evaluation_thresholds.functionals` "
-                        "instead, which is read",
-    "Ny": "the second-axis grid count for the same unreachable 2-D block. `Nx` and "
-          "`Nt` have scalar-route readers; a second spatial axis does not",
+    # Retired 2026-11-05, and the churn this predicted is what retired them. The note
+    # above said the exemption "churns with every re-run while the underlying waste
+    # stays put", and tracked whichever spelling the current workspace carried --
+    # `state_vars`/`read_at` on the Oct-31 run, `evaluate_at`/`functional_names`/`Ny`
+    # on Nov-01. A third `--fresh` run of the same problem the same afternoon
+    # (12-implementation.md §7) proposed **no** 2-D Kolmogorov block at all, so the
+    # third spelling aged out like the first two.
+    #
+    # Which is the useful datum: across three runs the formulator proposed this
+    # unreachable route twice and skipped it once, so it is not a stable property of
+    # the problem and there is nothing here to exempt. The waste is real when it
+    # happens and the fix is still a signal to the formulator that `surrogates.
+    # kolmogorov` refuses any spec with `state_dimension != 1`, not a line in this
+    # table chasing field names. If a fourth run invents a fourth spelling it will
+    # meet the guard and this paragraph.
     # --- the replication knobs: a decision deferred, with its evidence ---------
     # These four are the declared place to configure a second solve at a different
     # path count, and nothing re-solves. Measured 2026-10-29 by re-solving the

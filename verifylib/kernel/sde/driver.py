@@ -86,7 +86,25 @@ def evaluate_sde(spec, plan_dir, agent):
     peaks: list[float] = []
 
     def solve(call, **kw):
-        out = sandbox.run(plan_dir, "sde", call, timeout_s=timeout_s, **kw)
+        # `timeout_scale` lets a caller that knowingly asks for more work than the
+        # graded solve get a budget in proportion to it. `timeout_s` is calibrated as
+        # 4.2x the slowest *graded* solve over the 34 live workspaces; a Dynkin ladder
+        # level that integrates 2^k times the graded step count is that many times the
+        # work by construction, so holding it to the graded budget is not the same
+        # guard -- it is a different, tighter one that nothing calibrated.
+        #
+        # Measured on `sde_sabr_cev_call_i` (B01, 2026-11-05): the finest level takes
+        # 299.9 s of a 300 s budget on an idle machine, so whether `dynkin_ok` came
+        # back `clean` or `unavailable` turned on what else happened to be resident.
+        # Two of three plans lost the check, and the kernel capped them at
+        # `A_prime`/uncertified for a reason that was really a stopwatch.
+        #
+        # Never scaled *down*: a scale below 1 would tighten the runaway guard on a
+        # call that asked for less, which is not this function's business.
+        out = sandbox.run(plan_dir, "sde", call,
+                          timeout_s=_scaled_timeout(timeout_s,
+                                                    kw.pop("timeout_scale", 1.0)),
+                          **kw)
         peak = out.get("peak_mem_mb")
         if isinstance(peak, (int, float)) and peak > 0.0:
             peaks.append(float(peak))
@@ -632,6 +650,22 @@ def evaluate_sde(spec, plan_dir, agent):
 
 
 # --- helpers ------------------------------------------------------------------
+
+def _scaled_timeout(timeout_s, scale):
+    """The wall-clock budget for a call that asks for ``scale`` times the graded work.
+
+    Never below ``timeout_s``: a scale under 1 would *tighten* the runaway guard on a
+    call that asked for less, which is not this function's business, and a missing or
+    unusable scale has to behave exactly like the graded call.
+    """
+    try:
+        factor = float(scale)
+    except (TypeError, ValueError):
+        factor = 1.0
+    if factor != factor or factor < 1.0:          # NaN, None-ish, or a shrink
+        factor = 1.0
+    return max(1, int(round(float(timeout_s) * factor)))
+
 
 def _crashed(m, got, started):
     metrics.record(m, "crashed", True)
@@ -1456,16 +1490,33 @@ def _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult, levels=3, m=
     # choose to escape. Cost: the dt/4 level is 4x the steps, ~30 s per plan here.
     payloads = crn.ladder_spec(num_paths, dt, T, levels=levels, seed=seed, m=m)
     runs = []
+    # Formed **before** the ladder runs. `initial_moments` reads the spec and the
+    # test functions and nothing else -- no solve feeds it -- yet it used to be
+    # evaluated after every level had been integrated, so a spec that cannot supply
+    # `E[phi(X_0)]` paid for the whole ladder before saying so.
+    #
+    # Measured on `sde_hhw_call_corr` (B06, 2026-11-06). Its finest level is 50 000
+    # paths x 10 000 steps x 3 channels = 12.0 GB, exactly at `DYNKIN_MAX_BYTES`, so
+    # the footprint guard admits it by zero bytes. Two of three plans ran all three
+    # levels -- 1337 s and 1339 s of a 7200 s problem budget -- and were then told
+    # "no deterministic initial value is declared", a verdict available before the
+    # first level. 44 minutes of a run that went on to hit its two-hour ceiling.
+    phi0, phi0_detail = dynkin.initial_moments(spec, phis)
+    if phi0 is None:
+        return "unavailable", {**cost, **phi0_detail}
+
+    graded_steps = max(1, round(float(T) / float(dt)))
     for level in payloads:
+        # This level's step count against the graded one: 1, 2, 4 ... for a ladder
+        # that refines downward from `dt`. The work scales with it, so the budget does.
+        level_steps = max(1, round(float(T) / float(level["dt"])))
         got = solve({"num_paths": num_paths, "dt": level["dt"], "T": T, "seed": seed},
-                    crn=level, observables=payload)
+                    crn=level, observables=payload,
+                    timeout_scale=level_steps / graded_steps)
         if got["status"] != "ok":
             return "unavailable", {"reason": f"the observables run crashed: "
                                              f"{got.get('reason')}: {got.get('error')}"}
         runs.append(got)
-    phi0, phi0_detail = dynkin.initial_moments(spec, phis)
-    if phi0 is None:
-        return "unavailable", {**cost, **phi0_detail}
     outcome, detail = dynkin.check(spec, phis, runs, phi0, ci_mult=ci_mult)
     return outcome, {**detail, "initial_state": phi0_detail, "cost": cost}
 

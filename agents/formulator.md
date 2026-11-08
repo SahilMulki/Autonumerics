@@ -332,6 +332,51 @@ affine or quadratic in `X`, the moment equations **close exactly**: `dE[X]/dt = 
 Set `closes_exactly: false` if you had to invoke a closure approximation — the evaluator will then
 treat it as a sanity band, not a reference. Do not pass off a closure as ground truth.
 
+**If the functionals have a known ordering, declare it as `verification.expected_cross_check`.**
+An ordering is a stronger statement than any single tolerance: three prices from one set of paths can
+each sit inside their own gate while being out of order, which is the signature of a mis-wired strike
+or a payoff read at the wrong spot. Put the claim in that field — prose is fine, the checker reads
+only the relations out of it:
+
+```json
+"expected_cross_check": "call value is increasing in the initial spot: price_S75 < price_S100 < price_S125"
+```
+
+Use the functional names exactly as `functionals` declares them, joined by `<`, `<=`, `>` or `>=`
+with spaces around them. This is the field the kernel reads; a claim written anywhere else (under
+`functional_notes`, say) is documentation and is never checked.
+
+**On a multi-component state, declare `initial_condition.value` explicitly.** The Dynkin check forms
+`E[phi(X_0)]` and reads the initial state from `X_0`/`Y_0`/`Z_0`, in state order. If you name your
+initial values for the domain — `S_0`, `V_0`, `R_0` — nothing matches them, and the check abstains
+on a state that is perfectly deterministic. The order cannot be guessed from the names, so state it:
+
+```json
+"initial_condition": {"law": "deterministic", "value": ["S_0", "V_0", "R_0"]}
+```
+
+listing the components in the same order as the state vector your `generator` and `drift_expression`
+use. Scalar problems with a plain `X_0` need nothing extra.
+
+**`mean_from` and `variance_from` are single expression strings, never lists.** The `state`, `rhs`
+and `initial` arrays carry one entry per *moment* and may be as long as the hierarchy needs — but
+this route produces **one marginal reference**, not one per state component. On a multi-component
+state, say which component that marginal describes:
+
+```json
+"mean_from": "m_S",
+"variance_from": "m_SS - m_S**2",
+"applies_to_component": 0,
+"applies_to_name": "S"
+```
+
+`applies_to_component` is a 0-based index into the state vector, and omitting it means component 0.
+Writing `"mean_from": ["m_S", "m_sig"]` does not give the evaluator two references — the reader
+takes scalar strings only, so a list is not read and the spec reports as declaring no `mean_from`
+at all. That costs a whole evaluate cycle: every plan in the pool scores low for want of a
+surrogate before anyone sees why. If the hierarchy gives you exact moments for a second component,
+state them in `note` as prose, where they are documentation rather than an answer key.
+
 **2. Kolmogorov solve** (`verification.kolmogorov`) — for scalar (or 2-D) SDEs where the moments do
 not close. `E[φ(X_T)]` solves the backward Kolmogorov PDE. Emit the truncation domain and payoffs:
 

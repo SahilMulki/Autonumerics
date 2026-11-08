@@ -8,6 +8,7 @@ under the same code with the same declared ``terminal_law``, and one pool contai
 exact non-central chi-squared transition while the other contains three discretizations
 of it. The difference was which spec's free-text notes happened to mention the scheme.
 """
+import glob
 import json
 import os
 
@@ -273,25 +274,55 @@ def test_a_directory_that_is_not_a_problem_reports_nothing(tmp_path):
 # --- the live corpus ------------------------------------------------------------
 
 
-def test_the_two_heston_pools_come_out_differently(tmp_path):
-    """The comparison the whole module is built on, run against the staged workspace
-    rather than a fixture: `sde_heston_call_feller` is reported for leaving its declared
-    non-central chi-squared transition unused, and `sde_heston_call_hivar` -- same
-    class, same declared law, same code -- is not, because its pool contains
-    `1-exact-chi2-broadie-kaya-cv`.
+def test_the_live_corpus_is_reported_exactly_where_the_technique_is_missing():
+    """The discrimination this module exists for, asserted against real artifacts.
 
-    Skipped rather than asserted-around where the workspace is not staged: it is
-    gitignored, and three documents in `docs/improving-autonumerics/` have already
-    been invalidated by it turning over underneath them.
+    **Written against the corpus rather than against a slug**, which is a correction.
+    The first version named the two Heston pools directly -- `sde_heston_call_feller`
+    is reported for leaving its declared non-central chi-squared transition unused,
+    `sde_heston_call_hivar` is not -- and it was **red within the hour**, because a
+    `--fresh` re-run of the first problem produced a pool that *does* contain the exact
+    draw (12-implementation.md §7). That is the fix working, and the test called it a
+    regression.
+
+    `workspace/` is gitignored and turns over; three documents in
+    `docs/improving-autonumerics/` have been invalidated by it, and so was this test.
+    So the assertion is now the *property*, read off whatever is on disk: a pool with a
+    declared `terminal_law` is reported for that component exactly when no plan in it
+    declares both the component and `scheme_family: exact-transition`. That holds for
+    any corpus, and it is what the fixture tests above check in isolation.
     """
     import pytest
 
     from .conftest import WORKSPACE
 
-    feller = os.path.join(WORKSPACE, "sde_heston_call_feller")
-    hivar = os.path.join(WORKSPACE, "sde_heston_call_hivar")
-    if not (os.path.isdir(feller) and os.path.isdir(hivar)):
-        pytest.skip("the BENCHOP Heston pools are not staged")
-    laws = [f for f in pool.check_problem(feller) if "terminal_law" in f.path]
-    assert len(laws) == 1, "the pool with no exact draw should be reported"
-    assert [f for f in pool.check_problem(hivar) if "terminal_law" in f.path] == []
+    checked = 0
+    for directory in sorted(glob.glob(os.path.join(WORKSPACE, "sde_*"))):
+        spec_path = os.path.join(directory, "problem_spec.json")
+        if not os.path.isfile(spec_path):
+            continue
+        with open(spec_path, encoding="utf-8") as fh:
+            spec = json.load(fh)
+        laws = (spec.get("verification") or {}).get("terminal_law")
+        if not isinstance(laws, list):
+            continue
+        plans = pool._plans(directory)
+        if not plans:
+            continue
+        exact = pool._exact_law(plans)
+        reported = {f.path for f in pool.check_terminal_law(spec, plans)}
+        for i, entry in enumerate(laws):
+            if not isinstance(entry, dict) or not entry.get("law"):
+                continue
+            checked += 1
+            expected = f"verification.terminal_law[{i}]" if not exact.get(i) else None
+            if expected:
+                assert expected in reported, (
+                    f"{os.path.basename(directory)} component {i} declares "
+                    f"{entry['law']!r}, no plan draws from it, and it was not reported")
+            else:
+                assert f"verification.terminal_law[{i}]" not in reported, (
+                    f"{os.path.basename(directory)} component {i} is drawn exactly by "
+                    f"{exact[i]} and was reported anyway")
+    if not checked:
+        pytest.skip("no staged SDE spec declares a terminal_law")

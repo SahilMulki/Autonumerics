@@ -121,6 +121,17 @@ def test_isolated_settings_is_threaded_into_the_conductor_command(tmp_path):
     ("You have hit your usage limit. Resets at 3pm.", True),
     ("error: rate limit exceeded", True),
     ("Insufficient credit balance", True),
+    # The real message, verbatim, from the 2026-11-05 nine-problem run. It
+    # matched none of the then-eleven phrases, so the driver did not halt and
+    # burned the eight remaining units at 1 s each.
+    ("You've hit your 5-hour limit · resets 9:20pm (America/New_York)", True),
+    ("You've hit your 7-hour limit", True),
+    # The "· resets" phrase on its own must be able to fire: an
+    # unconditional \b beside the "·" made it dead for its whole life.
+    ("limit · resets 9:20pm", True),
+    # ... without becoming a bare-word match on unrelated prose.
+    ("the solver resets the seed between replications", False),
+    ("a four-hour wall-clock budget", False),
 ])
 def test_looks_like_limit_matches_whole_words_only(tmp_path, text, expected):
     """'degene|rate limit' is the kernel's own vocabulary; a successful transcript
@@ -354,3 +365,34 @@ def test_the_run_config_says_which_ceiling_the_sweep_was_made_under():
     """A sweep made under the default ceiling can have been cut off mid-cycle, and
     nothing else in the record distinguishes it from one that was not."""
     assert RUN.CONDUCTOR_ENV == {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "1800000"}
+
+
+def test_the_two_limit_phrase_lists_have_not_drifted():
+    """oneshot.py duplicates run.py's phrases rather than importing them, and
+    its comment says it reuses them. A phrase added to one and not the other
+    leaves the baseline driver blind to a limit the pipeline driver catches.
+    Read as source, not imported: oneshot.py rewrites sys.path on import."""
+    import ast
+    import pathlib
+
+    def phrases(path):
+        tree = ast.parse(pathlib.Path(path).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and any(
+                getattr(t, "id", None) == "_LIMIT_PHRASES" for t in node.targets
+            ):
+                return ast.literal_eval(node.value)
+        raise AssertionError(f"no _LIMIT_PHRASES in {path}")
+
+    here = pathlib.Path(__file__).resolve().parent.parent
+    assert phrases(here / "oneshot.py") == phrases(here / "run.py")
+    assert phrases(here / "run.py") == list(RUN._LIMIT_PHRASES) or \
+        tuple(phrases(here / "run.py")) == RUN._LIMIT_PHRASES
+
+
+def test_a_phrase_is_anchored_only_on_word_character_edges():
+    assert RUN._phrase_pattern("usage limit") == r"\busage\ limit\b"
+    pattern = RUN._phrase_pattern("· resets")
+    assert not pattern.startswith(r"\b"), (
+        "a leading \\b beside a non-word character can never match")
+    assert pattern.endswith(r"\b")

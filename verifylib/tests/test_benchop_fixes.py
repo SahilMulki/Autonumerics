@@ -483,11 +483,42 @@ def test_solve_time_cannot_change_the_ranking_of_a_benchop_pool(slug):
     the accuracy-gap formulation could not manage: measured 2026-11-01, the
     accuracy component is flat across all four BENCHOP pools (``None`` on
     ``sde_heston_dnt``, ``0.0`` on the other three), so any assertion phrased in
-    terms of an accuracy *gap* skips everywhere and guards nothing. That flatness
-    is itself worth knowing and is recorded in
-    ``ranking.CERT_COMPONENTS``: at the kernel's diagnostic path count the graded
-    quantity is not resolvable, so the one component that matters contributes
-    nothing and the index rests on the others.
+    terms of an accuracy *gap* skips everywhere and guards nothing.
+
+    **[2026-11-05] That flatness was the bug, not the path count.** This docstring
+    attributed it to the kernel's diagnostic path count making the graded quantity
+    unresolvable. The real cause was that ``metrics.BLOCK_KEYS`` did not carry
+    ``functional_rel_error`` or ``functional_rel_tol``, so ``ranking.accuracy`` read
+    them from a dict that could not contain them and fell through to a state moment
+    on every plan -- see ``docs/improving-autonumerics/11-sde-accuracy-fixes.md`` §1.
+    With the fields on the block, accuracy discriminates: 0.048 / 0.451 / 0.159 across
+    ``sde_heston_call_feller``'s three plans.
+
+    So the second half of this guard changed, and the reason is worth reading before
+    changing it back. It used to assert that **within a band tied on score and
+    provenance, the most accurate plan must win.** That assertion could never fire
+    while accuracy was flat, and the moment it could, it failed -- on this pool the
+    winner's accuracy is 0.048 against a band maximum of 0.451. The assertion is
+    accuracy-first restricted to a band, and accuracy-first is **measured worse**:
+    1.24x by raw harness error across five re-ranked pools, and on this pool
+    specifically it ships 0.0779 where the current key ships 0.0391
+    (``12-implementation.md`` §6.3, §7.3).
+
+    It is not simply wrong either. By *noise-floored* error -- a plan cannot claim an
+    error below its own bar -- the band maximum here is the better plan, 0.0779 against
+    0.2973. The two metrics disagree, and which one selection optimises for is an open
+    question that one pool must not settle. So the ordering claim is **withdrawn**
+    rather than inverted, and what replaces it is the thing this change set does
+    establish and that was false on all four pools when the paragraph above was
+    written: on a pool graded by declared functionals, accuracy has to be *measurable*.
+
+    **One tooth today, and it grows.** The guard reads ``functional_rel_tol`` off each
+    plan's ``<metrics>`` block, so it is live only on pools whose blocks were written
+    after the field reached ``BLOCK_KEYS``. Of the four staged pools that is
+    ``sde_heston_call_feller`` alone -- three plans, all measurable, 0.451 / 0.159 /
+    0.048 -- and the other three skip on archived blocks that cannot carry the field.
+    That is the right scoping rather than a gap: the assertion is about what the
+    current kernel reports, and it arms itself as pools are re-run.
     """
     pool = _pool(slug)
     if len(pool) < 2:
@@ -511,24 +542,32 @@ def test_solve_time_cannot_change_the_ranking_of_a_benchop_pool(slug):
         f"{slug}: reversing the pool's solve times reordered it -- "
         f"{times} -> {list(reversed(times))}")
 
-    # ...and where accuracy *does* separate two plans tied on score and
-    # provenance, the less accurate one must not be the winner.
-    entries = [{"kernel": {"summary": s, **s}} for s in pool]
-    entries.sort(key=lambda e: ranking.rank_key(e, pool))
-    top = entries[0]["kernel"]
-    band = [e["kernel"] for e in entries
-            if (e["kernel"].get("score"), e["kernel"].get("provenance"))
-            == (top.get("score"), top.get("provenance"))]
+    # ...and accuracy has to reach the ranker at all. See the docstring: this
+    # replaced an ordering assertion that could not fire while the component was
+    # structurally invisible, and that failed the moment it could.
+    def acc(summary):
+        return ranking.accuracy(summary, ranking._tol_of(summary, {}))
 
-    def acc(k):
-        s = k["summary"]
-        return ranking.accuracy(s, ranking._tol_of(s, {}))
-
-    graded = [acc(k) for k in band if acc(k) is not None]
-    if len(set(graded)) > 1:
-        assert acc(top) == max(graded), (
-            f"{slug}: the winner's accuracy component is {acc(top)} but a plan "
-            f"tied with it on score and provenance measured {max(graded)}")
+    graded = [acc(s) for s in pool if s.get("functional_rel_tol") is not None]
+    if graded:
+        assert all(a is not None for a in graded), (
+            f"{slug}: a plan declares a graded functional and `ranking.accuracy` "
+            f"returned None for it, so 0.35 of the quality index is renormalised "
+            f"away on the quantity the problem is actually scored on: {graded}")
+        # ...and not saturated at an endpoint across the whole pool, which is the
+        # signature the docstring describes: 0.0 everywhere is the component reading a
+        # moment the spec says does not close, 1.0 everywhere is the F16 snap placing
+        # every unresolved plan at the ceiling. A tie at an *interior* value is not
+        # that -- two plans can legitimately measure the same functional error, and
+        # four of the ten pools on this suite hold a near-identical pair -- so the
+        # test is on the endpoints rather than on distinctness.
+        if len(graded) > 1:
+            assert set(graded) not in ({0.0}, {1.0}), (
+                f"{slug}: accuracy is saturated at {graded[0]} across "
+                f"{len(graded)} plans with declared functionals, so 0.35 of the "
+                f"index orders nothing. Check that `functional_rel_error` and "
+                f"`functional_rel_tol` are on `metrics.BLOCK_KEYS` and that the "
+                f"error is not being read off a moment the spec says does not close")
 
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1051,3 +1090,193 @@ def test_the_moment_fallback_is_what_the_block_used_to_force():
     for pair in (tight, loose):
         bare = {k: v for k, v in pair.items() if not k.startswith("functional")}
         assert ranking.accuracy(bare, 0.1) == ranking.accuracy(stripped, 0.1)
+
+
+# --- the moment-ODE selector shape, measured on B01 2026-11-05 ---------------
+
+
+def test_listed_moment_selectors_are_reported_as_the_shape_they_are():
+    """B01's first cycle, in one assertion.
+
+    The formulator wrote ``mean_from: ["m_S", "m_sig"]`` -- one expression per
+    state component, which is the natural thing to write and not the contract.
+    ``isinstance(..., str)`` skipped both, ``out`` came back empty, and the reason
+    read "declares no mean_from or variance_from" of a spec that declares both.
+    Every plan in the pool scored 2 for want of a surrogate, and ~27 minutes and a
+    whole evaluate cycle went by before a re-dispatch fixed it in one.
+    """
+    from verifylib.kernel.sde import surrogates
+
+    spec = _heston_spec()
+    mo = spec["verification"]["moment_ode"]
+    mo["mean_from"] = ["m1", "m2"]
+    mo["variance_from"] = ["m2 - m1**2", "m1"]
+
+    out, detail = surrogates.moment_ode(spec)
+    assert out is None
+    assert detail["moment_ode_listed_selectors"] == ["mean_from", "variance_from"]
+    reason = detail["reason"]
+    # The evaluator agent acts on this string, so it has to carry the field, the
+    # shape, and the scalar form that replaces it.
+    assert "mean_from" in reason and "variance_from" in reason
+    assert "as a list" in reason
+    assert "applies_to_component" in reason
+    assert "declares no mean_from" not in reason
+
+
+def test_one_listed_selector_still_yields_the_other_and_says_what_it_dropped():
+    """A half-read surrogate must not look like a whole one."""
+    from verifylib.kernel.sde import surrogates
+
+    spec = _heston_spec()
+    spec["verification"]["moment_ode"]["mean_from"] = ["m1", "m2"]
+
+    out, detail = surrogates.moment_ode(spec)
+    assert out is not None and "variance" in out and "mean" not in out
+    assert detail["route"] == "moment_ode"
+    assert detail["moment_ode_listed_selectors"] == ["mean_from"]
+    assert "applies_to_component" in detail["moment_ode_listed_warning"]
+
+
+def test_the_scalar_contract_is_documented_where_the_formulator_reads_it():
+    """The kernel's message is the second line of defence; the prompt is the first."""
+    import pathlib
+
+    text = (pathlib.Path(__file__).resolve().parents[2]
+            / "agents" / "formulator.md").read_text()
+    assert "single expression strings, never lists" in text
+    assert "applies_to_component" in text
+
+
+# --- the Dynkin ladder's cost, measured on B01 2026-11-05 -------------------
+
+
+def test_the_crn_ladder_is_built_without_holding_the_level_twice():
+    """Bit-identical to the pre-change expression, at a fraction of the peak.
+
+    B01's finest level is 200 000 paths x 1600 steps x 2 channels = 5.12 GB, and
+    `np.sqrt(T / fine) * rng.standard_normal(shape)` held it twice. Measured: the
+    coarsest level peaked at 6139 MB before and 1571 MB after. Paths are the
+    outermost axis and `standard_normal` fills C-order, so consuming the stream one
+    path block at a time consumes it in exactly the order one whole draw would --
+    which is why this is a memory change and not a numerical one.
+    """
+    import numpy as np
+
+    from verifylib.kernel import sandbox
+
+    def monolithic(crn):
+        rng = np.random.default_rng(int(crn["seed"]))
+        paths, fine = int(crn["num_paths"]), int(crn["Nt_fine"])
+        T = float(crn["T"])
+        shape = (paths, fine) if not crn.get("m") else (paths, fine, int(crn["m"]))
+        dW = np.sqrt(T / fine) * rng.standard_normal(shape)
+        agg = int(crn["aggregate"])
+        if agg > 1:
+            dW = dW.reshape(paths, -1, agg, *shape[2:]).sum(axis=2)
+        return dW
+
+    original = sandbox.CRN_BLOCK_BYTES
+    try:
+        for block in (original, 64):          # 64 forces one path per block
+            sandbox.CRN_BLOCK_BYTES = block
+            for m in (None, 1, 3):
+                for agg in (1, 2, 4):
+                    crn = {"seed": 11, "num_paths": 97, "Nt_fine": 32, "T": 1.5,
+                           "aggregate": agg, "m": m}
+                    got = sandbox._crn_increments(crn)
+                    want = monolithic(crn)
+                    assert got.shape == want.shape
+                    assert np.array_equal(got, want), (m, agg, block)
+    finally:
+        sandbox.CRN_BLOCK_BYTES = original
+
+
+def test_a_finer_ladder_level_gets_a_budget_in_proportion_to_its_work():
+    """The finest level needs 299.9 s of a 300 s budget, so whether the generator
+    check ran turned on machine load rather than on the solver. The guard scales
+    with the level's step count, and never shrinks below the graded budget."""
+    from verifylib.kernel.sde.driver import _scaled_timeout
+
+    # A ladder refining downward from the graded dt: 1x, 2x, 4x the step count.
+    assert _scaled_timeout(300, 1.0) == 300
+    assert _scaled_timeout(300, 2.0) == 600
+    assert _scaled_timeout(300, 4.0) == 1200
+    # B01's finest level, with its measured cost comfortably inside the new budget.
+    assert _scaled_timeout(300, 4.0) > 299.9
+    # Never a shrink, and never a crash on junk.
+    assert _scaled_timeout(300, 0.25) == 300
+    assert _scaled_timeout(300, 0) == 300
+    assert _scaled_timeout(300, None) == 300
+    assert _scaled_timeout(300, "nonsense") == 300
+    assert _scaled_timeout(300, float("nan")) == 300
+    assert _scaled_timeout(1, 1.0) >= 1
+
+
+def test_the_ladder_asks_for_that_budget_with_the_level_it_is_running():
+    """The scale has to be the level's own refinement, not a constant."""
+    import inspect
+
+    from verifylib.kernel.sde import driver
+
+    src = inspect.getsource(driver._dynkin)
+    assert "timeout_scale=level_steps / graded_steps" in src, (
+        "the ladder must pass its own refinement factor, or every level gets the "
+        "graded budget again")
+
+
+def test_the_initial_moments_check_runs_before_the_ladder_not_after():
+    """B06 paid 1337 s per plan for a verdict available in microseconds.
+
+    `initial_moments` reads the spec and the test functions; no solve feeds it. It
+    sat after the level loop, so `sde_hhw_call_corr` -- whose finest level is
+    12.0 GB, admitted by the footprint guard with zero bytes to spare -- integrated
+    all three levels on two plans and was then told its spec declares no initial
+    law. Those two plans burned 44 minutes of a run that hit its 2 h ceiling.
+    """
+    import inspect
+
+    from verifylib.kernel.sde import driver
+
+    src = inspect.getsource(driver._dynkin)
+    hoisted = src.index("dynkin.initial_moments(spec, phis)")
+    loop = src.index("for level in payloads:")
+    assert hoisted < loop, (
+        "initial_moments must be formed before any level is integrated; it depends "
+        "on nothing the ladder produces")
+    # And it is formed exactly once.
+    assert src.count("dynkin.initial_moments(spec, phis)") == 1
+
+
+def test_a_domain_named_initial_state_is_reported_as_a_spelling_mismatch():
+    """B06's state is deterministic; only the key names differ.
+
+    `sde_hhw_call_corr` declares `S_0`, `V_0`, `R_0`, and `_initial_state` reads
+    `X_0`/`Y_0`/`Z_0`, so the check abstained saying "no deterministic initial value
+    is declared" -- which reads as a claim about the problem rather than about the
+    spec's spelling. The order is deliberately not inferred: {S_0, V_0, R_0} does not
+    say whether the state is (S, V, R) or (V, R, S).
+    """
+    from verifylib.kernel.sde import dynkin
+
+    spec = {
+        "state_dimension": 3,
+        "parameters": {"S_0": 100.0, "V_0": 0.04, "R_0": 0.1, "kappa": 0.5},
+        "verification": {"dynkin_test_functions": ["X[:, 0]"]},
+    }
+    phis = dynkin.test_functions(spec)
+    value, detail = dynkin.initial_moments(spec, phis)
+    assert value is None
+    assert detail["initial_value_candidates"] == ["R_0", "S_0", "V_0"]
+    reason = detail["reason"]
+    assert "R_0, S_0, V_0" in reason
+    assert "X_0/Y_0/Z_0" in reason
+    assert "state order" in reason
+
+    # A spec that spells it canonically still works, and one that states the order
+    # explicitly is taken at its word.
+    ok = dict(spec, parameters={"X_0": 100.0, "Y_0": 0.04, "Z_0": 0.1})
+    assert dynkin.initial_moments(ok, phis)[0] is not None
+    stated = dict(spec, initial_condition={"law": "deterministic",
+                                           "value": [100.0, 0.04, 0.1]})
+    assert dynkin.initial_moments(stated, phis)[0] is not None

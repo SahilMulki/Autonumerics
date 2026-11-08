@@ -461,16 +461,33 @@ the harder half and the one with no measured gain attached to it yet.
    is the graded quantity; `resolved` should follow it, and F19's gate reads `resolved`.
 4. ~~Whether to require a `variance_reduction:` declaration.~~ **Settled**: no new field, see §9.1
    decision 4.
-5. ~~**Whether `score`'s primacy survives a working accuracy component.**~~ **Settled 2026-11-05:
-   it does.** B07 re-measured after Fix 2b — accuracy-first is 1.24× worse, sqi-first 1.23× worse
-   ([12](12-implementation.md) §6.3). What replaces it as the open question is narrower and sharper:
-   **the functional error's resolving power.** On B07 it spans 1.3× across plans whose true errors
-   span 4.5×, because most of the estimate is the sampling term, so it ranks the pool's best plan
-   second. A finer accuracy signal — more graded paths, or a sampling term the ranker discounts —
-   is the next thing worth measuring on the selection side.
+5. ~~**Whether `score`'s primacy survives a working accuracy component.**~~ **Settled by raw error
+   2026-11-05, and re-opened the same day by metric.** B07 re-measured after Fix 2b: accuracy-first
+   is 1.24× worse and sqi-first 1.23× worse, **by raw harness error**
+   ([12](12-implementation.md) §6.3). Then B03's live re-run split the two keys by *which metric* —
+   score-first ships the pool best raw (0.0391) and accuracy-first ships the pool best
+   noise-floored (0.0779), each losing under the other measure
+   ([12](12-implementation.md) §7.3). So the open question is now **which metric selection is
+   optimising for**, raw or noise-floored, which neither document has settled; the key order follows
+   from that rather than the other way round.
+   Underneath it, two narrower items:
+   - **The functional error's resolving power.** On B07 it spans 1.3× across plans whose true errors
+     span 4.5×, because most of the estimate is the sampling term, so it ranks the pool's best plan
+     second.
+   - **A fully-abstained bias inflates `accuracy`.** Where Fix 2b abstains, the charged error is the
+     sampling term alone, and "no bias term" and "bias term of zero" read identically to
+     `_functional_fraction`. That is the mirror of the B01 over-charge in
+     [12](12-implementation.md) §1.
 6. **B07 is a generation problem, not a selection one** ([12](12-implementation.md) §6.3). Its pool
    best, 0.0388, is held by `3-em-control-variate-antithetic` — one of the duplicate pairs Fix 5
    reports — and no ordering of the rank key reaches it.
+6a. ~~**B03's pool does not contain the technique.**~~ **It does now.** The live Sonnet re-run
+   produced `1-exact-v-conditional-mc` — the exact non-central χ² transition *and* the conditional
+   Monte Carlo §4 says no plan had ever proposed — from the strengthened manual rules alone, with
+   the gate's pool check coming back clean. Shipped error 0.4084 → **0.0391 raw / 0.2973
+   noise-floored**, and model-matched the pipeline now beats a naked Sonnet draw on this problem by
+   1.48× raw and 4.83× floored ([12](12-implementation.md) §7). **n = 1**, and the gate's corrective
+   path is still untested because generation complied without it.
 7. **The work-precision flake is fixed by argument, not by a repro.** §9.2 diagnosed
    `test_work_precision::test_an_sde_sweep_moves_both_axes_...` as load-dependent; its cost-axis
    check is now end-to-end over a 200× work span instead of between adjacent levels
