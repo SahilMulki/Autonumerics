@@ -1,9 +1,12 @@
 # Improving AutoNumerics — what BENCHOP-SLV measured, and what to change
 
-**Status:** **written 2026-10-28, revised the same day against [07-review.md](07-review.md),
-revised again 2026-10-29 against the free measurements in
-[08-free-measurements.md](08-free-measurements.md), and
-[implemented](09-implementation.md) the same day.** ~~Nothing here is implemented.~~
+**Status:** **written 2026-10-28; three rounds of fix-and-measure since.** Round 1 (F0–F19) was
+reviewed in [07](07-review.md), re-grounded in [08](08-free-measurements.md) and
+[implemented](09-implementation.md) on 2026-10-29. Round 2 was the all-Sonnet retest
+([10](10-sonnet-retest.md), 2026-11-02). Round 3 re-derived the fix list from those measurements
+([11](11-sde-accuracy-fixes.md)) and implemented it in full ([12](12-implementation.md),
+2026-11-05/07). **Start at [§ Where things stand](#where-things-stand-2026-11-07).**
+~~Nothing here is implemented.~~
 
 > **[I, 2026-10-29]** Everything in the fix table below except F9 (withdrawn) and F14 (untouched)
 > is now in the working tree, with 26 acceptance tests in
@@ -37,6 +40,50 @@ in [06](06-retest-protocol.md) §1 needs artefacts that are not on disk. One rev
 [06-retest-protocol.md](06-retest-protocol.md) §8 before changing any code**, and
 [07-review.md](07-review.md) for the reasoning behind each correction.
 
+## Where things stand (2026-11-07)
+
+Read this first; the three sections after it are the original 2026-10-28 argument, kept because the
+later rounds are corrections *to* it.
+
+**Implemented.** Round 1's F0–F19 (all but the withdrawn F9 and the untouched F14) and round 3's
+Fix 0–Fix 6 are in the working tree. The largest single defect found in the whole folder is round
+3's: the `<metrics>` block is a **whitelist**, and five of `ranking.py`'s inputs were not on it —
+`functional_rel_error`, `functional_rel_tol`, `order_band`, `kind` and `cost_source` — so round 1's
+central fix (F3, functional accuracy) and F4's mixed-cost guard **had never reached the ranker at
+all**. `BLOCK_KEYS` went 38 → 50 and a structural test now walks `ranking.py`'s AST to keep it
+honest ([12](12-implementation.md) §1–§2).
+
+**Measured, offline.** 1.32× shipped-error improvement from Fix 3 alone across all ten pools with no
+re-evaluation, and 2.06× across the five pools that were re-evaluated, three of which now ship the
+pool best ([12](12-implementation.md) §6).
+
+**Measured, live.** One problem, `B03`, re-run through the pipeline at Sonnet on 2026-11-05: the
+pool contained the exact non-central-χ² transition *and* conditional Monte Carlo for the first time
+— techniques that appeared in zero of thirty earlier plans — from the strengthened manuals alone.
+Shipped error **0.4084 → 0.0391 raw / 0.2973 noise-floored**, which model-matched beats a naked
+Sonnet draw on the pipeline's worst problem by 1.48× raw and 4.83× floored, and closes a 23× gap to
+ten Opus draws down to 2.2× ([12](12-implementation.md) §7). **n = 1.**
+
+**Test state, 2026-11-07:** `uv run pytest verifylib/tests benchmark/tests` gives **1124 passed,
+3 skipped, 0 failed** — up from the 1030 passed / 4 failed baseline below, with all four of
+[06](06-retest-protocol.md) §7a's failures now green.
+
+**The open questions**, in order of how much they govern the next run
+([11](11-sde-accuracy-fixes.md) §8, [12](12-implementation.md) §5):
+
+1. **Which error metric selection optimises for — raw or noise-floored.** On B03 the two candidate
+   rank keys ship different plans and *each is optimal under one metric*, so the key-order question
+   ([11](11-sde-accuracy-fixes.md) §9.1 decision 1) cannot be settled until the metric is.
+   Score-first keeps primacy meanwhile: accuracy-first measures 1.24× worse by raw error.
+2. **The functional error's resolving power.** On B07 it spans 1.3× across plans whose true errors
+   span 4.5×, because most of the estimate is the sampling term — so a working accuracy component
+   still ranks that pool's best plan second. B07 is a *generation* problem, not a selection one.
+3. **Nine of ten problems have not been re-run since round 3.** Everything above except B03 is an
+   offline re-ranking of archived blocks. See [§ Running the benchmark at Sonnet](#running-the-benchmark-at-sonnet).
+4. **`workspace/` is gitignored and has now invalidated three documents in this folder**
+   ([11](11-sde-accuracy-fixes.md) §8 item 8). Fix 0 persists `evaluation.json` into the plan
+   directory for exactly this reason; date every measurement and name the artefact it came from.
+
 ## The finding, in one paragraph
 
 On the BENCHOP-SLV suite the pipeline is **less accurate than a single Opus completion with no
@@ -69,7 +116,13 @@ Two things follow, and they set the order of work:
    every multi-dimensional problem, which is all ten. The pipeline improvised past that rule in
    nine of ten pools and the improvisations were usually the better plan. It then ranked them last.
 
-## The fix list, by leverage
+## The fix list, by leverage — round 1 (2026-10-28)
+
+> **This table is history.** It was implemented on 2026-10-29
+> ([09](09-implementation.md)) and then **partly undone by measurement**: F3's accuracy component and
+> F4's cost guard could not fire, because the keys they read were missing from the `<metrics>`
+> whitelist ([11](11-sde-accuracy-fixes.md) §1). The live fix list is
+> [11](11-sde-accuracy-fixes.md) §7, implemented in [12](12-implementation.md).
 
 Effort is a rough engineering estimate; "evidence" names the measurement in
 [01-what-was-measured.md](01-what-was-measured.md) that justifies the fix.
@@ -97,9 +150,13 @@ Effort is a rough engineering estimate; "evidence" names the measurement in
 | ~~**F15**~~ | ~~Diagnose B02~~ — **answered** ([08](08-free-measurements.md) §5): it **fails the external gate at 1 of 3 seeds**, every plan recorded `resolved: false`, and nothing acts on it. Superseded by **F19** | — | — | shipped plan 1.1380 at seed 202; `mc_se_rel` 25–38× the reported estimate | Closed |
 | ~~**F9**~~ | ~~Cut `max_iter` 5 → 2~~ — **withdrawn**, it saves nothing | — | — | every plan already stopped at `iter: 2` | **Zero.** The plan-count increase is a cost *rise*, proposed separately |
 
-Detail, rationale and acceptance tests:
+Detail, rationale and acceptance tests. **Reading order: this README, then
+[12](12-implementation.md) for the current state of the code, then [11](11-sde-accuracy-fixes.md)
+for why those fixes and what is still open.** 01–09 are the first round and are superseded where
+they conflict with 11 and 12.
 
-**Baseline test state, measured 2026-10-28:** `uv run pytest verifylib/tests benchmark/tests` gives
+**Baseline test state, measured 2026-10-28** (superseded — see
+[§ Where things stand](#where-things-stand-2026-11-07) for the current 1124/0): `uv run pytest verifylib/tests benchmark/tests` gives
 **1030 passed, 4 failed**. The suite is not red from a regression —
 [06](06-retest-protocol.md) §7a characterises all four, and one of them,
 `test_spec_field_coverage::test_no_sde_spec_field_is_declared_and_unread_without_a_reason`, **is
@@ -115,11 +172,11 @@ read by nothing in `verifylib/`. It is F0/F2's free acceptance test.
 | [05-fix-loop-and-harness.md](05-fix-loop-and-harness.md) | F8–F11: the refine loop's iteration budget and the four harness defects the runs exposed |
 | [06-retest-protocol.md](06-retest-protocol.md) | The all-Sonnet retest: what to hold fixed, what counts as success, what the budget buys, and the artefact question that has to be settled first |
 | [07-review.md](07-review.md) | **An independent review of everything above**, recomputed from the records: three wrong numbers in §2 of 01, the half of the selection loss that is Monte-Carlo luck, why F1 and F3 cannot work as specified, why F9 saves nothing, what is no longer on disk, and what will not generalize past BENCHOP. Every correction above traces to a numbered section of it; one of its findings is rejected in [01](01-what-was-measured.md) §1a |
+| [08-free-measurements.md](08-free-measurements.md) | **The four free measurements, run.** The quality index is anti-correlated with accuracy (8 of 30 within-pool pairs, p = 0.008); seed replication puts the selection loss at **1.69×**; F11 and F15 answered; F6's 104× unsupported |
 | [09-implementation.md](09-implementation.md) | **What was implemented.** Every fix, the file it landed in, the F16 design decision and the two readings of it that are wrong, what was deliberately left undone and why, the test state against [06](06-retest-protocol.md) §7a's baseline, and the three measurements still outstanding |
 | [10-sonnet-retest.md](10-sonnet-retest.md) | **The all-Sonnet retest, measured.** All ten problems re-run: 2.20× better than pre-change on the cheaper model, and behind a matched best-of-three Opus control by 1.67×. The four selection misses with exact mechanisms, why B06 lost 15.7× to a two-sided order penalty whose fix has never executed, why B03's pool is 15× behind C0 at an identical path budget, and six suggested fixes in measured-leverage order — with the two that cannot improve accuracy named as such. **§7 adds the model-matched control** (C0 at Sonnet, 3 draws): it overturns §2's "the pool is 1.67× behind" — model-matched the pool ties at 1.11×, the blind comparison reverses to a 2.4× pipeline win, and the pipeline's one measured edge is robustness, 0 of 30 plans failing the harness against 4 of 30 naked draws |
 | [11-sde-accuracy-fixes.md](11-sde-accuracy-fixes.md) | **The SDE accuracy fix list, re-derived from re-run measurements.** Four of [10](10-sonnet-retest.md) §6's six fixes were wrong about the cause. The `<metrics>` block is a whitelist and **four of `ranking.py`'s inputs are not on it**, so F3's functional accuracy and D2's one-sided order band have never reached the ranker — putting them back recovers B06 (15.7×) and B01 (2.3×) outright, 1.43× on the shipped geomean. Plus: the Richardson denominator inflating a converged plan's error 16×, exact-sampling legs charged a bias they cannot have, why B03's pool lacked the technique B08's had when both specs declared the same field, four of ten pools containing a bit-identical plan pair, and B10 retired as a miss that was always inside its noise bar. **§9 records the four implementation decisions as settled**, including the one argued down: an accuracy-first rank key measures 1.30× *worse* on the re-ranked pools, so score keeps its primacy until Fix 2b lets B07 be re-measured |
 | [12-implementation.md](12-implementation.md) | **Implementing [11](11-sde-accuracy-fixes.md): what each fix became, and the two it corrected.** Fix 0 through Fix 6 shipped, the `<metrics>` block's homes moved together, the pool obligations built as a new `verifylib/pool.py`. **Measured: 1.32× from Fix 3 alone on all ten pools with no re-evaluation, and 2.06× on the five re-evaluated ones, three of which now ship the pool best.** The two corrections are the point: Fix 2b's scope — a decision [11](11-sde-accuracy-fixes.md) §9.1 called settled — threw away a real second-order bias and cost B01 the selection, so the abstention now requires *every* component exact, not any; and the structural test Fix 1 asked for found a **fifth** unreachable ranker input, `cost_source`, meaning F4's mixed-cost guard had never fired. Plus: the manual carried 24 of 38 block keys, so the "specified once" rule had already failed silently; `baseline_select.py` was feeding `rank_key` the full summary while the pipeline fed it the whitelist, so one caller had a working accuracy component all along; and **§9.1 decision 1 resolved by raw error** — with accuracy working, accuracy-first is still 1.24× worse. **§7 is the first live test:** B03 re-run through the pipeline at Sonnet produced `1-exact-v-conditional-mc` — the exact non-central χ² transition *and* the conditional Monte Carlo that appeared in zero of thirty plans before — from the manual rules alone, with the gate's pool check clean. Shipped error 0.4084 → **0.0391 raw / 0.2973 noise-floored**, and model-matched the pipeline now beats a naked Sonnet draw on its worst problem by **1.48× raw and 4.83× floored**, closing a 23× gap to ten Opus draws down to 2.2×. It also re-opens the key-order question on a different axis: the two keys ship different plans and each is optimal under one metric, so what is unsettled is *which metric selection optimises for* |
-| [08-free-measurements.md](08-free-measurements.md) | **The four free measurements, run.** The quality index is anti-correlated with accuracy (8 of 30 within-pool pairs, p = 0.008); seed replication puts the selection loss at **1.69×**; F11 and F15 answered; F6's 104× unsupported |
 
 ## What this folder does not claim
 
@@ -141,9 +198,11 @@ read by nothing in `verifylib/`. It is F0/F2's free acceptance test.
 ## Running the benchmark at Sonnet
 
 The BENCHOP suite is ten Tier-3 SDE problems, `B01`–`B10`. `B03`
-(`sde_heston_call_feller`) was run on 2026-11-01 and is the problem the pairing and
-martingale fixes came out of, so the command below excludes it. Drop `--only` to
-run all ten.
+(`sde_heston_call_feller`) has been run twice post-change — 2026-11-01, which the pairing and
+martingale fixes came out of, and 2026-11-05, the round-3 live test in
+[12](12-implementation.md) §7 — so the command below excludes it. **The other nine have not been
+re-run since round 3; every round-3 number except B03's is an offline re-ranking of archived
+blocks, so this run is what turns 1.32×/2.06× into a measurement.** Drop `--only` to run all ten.
 
 ```bash
 cd /Users/sahilmulki/Autonumerics
@@ -181,7 +240,7 @@ before a run overwrites it.
 
 ### Reading the results
 
-Three things will look like regressions and are not:
+Four things will look like regressions and are not:
 
 - **`unavailable` where a score used to appear.** A reference stating one moment for
   a multi-component state with no slot spelling now abstains instead of assuming
@@ -194,6 +253,11 @@ Three things will look like regressions and are not:
   specs on disk: `sde_sabr_cev_call_i` and `sde_heston_dnt` validate;
   `sde_sabr_cev_call_ii` and `sde_heston_call_feller` do not. It is a spelling
   dependency, not a solver property.
+- **New per-pool complaints in the gate, and duplicate-plan reports.** Round 3 added
+  `verifylib/pool.py`: it reports a pool whose members are bit-identical (four of ten pools held
+  such a pair) and checks the pool's obligations. Those are findings about the *pool*, not failures
+  of a solver. Each plan directory also now carries an `evaluation.json` written by `evaluate`
+  (Fix 0), so a kernel number is reproducible after `workspace/` turns over.
 - **Numbers that do not line up with the Aug-7 baseline.** Cost is gone from
   `ranking.WEIGHTS` and from the `rank_key` tiebreak, `sqi` renormalises over 0.90,
   and the pairing fixes change scores outright. Winner selection is on a different
