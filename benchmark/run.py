@@ -315,8 +315,9 @@ def process(problem, args):
     slug = problem["slug"]
     workspace_dir = os.path.join(WORKSPACE_ROOT, slug)
 
-    # 1. always (re)write the input problem.md
-    S.write_problem_md(problem, WORKSPACE_ROOT)
+    # 1. always (re)write the input problem.md, in this run's own arm -- the staged
+    #    brief is the only thing that makes the two arms different experiments.
+    S.write_problem_md(problem, WORKSPACE_ROOT, arm=getattr(args, "arm", None))
 
     # 2. run the pipeline (unless skipped)
     if args.skip_run:
@@ -380,6 +381,7 @@ def process(problem, args):
         "family": problem["family"], "title": problem["title"], "challenge": problem["challenge"],
         "has_ground_truth": problem["has_ground_truth"],
         "ground_truth_kind": problem.get("ground_truth_kind", "exact"),
+        "arm": getattr(args, "arm", S.DEFAULT_ARM),
         "run": run, "pipeline": pipeline, "verify": verify,
     }
     if kernel is not None:
@@ -451,6 +453,13 @@ def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, 
                 "reference_abs_err", "functional_levels") if k in harness},
             "kernel": block,
             "is_winner": bool(is_winner),
+            # Step 10's own acceptance line is that the per-plan record shows which
+            # scheme family each plan chose, and before the step-8 smoke test it did
+            # not: the family reached the record only inside the winner's
+            # work-precision points, so a comparison across plans -- the whole point
+            # of a scheme benchmark -- had nothing to read. Declared, never inferred,
+            # for the reason `verify.SCHEME_STAGES` gives.
+            "scheme_family": V._plan_scheme_family(plan_dir),
         }
         # Computed here, where the full harness result is still in hand.
         err, margin = plan_harness_error(problem, harness)
@@ -510,6 +519,11 @@ def harness_error_metric(problem):
     the number had not been computed from."""
     if problem["type"] != "sde":
         return "rel_l2_err"
+    # The pathwise route is graded on neither, so the fallback below named a moment
+    # error on all eight of the entries that have no moment gate at all -- the same
+    # stale-label defect the BENCHOP step-8 smoke test found for prices.
+    if problem.get("ground_truth_kind") == "pathwise":
+        return "relative strong error / its gate"
     terms = [t for t, present in (("moment", problem.get("moments") is not None),
                                   ("functional", bool(problem.get("functional_truth"))))
              if present]
@@ -536,6 +550,25 @@ def plan_harness_error(problem, harness):
         if not isinstance(err, (int, float)) or err != err:
             return None, 0.0
         return float(err), float(problem.get("reference_error") or 0.0)
+    # The pathwise route (H1) grades exactly one number, and it is neither a moment
+    # nor a functional, so until the step-8 smoke test this function returned None on
+    # every entry of the `sciml` suite: `wrong_plan_won` had nothing to rank eight of
+    # the nine on and the per-plan table's error column was blank. Same shape as the
+    # defect step 5 of the BENCHOP adoption left for its own step 8, one route later.
+    #
+    # The margin is the sampling noise on the statistic itself. The graded number is a
+    # root-mean-square over `n` paths, whose standard error is `rms / sqrt(2n)` to
+    # leading order, so two plans differing by less than that are not distinguishable
+    # at this path count -- the same reason the moment branch below carries one.
+    if harness.get("gt_kind") == "pathwise":
+        err = harness.get("pathwise_rel_err")
+        tol = harness.get("pathwise_tol_used")
+        if not isinstance(err, (int, float)) or err != err or not tol:
+            return None, 0.0
+        n = int((harness.get("run") or {}).get("num_paths")
+                or problem.get("num_paths") or 0)
+        se = float(err) / math.sqrt(2 * n) if n > 0 else 0.0
+        return float(err) / float(tol), se / float(tol)
     # The gates verify.py applies, so the scaling puts 1.0 exactly at the pass line.
     MOMENTS = (("variance", 0.10), ("mean", 0.05))
     worst, worst_se = None, 0.0
@@ -983,6 +1016,7 @@ def main(argv=None):
         "solver_timeout_s": args.verify_timeout,
         "mem_mb": args.verify_mem_mb,
         "work_precision": args.work_precision,
+        "arm": args.arm,
         # Part of the invocation, not of the grading: a run made under the CLI's
         # default 600 s background ceiling can have been cut off mid-cycle, and the
         # config is the only place that distinguishes it from one that was not.

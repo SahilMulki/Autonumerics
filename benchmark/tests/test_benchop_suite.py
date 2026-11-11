@@ -314,11 +314,21 @@ def test_the_manifest_records_which_suite_the_entry_is_scored_in(prob):
     assert S.manifest_entry(prob)["suite"] == "benchop"
 
 
-def test_the_manifest_counts_the_three_suites_apart(tmp_path):
+def test_the_manifest_counts_the_suites_apart(tmp_path):
+    """~~the three suites~~ -- a fourth (`sciml`) landed in plan-sciml-benchmark.md
+    step 6. The three counts this test was written to pin are still pinned; what is no
+    longer asserted is that nothing *else* carries a `suite` key, because something
+    else now does."""
     path = S.write_manifest(list(P.PROBLEMS), str(tmp_path / "manifest.json"))
     with open(path) as fh:
         manifest = json.load(fh)
-    assert manifest["n_by_suite"] == {"main": 49, "no-closed-form": 7, "benchop": 10}
-    assert sum(manifest["n_by_suite"].values()) == manifest["n_total"]
+    counts = manifest["n_by_suite"]
+    assert counts["main"] == 49
+    assert counts["no-closed-form"] == 7
+    assert counts["benchop"] == 10
+    assert sum(counts.values()) == manifest["n_total"]
+    # No problem outside a named suite carries the key, which is what makes the
+    # `main` denominator readable off the manifest.
+    named = {p["slug"] for p in P.PROBLEMS if p.get("suite")}
     assert not any("suite" in e for e in manifest["problems"]
-                   if e["slug"] not in {p["slug"] for p in SUITE})
+                   if e["slug"] not in named)

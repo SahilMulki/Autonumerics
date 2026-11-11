@@ -133,10 +133,11 @@ MANUAL_PREAMBLE = (
 PROBLEM_MARKER = "\n\n===== PROBLEM =====\n\n"
 
 
-def read_problem_md(problem):
+def read_problem_md(problem, arm=None):
     """Return the exact problem.md both systems are given (contract footer and all).
-    Rewrites it first so it always reflects the current problems.py."""
-    S.write_problem_md(problem, WORKSPACE_ROOT)
+    Rewrites it first so it always reflects the current problems.py -- and in `arm`,
+    since on a pathwise problem the arm is what the brief *asks for* and not a label."""
+    S.write_problem_md(problem, WORKSPACE_ROOT, arm=arm)
     with open(os.path.join(WORKSPACE_ROOT, problem["slug"], "problem.md")) as fh:
         return fh.read()
 
@@ -147,12 +148,12 @@ def read_manual(problem):
         return fh.read()
 
 
-def build_prompt(problem, condition, manuals):
+def build_prompt(problem, condition, manuals, arm=None):
     header = C0_HEADER if condition == "c0" else C1_HEADER
     parts = [header]
     if manuals == "manual":
         parts.append(MANUAL_PREAMBLE + read_manual(problem))
-    parts.append(PROBLEM_MARKER + read_problem_md(problem))
+    parts.append(PROBLEM_MARKER + read_problem_md(problem, arm=arm))
     if condition == "c0":
         parts.append(C0_REMINDER)
     return "".join(parts)
@@ -429,13 +430,33 @@ def _model_tag(model):
     return re.sub(r"[^A-Za-z0-9._-]", "_", model or "default")
 
 
-def plan_dir_for(problem, condition, manuals, model, rep):
+def _arm_tag(arm):
+    """``""`` for the default arm, ``"|<arm>"``-style suffix otherwise.
+
+    The arm has to reach the artifact path and the unit key, and the reason is a defect
+    found by running both arms for the first time: `plan_dir_for` keyed on
+    (problem, condition, manuals, model, rep) and nothing else, so the second arm wrote
+    its `solver.py` over the first arm's. On a *scheme* benchmark the solver source is
+    the evidence -- it is what says which scheme was chosen -- so the first arm's
+    result survived in the record while the thing the record is about was deleted.
+    `unit_key` had the same hole, and there it is worse than lost evidence: two arms
+    written to one results file would have silently deduped to one, which is the
+    pooling §6 made the arm a recorded field to prevent.
+
+    The default arm keeps the old spelling exactly, so every frozen results file still
+    matches on `--resume` and every existing artifact directory is still the right one.
+    """
+    return "" if not arm or arm == S.DEFAULT_ARM else f"-{arm}"
+
+
+def plan_dir_for(problem, condition, manuals, model, rep, arm=None):
     return os.path.join(ONESHOT_ROOT, _model_tag(model), problem["slug"],
-                        f"{condition}-{manuals}", f"rep{rep}")
+                        f"{condition}-{manuals}{_arm_tag(arm)}", f"rep{rep}")
 
 
-def unit_key(slug, condition, manuals, model, rep):
-    return f"{slug}|{condition}|{manuals}|{_model_tag(model)}|{rep}"
+def unit_key(slug, condition, manuals, model, rep, arm=None):
+    return (f"{slug}|{condition}|{manuals}{_arm_tag(arm)}|"
+            f"{_model_tag(model)}|{rep}")
 
 
 def reps_per_problem(chosen, args):
@@ -473,10 +494,12 @@ def reps_per_problem(chosen, args):
 
 def process_unit(problem, condition, manuals, model, rep, args):
     slug = problem["slug"]
-    plan_dir = plan_dir_for(problem, condition, manuals, model, rep)
+    plan_dir = plan_dir_for(problem, condition, manuals, model, rep,
+                            arm=getattr(args, "arm", None))
     os.makedirs(plan_dir, exist_ok=True)
 
-    prompt = build_prompt(problem, condition, manuals)
+    prompt = build_prompt(problem, condition, manuals,
+                          arm=getattr(args, "arm", None))
     with open(os.path.join(plan_dir, "prompt.txt"), "w") as fh:
         fh.write(prompt)
 
@@ -513,6 +536,7 @@ def process_unit(problem, condition, manuals, model, rep, args):
         "ground_truth_kind": problem.get("ground_truth_kind", "exact"),
         "discriminator": bool(problem.get("discriminator")),
         "condition": condition, "manuals": manuals, "model": model, "rep": rep,
+        "arm": getattr(args, "arm", S.DEFAULT_ARM),
         "run": run, "verify": verify,
         "plan_dir": os.path.relpath(plan_dir, REPO_ROOT),
     }
@@ -689,11 +713,13 @@ def main(argv=None):
         "agent_timeout": args.agent_timeout,
         "solver_timeout_s": args.timeout, "mem_mb": args.mem_mb,
         "work_precision": args.work_precision,
+        "arm": args.arm,
     }
 
     t_start = time.monotonic()
     for i, (problem, cond, man, rep) in enumerate(units, 1):
-        key = unit_key(problem["slug"], cond, man, args.model, rep)
+        key = unit_key(problem["slug"], cond, man, args.model, rep,
+                       arm=getattr(args, "arm", None))
         label = f"{problem['slug']} [{cond}/{man}] rep{rep} ({args.model})"
         if args.resume and key in prior and key not in stale:
             print(f"[{i}/{len(units)}] {label}: resume — skipping (already recorded)")

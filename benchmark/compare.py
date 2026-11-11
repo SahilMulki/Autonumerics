@@ -47,6 +47,7 @@ RESULTS_DIR = os.path.join(HERE, "results")
 sys.path.insert(0, HERE)
 import problems as P  # noqa: E402, I001
 import report as R  # noqa: E402
+import setup as S  # noqa: E402
 
 DEFAULT_PIPELINE = os.path.join(RESULTS_DIR, "results.json")
 DEFAULT_ONESHOT = os.path.join(RESULTS_DIR, "oneshot_results.json")
@@ -73,6 +74,17 @@ def _oneshot_pass(rec):
     return R.oneshot_passed(v)
 
 
+class ArmConflict(SystemExit):
+    """Raised when one column would pool records from both arms [H10].
+
+    Not a warning. The two arms measure different things -- whether the pipeline can
+    *recognise* an exactly solvable SDE, and how good its discretisation is -- and a
+    rate averaged over both is neither, while looking exactly like a headline number.
+    `setup.ARMS` has the argument in full. The refusal names the column and both arms,
+    because the fix is always to split the files, never to pick one.
+    """
+
+
 class Column:
     """One system variant: a pipeline config, or a one-shot (cond, manuals, model)."""
 
@@ -81,6 +93,29 @@ class Column:
         self.label = label
         self.kind = kind              # "pipeline" | "oneshot"
         self.by_slug = {}             # slug -> rec (pipeline) | [recs] (oneshot)
+
+    def arms(self):
+        """Every arm appearing in this column's records. Records written before the
+        arm existed carry none, and are read as the default rather than as a third
+        arm -- every suite but `sciml` has only one arm, so that is what they were."""
+        found = set()
+        for group in self.by_slug.values():
+            for rec in (group if isinstance(group, list) else [group]):
+                found.add(rec.get("arm") or S.DEFAULT_ARM)
+        return found
+
+    def arm(self):
+        """The one arm this column is in. Raises if it is in two."""
+        found = self.arms()
+        if len(found) > 1:
+            raise ArmConflict(
+                f"column {self.label!r} mixes the {' and '.join(sorted(found))} arms "
+                f"of the SciML comparison in one rate.\n"
+                f"The two measure different things and must never be averaged "
+                f"(benchmark/setup.py ARMS, plan-sciml-benchmark.md §6 and H10).\n"
+                f"Run each arm into its own --results-json and compare them as two "
+                f"columns.")
+        return next(iter(found), S.DEFAULT_ARM)
 
     def pass_at_1(self, slug):
         """Fraction of this column's reps that independently passed for ``slug``;
@@ -177,6 +212,24 @@ def _median(xs):
 
 
 # --- report -----------------------------------------------------------------
+
+
+def check_arms(columns):
+    """Every column in one arm, and the arms distinguished in their labels [H10].
+
+    Called before anything is rendered, so a conflict stops the report rather than
+    appearing inside it. Where several arms are present *across* columns that is
+    fine and is exactly how the two are meant to be read -- side by side, labelled --
+    so the only thing refused is a single column that pools them.
+    """
+    arms = {}
+    for col in columns:
+        arms[col.key] = col.arm()          # raises ArmConflict
+    if len(set(arms.values())) > 1:
+        for col in columns:
+            if arms[col.key] != S.DEFAULT_ARM:
+                col.label = f"{col.label} [{arms[col.key]}]"
+    return arms
 
 
 def generate(columns, out_path):
@@ -314,6 +367,7 @@ def main(argv=None):
 
     specs = args.pipeline if args.pipeline else [f"{DEFAULT_PIPELINE}=pipeline"]
     columns = pipeline_columns(specs) + oneshot_columns(args.oneshot, args.model)
+    check_arms(columns)
     generate(columns, args.out)
 
 

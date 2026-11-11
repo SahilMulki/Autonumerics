@@ -34,7 +34,8 @@ son3   = c0_arm([os.path.join(P, "baselines/oneshot_benchop_c0_sonnet.json")])
 opus3  = c0_arm([os.path.join(P, "baselines/oneshot_benchop_c0_opus_naked3.json")])
 an1    = an_arm([os.path.join(S, f) for f in ("p_regrade123.json","p_regrade4.json",
                                               "p_b0506.json","p_b0708.json","p_b0910.json")])
-an2    = an_arm([os.path.join(P, "pipeline/benchop_sonnet.json")])
+an2    = an_arm([os.path.join(P, "pipeline/benchop_sonnet.json"),
+                 os.path.join(P, "pipeline/benchop_b03_sonnet_run3.json")])
 an3    = an_arm([os.path.join(P, "pipeline/benchop_sonnet_other9_run2.json"),
                  os.path.join(P, "pipeline/benchop_b03_sonnet_run4.json")])
 

@@ -278,6 +278,224 @@ def sde_verify_dt(problem):
     return min(problem["dt"], 0.04 / problem["T"])
 
 
+# --- the pathwise (strong-error) route [H1-H4, plan-sciml-benchmark.md] -----
+#
+# Every SDE route above grades a *distribution*: a terminal moment, a sampled
+# reference moment, a scalar functional, or merely finiteness. None of them compares
+# a solver's path to the exact path it was asked to follow, and that -- the strong
+# error -- is SciMLBenchmarks' primary axis. This section adds it.
+#
+# Two things about it are easy to get wrong, and both were got wrong in rev 1 of the
+# plan before the sources were read (§2a):
+#
+#   1. SciML's `error_estimate = :l2` is a **timeseries** error and an **absolute**
+#      one -- `norm(sqrt(mean_over_saved_timepoints((u - u_analytic)^2)))` in
+#      `SciMLBase/src/solutions/rode_solutions.jl` -- while `:final` is the terminal
+#      one. A terminal relative error is therefore not the published quantity, so
+#      both are computed here: the relative terminal error *gates*, and the absolute
+#      timeseries error is recorded for comparability and gates nothing. A solver
+#      that returns no path history still grades; it just has no comparator axis.
+#   2. A problem with a pathwise-exact closed form can be *answered by transcribing
+#      the formula*, which is exact at every `dt`, consumes the supplied increments,
+#      and varies correctly with the path count -- so neither the `dW`-ignoring check
+#      nor the two-path-count check sees it. The CRN ladder does (`crn.py`'s
+#      `sde_bm_with_drift` precedent: `s0 = 9.4e-15`), and `pathwise_ladder` below
+#      turns that reading into a recorded verdict rather than a near-miss.
+
+#: Relative gate on the terminal strong error of a ``pathwise`` problem.
+#:
+#: 10%, the same as ``SDE_VAR_TOL``, and it was **measured rather than chosen**. The
+#: first version of this constant was 5% -- reasoning that a pathwise difference under
+#: common random numbers has the Monte-Carlo error cancelled out of it and is
+#: therefore better determined than a sampled moment, which is true. It is also
+#: irrelevant: what sets this gate is not the measurement's noise but the *scheme's
+#: discretization error*, and a strong error is far larger than a weak one at the same
+#: step, because the errors do not cancel across paths.
+#:
+#: On SciML's own linear problem (``f = 1.01u``, ``g = 0.87u``, ``T = 1``) at this
+#: harness's step of ``dt = 0.01``, measured over 4000 paths against the exact
+#: solution on the supplied path:
+#:
+#:   * Euler-Maruyama     5.36%
+#:   * Milstein           1.64%
+#:   * Euler-Maruyama with one wrong drift coefficient  40.67%
+#:
+#: So 5% failed a **correct** Euler-Maruyama by a hair, which is the one thing this
+#: repo's calibration rule forbids -- and it would have done so invisibly, since a
+#: false hard-fail on a correct solver does not look like a false positive. At 10% a
+#: correct EM clears by 1.9x, the one-decision-wrong variant fails by 4.1x, and the
+#: two are separated by 7.6x.
+#:
+#: Per-entry calibration in step 7 of the plan still applies and still overrides this
+#: with ``pathwise_tol``: a default is the gate for a problem nobody has measured yet,
+#: never a substitute for measuring it.
+SDE_PATHWISE_TOL = 0.10
+
+#: Levels in the pathwise CRN ladder. Three is ``crn.strong_order``'s requirement
+#: (it needs two nested differences), and the graded step is the **coarsest** of the
+#: three, so the graded run is level 0 and only two extra solves are spent.
+PATHWISE_LADDER_LEVELS = 3
+
+#: Stages per step for each declared ``scheme_family``, for the work axis (H4).
+#:
+#: Read from the plan's own frontmatter and never self-reported by the solver, for
+#: the reason ``verifylib/cli.py`` gives about ``scheme_family`` generally: a
+#: declared field can be held to, an inferred one cannot. Unknown families get 1 and
+#: say so, because over-counting another system's work would flatter this one.
+#: ``ns_per_eval`` is recorded beside it so a mis-declaration shows up as an outlier
+#: rather than silently rescaling a curve.
+SCHEME_STAGES = {
+    "euler-maruyama": 1,
+    "tamed-euler-maruyama": 1,
+    "milstein": 1,
+    "tamed-milstein": 1,
+    "implicit": 1,
+    "exact-transition": 1,
+    "quadratic-exponential": 1,
+}
+
+
+def sde_noise_dimension(problem):
+    """How many independent Brownian channels drive this problem (H3).
+
+    Every SDE problem authored before this one carried ``m = d`` implicitly -- there
+    was no field to say otherwise, and ``verifylib/schema.py``'s
+    ``check_noise_dimension`` works on the *plan spec* side, not on the benchmark
+    entry. Defaulting to ``state_dimension`` is what keeps all 23 existing entries
+    and their problem statements byte-identical.
+
+    It matters as soon as a problem has a non-square diffusion: the increment shape
+    the solver is promised is ``(num_paths, Nt, m)``, and a solver that reuses one
+    increment for two noise sources is wrong in a way no existing problem can
+    exercise.
+    """
+    m = problem.get("noise_dimension")
+    return int(m) if m else int(problem["state_dimension"])
+
+
+def sde_pathwise_fine_steps(problem):
+    """``Nt`` of the one fine Brownian grid every level of this problem coarsens.
+
+    All of a pathwise problem's levels -- the graded step, the ladder, and every
+    work-precision point -- are **aggregations of a single draw**, never independent
+    draws at each step. That is §18's argument applied to the whole series rather
+    than only to the order study: with independent draws the differences between
+    levels are mostly Monte-Carlo noise, and a work-precision curve built that way
+    measures the sampler.
+
+    The price is that a level only exists if its step count divides this one. Levels
+    that do not are reported as skipped with ``not_nested`` rather than quietly drawn
+    fresh, which makes it a step-6 authoring constraint: SciML's published steps
+    (``5^-k``, ``8^-k``, ``2^-k``) have to be declared on a grid they nest in.
+    """
+    declared = problem.get("pathwise_fine_steps")
+    if declared:
+        return int(declared)
+    nt = max(1, round(float(problem["T"]) / sde_verify_dt(problem)))
+    return nt * 2 ** (PATHWISE_LADDER_LEVELS - 1)
+
+
+def sde_pathwise_crn(problem, num_paths, dt):
+    """The CRN payload for one ``(num_paths, dt)``, or ``None`` when ``dt`` does not
+    nest in the problem's fine grid.
+
+    The payload is a seed and a shape, not an array -- the same convention
+    ``crn.ladder_spec`` uses and for the same reason: the child rebuilds the
+    increments deterministically, so nothing large crosses the process boundary.
+    """
+    T = float(problem["T"])
+    fine = sde_pathwise_fine_steps(problem)
+    nt = max(1, round(T / float(dt)))
+    if nt > fine or fine % nt:
+        return None
+    m = sde_noise_dimension(problem)
+    return {"seed": int(problem["seed"]), "num_paths": int(num_paths),
+            "Nt_fine": int(fine), "T": T, "aggregate": int(fine // nt),
+            "m": (m if m > 1 else None), "dt": T / nt}
+
+
+def sde_pathwise_ladder(problem, num_paths=None):
+    """The ``PATHWISE_LADDER_LEVELS`` nested payloads, coarsest first.
+
+    Level 0 is the graded step, so the graded run doubles as the ladder's coarse end.
+    """
+    n = int(num_paths or problem["num_paths"])
+    dt0 = sde_verify_dt(problem)
+    return [sde_pathwise_crn(problem, n, dt0 / 2 ** k)
+            for k in range(PATHWISE_LADDER_LEVELS)]
+
+
+def crn_increments(payload):
+    """Rebuild one CRN level from its payload. Bit-identical in the parent and the
+    child, which is what lets the harness evaluate its own truth on the same
+    Brownian path the solver was handed without shipping the array.
+
+    ``verifylib/kernel/sandbox.py`` builds these in path blocks to bound the
+    high-water mark on a 5 GB finest level; this suite's path counts are three orders
+    smaller, and the blocked form is bit-identical to this one, so the simple version
+    is used and the cross-check stays available.
+    """
+    rng = np.random.default_rng(int(payload["seed"]))
+    paths, fine = int(payload["num_paths"]), int(payload["Nt_fine"])
+    T, agg = float(payload["T"]), max(int(payload["aggregate"]), 1)
+    m = int(payload["m"]) if payload.get("m") else None
+    tail = (m,) if m else ()
+    dW = rng.standard_normal((paths, fine) + tail)
+    dW *= np.sqrt(T / fine)
+    if agg > 1:
+        dW = dW.reshape(paths, -1, agg, *tail).sum(axis=2)
+    return dW
+
+
+def _pathwise_W(payload, save_points):
+    """``(W_T, W_at_saves, t_at_saves)`` for the path the solver was handed.
+
+    ``W_at_saves`` is ``None`` when the problem declares no save grid; the terminal
+    value is always available because it is the sum of the increments.
+    """
+    dW = crn_increments(payload)
+    # Sum over the step axis; a multi-channel problem keeps its channel axis, since
+    # a pathwise formula on `m > 1` is a function of the whole vector W(t).
+    W_T = dW.sum(axis=1)
+    if not save_points:
+        return W_T, None, None
+    nt = dW.shape[1]
+    T = float(payload["T"])
+    k = int(save_points)
+    if k < 1 or nt % k:
+        return W_T, None, None  # the save grid must divide the step grid
+    W = np.cumsum(dW.reshape(dW.shape[0], k, nt // k, *dW.shape[2:]).sum(axis=2),
+                  axis=1)
+    t = np.linspace(T / k, T, k)
+    return W_T, W, t
+
+
+def _sde_pathwise_truth(problem, t, W):
+    """The exact state on the supplied Brownian path. ``pathwise_exact(t, W)`` --
+    parameters baked in by ``partial``, exactly as ``moments(T)`` does."""
+    fn = problem.get("pathwise_exact")
+    if not callable(fn):
+        return None
+    return np.asarray(fn(t, W), dtype=float)
+
+
+def _rel_l2_over_paths(num, exact):
+    """Relative strong error: the l2 norm of the pathwise difference over the l2 norm
+    of the exact terminal states. Relative, so it is a gate; see the module note on
+    why the absolute timeseries norm is recorded separately."""
+    num = np.asarray(num, dtype=float)
+    exact = np.asarray(exact, dtype=float)
+    if num.shape != exact.shape:
+        return None
+    denom = float(np.sqrt(np.mean(exact ** 2)))
+    diff = float(np.sqrt(np.mean((num - exact) ** 2)))
+    if not np.isfinite(diff):
+        return float("inf")
+    # A problem whose exact terminal state is ~0 has no relative error to report;
+    # the absolute difference is the honest number there.
+    return diff / denom if denom > 1e-12 else diff
+
+
 def _scalar(v):
     """Tolerant scalar coercion: accepts a python/numpy scalar or a size-1 array.
     Returns identical values for a correct scalar; lets a solver that reported a
@@ -285,7 +503,7 @@ def _scalar(v):
     return float(np.asarray(v, dtype=float).item())
 
 
-def _run_and_read_sde(problem, plan_dir, injected=None):
+def _run_and_read_sde(problem, plan_dir, injected=None, crn=None):
     """Re-run the best plan's solver well-resolved and read the terminal moments.
 
     Returns ``(comps, run_meta, result, err)`` where ``comps`` is a list of
@@ -297,6 +515,13 @@ def _run_and_read_sde(problem, plan_dir, injected=None):
     importing and calling ``solve_sde`` inline. The scoring downstream is byte-for-
     byte identical either way, which is what makes the sandboxed one-shot path and
     the inline pipeline path a fair comparison.
+
+    ``crn`` is a pathwise problem's increment payload (H1). On the inline path the
+    increments are rebuilt here and passed as ``dW``; on the sandboxed path the child
+    has already rebuilt the identical array from the identical payload, so this
+    argument is ignored and ``injected`` carries the result. A solver whose signature
+    has no ``dW`` is a contract failure rather than a crash: §18 has specified the
+    argument since before this suite existed.
     """
     if injected is not None:
         result, run_meta = injected
@@ -306,7 +531,18 @@ def _run_and_read_sde(problem, plan_dir, injected=None):
             return None, None, None, {"status": "error", "error": "solver.py has no solve_sde()"}
         T = problem["T"]
         dt_verify = sde_verify_dt(problem)
-        result = mod.solve_sde(num_paths=problem["num_paths"], dt=dt_verify, T=T, seed=problem["seed"])
+        kwargs = {"num_paths": problem["num_paths"], "dt": dt_verify, "T": T,
+                  "seed": problem["seed"]}
+        if crn is not None:
+            kwargs["dW"] = crn_increments(crn)
+        try:
+            result = mod.solve_sde(**kwargs)
+        except TypeError as exc:
+            if crn is None or "dW" not in str(exc):
+                raise
+            return None, None, None, {
+                "status": "contract",
+                "error": f"solve_sde does not accept the supplied increments: {exc}"}
         run_meta = {"num_paths": int(problem["num_paths"]), "dt": float(dt_verify),
                     "T": float(T), "seed": int(problem["seed"])}
     d = problem["state_dimension"]
@@ -668,6 +904,140 @@ def verify_sde_reference(problem, plan_dir, injected=None):
     # {key: (value, standard_error)}
     return _score_sde_moments(problem, comps, _sde_moment_truth(problem), run_meta,
                               reference=True, result=result)
+
+
+
+def _pathwise_tol(problem):
+    """The relative gate, per entry. Declared where a scheme cannot reach the
+    default at the resolution the entry ships with -- never widened after seeing
+    where a scheme landed, which is the calibration rule the rest of the suite is
+    held to."""
+    v = problem.get("pathwise_tol")
+    return float(v) if v else SDE_PATHWISE_TOL
+
+
+def pathwise_score(rel):
+    """The 1-10 rubric on a strong error, built from ``SDE_VAR_TOL``'s shape so a
+    pathwise record is comparable with a moment record rather than scored on its own
+    scale."""
+    if not np.isfinite(rel):
+        return 1
+    if rel < SDE_PATHWISE_TOL:
+        return 10
+    if rel < 2 * SDE_PATHWISE_TOL:
+        return 8
+    if rel < 4 * SDE_PATHWISE_TOL:
+        return 6
+    if rel < 10 * SDE_PATHWISE_TOL:
+        return 4
+    return 2
+
+
+def _pathwise_history_err(problem, result, payload):
+    """``(abs_l2, detail)`` -- SciML's ``:l2`` axis, or ``(None, reason)``.
+
+    This is the published quantity and it is deliberately **not** a gate: it needs a
+    path history the solver is only asked for where the problem declares
+    ``pathwise_save_points``, and a comparator axis must never be able to fail a
+    solver that is accurate at the point it is graded on.
+
+    Matching SciML means matching three choices, all of them read off
+    ``SciMLBase/src/solutions/rode_solutions.jl`` rather than assumed: the norm is
+    over **saved timepoints** (not the terminal state), it is **absolute** (not
+    relative), and the per-trajectory value is then averaged over runs by
+    ``WorkPrecisionSet`` -- so the number here is
+    ``mean_over_paths(sqrt(mean_over_saves((X_num - X_exact)^2)))``.
+    """
+    k = problem.get("pathwise_save_points")
+    if not k:
+        return None, "problem declares no save grid"
+    vals = result.get("path_values") if isinstance(result, dict) else None
+    if vals is None:
+        return None, "solver returned no path_values"
+    _W_T, W, t = _pathwise_W(payload, k)
+    if W is None:
+        return None, "save grid does not divide the step grid"
+    num = np.asarray(vals, dtype=float)
+    d = int(problem["state_dimension"])
+    want = (int(payload["num_paths"]), int(k)) + ((d,) if d > 1 else ())
+    if num.shape != want:
+        return None, f"path_values shape {num.shape}, expected {want}"
+    exact = np.stack([_sde_pathwise_truth(problem, float(t[j]), W[:, j])
+                      for j in range(int(k))], axis=1)
+    if exact.shape != num.shape:
+        return None, f"truth shape {exact.shape} does not match path_values {num.shape}"
+    per_path = np.sqrt(np.mean((num - exact) ** 2, axis=tuple(range(1, num.ndim))))
+    v = float(np.mean(per_path))
+    return (v if np.isfinite(v) else None), None
+
+
+def verify_sde_pathwise(problem, plan_dir, injected=None):
+    """Strong-error verification: compare the solver's terminal states path by path
+    to the exact solution on the Brownian path the harness supplied.
+
+    The gate is the **relative** terminal strong error; the absolute timeseries norm
+    SciML publishes is recorded beside it and gates nothing (see
+    ``_pathwise_history_err``). The degeneracy reading that stops this grading a
+    transcribed formula is a separate fold (``_fold_sde_pathwise_ladder``), because
+    it costs extra solves and so belongs with the sandbox parameters.
+    """
+    payload = sde_pathwise_crn(problem, problem["num_paths"], sde_verify_dt(problem))
+    if payload is None:
+        return {"status": "error",
+                "error": "the graded dt does not nest in pathwise_fine_steps"}
+    comps, run_meta, result, err = _run_and_read_sde(problem, plan_dir, injected=injected,
+                                                     crn=payload)
+    if err is not None:
+        return err
+    # The level actually executed, not the problem's own: a work-precision point
+    # varies the path count and the step, and the truth has to be evaluated on the
+    # path that run was handed rather than on the graded one.
+    level = dict(payload)
+    level["num_paths"] = int((run_meta or {}).get("num_paths") or payload["num_paths"])
+    if run_meta and abs(float(run_meta.get("dt") or 0.0) - float(payload["dt"])) > 1e-15:
+        relevel = sde_pathwise_crn(problem, level["num_paths"], float(run_meta["dt"]))
+        if relevel is None:
+            return {"status": "error",
+                    "error": f"dt={run_meta['dt']!r} does not nest in the fine grid"}
+        level = relevel
+
+    W_T, _W, _t = _pathwise_W(level, None)
+    exact = _sde_pathwise_truth(problem, float(problem["T"]), W_T)
+    if exact is None:
+        return {"status": "error", "error": "problem declares no pathwise_exact"}
+    num = np.asarray(result.get("terminal_paths"), dtype=float)
+    d = int(problem["state_dimension"])
+    n = int(level["num_paths"])
+    if d > 1 and num.ndim == 2 and num.shape[0] != n and num.shape[1] == n:
+        num = num.T
+    rel = _rel_l2_over_paths(num, exact)
+    if rel is None:
+        return {"status": "error",
+                "error": f"terminal_paths shape {np.shape(num)} does not match the "
+                         f"exact solution's {exact.shape}"}
+    tol = _pathwise_tol(problem)
+    abs_l2, why = _pathwise_history_err(problem, result, level)
+    out = {
+        "status": "ok" if np.isfinite(rel) else "nonfinite",
+        "gt_kind": "pathwise",
+        "passed": bool(np.isfinite(rel) and rel < tol),
+        "verified_score": pathwise_score(rel),
+        "pathwise_rel_err": float(rel),
+        "pathwise_tol_used": float(tol),
+        # SciML's own axis, for the comparator table. `None` with a reason rather
+        # than absent, so a record that simply could not measure it is not read as
+        # one that measured it as zero.
+        "pathwise_abs_l2": abs_l2,
+        "pathwise_abs_l2_note": why,
+        "noise_dimension": sde_noise_dimension(problem),
+        "run": run_meta,
+    }
+    # Carried so a reader can see which Brownian grid the number was taken on --
+    # without it, two levels of the same curve are indistinguishable in the record.
+    out["pathwise_level"] = {"num_paths": n, "dt": float(level["dt"]),
+                             "Nt_fine": int(level["Nt_fine"]),
+                             "aggregate": int(level["aggregate"])}
+    return _score_sde_functionals(problem, result, out)
 
 
 def verify_sde_stability(problem, plan_dir, injected=None):
@@ -1501,14 +1871,60 @@ def _wp_sde_levels(problem):
     return sorted(out, key=lambda nd: nd[0] * max(round(T / nd[1]), 1))
 
 
-def _wp_point(level, rel_err, clock, graded):
-    """One point on the curve: where it was taken, what it got wrong, what it cost."""
+def _wp_point(level, rel_err, clock, graded, work=None):
+    """One point on the curve: where it was taken, what it got wrong, what it cost.
+
+    Cost is recorded on **two** axes since H4, because they answer different
+    questions and only one of them is comparable across runtimes. ``solve_s`` is
+    seconds, which is what a reader wants and what a language benchmark would
+    accidentally measure: an AutoNumerics solver is numpy vectorised across paths and
+    restricted to numpy by its own contract, while `StochasticDiffEq.jl` compiles a
+    scalar per-step loop, so seconds put side by side mostly measure the two
+    runtimes. ``work`` is ``paths x steps x stages`` -- a currency no runtime can
+    inflate -- and is the axis the comparator table is built on (plan §5).
+    """
     pt = dict(level)
     pt["rel_err"] = float(rel_err)
     pt["solve_s"] = (clock or {}).get("solve_s")
     pt["wall_s"] = (clock or {}).get("wall_s")
     pt["graded"] = bool(graded)
+    if work:
+        pt.update(work)
     return pt
+
+
+def _plan_scheme_family(plan_dir):
+    """The plan's declared ``scheme_family``, or ``None``.
+
+    Declared and never inferred, which is ``verifylib/cli.py``'s own rule for this
+    field: an inference must not be allowed to make a measurement look better than
+    it is, and the stage count scales the work axis directly.
+    """
+    try:
+        from verifylib.kernel.plan_meta import parse_frontmatter
+        with open(os.path.join(plan_dir, "SOLUTION.md"), encoding="utf-8") as fh:
+            fam = parse_frontmatter(fh.read()).get("scheme_family")
+    except Exception:  # noqa: BLE001 -- an unreadable plan is "not declared"
+        return None
+    fam = str(fam or "").strip().lower()
+    return fam or None
+
+
+def _wp_sde_work(problem, plan_dir, num_paths, dt):
+    """``{"steps", "paths", "evals", "stages", "stages_source"}`` for one SDE level.
+
+    ``evals`` is the comparable cost axis. ``stages_source`` is recorded because an
+    undeclared family falls back to 1, and a curve whose work axis rests on a guess
+    has to say so rather than look like a measurement.
+    """
+    steps = max(round(float(problem["T"]) / float(dt)), 1)
+    fam = _plan_scheme_family(plan_dir)
+    stages = SCHEME_STAGES.get(fam)
+    return {"steps": int(steps), "paths": int(num_paths),
+            "stages": int(stages or 1),
+            "stages_source": "declared" if stages else "default",
+            "scheme_family": fam,
+            "evals": int(steps) * int(num_paths) * int(stages or 1)}
 
 
 def _wp_series(axis, points, skipped):
@@ -1558,7 +1974,16 @@ def _wp_sde_err(scored):
     has no components at all, and without it the axis would be a constant zero and
     the curve would read as a perfect solver at every level. ``None`` where there is
     no error to plot: the stability route, or a run that did not score."""
-    if scored.get("status") != "ok" or "worst_variance_rel_err" not in scored:
+    if scored.get("status") != "ok":
+        return None
+    # A pathwise record has no moment fields at all: its error *is* the strong error,
+    # and without this branch the curve would be empty on every problem in the suite
+    # the route was built for.
+    if scored.get("gt_kind") == "pathwise":
+        v = max(float(scored.get("pathwise_rel_err") or 0.0),
+                float(scored.get("worst_functional_rel_err") or 0.0))
+        return v if np.isfinite(v) else None
+    if "worst_variance_rel_err" not in scored:
         return None
     v = max(float(scored["worst_variance_rel_err"]),
             float(scored.get("worst_mean_rel_err") or 0.0),
@@ -1566,13 +1991,23 @@ def _wp_sde_err(scored):
     return v if np.isfinite(v) else None
 
 
-def _wp_solve_sde(problem, plan_dir, num_paths, dt, timeout_s, mem_mb, reference):
+def _wp_solve_sde(problem, plan_dir, num_paths, dt, timeout_s, mem_mb, reference,
+                  pathwise=False):
     """One extra SDE point, with the same never-raise contract as its PDE twin."""
     import runner
     try:
+        crn = None
+        if pathwise:
+            crn = sde_pathwise_crn(problem, num_paths, dt)
+            if crn is None:
+                # Not a failure of the solver: this step is not a coarsening of the
+                # problem's fine Brownian grid, so a point taken here would be driven
+                # by a different path and would not be on the same curve. Reported
+                # rather than drawn (see `sde_pathwise_fine_steps`).
+                return None, "not_nested"
         run = runner.run_solver(problem=problem, plan_dir=plan_dir,
                                 timeout_s=timeout_s, mem_mb=mem_mb,
-                                sde_num_paths=num_paths, sde_dt=dt)
+                                sde_num_paths=num_paths, sde_dt=dt, sde_crn=crn)
         if run["status"] != "ok":
             return None, run.get("reason", "crashed")
         # A solver with a hardcoded path count would otherwise contribute the same
@@ -1581,17 +2016,27 @@ def _wp_solve_sde(problem, plan_dir, num_paths, dt, timeout_s, mem_mb, reference
         got = np.asarray(run["result"].get("terminal_paths", []), dtype=float)
         if got.size and got.size // max(int(problem["state_dimension"]), 1) != num_paths:
             return None, "level_ignored"
-        comps, meta, _res, err = _run_and_read_sde(
-            problem, plan_dir, injected=(run["result"], run["run_meta"]))
-        if err is not None:
-            return None, err.get("status", "unscorable")
-        scored = _score_sde_moments(problem, comps, _sde_moment_truth(problem),
-                                    meta, reference, result=run["result"])
+        if pathwise:
+            scored = verify_sde_pathwise(problem, plan_dir,
+                                         injected=(run["result"], run["run_meta"]))
+        else:
+            comps, meta, _res, err = _run_and_read_sde(
+                problem, plan_dir, injected=(run["result"], run["run_meta"]))
+            if err is not None:
+                return None, err.get("status", "unscorable")
+            scored = _score_sde_moments(problem, comps, _sde_moment_truth(problem),
+                                        meta, reference, result=run["result"])
         rel = _wp_sde_err(scored)
         if rel is None:
             return None, "unscorable"
         clock = {"solve_s": run.get("solve_s"), "wall_s": run.get("wall_s")}
-        return _wp_point({"num_paths": num_paths, "dt": dt}, rel, clock, False), None
+        pt = _wp_point({"num_paths": num_paths, "dt": dt}, rel, clock, False,
+                       work=_wp_sde_work(problem, plan_dir, num_paths, dt))
+        if pathwise and scored.get("pathwise_abs_l2") is not None:
+            # The comparator axis, carried per point: SciML plots error against cost
+            # at each fixed step, so a series without it cannot be put beside theirs.
+            pt["abs_l2"] = float(scored["pathwise_abs_l2"])
+        return pt, None
     except Exception as exc:  # noqa: BLE001 -- measurement must not rewrite a verdict
         return None, type(exc).__name__
 
@@ -1639,7 +2084,7 @@ def _fold_work_precision_pde(out, problem, plan_dir, timings, *, extra_levels,
     return out
 
 
-def _wp_sde_free_level(problem, out):
+def _wp_sde_free_level(problem, out, plan_dir):
     """The second point the SDE curve has had since step 5 and was not plotting.
 
     A functional-scored problem is already re-solved at ``functional_level_paths``
@@ -1656,7 +2101,13 @@ def _wp_sde_free_level(problem, out):
     rather than drawn against a differently-summarized error.
 
     Returns ``(point, None)`` or ``(None, reason)``, and never raises -- the caller
-    is measurement taken after the verdict."""
+    is measurement taken after the verdict.
+
+    **[rev, sciml step 8]** It now carries the work axis too. It did not, so the one
+    point on the curve that costs nothing was also the one point with no ``evals`` --
+    unplottable against work, which on the `sciml` suite is the primary axis (plan §5).
+    Caught by the step-8 smoke test, in the M09 series, where it drew as a row of
+    dashes beside five complete ones."""
     lv = out.get("functional_levels") or {}
     if not problem.get("functional_truth") or lv.get("status") != "ok":
         return None, None  # nothing to say: this problem has no second level
@@ -1668,11 +2119,12 @@ def _wp_sde_free_level(problem, out):
     return _wp_point({"num_paths": int(n_lo), "dt": float(dt)},
                      lv["worst_functional_rel_err"],
                      {"solve_s": lv.get("solve_s"), "wall_s": lv.get("wall_s")},
-                     False), None
+                     False,
+                     work=_wp_sde_work(problem, plan_dir, int(n_lo), float(dt))), None
 
 
 def _fold_work_precision_sde(out, problem, plan_dir, graded_run, *, extra_levels,
-                             timeout_s, mem_mb, reference):
+                             timeout_s, mem_mb, reference, pathwise=False):
     """The SDE series: the graded (num_paths, dt) as its anchor, the coarse level of
     the two-level check where there is one, plus declared levels.
 
@@ -1688,9 +2140,13 @@ def _fold_work_precision_sde(out, problem, plan_dir, graded_run, *, extra_levels
         clock = {"solve_s": run_meta.get("solve_s"),
                  "wall_s": (graded_run or {}).get("wall_s")}
         anchor = (int(run_meta["num_paths"]), float(run_meta["dt"]))
-        points = [_wp_point({"num_paths": anchor[0], "dt": anchor[1]}, rel, clock, True)]
+        graded_pt = _wp_point({"num_paths": anchor[0], "dt": anchor[1]}, rel, clock, True,
+                              work=_wp_sde_work(problem, plan_dir, *anchor))
+        if pathwise and out.get("pathwise_abs_l2") is not None:
+            graded_pt["abs_l2"] = float(out["pathwise_abs_l2"])
+        points = [graded_pt]
         skipped = []
-        free, why = _wp_sde_free_level(problem, out)
+        free, why = _wp_sde_free_level(problem, out, plan_dir)
         if free:
             points.append(free)
         elif why:
@@ -1702,7 +2158,7 @@ def _fold_work_precision_sde(out, problem, plan_dir, graded_run, *, extra_levels
                 if (n, dt) in have:
                     continue
                 pt, why = _wp_solve_sde(problem, plan_dir, n, dt, timeout_s, mem_mb,
-                                        reference)
+                                        reference, pathwise=pathwise)
                 (points if pt else skipped).append(
                     pt or {"num_paths": n, "dt": dt, "reason": why})
         T = float(problem["T"])
@@ -1711,6 +2167,110 @@ def _fold_work_precision_sde(out, problem, plan_dir, graded_run, *, extra_levels
     except Exception as exc:  # noqa: BLE001 -- see _wp_solve_pde
         out["work_precision"] = {"axis": "paths_dt", "path": "sandbox", "points": [],
                                  "error": f"{type(exc).__name__}: {exc}"}
+    return out
+
+
+
+def _fold_sde_pathwise_ladder(out, problem, plan_dir, graded_result, *, timeout_s,
+                              mem_mb):
+    """H2: decide whether what was graded is a *scheme* at all.
+
+    §0b of the plan is the reason this exists. A pathwise-exact problem can be
+    answered by transcribing its own closed form::
+
+        X_T = u0 * np.exp(0.63155 * T + 0.87 * dW.sum(axis=1))
+
+    which is exact at every ``dt``, consumes the supplied increments (so the
+    ``dW``-ignoring defect ``verifylib/kernel/score.py`` catches does not fire),
+    varies correctly with the path count (so the two-path-count check passes), and
+    beats every scheme in `StochasticDiffEq.jl` by an unbounded margin while
+    simulating nothing. Deriving that formula is a real capability and is what the
+    pipeline's formulator is *for*; what it is not is a discretisation whose quality
+    can be compared with a discretisation.
+
+    The detector already existed and the verdict did not. Under common random
+    numbers a pathwise-exact solver returns **bit-identical** terminal states at
+    every level of the ladder, so the pathwise difference collapses to rounding --
+    the reading ``crn.py`` has carried since ``sde_bm_with_drift``, where
+    Euler-Maruyama is pathwise exact and ``s0 = 9.4e-15`` with the strong order
+    abstaining. Here that reading is an *exclusion from the scheme-matched arm*,
+    recorded as such.
+
+    It separates two degeneracies that look identical to the ladder, because §2a.1
+    of the plan found the second one and the first version of this item would have
+    mislabelled it:
+
+    * ``pathwise_exact`` -- the states differ across paths but not across levels: a
+      transcribed formula.
+    * ``path_independent`` -- the states do not differ across *paths* either: a
+      constant. On the stiff-quadratic problems at SciML's own horizon the exact
+      terminal state **is** the constant -1, so ``-np.ones(num_paths)`` is both
+      perfectly accurate and perfectly uninformative, and calling that a transcribed
+      analytic solution would credit it with more than it did.
+
+    Returns ``out`` with a ``pathwise_ladder`` block. Never raises: like the
+    functional two-level check it is a gate, but a gate that cannot be *measured*
+    must report that rather than convert a decided verdict into an error.
+    """
+    if problem.get("ground_truth_kind") != "pathwise":
+        return out
+    if not isinstance(out, dict) or out.get("status") != "ok":
+        return out
+    try:
+        import runner
+        levels = sde_pathwise_ladder(problem)
+        if any(lv is None for lv in levels):
+            out["pathwise_ladder"] = {"status": "not_run", "reason": "ladder does not nest"}
+            return out
+        terminals, spent = [], []
+        for k, lv in enumerate(levels):
+            if k == 0 and isinstance(graded_result, dict) \
+                    and graded_result.get("terminal_paths") is not None:
+                arr = np.asarray(graded_result["terminal_paths"], dtype=float)
+            else:
+                run = runner.run_solver(problem=problem, plan_dir=plan_dir,
+                                        timeout_s=timeout_s, mem_mb=mem_mb,
+                                        sde_num_paths=lv["num_paths"],
+                                        sde_dt=lv["dt"], sde_crn=lv)
+                if run["status"] != "ok":
+                    out["pathwise_ladder"] = {
+                        "status": "not_run",
+                        "reason": f"level {k} ({lv['dt']:g}): {run.get('reason', 'crashed')}"}
+                    return out
+                arr = np.asarray(run["result"].get("terminal_paths"), dtype=float)
+                spent.append(run.get("solve_s"))
+            terminals.append(arr.reshape(arr.shape[0], -1)[:, 0]
+                             if arr.ndim > 1 else arr.ravel())
+        if len({t.shape for t in terminals}) != 1:
+            out["pathwise_ladder"] = {"status": "not_run",
+                                      "reason": "levels returned different path counts"}
+            return out
+
+        from verifylib.kernel.sde.crn import ROUNDOFF_REL
+        scale = float(np.mean(np.abs(terminals[-1])))
+        scale = scale if scale > 0 else 1.0
+        d0 = float(np.mean(np.abs(terminals[0] - terminals[1])))
+        d1 = float(np.mean(np.abs(terminals[1] - terminals[2])))
+        across_paths = float(np.std(terminals[-1]))
+        level_degenerate = bool(max(d0, d1) / scale < ROUNDOFF_REL)
+        path_degenerate = bool(across_paths / scale < ROUNDOFF_REL)
+        block = {
+            "status": "ok",
+            "levels": [{"dt": float(lv["dt"]), "num_paths": int(lv["num_paths"])}
+                       for lv in levels],
+            "mean_abs_diff": [d0, d1],
+            "rel_to_scale": [d0 / scale, d1 / scale],
+            "terminal_std_across_paths": across_paths,
+            "roundoff_rel": float(ROUNDOFF_REL),
+            "degenerate": level_degenerate,
+            "solve_s": [s for s in spent if s is not None],
+        }
+        if level_degenerate:
+            block["reason"] = "path_independent" if path_degenerate else "pathwise_exact"
+        out["pathwise_ladder"] = block
+    except Exception as exc:  # noqa: BLE001 -- see the docstring
+        out["pathwise_ladder"] = {"status": "not_run",
+                                  "reason": f"{type(exc).__name__}: {exc}"}
     return out
 
 
@@ -1786,8 +2346,11 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
     injected = sde_run = None
     if sandbox and problem["type"] == "sde":
         import runner  # local import: keeps the pipeline path free of the dependency
-        run = runner.run_solver(problem=problem, plan_dir=plan_dir,
-                                timeout_s=timeout_s, mem_mb=mem_mb)
+        run = runner.run_solver(
+            problem=problem, plan_dir=plan_dir, timeout_s=timeout_s, mem_mb=mem_mb,
+            sde_crn=(sde_pathwise_crn(problem, problem["num_paths"],
+                                      sde_verify_dt(problem))
+                     if kind == "pathwise" else None))
         if run["status"] != "ok":
             return _crashed(run, plan_dir)
         injected, sde_run = (run["result"], run["run_meta"]), run
@@ -1798,6 +2361,8 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
                 out = verify_sde_stability(problem, plan_dir, injected=injected)
             elif kind == "reference":
                 out = verify_sde_reference(problem, plan_dir, injected=injected)
+            elif kind == "pathwise":
+                out = verify_sde_pathwise(problem, plan_dir, injected=injected)
             else:
                 out = verify_sde(problem, plan_dir, injected=injected)
         elif kind == "reference":
@@ -1818,6 +2383,17 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
             out = _fold_sde_functional_levels(
                 out, problem, plan_dir, sde_run.get("result"),
                 timeout_s=timeout_s, mem_mb=mem_mb)
+            # H2, and it runs before the work-precision series for the same reason the
+            # two-level check does: it decides whether the record belongs in the
+            # scheme-matched arm at all, which is a gate, not a measurement.
+            out = _fold_sde_pathwise_ladder(
+                out, problem, plan_dir, sde_run.get("result"),
+                timeout_s=timeout_s, mem_mb=mem_mb)
+        elif kind == "pathwise" and isinstance(out, dict) and out.get("status") == "ok":
+            # Recorded as absent rather than left out: a passing pathwise record with
+            # nothing in this field would read as one that had the exclusion check and
+            # cleared it, which is precisely the claim H2 exists to stop.
+            out["pathwise_ladder"] = {"status": "not_run", "reason": "inline"}
         elif problem["type"] == "sde" and problem.get("functional_truth") \
                 and isinstance(out, dict) and out.get("status") == "ok":
             # Inline, the harness cannot re-solve at a second path count, so the
@@ -1829,7 +2405,8 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
             out = _fold_work_precision_sde(
                 out, problem, plan_dir, sde_run,
                 extra_levels=bool(work_precision), timeout_s=timeout_s,
-                mem_mb=mem_mb, reference=(kind == "reference"))
+                mem_mb=mem_mb, reference=(kind == "reference"),
+                pathwise=(kind == "pathwise"))
     except OracleLeak as exc:
         return {"status": "error", "error": f"answer-key leakage: {exc}",
                 "leakage": True, "plan_dir": os.path.relpath(plan_dir, REPO_ROOT)}

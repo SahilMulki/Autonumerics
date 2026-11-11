@@ -401,7 +401,9 @@ def test_no_problem_outside_the_anchored_suite_is_changed_by_any_of_this():
     HEAD (measured, 56/56). It is the new suite, and only the new suite, that opts
     into the second call."""
     for prob in P.PROBLEMS:
-        if prob["type"] != "sde" or prob.get("suite") == "benchop":
+        # ~~`== "benchop"`~~ -- `sciml` joined in step 6 and its weak entry carries a
+        # `functional_truth` too, so it opts into the second call on the same terms.
+        if prob["type"] != "sde" or prob.get("suite") in ("benchop", "sciml"):
             continue
         md = S.contract_footer(prob)
         assert "called **once**" in md, prob["slug"]
@@ -416,8 +418,14 @@ def test_the_sde_problems_that_carry_a_functional_are_exactly_the_anchored_suite
     carrying = [p for p in P.PROBLEMS if p.get("functional_truth")]
     assert [p["slug"] for p in carrying if p["type"] == "pde"] == ["pde_schrodinger_eigen_2d"]
     sde = [p for p in carrying if p["type"] == "sde"]
-    assert sde and all(p.get("suite") == "benchop" for p in sde)
-    assert len(sde) == len(P.benchop_problems())
+    # ~~all in `benchop`~~ -- the SciML suite's weak-error entry is the eleventh, and
+    # is the only one of its nine scored on numbers rather than on a path. The
+    # invariant that survives: every SDE problem scored on a functional belongs to an
+    # externally anchored suite, never to the two that carry measured baselines.
+    assert sde and all(p.get("suite") in ("benchop", "sciml") for p in sde)
+    assert len(sde) == len(P.benchop_problems()) + 1
+    assert [p["slug"] for p in sde if p.get("suite") == "sciml"] == \
+        ["sde_sciml_weak_noncommutative"]
 
 
 def test_the_second_call_reaches_the_problems_that_asked_for_it():

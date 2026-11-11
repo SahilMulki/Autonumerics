@@ -1,0 +1,13 @@
+{
+ "stack": "julia",
+ "julia_version": "1.11.9",
+ "threads": 1,
+ "cpu": "apple-m1",
+ "machine": "arm64-apple-darwin24.0.0",
+ "reps": 5,
+ "rows": [
+  {"shape": "scalar_many_paths", "d": 1, "paths": 1000, "steps": 15625, "seconds_min": 0.072411208, "ns_per_path_step": 4.634317312},
+  {"shape": "scalar_many_paths_interleaved4", "d": 1, "paths": 1000, "steps": 15625, "seconds_min": 0.027517291, "ns_per_path_step": 1.761106624},
+  {"shape": "many_states_few_paths", "d": 8, "paths": 10, "steps": 15625, "seconds_min": 0.005534375, "ns_per_path_step": 4.4275}
+ ]
+}

@@ -168,7 +168,13 @@ def test_no_problem_outside_the_anchored_suite_has_a_widened_functional_gate():
     the externally anchored suite, where they were put deliberately and where no
     baseline has been measured yet."""
     assert CORPUS_FUNCTIONAL, "the fixture would otherwise assert nothing"
-    older = [p for p in CORPUS_FUNCTIONAL if p.get("suite") != "benchop"]
+    # ~~`!= "benchop"`~~ -- a fourth suite (`sciml`) landed in step 6 of
+    # plan-sciml-benchmark.md and its weak-error entry also declares per-value gates,
+    # for the same reason: its three observables differ by five orders of magnitude.
+    # The claim that matters is unchanged and is now stated as what it always meant --
+    # the suites that carry *measured baselines* are untouched.
+    older = [p for p in CORPUS_FUNCTIONAL
+             if p.get("suite") not in ("benchop", "sciml")]
     assert older, "expected the pre-existing functional problems to still be here"
     for p in older:
         base = V._functional_tol(p)

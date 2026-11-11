@@ -321,19 +321,35 @@ def test_the_required_family_keys_are_the_ones_the_order_study_reads():
 
 
 def test_every_live_sde_spec_declares_a_floor_for_every_family_it_admits():
-    """The artifacts, not the rule. Measured across all 39 SDE specs under
-    ``workspace*/``: 8 carry a ``verification`` block, the two that admit a Milstein
-    plan (``cir_feller_violated``, ``ginzburg_landau_s6``) both declare
+    """The artifacts, not the rule.
+
+    ~~Measured across all 39 SDE specs under ``workspace*/``: 8 carry a
+    ``verification`` block, the two that admit a Milstein plan
+    (``cir_feller_violated``, ``ginzburg_landau_s6``) both declare
     ``expected_strong_order_milstein: 1.0``, and the other five say
-    ``milstein_eligible: false`` with a reason."""
-    admits = 0
+    ``milstein_eligible: false`` with a reason.~~
+
+    **[rev, sciml step 10] The census is 18 specs and three admitters**, the third
+    being ``sde_sciml_linear_ito`` — written by the first `sciml` pipeline run, and
+    correctly admitting Milstein: it is scalar with multiplicative noise and
+    ``dg/dX = 0.87`` in closed form, which is exactly ``agents/formulator.md``'s
+    eligibility rule. It declares ``expected_strong_order_milstein: 1.0`` like the
+    other two, so the *rule* this test is about held across a problem family that did
+    not exist when it was written; only the count moved.
+
+    A note for the next person this fails on: both numbers are properties of whatever
+    is **currently staged** under ``workspace/``, which any pipeline run rewrites. The
+    assertion inside the loop is the invariant; the count below is a census, and a
+    census of a directory that runs mutate will go stale again."""
+    admits = []
     for path in _specs("sde_*"):
         spec = read_json(path)
         assert schema.check_strong_order_declared(spec) == [], path
         if spec.get("milstein_eligible") is not False:
-            admits += 1
+            admits.append(os.path.basename(os.path.dirname(path)))
             assert (spec["verification"]["expected_strong_order_milstein"] > 0), path
-    assert admits == 2, admits
+    assert sorted(admits) == ["sde_cir_feller_violated", "sde_ginzburg_landau_s6",
+                              "sde_sciml_linear_ito"], admits
 
 
 # --- prose in an expr field ([REV 66]) ----------------------------------------

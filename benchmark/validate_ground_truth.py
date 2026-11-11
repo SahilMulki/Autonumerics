@@ -389,6 +389,154 @@ for prob in P.sde_problems():
               se_rel < 0.02,
               f"SE(mean)/|mean| = {se_rel:.2%} (1 sigma) -> 5% gate is {0.05/se_rel:.1f} sigma")
 
+# --- PATHWISE problems (H1-H3): every structural promise the route makes, checked
+#     without running a solver. A `pathwise` entry is graded against a formula the
+#     harness evaluates on increments the harness generates, so if the two disagree
+#     about a shape, every solver on that problem fails for a reason that is not its
+#     own. The noise-floor question above does not arise here -- a pathwise difference
+#     under common random numbers has the sampling error cancelled out of it -- which
+#     is exactly why these are shape checks instead. ---
+print("\n--- pathwise problems: increment shapes, nesting, and truth ---")
+_pathwise = [q for q in P.sde_problems()
+             if q.get("ground_truth_kind") == "pathwise"]
+if not _pathwise:
+    print("  (none authored yet -- the route ships before the suite does)")
+for prob in _pathwise:
+    slug, d = prob["slug"], prob["state_dimension"]
+    m = V.sde_noise_dimension(prob)
+    check(f"{slug} declares pathwise_exact", callable(prob.get("pathwise_exact")))
+    # The ladder and every work-precision level must be coarsenings of one draw.
+    ladder = V.sde_pathwise_ladder(prob)
+    check(f"{slug} ladder nests in the fine grid", all(lv is not None for lv in ladder),
+          f"fine steps = {V.sde_pathwise_fine_steps(prob)}, "
+          f"dts = {[None if lv is None else lv['dt'] for lv in ladder]}")
+    declared = [lvl for lvl in (prob.get("work_precision_levels") or [])]
+    bad = [lvl for lvl in declared
+           if V.sde_pathwise_crn(prob, int(lvl[0]), float(lvl[1])) is None]
+    check(f"{slug} every declared work-precision step nests", not bad,
+          f"non-nesting: {bad}" if bad else "")
+    if ladder[0] is None:
+        continue
+    # The truth must accept the increment shape the solver will be handed, and return
+    # the state shape the solver will be scored on. A mismatch here is the failure
+    # mode that looks like every solver being wrong.
+    probe = dict(ladder[0], num_paths=8)
+    dW = V.crn_increments(probe)
+    want = (8, int(probe["Nt_fine"] // probe["aggregate"])) + ((m,) if m > 1 else ())
+    check(f"{slug} increments are {want}", dW.shape == want, f"got {dW.shape}")
+    exact = V._sde_pathwise_truth(prob, float(prob["T"]), dW.sum(axis=1))
+    want_state = (8,) if d == 1 else (8, d)
+    check(f"{slug} pathwise_exact returns {want_state}",
+          exact is not None and exact.shape == want_state,
+          f"got {None if exact is None else exact.shape}")
+    check(f"{slug} pathwise_exact is finite",
+          exact is not None and bool(np.all(np.isfinite(exact))))
+    # §2a.1: a terminal state that does not vary across paths cannot be graded -- a
+    # constant scores perfectly without consuming an increment. Caught here rather
+    # than after a run, because it is a property of the entry, not of any solver.
+    if exact is not None and exact.size:
+        scale = float(np.mean(np.abs(exact))) or 1.0
+        spread = float(np.std(exact)) / scale
+        check(f"{slug} exact terminal state varies across paths",
+              spread > 1e-6,
+              f"std/|mean| = {spread:.2e} -- a constant terminal state makes this "
+              f"entry vacuous (plan-sciml-benchmark.md §2a.1)")
+    if prob.get("pathwise_save_points"):
+        k = int(prob["pathwise_save_points"])
+        _W_T, W, t = V._pathwise_W(probe, k)
+        check(f"{slug} save grid divides the step grid", W is not None,
+              f"{k} saves into {dW.shape[1]} steps")
+        if W is not None:
+            check(f"{slug} saved times end at T", abs(float(t[-1]) - prob["T"]) < 1e-12)
+
+
+# --- M09: the non-commutative weak problem's three second moments, against a
+#     route that shares nothing with the entry. The entry solves a 3x3 linear ODE by
+#     matrix exponential; this integrates the SDE itself by Euler-Maruyama and
+#     Richardson-extrapolates two step sizes, which separates the scheme's weak bias
+#     (O(dt), and the reason a single level sits several sigma away) from the
+#     Monte-Carlo noise. Nothing here reads `functional_truth`. ---
+print("\n--- SciML non-commutative weak problem: moments vs an independent MC ---")
+_s2 = np.sqrt(2.0)
+_a1 = -273 / 512
+_b1, _b2 = -1 / 160, 785 / 512 - _s2 / 8
+_c11, _c12 = 1 / 4, 1 / 16
+_d1, _d2, _d3 = (1 - 2 * _s2) / 4, 1 / 10, 1 / 16
+
+
+def _noncommutative_em(num_paths, Nt, seed, T=3.0):
+    """Terminal states of an Euler-Maruyama solve of M09's system."""
+    rng = np.random.default_rng(seed)
+    dt = T / Nt
+    scale = np.sqrt(dt)
+    x1 = np.ones(num_paths)
+    x2 = np.ones(num_paths)
+    for _ in range(Nt):
+        dw = rng.standard_normal((num_paths, 2)) * scale
+        nx1 = x1 + _a1 * x1 * dt + _c11 * x1 * dw[:, 0] + _c12 * x1 * dw[:, 1]
+        nx2 = (x2 + (_b1 * x1 + _b2 * x2) * dt + _d1 * x1 * dw[:, 0]
+               + (_d2 * x1 + _d3 * x2) * dw[:, 1])
+        x1, x2 = nx1, nx2
+    return x1, x2
+
+
+def _noncommutative_obs(x1, x2):
+    return np.stack([x1 ** 2, x1 * x2, x2 ** 2], axis=1)
+
+
+_m09 = P.by_slug("sde_sciml_weak_noncommutative")
+_truth = np.array([_m09["functional_truth"][k] for k in
+                   ("second_moment_x1", "cross_moment_x1x2", "second_moment_x2")])
+# Two nested step counts, same seed, so the extrapolation removes the O(dt) term
+# rather than amplifying two independent samples' noise.
+_NP, _NC, _NF = 400_000, 1200, 2400
+_obs_c = _noncommutative_obs(*_noncommutative_em(_NP, _NC, 909))
+_obs_f = _noncommutative_obs(*_noncommutative_em(_NP, _NF, 909))
+# Path-by-path extrapolation, then the standard error of the extrapolant itself --
+# `2*fine - coarse` has neither the variance nor the correlation structure of `fine`,
+# which is the §20 lesson this repo already paid for once.
+_ext = 2 * _obs_f - _obs_c
+_mean = _ext.mean(axis=0)
+_se = _ext.std(axis=0, ddof=1) / np.sqrt(_NP)
+for _i, _name in enumerate(("E[X1^2]", "E[X1X2]", "E[X2^2]")):
+    _z = abs(_mean[_i] - _truth[_i]) / _se[_i]
+    check(f"sde_sciml_weak_noncommutative {_name} vs independent MC",
+          _z < 4.0,
+          f"exact {_truth[_i]:.6g}, Richardson({_NC},{_NF}) at {_NP} paths "
+          f"{_mean[_i]:.6g} +- {_se[_i]:.3g} -> {_z:.1f} sigma")
+# And the un-extrapolated levels must be *converging* to it, or the agreement above
+# is a coincidence of two biases -- but only where there is a bias left to measure.
+#
+# This check asked for the halving unconditionally when it was first written, and
+# E[X1^2] failed it: 0.310% at dt=2.5e-3 against 0.383% at dt=1.25e-3. That is not a
+# convergence failure, it is the same lesson §19/§20 of the verification manual
+# already records -- the weak bias on that observable has fallen **below its own
+# Monte-Carlo standard error** (0.175% at this path count), so the ratio of two
+# "errors" that are mostly noise says nothing. An observable at the noise floor is
+# reported as such and is not a failure, which is exactly how `crn.weak_order` treats
+# the same situation.
+for _i, _name in enumerate(("E[X1^2]", "E[X1X2]", "E[X2^2]")):
+    _ec = abs(_obs_c[:, _i].mean() - _truth[_i]) / abs(_truth[_i])
+    _ef = abs(_obs_f[:, _i].mean() - _truth[_i]) / abs(_truth[_i])
+    _se_rel = float(_obs_c[:, _i].std(ddof=1) / np.sqrt(_NP) / abs(_truth[_i]))
+    if _ec < 3.0 * _se_rel:
+        print(f"  [noise floor] sde_sciml_weak_noncommutative {_name} weak error "
+              f"{_ec:.3%} is inside 3x its own MC standard error ({_se_rel:.3%}) at "
+              f"dt={3.0 / _NC:.2e} -- no bias left to measure, so the convergence "
+              f"ratio is not asserted")
+        continue
+    check(f"sde_sciml_weak_noncommutative {_name} weak error halves with dt",
+          _ef < 0.7 * _ec,
+          f"rel err {_ec:.3%} at dt={3.0/_NC:.2e} -> {_ef:.3%} at dt={3.0/_NF:.2e} "
+          f"(MC se {_se_rel:.3%})")
+# The first row of the moment system is what makes SciML's own observable blind to
+# the channel structure, so it is asserted rather than left as prose.
+_A_row0 = 2 * _a1 + _c11 ** 2 + _c12 ** 2
+check("sde_sciml_weak_noncommutative E[X1^2] decouples exactly",
+      _A_row0 == -1.0 and P.sciml_noncommutative_moments(3.0)["second_moment_x1"]
+      == float(np.exp(-3.0)),
+      f"2*a1 + c11^2 + c12^2 = {_A_row0!r} -> E[X1^2] = exp(-t) with no quadrature")
+
 # --- The same question for a problem scored on a number: its gate has to sit
 #     outside the sampling noise too, but the noise is the payoff's and not a
 #     moment's, so it cannot be derived from the problem dict alone. What *can* be

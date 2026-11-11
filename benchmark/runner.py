@@ -209,6 +209,28 @@ def _coerce_functional(v):
         return repr(v)
 
 
+def _crn_increments(payload):
+    """Rebuild one CRN level from a seed-and-shape payload (manual §18).
+
+    A byte-for-byte copy of ``verify.crn_increments``, deliberately duplicated: the
+    child imports **numpy and the standard library only**, which is what makes the
+    sandbox a sandbox, and reaching back into ``verify`` would both break that and
+    put the answer key on the child's import path. ``benchmark/tests`` holds the two
+    to equality, which is the cheaper way to stop them drifting.
+    """
+    import numpy as np
+    rng = np.random.default_rng(int(payload["seed"]))
+    paths, fine = int(payload["num_paths"]), int(payload["Nt_fine"])
+    T, agg = float(payload["T"]), max(int(payload["aggregate"]), 1)
+    m = int(payload["m"]) if payload.get("m") else None
+    tail = (m,) if m else ()
+    dW = rng.standard_normal((paths, fine) + tail)
+    dW *= np.sqrt(T / fine)
+    if agg > 1:
+        dW = dW.reshape(paths, -1, agg, *tail).sum(axis=2)
+    return dW
+
+
 def _extract_sde(res):
     """Pull the contract fields out of an SDE solver's return dict.
 
@@ -237,6 +259,12 @@ def _extract_sde(res):
         if tp.ndim == 1:
             scalars.setdefault("empirical_mean", float(tp.mean()))
             scalars.setdefault("empirical_variance", float(tp.var(ddof=1)))
+    # The saved path history of a `pathwise` problem (H1). Optional, and silently
+    # absent for every other problem: it exists to carry SciML's timeseries `:l2`
+    # axis, which is a comparator and never a gate, so a solver that does not return
+    # it must lose the axis and nothing else.
+    if res.get("path_values") is not None:
+        arrays["path_values"] = np.asarray(res["path_values"], dtype=float)
     # A quantity of interest travels on this path too, by exactly the PDE rule. The
     # SDE contract gained one in plan-benchop-slv.md §6 step 5, and a boundary that
     # carried it for one problem type and dropped it for the other is the defect
@@ -406,6 +434,13 @@ def _child_main(spec_path):
             meta["run_meta"] = {"N": N, "accepted_resolution": accepted,
                                 "solve_s": solve_s}
         else:
+            # The supplied Brownian increments are rebuilt here rather than shipped:
+            # the finest level of a ladder is large, and a seed crosses the boundary
+            # for free. Identical to the parent's reconstruction from the identical
+            # payload, which is what lets the harness evaluate its own truth on the
+            # very path the solver was handed.
+            if spec.get("crn"):
+                call["dW"] = _crn_increments(spec["crn"])
             # Distinguish a wrong signature from an internal error.
             try:
                 inspect.signature(fn).bind(**call)
@@ -418,6 +453,9 @@ def _child_main(spec_path):
             meta["run_meta"] = {"num_paths": int(call["num_paths"]),
                                 "dt": float(call["dt"]), "T": float(call["T"]),
                                 "seed": int(call["seed"]), "solve_s": solve_s}
+            if spec.get("crn"):
+                meta["run_meta"]["crn"] = {
+                    k: spec["crn"][k] for k in ("seed", "Nt_fine", "aggregate", "m")}
 
         np.savez(out_base + ".npz", **arrays)
         meta.update(status="ok", reason=None, scalars=scalars,
@@ -450,7 +488,7 @@ def _write_meta(out_base, meta):
 
 
 def run_solver(plan_dir, problem, timeout_s=120, mem_mb=4096, scratch_dir=None, pde_N=None,
-               sde_num_paths=None, sde_dt=None):
+               sde_num_paths=None, sde_dt=None, sde_crn=None):
     """Run ``plan_dir/solver.py`` in a sandboxed subprocess.
 
     Returns a dict:
@@ -470,6 +508,13 @@ def run_solver(plan_dir, problem, timeout_s=120, mem_mb=4096, scratch_dir=None, 
     child. Their difference is the harness's own overhead, which on a fast problem
     is most of ``wall_s`` and would otherwise swamp an error-vs-time comparison.
     ``solve_s`` is absent on a crash, since there is no completed solve to time.
+
+    ``sde_crn`` is a ``pathwise`` problem's increment payload: a seed and a shape
+    (``verify.sde_pathwise_crn``), from which the child rebuilds the ``dW`` the
+    contract's §18 extension promises. It is the one argument that changes what the
+    solver is *given* rather than how much of it, and it is passed only for the route
+    that grades a path -- every other problem's call is unchanged, which is what keeps
+    the existing suites' records comparable.
 
     ``pde_N`` / ``sde_num_paths`` / ``sde_dt`` override the configuration the problem
     declares. The graded call never passes them -- it is the problem's own
@@ -513,6 +558,8 @@ def run_solver(plan_dir, problem, timeout_s=120, mem_mb=4096, scratch_dir=None, 
         dt = _V.sde_verify_dt(problem) if sde_dt is None else sde_dt
         spec["call"] = {"num_paths": int(npaths), "dt": float(dt),
                         "T": float(problem["T"]), "seed": int(problem["seed"])}
+        if sde_crn is not None:
+            spec["crn"] = dict(sde_crn)
     else:
         spec["call"] = {"N": pde_N}
 
@@ -571,6 +618,8 @@ def _reconstruct(kind_type, scalars, arrays):
         result = {}
         if "terminal_paths" in arrays:
             result["terminal_paths"] = arrays["terminal_paths"]
+        if "path_values" in arrays:
+            result["path_values"] = arrays["path_values"]
         for k in ("empirical_mean", "empirical_variance"):
             if k in scalars:
                 result[k] = scalars[k]

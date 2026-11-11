@@ -35,6 +35,32 @@ CITATION_PATTERNS = (
     r"\bvalidate_ground_truth\b",
     r"verify_(?:sde|pde)_\w+",
     r"_heston_call\b",
+    # The external answer keys and comparator artefacts, by filename as well as by
+    # path [H9]. `benchmark/` above already covers them when they are written as a
+    # path, but a leak does not have to quote a path: the BENCHOP incident entered as
+    # a transcribed *value* and propagated by hand, and a plan that names
+    # `comparators.json` has been told what it is being measured against whether or
+    # not it says where the file lives.
+    #
+    # The SciML suite makes this sharper than BENCHOP did. Its artefacts hold two
+    # separate things a plan must not see: the reference *error values* it is graded
+    # near, and the SRK tableaux of the schemes it is being compared against -- so a
+    # plan could copy its competitor rather than recall its answer.
+    #
+    # Only the artefacts are listed, never the library or the benchmark suite by
+    # name. `StochasticDiffEq`, `SDEProblemLibrary` and the scheme names themselves
+    # are public literature, and a plan that writes "SRA1, after Roessler" is citing a
+    # paper, not reading the answer key -- flagging it would be the false-positive
+    # class this module's docstring exists to refuse. What is protected is the file
+    # holding *this repo's* measured comparator numbers.
+    r"\bcomparators\.json\b",
+    r"\bharvest\.jl\b",
+    # `harvest_spec.json` is generated FROM `problems.py` and carries every gate the
+    # sciml suite applies plus M09's three exact moments -- which is to say it is an
+    # answer key that happens to be an input to a Julia script. Added when step 3
+    # created it, for the same reason `comparators.json` was added before it existed.
+    r"\bharvest_spec\.json\b",
+    r"\bbenchop_slv\.json\b",
 )
 
 #: The one file that legitimately names the protected paths: project_manual.md's

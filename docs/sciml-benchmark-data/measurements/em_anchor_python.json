@@ -1,0 +1,26 @@
+{
+ "stack": "python",
+ "python_version": "3.14.7",
+ "numpy_version": "2.4.6",
+ "machine": "macOS-15.7.3-arm64-arm-64bit-Mach-O",
+ "processor": "arm",
+ "reps": 5,
+ "rows": [
+  {
+   "shape": "scalar_many_paths",
+   "d": 1,
+   "paths": 1000,
+   "steps": 15625,
+   "seconds_min": 0.07467391696991399,
+   "ns_per_path_step": 4.779130686074495
+  },
+  {
+   "shape": "many_states_few_paths",
+   "d": 8,
+   "paths": 10,
+   "steps": 15625,
+   "seconds_min": 0.04633820801973343,
+   "ns_per_path_step": 37.07056641578674
+  }
+ ]
+}

@@ -61,12 +61,22 @@ def functional_gate(problem):
     return f"{names} must be within {ftol * 100:g}% (relative) of the reference value."
 
 
-def contract_footer(problem):
+def contract_footer(problem, arm=None):
     """The solver I/O contract + exact evaluation configuration, appended to every
     problem.md. Keeping this in the problem statement (rather than only in the
     pipeline's private agent prompts) is what makes a one-shot LLM given just
     problem.md a fair comparison: it is told the function to implement, the schema to
-    return, and the exact arguments / step it will be scored at."""
+    return, and the exact arguments / step it will be scored at.
+
+    ``arm`` changes the *task* on a pathwise problem, and the reason it has to is a
+    defect found while preparing the sciml runs: `--arm` was a field recorded on the
+    result and nothing else, so `scheme-matched` and `unrestricted` staged a
+    byte-identical brief. Both arms would have told the solver a discretised scheme
+    was required and both would have excluded a transcription, which makes the second
+    arm a *label on the first experiment* -- two runs that cost twice as much and
+    measure one thing. §6 of the plan is explicit that the unrestricted arm is where
+    the pipeline may return the exact pathwise solution, so that permission has to
+    reach the brief or the arm does not exist."""
     if problem["type"] == "sde":
         d = problem["state_dimension"]
         dtv = V.sde_verify_dt(problem)
@@ -94,6 +104,19 @@ def contract_footer(problem):
             schema += (f"\n- `functionals`: a dict of scalar results, containing {keys} "
                        "— each a float")
         kind = problem.get("ground_truth_kind", "exact")
+        # H1. A `pathwise` problem is handed the Brownian increments and graded path
+        # by path, so three things in the contract change and nothing else does: the
+        # signature gains `dW`, the schema may gain a saved history, and the gate is a
+        # strong error rather than a moment. Everything below is reached only for this
+        # kind, which is what keeps the other 66 statements byte-identical.
+        pathwise = kind == "pathwise"
+        save_k = problem.get("pathwise_save_points") if pathwise else None
+        if pathwise and save_k:
+            comp = "" if d == 1 else f", {d}"
+            schema += (
+                f"\n- `path_values`: numpy array of shape `(num_paths, {int(save_k)}"
+                f"{comp})` — the state at the {int(save_k)} equally spaced times "
+                f"`T/{int(save_k)}, 2T/{int(save_k)}, ..., T`, in that order")
         if kind == "stability":
             chk = problem.get("stability_check", {"type": "finite"})
             if chk.get("type") == "domain":
@@ -107,6 +130,23 @@ def contract_footer(problem):
                 f"only that {crit} — exactly what a naive scheme that diverges or escapes the "
                 "domain gets wrong."
             )
+        elif pathwise:
+            hist = "" if not save_k else (
+                f"\n\n**Saved history.** `path_values` is compared to the same exact "
+                f"solution at the {int(save_k)} saved times, as an *absolute* error. "
+                f"That number is recorded for comparison with published results and is "
+                f"**not** part of the pass decision — returning it cannot fail you, and "
+                f"omitting it cannot either.")
+            scoring = (
+                f"This problem has an exact solution that is a function of the Brownian "
+                f"path, so it is graded **path by path** rather than in distribution. "
+                f"Scoring is independent of any self-report: the harness evaluates its "
+                f"own exact solution on the very increments it handed you and gates the "
+                f"relative strong error "
+                f"`sqrt(mean((X_num - X_exact)^2)) / sqrt(mean(X_exact^2))` "
+                f"over paths at < {V._pathwise_tol(problem) * 100:g}%."
+                + (UNRESTRICTED_PARAGRAPH if arm == "unrestricted" else
+                   SCHEME_MATCHED_PARAGRAPH) + hist)
         else:
             no_formula = (
                 "This problem has no closed-form moments; the harness's ground truth is "
@@ -142,6 +182,28 @@ def contract_footer(problem):
         # statement said before step 5, deliberately: a problem statement is an agent
         # *input*, and churn in it makes a later run incomparable with an earlier one
         # for a reason that has nothing to do with the solver.
+        pathwise_sig = "" if not pathwise else (
+            ",\n              dW: np.ndarray | None = None")
+        m_pw = V.sde_noise_dimension(problem)
+        nt_pw = max(1, round(float(problem["T"]) / dtv))
+        # Kept as one substitution including the sentence that follows it, so the
+        # non-pathwise rendering stays byte-identical: every other problem statement
+        # has "...do not hardcode a different step). It must return a dict with:" on
+        # a single line, and a blank line inserted there would be churn in an agent
+        # input for no reason to do with the solver.
+        schema_intro = " It must return a dict with:"
+        if pathwise:
+            channels = "" if m_pw == 1 else f", {m_pw}"
+            axis_note = ("" if m_pw == 1 else
+                         f", whose last axis indexes the {m_pw} independent noise "
+                         f"sources")
+            schema_intro = (
+                f"\n\n`dW` is always supplied: a numpy array of shape "
+                f"`({problem['num_paths']}, {nt_pw}{channels})` holding the Brownian "
+                f"increments, **already scaled by sqrt(dt)**{axis_note}. Use exactly "
+                f"these — take `Nt = dW.shape[1]` and `dt = T / Nt` — and do not draw "
+                f"your own randomness for the Brownian path."
+                f"\n\nIt must return a dict with:")
         once = "**once**" if not sde_functionals else "**twice**"
         second_call = "" if not sde_functionals else (
             f"\n\nand then again with `num_paths="
@@ -155,13 +217,13 @@ def contract_footer(problem):
 
 Implement, in `solver.py`, exactly this function:
 
-    def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42) -> dict
+    def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42{pathwise_sig}) -> dict
 
 It is imported and called {once}, with these exact arguments:
 
     solve_sde(num_paths={problem['num_paths']}, dt={dtv:.4g}, T={problem['T']:.6g}, seed={problem['seed']}){second_call}
 
-Use the `dt` you are given (do not hardcode a different step). It must return a dict with:
+Use the `dt` you are given (do not hardcode a different step).{schema_intro}
 
 {schema}
 
@@ -300,13 +362,17 @@ Requirements:
 """
 
 
-def write_problem_md(problem, workspace_root):
-    """Write workspace/{slug}/problem.md. Returns the path written."""
+def write_problem_md(problem, workspace_root, arm=None):
+    """Write workspace/{slug}/problem.md. Returns the path written.
+
+    ``arm`` is threaded from the runner rather than defaulted here, because the
+    staged brief is the *only* thing that distinguishes the two arms of the sciml
+    comparison and a default would silently stage the wrong experiment."""
     wdir = workspace_dir(problem["slug"], workspace_root)
     os.makedirs(wdir, exist_ok=True)
     path = os.path.join(wdir, "problem.md")
     with open(path, "w") as fh:
-        fh.write(problem["description"] + contract_footer(problem))
+        fh.write(problem["description"] + contract_footer(problem, arm=arm))
     return path
 
 
@@ -347,6 +413,27 @@ def manifest_entry(problem):
             num_paths=problem["num_paths"],
             seed=problem["seed"],
         )
+        # Written where the entry *declares* it, not where it differs from the state
+        # dimension (H3). Declared-rather-than-derived is the same rule
+        # `scheme_family` follows, and it matters for the one entry where the two
+        # coincide: M09 is 2 states driven by 2 channels through a **full
+        # non-commutative** diffusion matrix, which `m == d` cannot distinguish from
+        # any ordinary diagonal 2-D problem. Recording the declaration at least says
+        # someone decided it; `noise_dimension` cannot express non-commutativity at
+        # all, which is a limitation of H3 rather than of this entry (§2b finding 7).
+        # No problem written before this suite declares it, so all 23 of their
+        # manifest entries stay byte-identical.
+        if problem.get("noise_dimension"):
+            entry["noise_dimension"] = V.sde_noise_dimension(problem)
+        if kind == "pathwise":
+            entry.update(
+                pathwise_tol=V._pathwise_tol(problem),
+                pathwise_fine_steps=V.sde_pathwise_fine_steps(problem),
+                pathwise_ladder_dts=[float(lv["dt"]) if lv else None
+                                     for lv in V.sde_pathwise_ladder(problem)],
+            )
+            if problem.get("pathwise_save_points"):
+                entry["pathwise_save_points"] = int(problem["pathwise_save_points"])
         if kind == "reference":
             gt = problem["moments"](problem["T"])  # {key: (value, standard_error)}
             entry["ground_truth_moments"] = {k: float(v[0]) for k, v in gt.items()}
@@ -431,7 +518,60 @@ def select(only):
     return chosen
 
 
-SUITES = ("main", "no-closed-form", "benchop")
+SUITES = ("main", "no-closed-form", "benchop", "sciml")
+
+#: The two arms of the SciML comparison, and why they can never be averaged [H10].
+#:
+#: `scheme-matched` is the suite: a discretised stepper that consumes the supplied
+#: increments, with transcriptions excluded by the degenerate-ladder reading
+#: (verify.py's `_fold_sde_pathwise_ladder`). It is what a comparison against
+#: `StochasticDiffEq.jl`'s algorithm set can honestly mean.
+#:
+#: `unrestricted` lets the pipeline do anything, including returning the exact
+#: pathwise solution -- which measures something real (does it *recognise* an exactly
+#: solvable SDE? `references/sde_manual.md` rule 0 rewards exactly that) but measures
+#: it against a ruler the pipeline can print. It will look spectacular and it is not a
+#: comparison, so it is a capability note.
+#:
+#: This is a recorded field rather than a convention because a convention cannot stop
+#: the two being pooled, and pooling them would produce a headline number that is
+#: neither quantity. `main` and the other suites are unaffected: they have one arm,
+#: which is `scheme-matched` by construction, and that is the default.
+ARMS = ("scheme-matched", "unrestricted")
+DEFAULT_ARM = "scheme-matched"
+
+#: The paragraph that makes `scheme-matched` the scheme-matched arm. A pathwise
+#: problem's exact solution is a function of the terminal Brownian value, so a solver
+#: can *return* it: exact at every `dt`, consuming the supplied increments, and
+#: simulating nothing (plan §0b). The degenerate-ladder reading detects it (H2) and the
+#: run is excluded rather than failed, which the brief says plainly -- a solver should
+#: not have to guess that an accurate answer will not be counted.
+SCHEME_MATCHED_PARAGRAPH = (
+    "\n\n**A discretised scheme is required.** The exact solution of this equation is "
+    "known in closed form, and a solver that evaluates it directly is exact at every "
+    "`dt`. That is not what this problem measures, and it is detected rather than "
+    "forbidden by politeness: the harness re-solves at `dt`, `dt/2` and `dt/4` driven "
+    "by coarsenings of one Brownian path, and a solver carrying no discretization error "
+    "returns terminal states identical to rounding at all three. Such a run is "
+    "**excluded** from the comparison rather than failed — it is recorded as having "
+    "transcribed the solution instead of integrating the equation. Advance the state "
+    "step by step from the increments you are given.")
+
+#: And the paragraph that makes `unrestricted` a different experiment rather than the
+#: same one with another label. Here the exact solution is a legitimate answer, because
+#: what this arm measures is whether the solver *recognises* an exactly solvable SDE --
+#: which `references/sde_manual.md` rule 0 asks for in as many words. It is a
+#: capability note and never a comparison against another library's schemes (§6), so
+#: the brief says what will be recorded rather than pretending the result is a win.
+UNRESTRICTED_PARAGRAPH = (
+    "\n\n**Any method is permitted, including the exact solution.** This equation has a "
+    "closed-form solution that is a function of the Brownian path, and evaluating it on "
+    "the increments you are given is a correct and expected answer here — it is exact at "
+    "every `dt`. The harness still re-solves at `dt`, `dt/2` and `dt/4` on coarsenings "
+    "of one Brownian path, and it records whether your solver carried any discretization "
+    "error at all, because recognising that this equation is exactly solvable is part of "
+    "what is being measured. A discretised scheme is equally acceptable and is graded by "
+    "the same gate.")
 
 
 def problem_suite(problem):
@@ -503,6 +643,10 @@ def add_suite_arguments(ap):
                          "NO_CLOSED_FORM_CANDIDATES.md)")
     ap.add_argument("--all-problems", dest="include_all", action="store_true",
                     help="run every problem, from every suite, together")
+    ap.add_argument("--arm", choices=ARMS, default=DEFAULT_ARM,
+                    help="which arm of the comparison this run belongs to "
+                         f"(default: {DEFAULT_ARM}). Recorded on every record; "
+                         "compare.py refuses to put two arms in one column")
 
 
 def main(argv=None):
@@ -511,6 +655,12 @@ def main(argv=None):
     ap.add_argument("--workspace", default=os.path.join(REPO_ROOT, "workspace"),
                     help="workspace root (default: <repo>/workspace)")
     ap.add_argument("--list", action="store_true", help="print inventory and exit")
+    # Staging is where the two arms of the sciml comparison actually differ, so this
+    # has to be settable here as well as on the runners -- a hand-staged workspace is
+    # otherwise always the scheme-matched one whatever a later run calls itself.
+    ap.add_argument("--arm", choices=ARMS, default=DEFAULT_ARM,
+                    help="which arm to stage the briefs for; only affects the sciml "
+                         "suite's pathwise problems (default: %(default)s)")
     args = ap.parse_args(argv)
 
     chosen = select(args.only)
@@ -522,7 +672,7 @@ def main(argv=None):
         return
 
     for p in chosen:
-        path = write_problem_md(p, args.workspace)
+        path = write_problem_md(p, args.workspace, arm=args.arm)
         print(f"wrote {os.path.relpath(path, REPO_ROOT)}")
 
     # The manifest always describes the full benchmark, not just the selection.

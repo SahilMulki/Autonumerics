@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import math
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -43,16 +44,26 @@ VERDICT_LABEL = {
     "STABLE_PASS": "STABLE (verified)",
     "BLOWUP": "BLOW-UP",
     "SELF_ONLY": "SELF-SCORE ONLY",
+    "ANALYTIC_TRANSCRIPTION": "EXCLUDED (analytic transcription)",
     "SPEC_BLOCKED": "SPEC BLOCKED",
     "RUN_ERROR": "RUN ERROR",
 }
 
 # Verdicts that count as an independently-confirmed success.
+#
+# ANALYTIC_TRANSCRIPTION is deliberately in neither this tuple nor the failure list
+# below. On a `pathwise` problem the exact solution is a closed form, so a solver can
+# *return* it -- exact at every dt, consuming the supplied increments, varying
+# correctly with the path count -- and be both perfectly accurate and not a scheme.
+# Scoring that as a pass would put a transcription at the top of a comparison between
+# discretizations; scoring it as a failure would call a correct answer wrong. It is an
+# exclusion: the run is reported, named, and left out of the arm that compares schemes
+# (plan-sciml-benchmark.md §0b, H2).
 _PASS_VERDICTS = ("VERIFIED_PASS", "STABLE_PASS")
 # The order verdicts are listed in the distribution table.
 _VERDICT_ORDER = ("VERIFIED_PASS", "STABLE_PASS", "OVERCLAIM", "BLOWUP",
                   "CONSTRAINT_VIOLATION", "UNDERCLAIM", "FAIL", "UNVERIFIED",
-                  "SELF_ONLY", "SPEC_BLOCKED", "RUN_ERROR")
+                  "SELF_ONLY", "ANALYTIC_TRANSCRIPTION", "SPEC_BLOCKED", "RUN_ERROR")
 
 # --- one-shot / single-agent baseline verdicts ------------------------------
 # A baseline solver has NO self-score (the pipeline's OVERCLAIM/UNDERCLAIM/10-of-10
@@ -69,11 +80,13 @@ ONESHOT_VERDICT_LABEL = {
     "STABLE_PASS": "STABLE",
     "BLOWUP": "BLOW-UP",
     "NO_GT": "NO GROUND TRUTH",
+    "ANALYTIC_TRANSCRIPTION": "EXCLUDED (analytic transcription)",
 }
-# What counts as an independently-confirmed baseline success.
+# What counts as an independently-confirmed baseline success. ANALYTIC_TRANSCRIPTION is
+# not here and not a failure either, exactly as on the pipeline side.
 _ONESHOT_PASS_VERDICTS = ("PASS", "STABLE_PASS")
 _ONESHOT_VERDICT_ORDER = ("PASS", "STABLE_PASS", "FAIL", "CONSTRAINT_VIOLATION",
-                          "BLOWUP", "CRASHED", "NO_GT")
+                          "BLOWUP", "CRASHED", "ANALYTIC_TRANSCRIPTION", "NO_GT")
 
 
 # --- verdict logic ----------------------------------------------------------
@@ -118,6 +131,16 @@ def harness_error(ver):
         tol = ver.get("variance_rel_err_max")
         if isinstance(tol, (int, float)) and tol > 0.0:
             return ver["worst_variance_rel_err"] / tol, "variance"
+    # The pathwise route carries neither a field error nor a moment error, so without
+    # this branch every entry in the SciML suite would print `-` in the error column:
+    # the F10 defect above, one route later. It is read after `functional_errs`
+    # because a pathwise problem may also declare a quantity of interest, and the
+    # worst gate decides there exactly as it does everywhere else.
+    if isinstance(ver.get("pathwise_rel_err"), (int, float)):
+        tol = ver.get("pathwise_tol_used")
+        if isinstance(tol, (int, float)) and tol > 0.0:
+            return ver["pathwise_rel_err"] / tol, "pathwise"
+        return None, "pathwise"
     return None, "none"
 
 
@@ -140,6 +163,32 @@ def _pipeline_claimed_pass(rec):
         if isinstance(source.get("certified"), bool):
             return source["certified"]
     return (pipeline.get("best_score") or 0) >= 10
+
+
+def _is_transcription(ver, arm=None):
+    """Did this run carry no discretization error at all, **and does that disqualify
+    it**? (H2)
+
+    One reading, used by both verdict functions. The baseline path needs it as much as
+    the pipeline path does -- more, in fact: §10's prediction 2 is that the C0 baseline
+    is *where* a transcribed answer is most likely, since a single completion with no
+    tools is exactly the setting in which writing down the closed form is the obvious
+    move. Until step 6 only `compute_verdict` had it, so a transcribing baseline would
+    have been recorded as a clean PASS on every problem in the suite.
+
+    **The arm decides whether it is an exclusion at all** -- added when the sciml runs
+    were being prepared, because the exclusion was unconditional while `--arm` was a
+    label, which made the `unrestricted` arm a second copy of the first experiment.
+    In that arm a transcription is the *capability being measured* (§6: does the system
+    recognise an exactly solvable SDE?), so it passes on its own merits and is not
+    excluded from anything -- there is nothing to exclude it from, since that arm is a
+    capability note rather than a comparison against another library's schemes. The
+    detection still runs and is still recorded; only the verdict changes.
+    """
+    if arm == "unrestricted":
+        return False
+    ladder = (ver or {}).get("pathwise_ladder") or {}
+    return ladder.get("status") == "ok" and bool(ladder.get("degenerate"))
 
 
 def compute_verdict(rec):
@@ -179,6 +228,19 @@ def compute_verdict(rec):
     pipeline_pass = _pipeline_claimed_pass(rec)
     verified_pass = bool(ver.get("passed", False))
 
+    # H2, and the order here was wrong when it shipped in step 5 -- step 6's
+    # calibration caught it. The exclusion applies only to a run that would
+    # *otherwise have passed*: a solver carrying no discretization error is accurate
+    # and is not a scheme, which is a different thing from being wrong.
+    #
+    # Read before the pass decision, a constant solver came back
+    # ANALYTIC_TRANSCRIPTION -- its ladder is degenerate too, since a constant does
+    # not change with `dt` either -- and that threw away the fact that it had *also*
+    # missed its gate by up to 60x. A wrong solver is a FAIL whatever its ladder says;
+    # the exclusion is for the one that is right and uninformative.
+    if verified_pass and _is_transcription(ver, rec.get("arm")):
+        return "ANALYTIC_TRANSCRIPTION"
+
     if verified_pass and pipeline_pass:
         return "VERIFIED_PASS"
     if verified_pass and not pipeline_pass:
@@ -203,6 +265,11 @@ def compute_oneshot_verdict(rec):
         BLOWUP       stability problem: diverged / escaped its domain
         NO_GT        no independent check exists (only Kuramoto-Sivashinsky) --
                      excluded from the pass rate
+        ANALYTIC_TRANSCRIPTION
+                     accurate, and not a scheme: on a `pathwise` problem the solver
+                     returned the closed form (or a constant) and carries no
+                     discretization error, so it is excluded from the scheme
+                     comparison rather than counted as a pass [step 6]
 
     A crash is deliberately a FAIL, not the pipeline's UNVERIFIED: when the task is
     "produce a working solver", failing to produce one is a loss."""
@@ -221,7 +288,10 @@ def compute_oneshot_verdict(rec):
     if ver.get("constraint_violation"):
         return "CONSTRAINT_VIOLATION"   # accurate-looking but broke a hard structural gate
     if vstatus == "ok":
-        return "PASS" if ver.get("passed") else "FAIL"
+        if not ver.get("passed"):
+            return "FAIL"
+        return ("ANALYTIC_TRANSCRIPTION"
+                if _is_transcription(ver, rec.get("arm")) else "PASS")
     if vstatus in ("nonfinite", "inconclusive", "contract"):
         # It ran but violated the contract (NaN output, or a grid/shape mismatch):
         # the solver's fault, so a FAIL rather than a neutral CRASHED.
@@ -287,6 +357,58 @@ def _has_independent_check(rec):
 
 
 # --- small markdown helpers -------------------------------------------------
+
+
+def _wp_series(rec):
+    """``(axis, points)`` of one record's work-precision series, or ``(None, [])``.
+
+    The series has been collected since the systems extension and rendered by nothing:
+    `report.py` and `compare.py` contained no occurrence of `work_precision` at all,
+    which the BENCHOP step-8 smoke test recorded as something its step 11 would inherit
+    and which stayed true. On the `sciml` suite that is not a cosmetic gap -- error
+    against *work* is this suite's primary axis (plan §5), the axis on which a numpy
+    solver and compiled Julia can share a plot -- so a sweep that collected five points
+    per entry and displayed none of them would have to be re-run to be read.
+    """
+    wp = ((rec.get("verify") or {}).get("work_precision")) or {}
+    pts = [q for q in (wp.get("points") or []) if isinstance(q, dict)]
+    return wp.get("axis"), pts
+
+
+def _wp_slope(points, xkey, ykey):
+    """Least-squares log-log slope of `ykey` against `xkey`, or None.
+
+    This is the number a work-precision diagram is read *for*: the exponent relating
+    error to work. Reported only from three or more finite, positive, distinct points,
+    because two points make a slope out of any pair of numbers and would put a
+    confident exponent on a curve that has not been resolved.
+    """
+    xy = [(float(q[xkey]), float(q[ykey])) for q in points
+          if isinstance(q.get(xkey), (int, float)) and isinstance(q.get(ykey), (int, float))
+          and q[xkey] > 0 and q[ykey] > 0]
+    xy = [(x, y) for x, y in xy if x == x and y == y]
+    if len(xy) < 3 or len({x for x, _ in xy}) < 3:
+        return None
+    xs = [math.log(x) for x, _ in xy]
+    ys = [math.log(y) for _, y in xy]
+    n = len(xs)
+    mx, my = sum(xs) / n, sum(ys) / n
+    den = sum((x - mx) ** 2 for x in xs)
+    if den <= 0:
+        return None
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True)) / den
+
+
+def _wp_fmt(point):
+    """A formatter bound to one work-precision point; `-` for anything missing.
+
+    A closure over the loop variable would read whichever point the loop finished on
+    (ruff B023), which on a five-point series is five copies of the last row.
+    """
+    def fmt(key, spec="{:g}"):
+        v = point.get(key)
+        return spec.format(v) if isinstance(v, (int, float)) else "-"
+    return fmt
 
 
 def _table(headers, rows):
@@ -490,7 +612,68 @@ def generate_report(results, config=None):
            f"max {_fmt_secs(max(times))}.")
     ap("")
 
+    # ---- work-precision ---------------------------------------------------
+    wp_recs = [r for r in results if len(_wp_series(r)[1]) >= 2]
+    if wp_recs:
+        ap("## Error vs work\n")
+        ap("Each row is one solve of the winning plan at a declared resolution. "
+           "`evals = paths x steps x stages` is the language-free work axis: `stages` "
+           "is the plan's *declared* scheme family's cost per step, so a family that "
+           "is not declared counts as 1 and says so. The slope is the least-squares "
+           "log-log fit of error against work over the series, reported only where "
+           "three or more points resolve it.\n")
+        for r in sorted(wp_recs, key=lambda x: x["id"]):
+            axis, pts = _wp_series(r)
+            fam = {q.get("scheme_family") for q in pts if q.get("scheme_family")}
+            src = {q.get("stages_source") for q in pts if q.get("stages_source")}
+            slope_e = _wp_slope(pts, "evals", "rel_err")
+            slope_dt = _wp_slope(pts, "dt", "rel_err")
+            head = f"**{r['id']} {r['slug']}**"
+            bits = []
+            if fam:
+                bits.append("scheme " + "/".join(sorted(fam))
+                            + (f" ({'/'.join(sorted(src))})" if src else ""))
+            if slope_e is not None:
+                bits.append(f"d log err / d log evals = {slope_e:.2f}")
+            if slope_dt is not None:
+                bits.append(f"observed order in dt = {slope_dt:.2f}")
+            ap(head + (" — " + "; ".join(bits) if bits else "") + "\n")
+            # A `default` stage count is a 1 the harness guessed, and the direction of
+            # that guess is not neutral: it UNDER-states the work of the plan being
+            # measured, which flatters it against any comparator costed honestly. The
+            # case is real rather than hypothetical -- the kernel's SDE vocabulary
+            # (`verifylib/kernel/plan_meta.SDE_FAMILIES`) has no Rossler/SRK entry, so a
+            # plan that writes a stochastic Heun or an SRK scheme can only declare
+            # `other`, and the first sciml pipeline run wrote exactly that.
+            if src and src != {"declared"}:
+                ap("> The stage count for this series is a **default of 1**, not a "
+                   "declared one: the plan's scheme family is "
+                   f"{'/'.join(sorted(str(f) for f in fam)) or 'undeclared'}, which "
+                   "carries no cost per step. `evals` is therefore a **lower bound** on "
+                   "this plan's work, so any comparison against a scheme whose stages "
+                   "are known understates this one's cost.\n")
+            cols = ["dt", "steps", "paths", "stages", "evals", "rel err", "solve s",
+                    "graded"]
+            rows = []
+            for q in pts:
+                g = _wp_fmt(q)
+                rows.append([g("dt"), g("steps"),
+                             g("paths") if q.get("paths") else g("num_paths"),
+                             g("stages"), g("evals"), g("rel_err", "{:.3e}"),
+                             g("solve_s", "{:.3f}"), "*" if q.get("graded") else ""])
+            ap(_table(cols, rows))
+            ap("")
+        skipped = [(r["id"], ((r.get("verify") or {}).get("work_precision") or {})
+                    .get("skipped"))
+                   for r in results]
+        skipped = [(i, s) for i, s in skipped if s]
+        if skipped:
+            ap("Points recorded but not plotted: "
+               + "; ".join(f"{i} ({s})" for i, s in skipped) + "\n")
+
     # ---- failures detail --------------------------------------------------
+    # ANALYTIC_TRANSCRIPTION is not here: it is an exclusion, not a defect of the run
+    # (see _PASS_VERDICTS). It appears in the distribution table under its own name.
     fails = [r for r in results if r["_verdict"] in ("FAIL", "OVERCLAIM", "BLOWUP", "RUN_ERROR",
                                                      "UNVERIFIED", "SPEC_BLOCKED")]
     ap("## Failures and errors\n")
@@ -631,6 +814,15 @@ def generate_report(results, config=None):
        "discretization-free Monte-Carlo of the known exact solution, compared within an "
        "SE-aware tolerance); *stability* (no ground truth — the independent check only confirms "
        "a correct scheme stays finite / in its domain, which is what a naive scheme gets wrong).")
+    ap("- **Four suites, four baseline denominators.** `main` (49) is the default; "
+       "`no-closed-form` (7), `benchop` (10) and `sciml` (9) each run only when asked "
+       "for by `--suite`, because mixing them into the main suite would move the "
+       "denominator every published pass rate is quoted against. `benchop` is graded "
+       "against 24 published reference values; `sciml` is graded against truth this "
+       "repo owns and *compared* against another library's schemes, which is why it "
+       "carries the `scheme-matched` / `unrestricted` arm distinction and the "
+       "`ANALYTIC_TRANSCRIPTION` exclusion. A run records its arm; two arms are never "
+       "merged.")
     ap("- **Problems with no closed form** (`closed_form: False`) run as their own suite "
        "(`--no-closed-form`) and are excluded by default, so the main benchmark's baseline "
        "denominators stay comparable. They are still independently checked, by one of four "

@@ -137,7 +137,7 @@ pass line. Produced by [`data/six_arm_pool_best.py`](data/six_arm_pool_best.py).
 |---|---|---|---|---|---|---|---|
 | B01 | `sde_sabr_cev_call_i` | **0.0180** | **0.0180** | **0.0180** | 0.0259 | 0.0473 | 0.0189 |
 | B02 | `sde_sabr_cev_call_ii` | 0.0116 | 0.4596 | 0.0913 | 0.7592 | 0.1674 | **0.0015** |
-| B03 | `sde_heston_call_feller` | 0.0178 | 0.0579 | **0.0143** | 0.4478 | — | 0.0391 |
+| B03 | `sde_heston_call_feller` | 0.0178 | 0.0579 | **0.0143** | 0.4478 | 0.4084 | 0.0391 |
 | B04 | `sde_heston_dnt` | 0.0603 | 0.0603 | 0.0603 | 0.0603 | 0.1353 | **0.0255** |
 | B05 | `sde_qlsv_dnt` | **0.0391** | **0.0391** | 0.0672 | 0.1315 | 0.1006 | 0.0441 |
 | B06 | `sde_hhw_call_corr` | 0.1445 | 0.5199 | 0.1508 | 0.4897 | **0.0474** | 0.0898 |
@@ -145,10 +145,13 @@ pass line. Produced by [`data/six_arm_pool_best.py`](data/six_arm_pool_best.py).
 | B08 | `sde_heston_call_hivar` | 0.0292 | 0.2417 | **0.0126** | 0.3350 | 0.1543 | 0.0274 |
 | B09 | `sde_heston_dnt_hivar` | 0.2243 | **0.0782** | 0.2243 | 0.2968 | 0.1175 | 0.2774 |
 | B10 | `sde_sabr_cev_call_ii_lowvol` | 0.0528 | 0.1106 | 0.0692 | **0.0041** | 0.1612 | 0.0291 |
-| | **geometric mean** | 0.0443 | 0.0979 | 0.0484 | 0.1451 | 0.0941 † | **0.0270** |
+| | **geometric mean** | 0.0443 | 0.0979 | 0.0484 | 0.1451 | 0.1090 | **0.0270** |
 
-† over **nine** problems — AutoNumerics run 2 has no B03 record, so its geomean is not strictly
-comparable to the other five columns.
+**Corrected 2026-11-09:** a first version of this table left run 2's B03 cell empty and averaged
+that column over nine problems. B03 *was* run in that arm — separately, as
+`benchop_b03_sonnet_run3.json`, which [10](10-sonnet-retest.md) §0 names as part of the same arm —
+so the cell is 0.4084 and the geomean is over ten problems like every other column. The earlier
+figure was 0.0941, biased low by dropping that arm's worst problem.
 
 ### What each column is
 
@@ -158,7 +161,7 @@ comparable to the other five columns.
 | Sonnet one-shot, best of 3 | `baselines/oneshot_benchop_c0_sonnet.json`, 2026-11-02 | sonnet | 3 per problem, `manual` |
 | Opus one-shot, best of 3 | `data/oneshot_benchop_c0_opus_naked3.json`, 2026-11-09 | opus | 3 per problem, `naked` |
 | AutoNumerics run 1 | `benchop-step10/p_regrade123`, `p_regrade4`, `p_b0506`, `p_b0708`, `p_b0910`, 2026-10-26 | default (Opus); the config does not record `--model` | pool of 1–3: B07 **1**; B01, B05, B06, B09, B10 **2**; rest 3 |
-| AutoNumerics run 2 | `pipeline/benchop_sonnet.json`, 2026-11-02 ([10](10-sonnet-retest.md)) | sonnet | pool of 3, except B04 **2**; no B03 |
+| AutoNumerics run 2 | `pipeline/benchop_sonnet.json` 2026-11-02 (nine) + `benchop_b03_sonnet_run3.json` 2026-11-01 (B03) — [10](10-sonnet-retest.md) §0's "Now" arm | sonnet | pool of 3, except B04 **2** |
 | AutoNumerics run 3 | `pipeline/benchop_sonnet_other9_run2.json` 2026-11-07 + `benchop_b03_sonnet_run4.json` 2026-11-05 | sonnet | pool of 3 on all ten |
 
 **Pool and draw counts are not equal across columns**, so this table is not a controlled comparison.
@@ -168,7 +171,7 @@ handicapped and the latter flattered, both by construction
 
 ### What it shows
 
-- **The pipeline's generation improved 5.4× across three runs**, 0.1451 → 0.0941 → 0.0270, while
+- **The pipeline's generation improved 5.4× across three runs**, 0.1451 → 0.1090 → 0.0270, while
   moving *down* a model tier at run 2. Run 3 has the best geomean on the table, but it wins only
   **3 rows outright** (B02, B04, B07) against Opus×3's 2 and one each for Sonnet×3, run 1 and run 2.
   **Its lead is breadth, not row wins**: it is top-two on **6 of 10** problems, more than any other
@@ -263,3 +266,68 @@ rep 3  no_touch_S75 = 0.7913035174062923   (0x1.9525bc10f088ap-1)
 - **The effect is strongest where the answer is most constrained.** The problems with many distinct
   answers (B02, B06, B07, B10 — 10 of 10 in the Opus arm) are the ones where the scheme is genuinely
   open, and those are where the arms actually separate. Read the table's spread there, not on B04.
+
+## Reproducibility: are the winning solvers still on disk?
+
+**Audited 2026-11-09**, [`data/solver_availability_audit.py`](data/solver_availability_audit.py).
+For each arm, whether the `solver.py` behind that arm's *best* result on each problem still exists.
+
+| arm | best-result solvers recoverable | where | why |
+|---|---|---|---|
+| Opus one-shot, best of 10 | **0 of 10** | — | `workspace_oneshot/opus/` was overwritten by the 2026-11-09 run |
+| Sonnet one-shot, best of 3 | **10 of 10** | `workspace_oneshot/sonnet/<slug>/c0-manual/rep<n>/` | untouched since 2026-11-02 |
+| Opus one-shot, best of 3 | **10 of 10** | `workspace_oneshot/opus/<slug>/c0-naked/rep<n>/` | written 2026-11-09 |
+| AutoNumerics run 1 | **0 of 10** | — | no workspace snapshot was ever archived |
+| AutoNumerics run 2 | **9 of 9** | `results/pipeline/archive_sonnet_other9_2026-11-05/workspace_snapshot/<slug>/plans/<plan>/` | snapshotted before the round-3 run |
+| AutoNumerics run 3 | **10 of 10** | `workspace/<slug>/plans/<plan>/` | live, and each carries Fix 0's `evaluation.json` |
+
+**The 2026-11-09 Opus run destroyed the 2026-10-25 Opus baseline's solvers.** `oneshot.py` writes to
+`workspace_oneshot/<model>/<slug>/c0-<manuals>/rep<n>`, a path that depends on model, condition and
+rep but **not on the run**, so three naked Opus draws landed exactly on top of the old arm's
+`c0-naked/rep1–3` and the old `c0-manual/rep1–5` directories are gone as well. The audit script
+reports 3 of 10 "present" for that arm; all three are this collision, and two of them hold a
+visibly different solver (B06 0.1445 recorded against 0.4847 for the file now at that path, B07
+0.0666 against 0.1097). The Oct-25 arm now exists **only** as the graded numbers in `s1–s4.json`.
+B09 is the exception that proves the duplicate-answer point: the file at that path is today's, yet
+it scores 0.224267076, the same as the Oct-25 draw, because both wrote the canonical scheme.
+
+### The surviving ones re-run bitwise
+
+Two spot-checks through the same sandboxed path that graded them
+([`data/reverify_spotcheck.py`](data/reverify_spotcheck.py)):
+
+```
+uv run python benchmark/verify.py --slug sde_heston_dnt \
+  --plan-dir workspace/sde_heston_dnt/plans/1-exact-chi2-bridge --no-work-precision
+```
+
+| unit | recorded gate units | recomputed 2026-11-09 | equal |
+|---|---|---|---|
+| AutoNumerics run 3, B04 best plan `1-exact-chi2-bridge` | 0.025491186346961462 | 0.025491186346961462 | **bitwise** |
+| Sonnet one-shot, B04 rep 3 | 0.06032867563731055 | 0.06032867563731055 | **bitwise** |
+
+Bitwise agreement is the expected result, not a lucky one, and for the same reason the arms collide
+on B04: fixed `num_paths`, `dt` and `seed` make the whole grading path deterministic. It does
+confirm that the recorded numbers are reproducible and that re-verification is cheap — ~20–38 s per
+solve.
+
+The B04 plan was then re-verified a **third** time, by hand, on the same machine. Every graded
+quantity repeated to the printed precision — all three functional errors, the two-level delta, both
+work-precision errors — and **only the two wall-clock figures moved**: 35.66 s → 37.99 s of solve
+time and 7.795 s → 7.963 s of sweep. That is the line to hold in mind when reading any cost figure
+in this folder: the accuracy numbers are deterministic, the timings are machine load and drift ~6%
+between runs on an idle box. `cost` is out of `ranking.WEIGHTS` and out of `rank_key`'s tiebreak as
+of round 3, but anything still reading `solve_s` is reading that noise.
+
+**One caveat on method.** A `verify.py --plan-dir` run does **not** rewrite the plan's
+`verify.json`; the one in a one-shot rep directory is the original from its own run. Reading that
+file back after a re-run looks like a confirmation and is not one. The spot-check above captures
+`verify_problem`'s return value directly.
+
+### What to do before the next run
+
+`workspace/` and `workspace_oneshot/` are both gitignored and both are clobbered by the next run
+that selects the same problem — `--fresh` for the pipeline, the model/condition/rep path for
+one-shot. The two arms that are currently live and unarchived are **AutoNumerics run 3** and
+**Opus one-shot ×3**. Copy them somewhere outside the repo, or into an archive directory under
+`results/pipeline/`, before running either arm again.

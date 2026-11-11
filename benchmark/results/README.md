@@ -86,6 +86,7 @@ Completed C2 sweeps, kept aside from the live `results.json`.
 | `no_closed_form.json` | the first no-closed-form wave — **4** problems, 2026-09-19. The input to [`docs/no-closed-form-findings.md`](../../docs/no-closed-form-findings.md) |
 | `NO_CLOSED_FORM_REPORT.md` | the report rendered from it |
 | `no_closed_form_v2.json` | the second wave — **3** problems (KdV, Gross–Pitaevskii, double-well), 2026-09-26. **This is what the committed `REPORT.md` was generated from** |
+| `sciml_m01_probe.json` | one pipeline run on M01, scheme-matched arm, taken as a cost probe before committing the other eight — 19.6 min, `VERIFIED_PASS`, and `wrong_plan_won: True`. Not a sweep; cited by [`docs/plan-sciml-benchmark.md`](../../../docs/plan-sciml-benchmark.md) §10a |
 
 ### baselines/
 
@@ -97,6 +98,8 @@ Completed C0/C1 one-shot sweeps, the selections made from them, and the flat sum
 | `oneshot_no_closed_form.selection.json` | `baseline_select.py`'s choice per problem, made with the conductor's own ranking key |
 | `oneshot_ncf_smoke.json` | the cheap plumbing smoke test — **2** units, 2026-09-26 |
 | `oneshot_ncf_smoke.selection.json` | its selection output |
+| `oneshot_sciml_scheme_matched.json` | the C0@Opus baseline on the sciml suite, **scheme-matched** arm — **9** units, naked only, `--c0-max-turns 4`, 2026-11-10. Zero of eight degenerate ladders |
+| `oneshot_sciml_unrestricted.json` | the same nine in the **unrestricted** arm, where evaluating the closed form is a permitted answer — **8 of 8** degenerate ladders at 5e-17 to 1.5e-15. The two files are the *same problems with different briefs*; `compare.py` refuses to put them in one column, and the arm is recorded on every record |
 | `c0_summary.tsv` | per-problem C0 pass rates, naked vs manual, with average cost / output tokens / wall time (2026-08-10) |
 | `c2b_summary.tsv` | per-problem C2b verdicts with self-score, verified score, errors and observed order (2026-08-17) |
 

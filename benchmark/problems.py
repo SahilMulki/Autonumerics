@@ -30,10 +30,39 @@ verifier how to check it:
   known, so ``moments(T)`` returns ``{key: (value, standard_error)}`` from a
   discretization-error-free Monte-Carlo of that exact solution. The verifier
   compares within an SE-aware tolerance.
+* ``pathwise`` -- the exact solution is a function of the **Brownian path**, so the
+  problem is graded path by path rather than in distribution: the strong error. The
+  problem exposes ``pathwise_exact(t, W) -> ndarray`` (parameters baked in by
+  ``partial``, exactly as ``moments`` does), the harness hands the solver the
+  increments the §18 contract extension specifies, and the gate is the relative
+  terminal strong error over paths (``pathwise_tol``, default 5%).
+
+  Two fields are optional and both exist because of what SciMLBenchmarks actually
+  publishes. ``pathwise_save_points`` asks for a saved history and turns on the
+  *absolute, timeseries* ``l2`` error that SciML plots -- recorded, never gated,
+  because a comparator axis must not be able to fail an accurate solver.
+  ``pathwise_fine_steps`` sets the one fine Brownian grid every level coarsens, so
+  the graded step, the ladder and every work-precision point are driven by the same
+  path; a declared level whose step does not divide it is reported as ``not_nested``
+  rather than drawn fresh.
+
+  The route carries its own exclusion. These problems can be answered by
+  transcribing the closed form, which is exact at every ``dt`` and defeats both
+  existing anti-hardcoding checks, so the harness reads the CRN ladder for a
+  degenerate pathwise difference and reports ``ANALYTIC_TRANSCRIPTION`` -- neither a
+  pass nor a failure, but an exclusion from the scheme comparison
+  (plan-sciml-benchmark.md §0b, H1-H2).
 * ``stability`` -- no ground truth at all; the independent check is only that a
   correct scheme stays finite / in its domain (a ``stability_check`` field says
   which). ``has_ground_truth`` is ``False`` but the problem is still independently
   checkable for blow-up.
+
+An SDE problem may also declare ``noise_dimension`` -- how many independent Brownian
+channels drive it. It defaults to ``state_dimension``, which is what every problem
+written before the SciML suite assumed implicitly, and it is what decides the shape of
+the increments the solver is promised: ``(num_paths, Nt)`` for one channel,
+``(num_paths, Nt, m)`` for ``m``. A non-square diffusion (``m != d``) is the case no
+problem in the first three suites exercises.
 
 PDE ``coords`` is ``(x,)`` for 1-D or the meshgrid ``(X, Y)`` for 2-D; steady
 problems ignore ``t``. A problem with no closed form *and* no stability check sets
@@ -1241,6 +1270,142 @@ def reference_error_of(slug):
 # =============================================================================
 # Problem set
 # =============================================================================
+
+# =============================================================================
+# SciMLBenchmarks pathwise exact solutions (plan-sciml-benchmark.md, step 6)
+#
+# Transcribed from the raw `SDEProblemLibrary.jl` at tag `SDEProblemLibrary-v1.2.4`
+# (commit d77baf21, sha256 58adc9b1...) and from the raw `.jmd` sources of the
+# benchmark notebooks -- never from a rendered page, whose prose is generated from a
+# drifting master and which three of these problems' own docstrings contradict
+# (plan §2a.8). Every one was additionally confirmed to *solve* its paired equation by
+# a common-random-number Milstein ladder reading strong order 0.94-1.04, which is the
+# check a correctly transcribed formula paired with the wrong equation would fail;
+# `docs/sciml-benchmark-data/verify_closed_forms.py` reproduces it.
+#
+# Each takes `(t, W)` and is a function of the Brownian path's value alone -- which is
+# what makes the strong-error route cheap here and, per §0b, what makes these problems
+# answerable by transcription rather than by integration. The `ANALYTIC_TRANSCRIPTION`
+# exclusion exists for that.
+# =============================================================================
+
+
+def sciml_linear_pathwise(t, W, X0=0.5, alpha=1.01, beta=0.87):
+    """SciML `prob_sde_linear`: dX = alpha X dt + beta X dW, the Black-Scholes asset.
+
+    `alpha - beta**2 / 2 = 0.63155` exactly, which is the literal the library writes
+    into its own `analytic`; it is computed here rather than copied so a change to
+    either coefficient cannot leave the solution silently inconsistent.
+    """
+    return X0 * np.exp((alpha - 0.5 * beta ** 2) * t + beta * W)
+
+
+def sciml_additive_pathwise(t, W, X0=1.0, alpha=0.1, beta=0.05):
+    """SciML `prob_sde_additive`: the time-dependent additive-noise problem.
+
+    dX = (beta/sqrt(1+t) - X/(2(1+t))) dt + alpha*beta/sqrt(1+t) dW.
+    """
+    return X0 / np.sqrt(1 + t) + beta * (t + alpha * W) / np.sqrt(1 + t)
+
+
+def sciml_cubic_pathwise(t, W, X0=0.5):
+    """SciML `prob_sde_cubic`: dX = -1/4 X(1-X^2) dt + 1/2 (1-X^2) dW.
+
+    Note the sign: the library's *code* has `-0.25 * u * (1 - u^2)` while its own
+    docstring writes `+1/4 u(1-u^2)` (§2a.8). The code is authoritative -- and the
+    docstring's reading is this entry's calibration control, because a transcriber
+    following the prose is the most plausible wrong solver there is.
+    """
+    e = np.exp(W)
+    return ((1 + X0) * e + X0 - 1) / ((1 + X0) * e + 1 - X0)
+
+
+def sciml_wave_pathwise(t, W, X0=1.0):
+    """SciML `prob_sde_wave`: dX = -1/100 sin(X)cos^3(X) dt + 1/10 cos^2(X) dW."""
+    return np.arctan(0.1 * W + np.tan(X0))
+
+
+def sciml_nltest_pathwise(t, W):
+    """SciML `prob_sde_nltest` (Tocino & Ardanuy): dX = (1/3 X^(1/3) + 6 X^(2/3)) dt
+    + X^(2/3) dW, X0 = 1.
+
+    The cube roots are a domain hazard for a *numerical* path but not for the exact
+    one: the solution is negative only where `W_t < -3(2t+1)`, and for Brownian motion
+    against that receding linear boundary the hitting probability over the whole
+    horizon is `exp(-2*3*6) ~ 2e-16`. A solver still needs a real cube root
+    (`np.cbrt`, not `**(1/3)`) because its own path can undershoot where the exact one
+    does not.
+    """
+    return (2 * t + 1 + W / 3) ** 3
+
+
+def sciml_stiffquad_pathwise(t, W, alpha, beta, X0=0.5):
+    """SciML `prob_sde_stiffquadito`: dX = -(alpha + beta^2 X)(1-X^2) dt
+    + beta (1-X^2) dW.
+
+    Both the Ito drift above and the Stratonovich drift `-alpha(1-X^2)` have **this
+    same solution** -- the Ito form is the Ito correction of the Stratonovich one -- so
+    dropping `beta^2` yields a problem whose answer key does not change and whose law
+    does (§2a.8). That is why the control works, and it is also why it only bites where
+    `beta^2` is comparable to `alpha`: measured, it separates on (50,1) and (5000,70)
+    and **not** on (500,1), where the correction is 1/500 of the drift.
+
+    `X = -1` is an absorbing point (`f` and `g` both carry the `1-X^2` factor) and the
+    attracting limit of `E -> 0`, which is why these entries are graded in the
+    transient rather than at SciML's `T = 3`, where the terminal state is the
+    bit-identical constant -1 across 200 000 paths (§2a.1).
+    """
+    e = np.exp(np.clip(-2 * alpha * np.asarray(t, dtype=float) + 2 * beta * W, -745, 709))
+    return ((1 + X0) * e + X0 - 1) / ((1 + X0) * e - X0 + 1)
+
+
+@lru_cache(maxsize=None)
+def sciml_noncommutative_moments(T=3.0):
+    """Exact second moments of SciML's non-commutative weak-error problem.
+
+    The problem (defined inline in `NonStiffSDE/HighOrderWeakSDEWorkPrecision.jmd`,
+    **not** in `SDEProblemLibrary.jl` -- §2a.3):
+
+        dX1 = -(273/512) X1 dt + (X1/4) dW1 + (X1/16) dW2
+        dX2 = (-(1/160) X1 - (-785/512 + sqrt2/8) X2) dt
+              + ((1-2 sqrt2)/4) X1 dW1 + (X1/10 + X2/16) dW2
+
+    with X(0) = [1, 1]. SciML grades `h(z) = z^2` on component 1 against `exp(-t)`.
+    That published value is *derived* here rather than transcribed: the second moments
+    `m = (E X1^2, E X1 X2, E X2^2)` satisfy the closed linear system `dm/dt = A m`
+    from Ito's rule, and `A[0,0] = 2*(-273/512) + (1/4)^2 + (1/16)^2 = -1` **exactly**,
+    so `E[X1^2] = exp(-t)` with no quadrature anywhere.
+
+    Two things that matrix shows, and that are the reason this entry carries three
+    observables rather than SciML's one:
+
+    * `A`'s first row is `[-1, 0, 0]`, so `E[X1^2]` satisfies a *closed scalar* ODE.
+      It is a function of component 1's **total** diffusion variance
+      `(1/4)^2 + (1/16)^2` and of nothing else -- not of the two channels being
+      separate, and not of the non-commutativity. A solver driving component 1 with a
+      single channel of matched variance reproduces SciML's graded observable exactly.
+    * `E[X1 X2]` and `E[X2^2]` do not decouple: their rows couple through
+      `(1-2 sqrt2)/4` and `1/10`, the coefficients of the two *different* increments
+      in row 2. These are the observables that require the channels to be separate.
+
+    Validated against a direct Euler-Maruyama Monte Carlo of 400 000 paths at three
+    step sizes, whose errors fall as `dt` (weak order 1) toward all three values.
+    """
+    s2 = np.sqrt(2.0)
+    a1 = -273 / 512
+    b1, b2 = -1 / 160, 785 / 512 - s2 / 8
+    c11, c12 = 1 / 4, 1 / 16
+    d1, d2, d3 = (1 - 2 * s2) / 4, 1 / 10, 1 / 16
+    A = np.array([
+        [2 * a1 + c11 ** 2 + c12 ** 2, 0.0, 0.0],
+        [b1 + c11 * d1 + c12 * d2, a1 + b2 + c12 * d3, 0.0],
+        [d1 ** 2 + d2 ** 2, 2 * b1 + 2 * d2 * d3, 2 * b2 + d3 ** 2],
+    ])
+    m = expm(A * float(T)) @ np.ones(3)
+    return {"second_moment_x1": float(m[0]),
+            "cross_moment_x1x2": float(m[1]),
+            "second_moment_x2": float(m[2])}
+
 
 PROBLEMS = [
     # -------------------------------------------------------------------------
@@ -4016,6 +4181,448 @@ as `price_K1`, `price_K2` and `price_K3` in the `functionals` dict, and the
 terminal states (S, sigma) in `terminal_paths`.
 """,
     },
+    # -------------------------------------------------------------------------
+    # SDE -- the SciMLBenchmarks-anchored suite (plan-sciml-benchmark.md, step 6)
+    #
+    # Nine problems whose *schemes* are compared against `StochasticDiffEq.jl`'s
+    # published algorithm set. Its own suite, like `benchop`, so its problems cannot
+    # move the denominators the other baselines are quoted against -- and tier 3
+    # throughout for the same reason benchop is: `references/sde_manual.md` contains
+    # no Roessler-family scheme at all and its rule 3 says stiffness is "not yet
+    # supported", so every entry here is beyond the reference manuals by construction.
+    #
+    # Eight are `pathwise`: the exact solution is a function of the Brownian path, so
+    # they are graded path by path (the strong error, which is SciML's primary axis)
+    # against increments the harness supplies. That also makes them answerable by
+    # transcribing the closed form, which is why the route carries the
+    # `ANALYTIC_TRANSCRIPTION` exclusion (§0b, H2).
+    #
+    # Every `pathwise_fine_steps` below is the one Brownian grid that the graded step,
+    # the three-level ladder and every declared work-precision step all coarsen -- so
+    # each is a common multiple of all of them, and `validate_ground_truth.py` refuses
+    # the entry if it is not.
+    # -------------------------------------------------------------------------
+    {
+        "id": "M01",
+        "slug": "sde_sciml_linear_ito",
+        "type": "sde",
+        "tier": 3,
+        "suite": "sciml",
+        "sciml_key": "prob_sde_linear (NonStiffSDE/BasicSDEWorkPrecision.jmd)",
+        "family": "sciml_linear_ito",
+        "title": "SciML Linear Ito (Black-Scholes asset)",
+        "challenge": "SciML's diagonal-noise reference problem; the SRI/SOSRI family's home ground, and none of them is in sde_manual.md.",
+        "state_dimension": 1,
+        "T": 1.0,
+        # 1/625 = 5^-4, one of SciML's own published steps, and the coarsest at which
+        # a correct Euler-Maruyama clears this entry's gate with room (§2b).
+        "dt": 0.0016,
+        "num_paths": 1000,          # SciML's own N for the strong-error pages
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "pathwise",
+        "pathwise_exact": sciml_linear_pathwise,
+        "pathwise_tol": 0.095,
+        "pathwise_save_points": 25,
+        "pathwise_fine_steps": 62500,   # lcm(5^6, 4*625): the published steps and the ladder
+        "work_precision_levels": [(1000, 0.04), (1000, 0.008), (1000, 0.0016),
+                                  (1000, 0.00032), (1000, 6.4e-05)],
+        "description": """# Linear Ito SDE (Black-Scholes asset)
+
+Simulate the following scalar Ito SDE:
+
+    dX = 1.01 X dt + 0.87 X dW,   X(0) = 0.5
+
+over the time interval [0, 1].
+
+This problem is graded **path by path**, not in distribution. You are handed the
+Brownian increments and your job is to advance the state through them with a
+discretised scheme; the harness compares your terminal states to the exact solution
+driven by those same increments.
+""",
+    },
+    {
+        "id": "M02",
+        "slug": "sde_sciml_additive",
+        "type": "sde",
+        "tier": 3,
+        "suite": "sciml",
+        "sciml_key": "prob_sde_additive (NonStiffSDE/BasicSDEWorkPrecision.jmd)",
+        "family": "sciml_additive",
+        "title": "SciML Additive-Noise SDE (time-dependent)",
+        "challenge": "Additive noise with a time-dependent coefficient -- the SRA family's target. The noise is so small that a constant passes a default gate, so this entry's gate is 80x tighter.",
+        "state_dimension": 1,
+        "T": 1.0,
+        "dt": 0.0016,
+        "num_paths": 1000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "pathwise",
+        "pathwise_exact": sciml_additive_pathwise,
+        # Measured, not inherited: the terminal law's spread is 0.5% of its magnitude
+        # (alpha*beta = 0.005), so the best possible constant scores 0.49% -- twenty
+        # times *inside* the default gate. See §2b finding 2.
+        "pathwise_tol": 0.0012,
+        "pathwise_save_points": 25,
+        "pathwise_fine_steps": 62500,
+        "work_precision_levels": [(1000, 0.04), (1000, 0.008), (1000, 0.0016),
+                                  (1000, 0.00032), (1000, 6.4e-05)],
+        "description": """# Additive-Noise SDE with a Time-Dependent Coefficient
+
+Simulate the following scalar Ito SDE:
+
+    dX = (beta / sqrt(1+t) - X / (2(1+t))) dt + (alpha beta / sqrt(1+t)) dW
+
+with alpha = 0.1, beta = 0.05 and X(0) = 1.0, over the time interval [0, 1].
+
+This problem is graded **path by path**, not in distribution. You are handed the
+Brownian increments and your job is to advance the state through them with a
+discretised scheme; the harness compares your terminal states to the exact solution
+driven by those same increments.
+
+Note that the diffusion coefficient does not depend on the state, and that its
+magnitude is small relative to the solution: the gate on this problem is
+correspondingly tight.
+""",
+    },
+    {
+        "id": "M03",
+        "slug": "sde_sciml_cubic",
+        "type": "sde",
+        "tier": 3,
+        "suite": "sciml",
+        "sciml_key": "prob_sde_cubic (SDEProblemLibrary; used by no notebook)",
+        "family": "sciml_cubic",
+        "title": "SciML Cubic SDE",
+        "challenge": "State-dependent diffusion vanishing at X = +-1, where the drift sign decides which fixed point attracts; the library's own docstring has that sign backwards.",
+        "state_dimension": 1,
+        "T": 1.0,
+        "dt": 0.0016,
+        "num_paths": 1000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "pathwise",
+        "pathwise_exact": sciml_cubic_pathwise,
+        "pathwise_tol": 0.049,
+        "pathwise_save_points": 25,
+        # No published comparison exists for this problem (§2a.3), so the levels are
+        # a nesting power-of-two ladder of our own rather than SciML's steps.
+        "pathwise_fine_steps": 10000,
+        # T = 1 here, so these are Nt = 125, 250, 625, 1250, 2500 -- all divisors of
+        # the fine grid, which `validate_ground_truth.py` checks and which the first
+        # draft of this entry got wrong by reusing M05's steps at a tenth of its
+        # horizon (§2b finding 6).
+        "work_precision_levels": [(1000, 0.008), (1000, 0.004), (1000, 0.0016),
+                                  (1000, 0.0008), (1000, 0.0004)],
+        "description": """# Cubic SDE
+
+Simulate the following scalar Ito SDE:
+
+    dX = -0.25 X (1 - X^2) dt + 0.5 (1 - X^2) dW,   X(0) = 0.5
+
+over the time interval [0, 1].
+
+Both coefficients vanish at X = +-1, so those states are absorbing; the sign of the
+drift decides which of them the solution is drawn toward. Read the equation above
+rather than any recollection of this problem.
+
+This problem is graded **path by path**, not in distribution. You are handed the
+Brownian increments and your job is to advance the state through them with a
+discretised scheme; the harness compares your terminal states to the exact solution
+driven by those same increments.
+""",
+    },
+    {
+        "id": "M04",
+        "slug": "sde_sciml_wave",
+        "type": "sde",
+        "tier": 3,
+        "suite": "sciml",
+        "sciml_key": "prob_sde_wave (NonStiffSDE/BasicSDEWorkPrecision.jmd)",
+        "family": "sciml_wave",
+        "title": "SciML Wave SDE",
+        "challenge": "Trigonometric drift and diffusion with a tiny noise amplitude; SciML's own page notes adaptive SRIW1 reaches its floor at the loosest tolerance here.",
+        "state_dimension": 1,
+        "T": 1.0,
+        "dt": 0.0016,
+        "num_paths": 1000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "pathwise",
+        "pathwise_exact": sciml_wave_pathwise,
+        # The noise amplitude is 0.1 cos^2(X) ~ 0.03 at X(0) = 1, so the terminal law
+        # is narrow and the best constant scores 3%: a default gate would pass it.
+        "pathwise_tol": 0.00057,
+        "pathwise_save_points": 25,
+        "pathwise_fine_steps": 62500,
+        "work_precision_levels": [(1000, 0.04), (1000, 0.008), (1000, 0.0016),
+                                  (1000, 0.00032), (1000, 6.4e-05)],
+        "description": """# Wave SDE
+
+Simulate the following scalar Ito SDE:
+
+    dX = -0.01 sin(X) cos^3(X) dt + 0.1 cos^2(X) dW,   X(0) = 1.0
+
+over the time interval [0, 1].
+
+This problem is graded **path by path**, not in distribution. You are handed the
+Brownian increments and your job is to advance the state through them with a
+discretised scheme; the harness compares your terminal states to the exact solution
+driven by those same increments.
+
+The noise amplitude here is small, so the gate on this problem is tight.
+""",
+    },
+    {
+        "id": "M05",
+        "slug": "sde_sciml_nltest",
+        "type": "sde",
+        "tier": 3,
+        "suite": "sciml",
+        "sciml_key": "prob_sde_nltest (SDEProblemLibrary, unexported; used by no notebook)",
+        "family": "sciml_nltest",
+        "title": "SciML Nonlinear Test SDE (Tocino & Ardanuy)",
+        "challenge": "Fractional powers of the state over a long horizon: the solution grows to ~10^4 and a scheme that undershoots into negative states hits a complex cube root.",
+        "state_dimension": 1,
+        "T": 10.0,
+        "dt": 0.004,                    # the harness cap at T = 10 is 0.04/10
+        "num_paths": 1000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "pathwise",
+        "pathwise_exact": sciml_nltest_pathwise,
+        "pathwise_tol": 0.0098,
+        "pathwise_save_points": 25,
+        "pathwise_fine_steps": 10000,
+        "work_precision_levels": [(1000, 0.016), (1000, 0.008), (1000, 0.004),
+                                  (1000, 0.002), (1000, 0.001)],
+        "description": """# Nonlinear Test SDE (Tocino & Ardanuy)
+
+Simulate the following scalar Ito SDE:
+
+    dX = ((1/3) X^(1/3) + 6 X^(2/3)) dt + X^(2/3) dW,   X(0) = 1.0
+
+over the time interval [0, 10].
+
+Both coefficients involve fractional powers of the state. The exact solution stays
+positive, but a numerical path can undershoot below zero, where a naive `x**(1/3)`
+returns a complex number or a NaN; use a real cube root.
+
+This problem is graded **path by path**, not in distribution. You are handed the
+Brownian increments and your job is to advance the state through them with a
+discretised scheme; the harness compares your terminal states to the exact solution
+driven by those same increments.
+""",
+    },
+    # The stiff-quadratic triple: one equation at three parameter sets, which makes it
+    # the suite's own shifted-parameter control (§8) for free.
+    #
+    # Each is graded at a horizon in the **transient**, not at SciML's `T = 3`, and
+    # that is the single largest consequence of step 2: at `T = 3` every one of these
+    # has collapsed onto the absorbing point `X = -1` and the exact terminal state is a
+    # bit-identical constant across 200 000 paths, so `-np.ones(num_paths)` earns a
+    # perfect score having consumed no increments (§2a.1). The alternative -- grading
+    # SciML's own timeseries norm at `T = 3` -- was measured and rejected: the
+    # transient is 0.3% of that interval, so on an equally spaced save grid a constant
+    # solver's relative timeseries error is 3e-13 at 10 saves and still only 0.09 at
+    # 1000 (§2b finding 1).
+    #
+    # `T` is a round number near `ln(3)/(2 alpha)`, the midpoint of the transition,
+    # where the terminal law is widest and a constant is therefore maximally wrong.
+    # The same rule for all three keeps them comparable with each other.
+    {
+        "id": "M06",
+        "slug": "sde_sciml_stiffquad_mild",
+        "type": "sde",
+        "tier": 3,
+        "suite": "sciml",
+        "sciml_key": "prob_sde_stiffquadito p=(50,1) (StiffSDE/QuadraticStiffness.jmd)",
+        "family": "sciml_stiff_quadratic",
+        "title": "SciML Quadratic Stiffness -- mild (alpha=50, beta=1)",
+        "challenge": "Deterministically stiff with vanishing diffusion at the absorbing states; sde_manual.md rule 3 says implicit schemes are 'not yet supported'.",
+        "state_dimension": 1,
+        "T": 0.01,
+        "dt": 0.0001,      # 100x inside the dt = 0.01 stability limit the notebook reports
+        "num_paths": 1000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "pathwise",
+        "pathwise_exact": partial(sciml_stiffquad_pathwise, alpha=50.0, beta=1.0),
+        "pathwise_tol": 0.015,
+        "pathwise_save_points": 25,
+        "pathwise_fine_steps": 400,
+        "work_precision_levels": [(1000, 0.0004), (1000, 0.0002), (1000, 0.0001),
+                                  (1000, 5e-05), (1000, 2.5e-05)],
+        "description": """# Quadratic Stiffness -- mild deterministic stiffness
+
+Simulate the following scalar Ito SDE:
+
+    dX = -(alpha + beta^2 X)(1 - X^2) dt + beta (1 - X^2) dW,   X(0) = 0.5
+
+with alpha = 50 and beta = 1, over the time interval [0, 0.01].
+
+Euler's stability here is governed by alpha + beta^2, so the step is small; the
+horizon is correspondingly short, and the whole interval is the transition between
+the two absorbing states X = +-1. The solution moves a long way in it.
+
+This problem is graded **path by path**, not in distribution. You are handed the
+Brownian increments and your job is to advance the state through them with a
+discretised scheme; the harness compares your terminal states to the exact solution
+driven by those same increments.
+
+Note that the drift carries a beta^2 X term alongside alpha. Dropping it gives a
+different equation with a different law.
+""",
+    },
+    {
+        "id": "M07",
+        "slug": "sde_sciml_stiffquad_det",
+        "type": "sde",
+        "tier": 3,
+        "suite": "sciml",
+        "sciml_key": "prob_sde_stiffquadito p=(500,1) (StiffSDE/QuadraticStiffness.jmd)",
+        "family": "sciml_stiff_quadratic",
+        "title": "SciML Quadratic Stiffness -- high deterministic (alpha=500, beta=1)",
+        "challenge": "Ten times the deterministic stiffness of its sibling at the same noise level; the shifted-parameter control for M06 and the one where the Ito/Stratonovich distinction stops being measurable.",
+        "state_dimension": 1,
+        "T": 0.001,
+        "dt": 1e-05,       # 200x inside the dt = 0.002 stability limit the notebook reports
+        "num_paths": 1000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "pathwise",
+        "pathwise_exact": partial(sciml_stiffquad_pathwise, alpha=500.0, beta=1.0),
+        "pathwise_tol": 0.039,
+        "pathwise_save_points": 25,
+        "pathwise_fine_steps": 400,
+        "work_precision_levels": [(1000, 4e-05), (1000, 2e-05), (1000, 1e-05),
+                                  (1000, 5e-06), (1000, 2.5e-06)],
+        "description": """# Quadratic Stiffness -- high deterministic stiffness
+
+Simulate the following scalar Ito SDE:
+
+    dX = -(alpha + beta^2 X)(1 - X^2) dt + beta (1 - X^2) dW,   X(0) = 0.5
+
+with alpha = 500 and beta = 1, over the time interval [0, 0.001].
+
+This is the same equation as the mild case at ten times the deterministic stiffness,
+and the horizon is scaled with it so that the graded state still sits in the
+transition between the absorbing states X = +-1.
+
+This problem is graded **path by path**, not in distribution. You are handed the
+Brownian increments and your job is to advance the state through them with a
+discretised scheme; the harness compares your terminal states to the exact solution
+driven by those same increments.
+""",
+    },
+    {
+        "id": "M08",
+        "slug": "sde_sciml_stiffquad_mixed",
+        "type": "sde",
+        "tier": 3,
+        "suite": "sciml",
+        "sciml_key": "prob_sde_stiffquadito p=(5000,70) (StiffSDE/QuadraticStiffness.jmd)",
+        "family": "sciml_stiff_quadratic",
+        "title": "SciML Quadratic Stiffness -- mixed (alpha=5000, beta=70)",
+        "challenge": "Noise stiffness beta^2 = 4900 alongside alpha = 5000. SciML's own conclusion is that nothing wins here: adaptivity is unstable and implicitness does not help.",
+        "state_dimension": 1,
+        "T": 0.0001,
+        "dt": 1e-06,       # 10x inside the dt = 1e-5 the notebook reports as the maximum
+        "num_paths": 1000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "pathwise",
+        "pathwise_exact": partial(sciml_stiffquad_pathwise, alpha=5000.0, beta=70.0),
+        "pathwise_tol": 0.11,
+        "pathwise_save_points": 25,
+        "pathwise_fine_steps": 400,
+        "work_precision_levels": [(1000, 4e-06), (1000, 2e-06), (1000, 1e-06),
+                                  (1000, 5e-07), (1000, 2.5e-07)],
+        "description": """# Quadratic Stiffness -- mixed deterministic and noise stiffness
+
+Simulate the following scalar Ito SDE:
+
+    dX = -(alpha + beta^2 X)(1 - X^2) dt + beta (1 - X^2) dW,   X(0) = 0.5
+
+with alpha = 5000 and beta = 70, over the time interval [0, 0.0001].
+
+Here beta^2 = 4900 is comparable to alpha, so the noise is as stiff as the drift.
+This is the hardest member of the family: the stability restriction comes from both
+terms at once, and the drift's beta^2 X contribution is no longer a small correction.
+
+This problem is graded **path by path**, not in distribution. You are handed the
+Brownian increments and your job is to advance the state through them with a
+discretised scheme; the harness compares your terminal states to the exact solution
+driven by those same increments.
+""",
+    },
+    {
+        # The one entry that is not `pathwise`, and deliberately so: it has no pathwise
+        # closed form, its truth is a set of moments, and -- the reason that matters --
+        # the high-order weak schemes SciML compares here (DRI1, PL1WM, RDI1WM, RDI2WM)
+        # draw auxiliary randomness per step and *cannot* consume a supplied Gaussian
+        # increment. Handing this problem `dW` would exclude the very methods the
+        # published page is a comparison between (§2b finding 4).
+        "id": "M09",
+        "slug": "sde_sciml_weak_noncommutative",
+        "type": "sde",
+        "tier": 3,
+        "suite": "sciml",
+        "sciml_key": "f_noncommutative! (NonStiffSDE/HighOrderWeakSDEWorkPrecision.jmd)",
+        "family": "sciml_weak_noncommutative",
+        "title": "SciML Non-Commutative Noise (weak error)",
+        "challenge": "2x2 non-commutative diffusion -- a noise structure no problem in the other three suites has -- graded on three exactly-known second moments, two of which require the two channels to stay separate.",
+        "state_dimension": 2,
+        "noise_dimension": 2,
+        "T": 3.0,
+        "dt": 0.0025,
+        "num_paths": 100000,        # SciML's own numtraj for this page
+        "seed": 42,
+        "has_ground_truth": True,
+        "functional_truth": sciml_noncommutative_moments(3.0),
+        # Per value, because they differ in how precisely a correct scheme can *compute*
+        # them at this step, not in how well they are known -- all three are exact.
+        # Each gate is the geometric mean of a correct Euler-Maruyama's weak error and a
+        # one-decision-wrong solver's, and each sits at least 4 sigma of Monte-Carlo
+        # noise above zero at this path count (§2b finding 5).
+        "functional_tol": {"second_moment_x1": 0.02,
+                           "cross_moment_x1x2": 0.016,
+                           "second_moment_x2": 0.029},
+        "work_precision_levels": [(100000, 1.0), (100000, 0.5), (100000, 0.25),
+                                  (100000, 0.125)],
+        "description": """# Non-Commutative Noise: weak error of three second moments
+
+Simulate the following 2-dimensional Ito SDE system, driven by **two independent**
+Brownian motions W1 and W2:
+
+    dX1 = -(273/512) X1 dt
+          + (1/4) X1 dW1 + (1/16) X1 dW2
+
+    dX2 = (-(1/160) X1 - (-785/512 + sqrt(2)/8) X2) dt
+          + ((1 - 2 sqrt(2))/4) X1 dW1 + ((1/10) X1 + (1/16) X2) dW2
+
+with X(0) = [1, 1], over the time interval [0, 3].
+
+The diffusion matrix is non-commutative: the two noise channels do not commute, so
+schemes that assume commutative or diagonal noise lose their order here. dW1 and dW2
+are independent -- using one increment for both channels is a different system.
+
+Report, in the `functionals` dict, the Monte-Carlo estimates of three terminal second
+moments:
+
+    second_moment_x1   E[X1(3)^2]
+    cross_moment_x1x2  E[X1(3) X2(3)]
+    second_moment_x2   E[X2(3)^2]
+
+All three are known exactly and are graded relatively, each against its own
+tolerance. Note their very different magnitudes: the third is of order 10^3 while the
+first is of order 10^-2, so a scheme that is accurate on one is not automatically
+accurate on another.
+
+In `terminal_paths`, X1 is the first column and X2 the second (the contract below
+calls those columns X and Y).
+""",
+    },
 ]
 
 
@@ -4059,6 +4666,20 @@ def benchop_problems():
     problems cannot move the denominators the other two baselines are quoted
     against (plan-benchop-slv.md §6, step 7)."""
     return [p for p in PROBLEMS if p.get("suite") == "benchop"]
+
+
+def sciml_problems():
+    """The SciMLBenchmarks-anchored suite: SDE problems whose *schemes* are compared
+    against ``StochasticDiffEq.jl``'s published algorithm set (plan-sciml-benchmark.md).
+
+    Its own suite for the same reason ``benchop`` is: separate baseline denominators.
+    What makes it different from ``benchop`` is what the external anchor *is*. BENCHOP
+    published 24 reference numbers, so the answer key is the truth; SciML published a
+    comparison between schemes, so the answer key is the *competitor*, and the truth is
+    usually a closed form this repo can write down itself. That is why the suite needs
+    the ``pathwise`` route and the ``ANALYTIC_TRANSCRIPTION`` exclusion rather than a
+    new answer key: see §0b of the plan."""
+    return [p for p in PROBLEMS if p.get("suite") == "sciml"]
 
 
 def no_closed_form_problems():

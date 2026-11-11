@@ -1,0 +1,1974 @@
+# SciMLBenchmarks (SDE) — External Benchmark Adoption Plan
+
+**Status:** **researched 2026-11-09; rev 1 the same day; rev 2–5 2026-11-10 — steps 1–9 of §7
+done, step 10 probed on one problem. The suite exists, is calibrated, is smoke-tested end to end,
+has its comparator numbers and has its C0 baseline in both arms; what remains is the other eight
+pipeline runs (step 10, ~3 h per arm) and the optional Phase 2 (step 11).** Rev 5
+`[2026-11-10]` closes the comparator track and the smoke test: §3e (the pinned environment — both
+upstream manifests instantiate verbatim, and the three published `BoundsError` cells §1a.2 names now run), §3f
+(`comparators.json`, 279 rows over 19 schemes), §5a (the EM anchor, three numbers rather than one)
+and §7a (the smoke test and the four harness defects it found). Four of rev 5's findings change how
+the result must be read rather than confirming the plan: **the `evals` axis over-charges
+multi-stage schemes by up to 6× against measured seconds**, so it flatters the pipeline (§3f);
+**§10's prediction 1 is confirmed under one reading of "matched work" and falsified on four of nine
+entries under the other**, and the two readings differ by two orders of magnitude (§3f); **the
+scalar EM anchor's 1.03× parity is an artifact of a latency-bound dependency chain**, with 2.71× the
+honest ceiling (§5a); and **nothing in this repository had ever rendered a work-precision series**,
+which on this suite is the primary axis (§7a). Rev 5 then ran step 9 (§9a — 18/18 PASS, and the
+two arms turn out to measure completely different things: **0 of 8 transcriptions in one, 8 of 8 in
+the other**) and probed step 10 on one problem (§10a — which came back `wrong_plan_won: True`, a
+field that was `null` until §7a's first defect was fixed). Two further defects were found by
+*running* rather than by testing, and both would have invalidated the runs that found them: the
+`unrestricted` arm staged a byte-identical brief and excluded transcriptions, so it was a label on
+the scheme-matched experiment; and the two arms shared their artifact paths and unit keys, so the
+second deleted the first's solver sources and would have deduped the first's records. Rev 1 narrows the scope to **SDE only, confirmed by the project
+owner**, and adds the two things the first draft left as one-line gestures: the **environment setup** needed to produce comparator numbers (§3) and
+the **harness work list** needed to run the problems at all (§4, items H1–H10 with files, line
+numbers and acceptance tests). Rev 1 also records three findings from reading the harness that the
+first draft had wrong or missing, all in §4a: the graded step is forced _finer_ than every published
+point on the weak-error problem, two Phase-2 problems exceed the solver budget by orders of
+magnitude, and the benchmark problem entries have no way to declare a noise dimension.
+
+**Rev 2 `[2026-11-10]` — step 2 is done and it changed the problem set.** Every formula in §2 was
+re-read against the raw `SDEProblemLibrary.jl` at the pinned version and against the raw `.jmd`
+sources of all five SDE benchmark notebooks; §2a is the diff, and four of its findings overturn the
+plan rather than confirming it. **S06–S08's terminal state is the constant −1 to machine precision**
+at SciML's own `T = 3`, so three of the nine Phase-1 entries are vacuous as this harness grades them
+(§2a.1). **SciML's `:l2` axis is a timeseries error, absolute rather than relative**, so H1 as
+written does not measure the published quantity (§2a.2). **Three of §2's nine entries are not in the
+library at all** and two more are in the library but in no notebook, so their `[L]`/`[W]` labels and
+their comparator status were both wrong (§2a.3). And **§1a.3 is withdrawn** — the page prose does not
+disagree with the library; the summarising agent conflated two of its sections (§2a.4). Step 2 also
+found a fifth notebook that grades on the terminal state, which is the axis this harness already
+has, and names the cheapest honest entry in the adoption (§2a.5).
+
+**Rev 3 `[2026-11-10]` — step 5 is done: H1, H2, H3, H4, H8, H9 and H10 are shipped** with 28
+acceptance tests, and all 66 existing problem statements and the whole manifest hash identically
+before and after. §4b records it. Implementing it mostly confirmed the plan; the four places it did
+not are worth more than the code. **H1 was bigger than one route**, because the `dW` the plan said
+"the contract already accepts" is the _kernel's_ contract and the benchmark's own SDE contract had
+no such argument on any problem — so the route needed a contract extension and increment plumbing
+through the sandbox child as well. **The gate had to be measured before it could be set, and the
+first value was wrong**: 5% failed a _correct_ Euler–Maruyama at 5.36%, which is the one thing this
+repo's calibration rule forbids and the kind of false hard-fail that is invisible as a false
+positive; at 10% a correct EM clears by 1.9x and a one-decision-wrong variant fails by 4.1x. **H2
+needed the distinction §2a.1 found rather than the single verdict H2 specified**, so a constant and
+a transcription are both excluded but named apart — and `validate_ground_truth.py` now refuses a
+vacuous entry at _authoring_ time, which is what stops the stiff-quadratic problems being declared
+at `T = 3` in step 6 and discovered in step 9. **H9's deny-rule half was already done**; the hole
+was that `harvest.jl` is a `.jl` file under `benchmark/` and every interpreter in the deny list was
+a Python one.
+
+**Rev 4 `[2026-11-10]` — steps 6 and 7 are done: the nine entries are authored and every gate is
+calibrated both ways.** §2b records it with the measured tables. **Every gate separates** — a
+correct Euler–Maruyama clears by 2.0–7.3x, a one-decision-wrong variant fails by 2.2–238x, the
+narrowest separation is **4.4x** against BENCHOP's 6.8x — and no gate was moved after seeing where a
+scheme landed. Step 7 is folded into step 6 because it could not be deferred: three entries were
+*vacuous* until calibration found them. The findings: §2a.2's alternative to moving the stiff
+horizon was **measured and rejected** (at `T = 3` a constant solver's relative timeseries error is
+3.5e-13 at 10 saves and still inside any gate at 1000, because the transient is 0.3% of the
+interval); **three entries were vacuous rather than one**, since `additive` and `wave` are
+answerable by a constant at a default gate, which establishes that a strong-error gate's scale is a
+property of each problem's terminal spread and not a universal number; **two of §7's one-decision
+controls fail** — a dropped Milstein correction is Euler–Maruyama, a correct scheme and not a wrong
+one, and the β²-drop is unobservable where `β² ≪ α`; **§10's prediction 4 is falsified** with its
+mechanism inverted, since the Monte-Carlo floor does bind on the weak observable but by making a
+correct scheme's error *unmeasurable* rather than by forcing the gate wider; and M09's published
+value is **derived rather than transcribed**, which is how the first row of its moment system turned
+out to show that SciML's own graded observable cannot see the channel structure at all. Step 6 also
+caught **two defects in step 5's own work**, the worse being that only the pipeline verdict knew
+about the transcription exclusion — so a transcribing C0 baseline, the case §10 predicts is most
+likely, would have been recorded as a clean pass.
+
+**Verdict unchanged:** feasible; the cheap half of the suite is trivially winnable for a reason with
+no BENCHOP analogue (§0b); the comparison is cross-runtime (§0c); and the outcome on the non-stiff
+set restates a documented gap in `sde_manual.md` (§0d). Rev 2 does not move the verdict, but it moves
+the _cheapest honest path to it_: three Phase-1 entries turn out to have a published **weak** axis
+that the repo's existing moment route already grades (§2a.5), so a comparator table no longer waits
+on H1, and the one Phase-2 problem graded on a terminal state is affordable today (§2a.5).
+
+**Scope:** the SDE sections of SciMLBenchmarks — 4 non-stiff and 5 stiff notebooks, comparing 6–12
+published schemes as implemented in `StochasticDiffEq.jl` — as a fourth suite alongside `main`,
+`no-closed-form` and `benchop`. **No PDE entries**, as in the BENCHOP-SLV adoption. Note that
+SciML's stochastic heat problem is method-of-lines and is therefore graded under the _SDE_ contract
+as an N-state system, not as a PDE.
+
+**Related:** [plan-benchop-slv.md](plan-benchop-slv.md) (the adoption this one copies its shape
+from), [improving-autonumerics/](improving-autonumerics/) (what the BENCHOP runs measured about the
+pipeline), [plan-sde-verification-gaps.md](plan-sde-verification-gaps.md) (the CRN ladder this plan
+reuses), [plan-no-closed-form.md](plan-no-closed-form.md) (the reference route Phase 2 needs).
+
+**Provenance of every fact below.** `[W]` read off a SciMLBenchmarks page on 2026-11-09, `[L]` read
+off `SDEProblemLibrary.jl` master on 2026-11-09, `[R]` measured or read in this repo, `[N]` new in
+this plan. **One caveat applies to every `[L]` and `[W]` item:** both were fetched through a
+summarising agent, so the formulas below are _close to_ verbatim and **must be re-read against the
+raw file at the pinned version before any of them is transcribed into `problems.py`** (step 2).
+
+---
+
+## 0. Verdict
+
+**Feasible.** The three things that made BENCHOP-SLV expensive are all cheaper here, and the
+machinery the comparison needs mostly exists:
+
+- **Truth is free.** `[L]` Every non-stiff SciML test problem ships an `analytic(u0, p, t, W)` —
+  an exact solution that is a closed-form function of the **terminal Brownian value alone**:
+  `u0*exp(0.63155t + 0.87W)` for the linear problem, `atan(0.1W + tan(u0))` for the wave problem,
+  `(2t + 1 + W/3)^3` for the nonlinear test, and `((1+u0)e^{W} + u0 - 1)/((1+u0)e^{W} + 1 - u0)` for
+  the cubic. BENCHOP step 6 cost a re-derivation of 24 published numbers by two independent method
+  families; here there is nothing to re-derive. The _weak_ truth is a 1-D Gaussian integral of a
+  known transform, which this repo already computes to machine precision by Gauss–Hermite — see
+  `quintic_ic_moments(n_gh=160)` at `benchmark/problems.py` `[R]`.
+- **The comparators are rerunnable.** MIT-licensed Julia, 6–12 schemes per notebook, on your own
+  hardware. BENCHOP-SLV gave plots and encrypted p-code; SciML gives source.
+- **The mechanisms exist.** The supplied-increment contract (`dW`, `verification_manual.md` §18,
+  `verifylib/kernel/sde/crn.py`) is exactly the common-random-number protocol a strong-error
+  measurement needs; `work_precision_levels` already re-solves an SDE problem at a list of
+  `(num_paths, dt)` pairs and emits error-vs-time; `runner.py:353` already separates the solve clock
+  from the process clock; a fourth suite is one tuple at `benchmark/setup.py:434` `[R]`.
+
+**And it is largely pointless in the form that is cheap.** That is §0b, and it is the finding this
+plan exists to record.
+
+### 0b. The cheap half is trivially winnable, and winning it measures nothing
+
+`[N]` On BENCHOP the answer key was a _number_, so the anti-memorisation question was "did the
+solver recall the price?" and the defence was a shifted-parameter control. Here the answer key is a
+**closed-form pathwise solution**, and the solver is handed the Brownian increments. So a solver can
+return
+
+```python
+X_T = u0 * np.exp(0.63155 * T + 0.87 * dW.sum(axis=1))
+```
+
+which is **exact at every `dt`**, consumes the supplied increments (so it is not the `dW`-ignoring
+defect `verifylib/kernel/score.py` catches), varies correctly with the path count (so the
+two-path-count anti-hardcoding check passes), and beats every scheme in `StochasticDiffEq.jl` by an
+unbounded margin on every axis SciML plots. It also simulates nothing.
+
+This is not hypothetical and it is not a leakage failure: deriving the analytic solution is what the
+pipeline's formulator is _for_, and `sde_manual.md` rule 0 already instructs plans to sample an
+exact transition law where one exists. The point is narrower and worse: **SciML's problems are
+yardsticks, not tasks.** Their exact solutions exist so that a _scheme_ can be measured against
+them. Adopting them as graded problems scores the pipeline against a ruler it can print.
+
+Three consequences shape the whole plan:
+
+1. The comparison is only meaningful in a **scheme-matched arm** (§6) that forbids the exact path
+   and requires a discretised stepper — and that arm has to be _enforced_ rather than requested.
+2. `[R]` Enforcement is nearly free, because the CRN ladder already detects it: a pathwise-exact
+   solver returns **bit-identical** terminal states at every level of the ladder, so the pathwise
+   difference `s0` collapses to rounding. That is the same reading the repo already has a precedent
+   for — `sde_bm_with_drift`, where Euler–Maruyama is pathwise exact and `s0 = 9.4e-15` with the
+   strong order abstaining (`verifylib/kernel/sde/crn.py`) `[R]`. What is missing is not the
+   detector but the _verdict_: on this suite a degenerate ladder means "not a scheme", and nothing
+   today says so. That is **H2**.
+3. The half of SciML that is **immune** — the problems with no closed form (Brusselator, Lorenz,
+   oscillating reaction network, Oval2, stochastic heat) and the high-order weak problem, whose
+   truth is a moment rather than a path — is exactly the half that needs a harness-owned reference
+   and a state dimension above 3. **The honest half is the expensive half.** Any plan that runs the
+   cheap half alone will produce a table of wins that means nothing, and a reviewer who reads
+   `SDEProblemLibrary.jl` will say so in one sentence.
+
+### 0c. The second problem: the comparison is cross-runtime
+
+`[N]` SciML's output axis is wall-clock at matched accuracy. `StochasticDiffEq.jl` compiles a
+scalar per-step loop and ensembles over threads (the published runs used 128 threads on an EPYC 7502
+`[W]`); an AutoNumerics solver is numpy, restricted to "standard library and numpy only" by the
+solver contract `[R]`, and gets its speed by vectorising **across paths**. On a scalar 1000-path
+strong-error test numpy vectorisation is competitive or better; on Oval2 (19 states, few paths,
+stiff) it loses by a large factor that has nothing to do with the scheme. Quoting raw seconds side
+by side is a language benchmark wearing a numerics benchmark's clothes. §5 is the fix, and **H4** is
+the code it needs.
+
+### 0d. The third problem: the outcome on the non-stiff set is already known
+
+`[R]` `references/sde_manual.md` offers EM, Milstein (scalar multiplicative only, rule 2), exact
+transition sampling (rule 0), conditional Monte Carlo (rule 0b), and for stiffness rule 3 —
+_"implicit or semi-implicit scheme required. Not yet supported; document the limitation."_ There is
+**no Rößler-family scheme in the manual at all** — no SRA, SRI, SOSRA, SOSRI, DRI1, PL1WM, RDI\*WM.
+`[W]` SciML's non-stiff headline is that those methods are _"orders of magnitude more efficient"_
+and _"should be used whenever applicable"_, and its high-order weak page concludes _"DRI1 in
+particular achieves the smallest errors for fixed timesteps."_
+
+So in the scheme-matched arm the pipeline enters a contest between EM/Milstein and nine schemes
+designed to beat them, on problems chosen by SciML _because_ the Rößler methods apply (additive and
+diagonal noise `[W]`). It will lose, and the measurement will be a restatement of rule 3 and of the
+manual's missing scheme table. That is a legitimate thing to measure **once**, as the cost of a
+documented gap — the BENCHOP runs were valuable for the same reason — but it is worth one
+measurement, not a suite. The suite earns its keep only if the manual gains an SRK section and the
+run is repeated; §12 makes that the plan's own success criterion rather than a hope.
+
+---
+
+## 1. What SciMLBenchmarks actually measures `[W]`
+
+~~Three axes, and the repo currently grades on none of them:~~ **Rev 2: three axes across _five_
+notebooks, and the repo already grades on one of them** — §2a.5 adds the two pages this table
+missed, one of which grades the terminal moment and one the terminal state. Note also that
+`error_estimate = :l2` is a **timeseries** error over every saved step and is **absolute**, not the
+terminal relative error this plan assumed (§2a.2); `:final` is the terminal one.
+
+| Page                                 | Axis                                           | Settings as published                                                                                                                                                  |
+| ------------------------------------ | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Basic SDE Work-Precision (non-stiff) | **Strong** error, `error_estimate = :l2`       | `N = 1000` runs; `tspan (0,1)`; `reltols = abstols = 10^-(1:5)`; fixed-step `dt = 5^-(2:6)` (1/25 … 1/15625); `maxiters = 1e7`                                         |
+| High-Order Weak Work-Precision       | **Weak** error, `error_estimate = :weak_final` | `numtraj = 1e5`; `seed = 100`; `dts = 1, 1/2, 1/4, 1/8`; observable `h(z) = z²` on component 1; `expected_value = exp(-3.0)`; `adaptive = false`; `test_dt = 1//10000` |
+| Quadratic Stiffness                  | Strong, `:l2`, plus `@time`                    | `numruns = 10`; `reltols = abstols = 10^-(3:5)`; EM/SRIW1-fixed `dt = 8^-(2:4)` and `8^-(3:5)`                                                                         |
+
+**Schemes compared, in the published order** `[W]`: SRIW1 (adaptive and fixed), EM, RKMil, SRA1,
+SRA2, SRA3, SOSRA, SOSRA2 (additive-noise set); SRI, SRIW1, SRIW2, SOSRI, SOSRI2 (diagonal set);
+DRI1, PL1WM, RDI1WM, RDI2WM, EM, SimplifiedEM (weak set); SRIW1, EM, ImplicitRKMil (stiff set).
+That clears the "three or more comparators" bar many times over, **but all of them are one library's
+implementations of other authors' published schemes.** The honest framing of any result is
+"AutoNumerics vs `StochasticDiffEq.jl`'s algorithm set", not "vs nine independent groups".
+
+### 1a. The published numbers cannot be used as they stand
+
+Four findings, each of which forces a local rerun rather than a citation `[W]`:
+
+1. **Almost no numbers are published.** Pages 1 and 2 are plots only — no timings, no error values,
+   no tables. The only printed numbers anywhere are page 3's `@time` lines, and most of those are
+   compilation-dominated (_"99.89% compilation time"_, _"99.98% compilation time"_), so they are
+   first-run artefacts, not timings.
+2. **Half of page 1 does not run.** Four cells report `BoundsError: attempt to access 4-element
+Vector{Float64} at index [5]` and `… 0-element Vector{Matrix{Float64}} at index [0]` — the 2-D
+   linear and scalar linear first cells, and the wave first cell. The published non-stiff
+   comparison is _incomplete_. Regenerating it is a small contribution in its own right.
+3. ~~**The page prose disagrees with the library.** Page 1 describes the linear problem as
+   `dX = αX dt + βX dW` with `α = 1/10, β = 1/20`; the library has `f = 1.01u`, `g = 0.87u`,
+   `analytic = u0*exp(0.63155t + 0.87W)` `[L]` (and `1.01 - 0.87²/2 = 0.63155` checks out, so the
+   source is self-consistent and the page is stale — those α, β values belong to the _additive_
+   problem, `p = (0.1, 0.05)`). The page also writes the solution exponent with α and β transposed.~~
+   **Withdrawn in rev 2 — this finding was an artefact of the summarising agent (§2a.4).** The page
+   describes the _additive_ problem with `α = 1/10, β = 1/20`, which is exactly its
+   `p = (0.1, 0.05)`, and separately describes the linear problem as `α = 1.01, β = 0.87` with
+   solution `X₀e^{(α − β²/2)t + βW_t}` — correct, and not transposed. The standing instruction
+   survives the withdrawal for a different reason: **problem definitions are read from the library at
+   the pinned version because the pages are rendered from a drifting `master` (§2a.7), not because
+   their prose is wrong.**
+4. **Versions and hardware drift across the three pages.** StochasticDiffEq 6.87.0 / 7.1.5 / 7.1.4;
+   SDEProblemLibrary 1.1.0 / 1.2.4 / 1.2.3; Julia 1.10.10 / 1.11.9 / 1.11.9 with a 1.12.7 docs
+   footer; all three on a 128-thread EPYC 7502. This machine is 8 cores / 17 GB `[R]`. Nothing is
+   comparable without a local rerun at pinned versions.
+
+---
+
+## 2. The problem set
+
+~~`[L]` Everything below is from the library source, with the §0 caveat: re-read the raw file at the
+pinned version before transcribing.~~ **Rev 2: the re-read is done (§2a), and the labels were wrong.**
+S01–S05 are `[L]`, confirmed verbatim against v1.2.4 and confirmed numerically to solve their own
+equations. **S06–S08's parameter sets and the whole of S09 are `[W]`, not `[L]`** — the library's
+`prob_sde_stiffquadito` carries `p = (1.0, 1.0)`, and no problem resembling S09 exists in the
+library at all (§2a.3). **S06–S08 are additionally vacuous at the `tspan` below** and their graded
+horizon has to move into the transient (§2a.1); the `0.5, (0,3)` in their row is SciML's, not this
+suite's.
+
+### Phase 1 — closed-form, pathwise-exact truth, `d ≤ 2`
+
+| #       | Candidate slug                         | SDE                                                                                                                                                             | `u0`, `tspan`  | Exact solution                                                     | dims (state, noise)    |
+| ------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------ | ---------------------- |
+| S01     | `sde_sciml_linear_ito`                 | `f = 1.01u`, `g = 0.87u`                                                                                                                                        | 0.5, (0,1)     | `u0·exp(0.63155t + 0.87W)`                                         | 1, 1                   |
+| S02     | `sde_sciml_additive`                   | `f = p₂/√(1+t) − u/(2(1+t))`, `g = p₁p₂/√(1+t)`, `p = (0.1, 0.05)`                                                                                              | 1.0, (0,1)     | `u0/√(1+t) + p₂(t + p₁W)/√(1+t)`                                   | 1, 1                   |
+| S03     | `sde_sciml_cubic`                      | `f = −0.25u(1−u²)`, `g = 0.5(1−u²)`                                                                                                                             | 0.5, (0,1)     | `((1+u0)e^W + u0 − 1)/((1+u0)e^W + 1 − u0)`                        | 1, 1                   |
+| S04     | `sde_sciml_wave`                       | `f = −0.01·sin(u)cos³(u)`, `g = 0.1cos²(u)`                                                                                                                     | 1.0, (0,1)     | `atan(0.1W + tan u0)`                                              | 1, 1                   |
+| S05     | `sde_sciml_nltest`                     | `f = ⅓u^{1/3} + 6u^{2/3}`, `g = u^{2/3}`                                                                                                                        | 1.0, (0,10)    | `(2t + 1 + W/3)³`                                                  | 1, 1                   |
+| S06–S08 | `sde_sciml_stiffquad_{mild,det,mixed}` | `f = −(α + β²u)(1−u²)`, `g = β(1−u²)`, `(α,β) = (50,1), (500,1), (5000,70)`                                                                                     | 0.5, (0,3)     | `((1+u0)e^{−2αt+2βW} + u0 − 1)/((1+u0)e^{−2αt+2βW} − u0 + 1)`      | 1, 1                   |
+| S09     | `sde_sciml_weak_noncommutative`        | `f₁ = −(273/512)u₁`; `f₂ = −(1/160)u₁ − (−785/512 + √2/8)u₂`; `g` the 2×2 matrix with `g₁₁ = u₁/4`, `g₁₂ = u₁/16`, `g₂₁ = ((1−2√2)/4)u₁`, `g₂₂ = u₁/10 + u₂/16` | `[1,1]`, (0,3) | **no pathwise form**; `E[X₁(t)²] = e^{−t}`, so `e^{−3}` at `T = 3` | 2, 2 (non-commutative) |
+
+Notes that decide the entries:
+
+- **Every Phase-1 exact solution is a function of `W_T` alone**, so the harness needs no reference
+  solver: it sums the supplied increments and evaluates a formula. This is what makes Phase 1 cheap
+  — and, per §0b, what makes it cheatable.
+- **S06–S08 are the suite's hardest problems and they have a closed form** `[L]`. SciML's own
+  conclusion on the mixed case is _"Noise stiffness is tough"_, _"the adaptive algorithm is
+  unstable"_, and _"the best solution is to run an explicit integrator with a low enough dt"_ `[W]`.
+  Against `references/sde_manual.md` rule 3 ("not yet supported") this is the single most
+  informative entry in the plan, and the only one where nobody — library or pipeline — does well.
+  Note the implementation constraint: **scipy is blocked in SDE solvers** `[R]`, so an implicit
+  scheme here has to hand-roll its Newton iteration in numpy. That is a page of code, not a
+  blocker, but it is the kind of thing a plan omits and a run discovers.
+- **S09 is the one Phase-1 entry immune to §0b**, because its truth is a moment and no pathwise
+  formula exists. It is also a natural fit for the existing `functional_truth` machinery: one
+  scalar, exactly known, graded relatively, with the two-path-count check as the anti-constant
+  defence `[R]`. Its noise is non-commutative 2×2, which no problem in the three existing suites
+  has — which is **H3**, and which exercises `crn.ladder_spec(..., m=2)` on a shape it has not seen.
+- **`prob_sde_2Dlinear` is excluded**: `u0 = ones(4,2)/2` is a 4×2 _array_ state, which is a
+  Julia-ism rather than a distinct problem, and it is one of the cells that errors `[W]`.
+- **`prob_sde_additivesystem` (`d = 4`) is deferred to Phase 2** solely on the dimension ceiling
+  (**H5**). It is the cheapest forcing case for that change: same equation as S02, four components,
+  `p = ([0.1]*4, [0.5, 0.25, 0.125, 0.1115])`.
+- **Stratonovich variants are excluded.** `[L]` They share `f` and `g` with their Itô counterparts
+  and differ _only_ in the analytic function; the problem object carries no interpretation flag. A
+  problem statement that cannot be distinguished from another by its own text is not a benchmark
+  entry, it is a trap.
+
+### Phase 2 — no closed form; needs a reference route, `d > 3`, and a budget
+
+| Candidate                             | Shape `[L]`                                                                                     | Why it is the half worth running                                                                                                        | Blocked on                                                                                                                                                                             |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prob_sde_bruss`                      | state 2, **noise 4** (2×4, non-diagonal), `p = (1,1,2.5,1)`, `t ∈ (0,100)`                      | SciML's own weak-error test problem; immune to §0b                                                                                      | H3, H6                                                                                                                                                                                 |
+| `prob_sde_lorenz`                     | state 3, diagonal noise `g ≡ 3.0`, `p = (10, 28, 2.66)`, `t ∈ (0,10)`                           | chaotic + additive noise; the SRA family's home ground                                                                                  | H6                                                                                                                                                                                     |
+| `prob_sde_additivesystem`             | state 4                                                                                         | cheapest `d > 3` forcing case; truth is closed-form                                                                                     | H5                                                                                                                                                                                     |
+| `prob_sde_oscilreact`                 | state 7, diagonal, 10 parameters, `t ∈ (0,4000)`                                                | chemical-Langevin square-root diffusions, long horizon                                                                                  | H5, H6, **H7 — exceeds the budget by ~10³**                                                                                                                                            |
+| `oval2ModelExample`                   | **state 19**, diagonal with 4 non-zero entries, `t ∈ (0,500)`, ~60 named constants, no analytic | SciML's headline stiff result (_"the advantage grows with problem difficulty"_ `[W]`)                                                   | H5, H6, H7, **high transcription cost**                                                                                                                                                |
+| `generate_stiff_stoch_heat(N=100)`    | state `N`, `WienerProcess` + `RSWM`                                                             | an SPDE graded under the SDE contract                                                                                                   | H5, H6, H7, and ~~it is **not exported** from the library~~ **the library's copy cannot run at all** (§2a.8); the notebook's own copy works and _does_ have a Stratonovich closed form |
+| `LotkaVolterraSDE` (notebook-defined) | state 2, diagonal `g = 0.1u`, `p = [1.5,1,3,1]`, `t ∈ (0,10)`                                   | **rev 2, §2a.5:** the only published SDE comparison graded on `:final` — the terminal state this harness already grades — at 2500 steps | H6 only                                                                                                                                                                                |
+
+`[N]` **The reference route is the one genuinely new piece of ground truth** (**H6**). The repo's
+SDE routes are `exact` moments, `reference` (discretisation-free MC of a _known exact path_ —
+unavailable here), `functional_truth` and `stability` `[R]`. Phase 2 needs a fourth: a harness-owned
+converged reference, measured as a **pathwise difference under common random numbers** against a very
+fine step, which is how SciML does it (`appxsol` = EM at `dt = 1/10000`, `test_dt = 1//10000` `[W]`)
+and which kills the Monte-Carlo noise in the difference rather than fighting it. `crn.ladder_spec`
+already builds nested coarsenings of one fine path, so this is an extension of shipped machinery.
+It needs the same validation story the no-closed-form PDE suite has: two independent integrators
+agreeing far below the gate (that suite reached 1.245e-09 … 1.375e-11 `[R]`), and nothing short of
+that should be trusted.
+
+---
+
+### 2a. Step-2 source reconciliation `[rev2 2026-11-10, N]`
+
+Sources, all fetched raw and independently re-checkable:
+
+| Source                                                                     | Pin                                                                                | Digest                                                                                              |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `lib/SDEProblemLibrary/src/SDEProblemLibrary.jl`                           | tag `SDEProblemLibrary-v1.2.4` → commit `d77baf216b3a77e591a9aabd10032090053b84f1` | sha256 `58adc9b105d5c40fedf17ffd99ad403c160e4f905c2694437073ad5f4ac84dbb` (19 399 bytes, 663 lines) |
+| `benchmarks/{NonStiffSDE,StiffSDE}/*.jmd`, `Project.toml`, `Manifest.toml` | `SciMLBenchmarks.jl` `master`, read 2026-11-10                                     | —                                                                                                   |
+| `SciMLBase/src/solutions/rode_solutions.jl`                                | `master`, read 2026-11-10                                                          | — (the `:l2` / `:final` definitions)                                                                |
+
+The two measurements below are reproducible from
+[sciml-benchmark-data/](sciml-benchmark-data/) — seeded, numpy-only, no Julia and no repo imports —
+which also lists every source read, with its pin.
+
+The library is **one file**; there is no second module to read, and `Project.toml` confirms
+`version = "1.2.4"`. Every `[L]` formula in §2 is confirmed **verbatim** except where struck through
+above. Two confirmations were run beyond a textual diff, because a correctly transcribed formula
+paired with the wrong equation still type-checks:
+
+- **Numeric, S01–S08.** Milstein under common random numbers against each analytic formula at four
+  nested steps, 4000 paths (1000 and 200 for S07/S08), one fine draw aggregated down. Observed
+  strong order: S01 **1.03 / 0.97 / 0.94**, S02 **1.00 / 1.00 / 1.00**, S03 **1.04 / 0.94 / 0.96**,
+  S04 **1.02 / 0.98 / 0.98**, S05 **1.00 / 1.00 / 1.00**. A mismatched (SDE, analytic) pair plateaus
+  at O(1) instead, so each of these five pairs is confirmed to solve its own equation — this is the
+  check that would have caught a transcription error, and it passed. S06–S08 returned a strong error
+  of **exactly 0.0**, which is finding 1 rather than a pass.
+- **Analytic, S09.** From the coefficients alone:
+  `d(X₁²) = 2X₁·(−273/512)X₁ dt + (g₁₁² + g₁₂²) dt + dM = [−546/512 + 1/16 + 1/256]X₁² dt`, and
+  `−546/512 + 34/512 = −1`, so `E[X₁(t)²]′ = −E[X₁(t)²]` and the published `E[X₁(t)²] = e^{−t}` is
+  exact. The `[W]` moment is derived, not taken on trust — which matters, because it is the one
+  Phase-1 ground truth with no formula to check it against.
+
+**1. S06–S08 are vacuous at `T = 3`: the terminal state is the constant −1.** The exact solution
+depends on the path only through `exp(−2αt + 2βW_t)`; at `α = 50, T = 3` that factor is `e^{−300}`,
+so the solution has collapsed onto `u = −1`, which is also an **absorbing** point of the equation
+(`f = g = 0` there, since both carry the factor `1 − u²`). Measured std of the exact terminal state
+across 2×10⁵ paths:
+
+| `(α, β)`                         | `t = 1e-4` | `t = 1e-3` | `t = 0.01` | `t = 0.05` | `t = 0.25`  | `t = 3` |
+| -------------------------------- | ---------- | ---------- | ---------- | ---------- | ----------- | ------- |
+| (1, 1) — _the library's own `p`_ | 7.5e-03    | 2.4e-02    | 7.6e-02    | 1.7e-01    | 4.0e-01     | 4.4e-01 |
+| (50, 1) — _S06_                  | 7.5e-03    | 2.5e-02    | 9.9e-02    | 2.0e-02    | **1.8e-10** | **0.0** |
+| (500, 1) — _S07_                 | 7.9e-03    | 3.2e-02    | 5.6e-05    | **0.0**    | **0.0**     | **0.0** |
+| (5000, 70) — _S08_               | 5.2e-01    | 2.5e-01    | **0.0**    | **0.0**    | **0.0**     | **0.0** |
+
+**0.0** is a bit-identical constant across all 2×10⁵ paths, not a small number. So on S06–S08 as §2
+writes them, `return -np.ones(num_paths)` earns a perfect terminal error at any `dt`, having
+consumed no increments and simulated nothing. H2 does flag it — the CRN ladder is degenerate for a
+constant too — but reports it as `ANALYTIC_TRANSCRIPTION`, which is the wrong reason and would read
+as a near-miss rather than as the suite's most trivial defect.
+
+The fix is cheap and it pays for itself twice: **move the graded horizon into the transient** —
+`T ≈ 0.05` (S06), `0.005` (S07), `5e-4` (S08) — keeping SciML's `(α, β)` and keeping `tspan = (0,3)`
+for the comparator runs only. That also dissolves §4a.ii's budget problem on these entries (S08 at
+`T = 5e-4`, `dt = 1e-5` is **50 steps**, not 3×10⁵) and puts the horizon where the harness step rule
+`min(dt, 0.04/T)` stops binding, so each entry's declared `dt` is the step it is graded at. What it
+costs is the claim that these are SciML's problems: they are SciML's _equations_ on a different
+horizon, and every table has to say so.
+
+**2. SciML's `:l2` is a timeseries error, and absolute — so H1 as written measures a different
+quantity.** `SciMLBase` computes `errors[:l2] = norm(sqrt(recursive_mean((u − u_analytic).^2)))` over
+**every saved timepoint**, gated by `timeseries_errors`, with `errors[:final]` as the terminal one;
+`WorkPrecisionSet` then averages over `numruns`. H1's "relative `l2` strong error over paths" at the
+terminal state is neither SciML's grid nor its normalisation, so a comparator table built from it
+would be putting two different numbers in one column. Three consequences, all cheap now:
+
+- H1's `pathwise_exact` must be evaluable **on a time grid**, not only at `T`:
+  `pathwise_exact(u0, p, t, W_t)`. Every §2 formula already is such a function, so this costs
+  nothing at authoring time and cannot be retrofitted later without rewriting all nine entries.
+- The route records **both** the absolute timeseries `l2` (for comparability) and a relative terminal
+  error (for the gate). H1's acceptance test is unaffected: order ≈ 0.5 for EM and ≈ 1.0 for
+  Milstein holds in either norm.
+- It is also what rescues S06–S08 as _SciML_ problems: their published comparison is informative
+  precisely because the transient sits inside the norm. A terminal-only route cannot reproduce that
+  at any horizon, which is why finding 1's horizon move and this grid change are one decision rather
+  than two. Note the quirk that the `:l2` grid is each setup's **own** step grid when
+  `save_everystep` is on, so the published norm is not a fixed-grid norm across `dt`.
+
+**3. Provenance: three of §2's nine entries are not in the library, and two more are in no notebook.**
+
+| Entry                                        | §2 claimed          | Source says                                                                                                                                   |
+| -------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| S06–S08 `(α,β) = (50,1), (500,1), (5000,70)` | `[L]`               | **`[W]`** — the library's `prob_sde_stiffquadito` carries `p = (1.0, 1.0)`; the three sets are `remake`d in `StiffSDE/QuadraticStiffness.jmd` |
+| S09, the entire problem                      | `[L]`               | **`[W]`** — defined inline in `NonStiffSDE/HighOrderWeakSDEWorkPrecision.jmd`; **no such problem exists in `SDEProblemLibrary.jl`**           |
+| S03 `prob_sde_cubic`                         | a benchmark problem | in the library, used by **no SDE notebook** — adopting it means _authoring_ its comparator setups, not rerunning a published comparison       |
+| S05 `prob_sde_nltest`                        | a benchmark problem | same, and additionally **unexported**                                                                                                         |
+
+The §2 formulas for all four are still correct; it is their status that was wrong. The practical
+consequence is on step 3: `harvest.jl` can _rerun_ a published comparison for S01, S02, S04 and
+S06–S07, but for S03, S05 and S08 it has to **invent** the setups, and those rows are then "our
+comparator runs of `StochasticDiffEq.jl`", not "SciML's published comparison". That distinction has
+to survive into the table or the table overclaims.
+
+`prob_sde_stiffquadito`, `prob_sde_stiffquadstrat`, `prob_sde_nltest` and
+`generate_stiff_stoch_heat` are all unexported (reachable by `import SDEProblemLibrary: x`, not by
+`using`), so §2's remark that stoch-heat "is **not exported**" singles out one of four.
+
+**4. §1a.3 is withdrawn: the page prose does not disagree with the library.** The master `.jmd`
+describes the _additive_ problem with `α = 1/10, β = 1/20` — exactly its `p = (0.1, 0.05)` — and
+separately describes the linear/Black–Scholes problem as `α = 1.01, β = 0.87` with solution
+`X₀e^{(α − β²/2)t + βW_t}`, which is right and not transposed. The summarising agent read one
+section's coefficients into the other section's equation. §1a's conclusion loses one of its four
+legs; the other three (almost no numbers, four erroring cells, 128 threads) stand, and §2a.7 adds a
+fifth that is better evidenced than the one withdrawn.
+
+**5. §1's table covers three notebooks of the nine, and two of the six it omits matter.** (The
+nine are the 4 non-stiff and 5 stiff the Scope line already counts; the four that remain
+uninteresting here are `Oval2LongRun`, `Oval2LongTimes`, `Oval2Timings` and `StochasticHeat`, all
+of whose problems §4a.ii drops on budget.)
+
+- **`NonStiffSDE/BasicSDEWeakWorkPrecision.jmd`** — the **weak** axis on `prob_sde_additive`,
+  `prob_sde_linear` and `prob_sde_wave`: S02, S01 and S04 graded on a terminal **moment**, which is
+  the `exact` truth route this repo has shipped since its first SDE problem. **Three Phase-1 entries
+  therefore gain a published comparator axis that needs none of H1** — the single largest piece of
+  good news in step 2, because it means the suite produces a comparator table even if H1 slips.
+  Settings: `numruns_error = 1000`, `reltols = 10^-(1:5)`, `error_estimate = :weak_final`, the same
+  `5^-(2:6)` and `5^-(3:7)` step sets, and `get_sample_errors` at
+  `numruns = [10, 10², 10³, 10⁴]` (see finding 6).
+- **`NonStiffSDE/LotkaVolterraSDE.jmd`** — `dx = ax − bxy`, `dy = −cy + dxy`, diagonal `g = 0.1u`,
+  `u0 = [1,1]`, `p = [1.5, 1, 3, 1]`, `t ∈ (0,10)`, `N = 100`, `reltols = 4^-(2:4)`, seven schemes
+  (SRIW1 adaptive and fixed, EM, RKMil, SRIW2, SOSRI, SOSRI2), reference
+  `appxsol_setup = SRIW1 @ abstol = reltol = 1e-4`, `test_dt = 1e-2`, and — alone among the five —
+  **`error_estimate = :final`**, for both its strong and its weak section. It is the only published
+  SDE comparison whose axis is the quantity this harness already grades; at `T = 10` the step rule
+  gives `dt ≤ 4e-3`, i.e. 2500 steps, which is affordable; and it needs **H6 only** (no closed form,
+  `d = 2`, diagonal noise, so neither H3 nor H5). **It belongs in Phase 2 ahead of `bruss` and
+  `lorenz`, and it is the cheapest honest entry in the adoption.** Its own prose records the one
+  hazard: "larger `dt`s contained trajectories which would veer off to infinity."
+
+**6. The one published noise floor is computed wrong upstream, and the page says so.** From the weak
+notebook: `get_sample_errors` "currently divides by `√N` twice, so it is a factor of about `√1000`
+below `E_S = √(V/N)` (a fix is proposed in
+`https://github.com/SciML/OrdinaryDiffEq.jl/pull/4612`); treat comparisons against that line as
+provisional." So `harvest.jl` must compute `√(V/N)` itself and record both values. This lands
+directly on §10's prediction 4, which expects the Monte-Carlo floor rather than the scheme to set
+the resolvable gate on S09: the prediction stands, but the published line cannot be used to check it.
+
+**7. Page staleness is confirmed from a second direction, and it is the real reason to distrust the
+pages.** Master's High-Order Weak conclusion reads "the observed convergence is slower than the
+nominal order 2, `PL1WM` and `RDI2WM` stop improving at the smallest step size, and **`RDI2WM`**
+reaches the smallest errors", against §0d's `[W]` quote of "**DRI1** in particular achieves the
+smallest errors for fixed timesteps". The rendered pages read on 2026-11-09 are therefore behind
+`master`. This also bears on §1a.2: in master every cell's `dts` and `reltols` lengths agree, so the
+four `BoundsError` cells may simply not reproduce at `master` — which would make "regenerating the
+incomplete comparison" a smaller contribution than §1a.2 claims. Only step 1's local rerun settles
+it; §1a.4's instruction is unaffected. **§0d's quote should be replaced by master's wording before it
+is used in any write-up**, since it names a different winning scheme.
+
+**8. Smaller corrections and transcription traps, each confirmed in the source.**
+
+- **The finer `dt` sets were missed.** Every non-stiff page runs its Rössler-comparison cells one
+  notch finer than its headline cells — `5^-(3:7)` (`(1:5) .+ 2`), not only §1's `5^-(2:6)` — and
+  Quadratic Stiffness likewise uses `8^-(3:5)` for its second problem. `work_precision_levels` has
+  to carry both sets or half the published points have no counterpart.
+- **S08 has no published work-precision curve at all.** Quadratic Stiffness builds
+  `WorkPrecisionSet`s for `(50,1)` and `(500,1)` only; the mixed case `(5000,70)` appears solely in
+  `@time` cells. §1's third stiff-set scheme, `ImplicitRKMil`, likewise appears in no
+  `WorkPrecisionSet` on that page — only in `@time` cells and on the stochastic-heat page. §1's
+  scheme list is a list of _mentioned_ schemes, not of compared ones.
+- **The notebook's own stability limits are the `dt` the entries must declare.** Its `@time` cells
+  run `(50,1)` at `dt = 0.01`, `(500,1)` at `0.002`, `(5000,70)` at `1e-5`, introduced as "the
+  maximum dts which are allowed. Anything higher is mostly unstable." The harness cap
+  `0.04/T = 0.0133` at `T = 3` is **coarser** than S06's stability limit, so each entry must declare
+  its own `dt` and rely on the `min`.
+- **The library's stoch-heat generator cannot run.** `generate_stiff_stoch_heat` calls `full(…)`
+  (removed in Julia 0.7) and uses `mul!`, `Tridiagonal`, `WienerProcess` and `RSWM` without
+  importing any of them, inside a module whose only import is `DiffEqBase: SDEFunction, SDEProblem`.
+  It throws `UndefVarError` on call at v1.2.4. `StiffSDE/StochasticHeat.jmd` **defines its own
+  working copy**, which also _has_ a closed form — `expm(At + WI)u₀`, valid in the **Stratonovich**
+  sense, which is why that page benchmarks `EulerHeun`, `ImplicitEulerHeun` and
+  `ImplicitRKMil(interpretation = Stratonovich)` and measures its errors at `t_end = 0.25`. §11's
+  "no analytic" is wrong about the notebook version; the §4a.ii drop stands, on budget.
+- **`prob_sde_bruss` is used by no notebook.** The weak page's "stochastic Brusselator" is a
+  _different, inline_ problem: `dX₁ = [(p₁−1)X₁ + p₁X₁² + (X₁+1)²X₂]dt + p₂X₁(1+X₁)dW`,
+  `dX₂ = −[…]dt − p₂X₁(1+X₁)dW`, `X₀ = [−0.1, 0]`, `p = [1.9, 0.1]`, `t ∈ (0,100)`, 100 paths,
+  `dts = 2^-(1:4)`, `test_dt = 1/1000`. So §2's Phase-2 justification for the library's
+  `prob_sde_bruss` — "SciML's own weak-error test problem" — attaches to the wrong problem. The
+  notebook's version is also a **third** noise shape for H3: **scalar** noise, `m = 1 < d = 2`,
+  where S09 is `m = d = 2` with a full matrix and the library's bruss is `m = 4 > d = 2`. And its
+  noise cancels exactly between components, so `X₁ + X₂` obeys the noise-free
+  `d(X₁+X₂) = −X₁ dt` — a structural invariant a wrong solver breaks, and a free constraint check of
+  the kind `CONSTRAINT_VIOLATION` already exists for.
+- **`prob_sde_bistable`** (`d = 1`, `m = 2` via `noise_rate_prototype = zeros(1,2)`, `p = (5,18,1)`,
+  `u0 = [3]`, `t ∈ (0,300)`) is in the library, **is** exported, has no closed form and is in no
+  notebook. It is the cheapest possible H3 exercise if one is wanted without a comparator.
+- **Three library docstrings disagree with their own code**, worth knowing before any is quoted:
+  `prob_sde_cubic`'s says `+¼u(1−u²)` where the code has `−0.25`; `prob_sde_lorenz`'s says
+  `β = 8/3` where the problem is built with `2.66`; `prob_sde_2Dlinear`'s calls itself "8 linear
+  SDEs" for a 4×2 state. §2's exclusion of `prob_sde_2Dlinear` stands.
+- **Oval2 has a discontinuous drift**: `TGF0 = 0.5(t > 100)` inside `f`, so any order claim on it
+  would be measured across a jump at `t = 100`, and its `σ` writes only 4 of 19 components (relying
+  on the caller to pre-zero). Dropped anyway per §4a.ii; the reason is now two reasons.
+- **The library's Brusselator diffusion is asymmetric in a way that reads like a typo**:
+  `du[2,3] = 0.15·√(p₃·2.5·u₁)` against `du[1,3] = −0.15·√(p₃·u₁)`, i.e. a literal `2.5` alongside
+  `p₃ = 2.5`. Transcribe as written and record it; do not "fix" it.
+- **§2's blanket claim about the Stratonovich variants is half wrong — and the half that is wrong
+  is the one §7 depends on.** `prob_sde_linear_stratonovich` and `prob_sde_2Dlinear_stratonovich` do
+  share `f` and `g` with their Itô counterparts and differ only in `analytic`, as §2 says. But
+  `stiff_quad_f_strat = −p₁(1−u²)` is a **different drift** (no `β²u`) paired with a
+  **byte-identical** analytic function. That is self-consistent — the Itô drift is the Itô correction
+  of the Stratonovich one, which is why both share a solution — and it is exactly why §7's proposed
+  wrong-variant control works: dropping `β²` yields a problem whose exact solution is _the same
+  formula_, so only integrating it with an Itô scheme reveals the error. **The control is sound, and
+  its mechanism is subtler than §7 states** — it is not "the formula changes", it is "the formula
+  does not change and the law does". §2's stated reason for excluding the Stratonovich entries
+  ("indistinguishable from their Itô counterparts by problem text") is right for linear and wrong for
+  stiffquad, where the text differs and the answer key does not; the exclusion still holds, for the
+  stronger reason that a problem statement cannot say which interpretation it means.
+
+### 2b. Step 6 as implemented — the nine entries `[rev4 2026-11-10, N]`
+
+**Shipped: M01–M09 in `benchmark/problems.py`**, eight on the `pathwise` route and one
+on `functional_truth`, with 66 tests in `benchmark/tests/test_sciml_suite.py` and a
+calibration of every gate in `docs/sciml-benchmark-data/calibrate_sciml_suite.py`.
+`validate_ground_truth.py` passes with the suite in it, and the other 66 problem
+statements and their manifest entries are still **byte-identical**.
+
+The entries as they ship. Note that `T` is SciML's for six of the nine and ours for
+the stiff triple, and that the `dt` column is the step the harness actually grades at
+(`sde_verify_dt`), which for every entry here is the entry's own declaration:
+
+| # | slug | T | graded dt | paths | gate | fine grid | work-precision steps |
+|---|---|---|---|---|---|---|---|
+| M01 | `sde_sciml_linear_ito` | 1 | 1/625 | 1000 | 9.5e-02 | 62 500 | SciML's `5^-(2:6)` |
+| M02 | `sde_sciml_additive` | 1 | 1/625 | 1000 | 1.2e-03 | 62 500 | SciML's `5^-(2:6)` |
+| M03 | `sde_sciml_cubic` | 1 | 1/625 | 1000 | 4.9e-02 | 10 000 | ours (no published set) |
+| M04 | `sde_sciml_wave` | 1 | 1/625 | 1000 | 5.7e-04 | 62 500 | SciML's `5^-(2:6)` |
+| M05 | `sde_sciml_nltest` | 10 | 4e-03 | 1000 | 9.8e-03 | 10 000 | ours (no published set) |
+| M06 | `sde_sciml_stiffquad_mild` | **0.01** | 1e-04 | 1000 | 1.5e-02 | 400 | ours (see finding 1) |
+| M07 | `sde_sciml_stiffquad_det` | **0.001** | 1e-05 | 1000 | 3.9e-02 | 400 | ours |
+| M08 | `sde_sciml_stiffquad_mixed` | **1e-04** | 1e-06 | 1000 | 1.1e-01 | 400 | ours |
+| M09 | `sde_sciml_weak_noncommutative` | 3 | 2.5e-03 | 100 000 | per value | — | SciML's `1, ½, ¼, ⅛` |
+
+**Every gate separates, and none was moved after seeing where a scheme landed.** Run
+through the real sandbox against the shipped entries, four solvers one decision apart:
+
+| entry | correct EM | one decision wrong | best constant | transcribed | gate clears correct by | separation |
+|---|---|---|---|---|---|---|
+| M01 | 0.0206 | 0.4600 | 0.7055 | 0.0 | 4.6x | 22.4x |
+| M02 | 0.00026 | 0.2860 | 0.00455 | 0.0 | 4.5x | 17.2x |
+| M03 | 0.0083 | 0.2897 | 0.6249 | 0.0 | 5.9x | 35.0x |
+| M04 | 0.00008 | 0.0032 | 0.0281 | 0.0 | 7.3x | 41.5x |
+| M05 | 0.0035 | 0.0275 | 0.1448 | 0.0 | 2.8x | 7.9x |
+| M06 | 0.0074 | 0.0324 | 0.8949 | 0.0 | 2.0x | 4.4x |
+| M07 | 0.0122 | 0.1260 | 0.5356 | 0.0 | 3.2x | 10.3x |
+| M08 | 0.0434 | 0.2817 | 0.9984 | 0.0 | 2.5x | 6.5x |
+
+The **narrowest separation is 4.4x** (M06), against BENCHOP's 6.8x — tighter, and said
+rather than hidden. Each gate is the geometric mean of the worst correct scheme and the
+best wrong one, rounded to two significant figures, so the margin is `sqrt(separation)`
+on each side by construction rather than by choice. The `transcribed` column is 0.0 to
+machine precision on all eight and is **excluded by name**, not passed.
+
+The one-decision controls, which are *not* the ones §7 proposed on two of the nine:
+
+| entry | the single decision changed |
+|---|---|
+| M01 | the Itô correction added to the drift (reading the solution as Stratonovich) |
+| M02 | the ½ dropped from the mean-reversion rate |
+| M03 | **the drift sign flipped — which is what the library's own docstring says** |
+| M04 | `cos³` written as `cos` in the drift |
+| M05 | the `⅓X^{1/3}` drift term dropped |
+| M06, M08 | `β²` dropped from the drift (the Stratonovich twin) |
+| M07 | diffusion `β(1−X)` instead of `β(1−X²)` |
+| M09 | one increment shared across both noise channels |
+
+#### Findings
+
+**1. The stiff triple is graded in the transient, and the alternative was measured
+before being rejected.** §2a.1 recommended moving the horizon; §2a.2 suggested instead
+gating on SciML's own timeseries norm at `T = 3`, which would have kept the published
+parameters *and* the published steps. **That alternative does not work, and the reason
+is quantitative.** The transient occupies 0.3% of `[0, 3]`, so on an equally spaced
+save grid a constant solver's relative timeseries error at `T = 3` is:
+
+| saves | first save at | constant solver's relative timeseries error |
+|---|---|---|
+| 10 | t = 0.30 | **3.5e-13** |
+| 100 | t = 0.03 | 2.7e-02 |
+| 1000 | t = 0.003 | 8.6e-02 |
+
+— inside any usable gate even at a thousand save points, because equally spaced saves
+barely sample the transition. Making it bite needs saves at every step at `dt = 1e-5`,
+i.e. 3×10⁵ points per path crossing the process boundary. So the horizon moves, and
+`T` is a round number near `ln(3)/(2α)`, the transition midpoint, where the terminal
+law is widest and a constant is therefore maximally wrong (its error is 0.89–1.00
+there). The same rule for all three keeps them comparable with each other, which
+matters because they are one equation at three parameter sets.
+
+**What this costs, stated plainly:** M06–M08 are SciML's *equations* on a different
+horizon, so their published `8^-(2:4)` steps are unusable (at `T = 0.01` a step of
+1/64 is both coarser than the horizon and past the stability limit) and their
+work-precision levels are ours. Combined with §2a.3 — M03 and M05 are in no notebook,
+and M08 never had a published work-precision curve anyway — **five of the nine entries
+have no published comparator steps**, and only M01, M02, M04 and M09 do. Any table has
+to mark the difference between a rerun of a published comparison and a comparison we
+constructed.
+
+**2. Three entries were vacuous as the plan specified them, not one.** §2a.1 found the
+stiff triple. Step 6's calibration found two more, by the same test applied to every
+entry: *what does the best possible constant score?*
+
+| entry | best constant's relative error | against the default 10% gate |
+|---|---|---|
+| M02 `additive` | **0.0046** | 22x **inside** it — a constant passes |
+| M04 `wave` | **0.0281** | 3.6x **inside** it — a constant passes |
+
+M02's terminal law has a spread of 0.5% of its magnitude, because its noise amplitude
+is `αβ = 0.005`; M04's diffusion is `0.1cos²(X) ≈ 0.03` at `X(0) = 1`. Neither is
+degenerate — both vary — but both are *answerable without simulating* at a gate set by
+a universal number. Their gates are therefore 1.2e-03 and 5.7e-04, i.e. 80x and 175x
+tighter than the default.
+
+The general lesson, which is the one worth carrying: **a strong-error gate's scale is
+set by the spread of the terminal law, not by a universal tolerance.** `SDE_VAR_TOL`
+can be universal because a variance is normalised by itself; a strong error is
+normalised by the solution's *magnitude*, and the ratio of those two is a property of
+each problem. The default exists for a problem nobody has measured yet.
+`validate_ground_truth.py` now refuses any `pathwise` entry whose best constant clears
+its gate, and `test_sciml_suite.py` asserts it per entry, so this class cannot be
+authored again.
+
+**3. §7's one-decision control for M03 is not a wrong solver at all.** §7 proposes "a
+dropped Milstein correction on S03". A dropped Milstein correction **is
+Euler–Maruyama** — a correct scheme of lower order, not a wrong one — and it measures
+0.0083 against Milstein's 0.00057, i.e. exactly the correct EM number. An accuracy gate
+cannot separate it and must not be asked to; holding a plan to an order it *declared*
+is the order study's job, not the strong-error gate's. The replacement is better than
+the original: **the drift sign flipped, which is what `prob_sde_cubic`'s own docstring
+says** (§2a.8 found the library's prose contradicts its code), so the control is the
+single most plausible wrong reading there is, and it separates by 35x.
+
+**4. §7's control for the stiff triple only bites where `β²` is comparable to `α`.**
+Dropping `β²` from the drift turns the Itô problem into its Stratonovich twin, whose
+exact solution is the *same formula* — which is what makes it an elegant control.
+Measured, it separates on M06 (4.4x) and M08 (6.5x) and **not on M07** (0.0170 against
+a 0.0200 gate, 1.4x from a correct scheme), because at `(α, β) = (500, 1)` the Itô
+correction is 1/500 of the drift and the two problems are numerically near-identical.
+M07 therefore ships with a different one-decision control, and the β²-drop is recorded
+as measuring something real: **the Itô/Stratonovich distinction is only observable on
+this family where the noise is stiff.**
+
+**5. §10's prediction 4 is falsified, and the mechanism is the opposite of the one
+predicted.** The prediction: "the Monte-Carlo noise floor at 10⁵ paths, not the scheme,
+sets the resolvable gate" on the weak problem, and "expect the gate to need widening on
+noise grounds". `X1` turns out to be **exactly lognormal** — its SDE involves only `X1`
+and the single combination `(1/4)dW1 + (1/16)dW2` — so the floor is computable in closed
+form rather than estimated: the relative standard deviation of `X1(3)²` is 1.1039, and
+
+| paths | relative SE on `E[X1²]` | a 5% gate is |
+|---|---|---|
+| 25 000 | 0.698% | 7σ |
+| 100 000 | 0.349% | 14σ |
+| 1 000 000 | 0.110% | 45σ |
+
+so no widening is needed. But the prediction was not simply wrong — it was right about
+*which* quantity binds and wrong about the direction. A correct Euler–Maruyama's weak
+error on `E[X1²]` at the graded step is **0.31%, which is below its own standard error
+of 0.175%** at 4×10⁵ paths. So the noise floor does set that gate — by making the
+scheme's error unmeasurable, not by making the gate too tight. The gate is 2.0%,
+5.7σ clear of the floor, and the entry's other two observables (whose weak errors are
+0.59% and 1.34%) are what actually resolve a scheme there.
+
+That same fact broke the validator's first convergence check, which asked for the weak
+error to halve with `dt` unconditionally and got 0.310% → 0.383% on `E[X1²]`. That is
+two noise measurements, not a convergence failure, and the check now declines to assert
+a ratio where the coarse error is inside 3x its own standard error — the discipline
+`crn.weak_order` already applies for the same reason.
+
+**6. M09's published value is derived rather than transcribed, and the derivation says
+why one observable is not enough.** The second moments `m = (E[X1²], E[X1X2], E[X2²])`
+satisfy a closed linear system `dm/dt = A m` from Itô's rule, with
+
+```
+A = [[ -1.0,       0.0,      0.0     ],
+     [ -0.1142767, 0.8271296, 0.0    ],
+     [  0.2189466, 0.0,      2.7167591]]
+```
+
+`A[0,0] = 2(−273/512) + (1/4)² + (1/16)² = −1` **exactly**, so `E[X1²] = exp(−t)` with
+no quadrature anywhere and SciML's published `exp(−3)` is confirmed from the
+coefficients. Two things that matrix shows:
+
+- **`A`'s first row is `[−1, 0, 0]`: `E[X1²]` decouples completely.** It is a function
+  of component 1's *total* diffusion variance and of nothing else — not of the two
+  channels being separate, and not of the non-commutativity. SciML grades `h(z) = z²`
+  on component 1, so **the published observable on this problem cannot distinguish the
+  true two-channel noise from a single channel of matched variance.**
+- `E[X1X2]` and `E[X2²]` do not decouple; their rows couple through `(1−2√2)/4` and
+  `1/10`, the coefficients of the two *different* increments in row 2. Those are the
+  observables that require the channels to stay separate.
+
+So the entry carries all three, exactly known, each with its own gate, validated by a
+route that shares nothing with it: a direct Euler–Maruyama Monte Carlo of 400 000
+paths, Richardson-extrapolated across two nested step counts to separate the weak bias
+from the noise, agreeing at **1.6σ, 0.7σ and 1.6σ**.
+
+**7. M09 must *not* be handed increments, and `noise_dimension` cannot express what
+makes it interesting.** Two limits on H3, both found by authoring the entry it was
+built for:
+
+- The high-order weak schemes SciML compares here — DRI1, PL1WM, RDI1WM, RDI2WM — draw
+  auxiliary randomness per step and **cannot consume a supplied Gaussian increment**.
+  Supplying `dW` would exclude the very methods the published page is a comparison
+  between. It is the same structural fact `exact_sampling_components` exists for on the
+  exact-sampling side. So M09 stays on the moment route, and H3's `(paths, Nt, m)`
+  promise applies to the eight pathwise entries only.
+- M09 is 2 states driven by 2 channels, so `m == d` and `noise_dimension` is
+  indistinguishable from the implicit default every 2-D problem already had. **The
+  field says how many channels there are, not whether the diffusion matrix is
+  diagonal**, and non-commutativity is the latter. The manifest now records a
+  *declared* `noise_dimension` even where it equals the state dimension, which at least
+  preserves the statement that someone decided it; expressing the structure itself
+  would need a field H3 does not have.
+
+**8. Two defects in step 5's own work, both caught by step 6's calibration.**
+
+- **The exclusion was read before the pass decision, so it rescued failing solvers.** A
+  constant solver's ladder is degenerate too — a constant does not change with `dt`
+  either — so `ANALYTIC_TRANSCRIPTION` was returned for solvers that had *also* missed
+  their gate by up to 60x, discarding the fact that they were wrong. The exclusion now
+  applies only to a run that would otherwise have passed: being accurate and not a
+  scheme is a different thing from being wrong.
+- **Only the pipeline verdict knew about the exclusion.** `compute_oneshot_verdict`
+  maps the *baseline* path and had no branch for it, so a transcribing C0 baseline
+  would have been recorded as a clean PASS on all eight pathwise problems — and §10's
+  prediction 2 is precisely that the C0 baseline is **where transcription is most
+  likely**, since a single completion with no tools is the setting in which writing
+  down the closed form is the obvious move. Step 9 would have measured the opposite of
+  what it set out to. Both verdict functions now read one shared helper.
+
+**9. The nesting check earned its keep immediately.** M03's first draft reused M05's
+work-precision steps at a tenth of its horizon, giving `dt = 0.016` at `T = 1` — a step
+count of 62.5, which is not an integer and does not divide the fine grid.
+`validate_ground_truth.py` refused the entry before any solver ran.
+
+---
+
+## 3. Environment setup `[rev1 2026-11-09]`
+
+Nothing here needs a model call, and none of it touches the pipeline. **Julia is not installed on
+this machine** `[R]`; everything in this section is prerequisite to step 3 of §7.
+
+### 3a. Julia, pinned
+
+~~`[W]` The three published pages ran on three different version sets (§1a.4), so there is no
+"current" set to inherit — pick one and record it. Use the newest of the three, because two of the
+three pages already ran on it:~~
+
+**Rev 2: there is a current set to inherit, and inheriting it is strictly better than choosing one.**
+`benchmarks/NonStiffSDE/Manifest.toml` and `benchmarks/StiffSDE/Manifest.toml` are committed upstream
+and **agree with each other**, so one manifest reproduces all five notebooks. Read off `master` on
+2026-11-10 `[N]`:
+
+```
+# Inherited verbatim from the upstream benchmark manifests, which agree across both folders.
+julia 1.11.9            # julia_version in both Manifest.toml files
+StochasticDiffEq     7.2.0     # not 7.1.5
+SDEProblemLibrary    1.2.4     # confirmed: the version step 2 read
+DiffEqNoiseProcess   5.36.3     # not 5.36.1
+DiffEqDevTools       3.6.3     # not 3.6.0
+SciMLBase            3.54.0
+SciMLLogging         2.1.0     # needed for `verbose = SciMLLogging.None()`; omitted in rev 1
+```
+
+Take the upstream `Manifest.toml` itself rather than re-resolving: `Pkg.add` at these versions
+resolves a _different_ dependency closure than the one the published pages ran on, and the manifest
+is the only artefact that fixes the closure. ~~The `Pkg.add` recipe below stays as the fallback for
+when the upstream manifest will not instantiate on this machine.~~ **Rev 5: the fallback is
+withdrawn, not merely unused (§3e).** The manifests instantiate verbatim on a platform neither
+published page ran on, and the recipe below pins the *stale* versions rev 1 read off the pages —
+`7.1.5`, `5.36.1`, `3.6.0` — so falling back to it would have resolved a closure matching neither
+the manifests nor any published run, while looking pinned. It is kept below only as the record of
+what rev 1 proposed.
+
+Install juliaup rather than a system package, so the version is pinnable and reproducible:
+
+```bash
+curl -fsSL https://install.julialang.org | sh      # juliaup
+juliaup add 1.11.9 && juliaup default 1.11.9
+julia +1.11.9 --version                            # must print 1.11.9
+```
+
+Then build a project **outside** the repo working tree first (it is third-party code; treat it as
+untrusted data per the download rules), and commit only the resolved manifest:
+
+```bash
+mkdir -p ~/sciml-comparators && cd ~/sciml-comparators
+julia +1.11.9 --project=. -e '
+  using Pkg
+  Pkg.add([Pkg.PackageSpec(name="StochasticDiffEq",  version="7.1.5"),
+           Pkg.PackageSpec(name="SDEProblemLibrary",  version="1.2.4"),
+           Pkg.PackageSpec(name="DiffEqNoiseProcess", version="5.36.1"),
+           Pkg.PackageSpec(name="DiffEqDevTools",     version="3.6.0")])
+  Pkg.status(); Pkg.instantiate()'
+```
+
+Copy the resulting `Project.toml` and `Manifest.toml` to
+`benchmark/references/sciml/` and commit both. The manifest is the only thing that makes a rerun
+reproducible, and it is small.
+
+### 3b. Single-threaded, and no compilation in the clock
+
+`[W]` Two conventions, both forced by what the published pages got wrong:
+
+- **Threads.** The published runs used 128 threads; this machine has 8 cores `[R]`. Run the
+  comparators with `JULIA_NUM_THREADS=1` and record it. A threaded comparator against a
+  single-process numpy solver is not a measurement of anything.
+- **Compilation.** Page 3's `@time` numbers are up to 99.98% compilation `[W]`. Every timed call is
+  run once to warm up and then timed over at least 5 repetitions, reporting the **minimum**, with
+  `@belapsed` (BenchmarkTools) or an explicit warm-up loop. Discard any number from a first call.
+
+### 3c. The harvest script
+
+`[N]` One Julia script, `benchmark/references/sciml/harvest.jl`, committed, that writes
+**numbers** where the pages have plots. For each (problem, scheme, fixed `dt`) it records:
+
+| Field                                                          | Why                                                               |
+| -------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `problem`, `scheme`, `dt`, `paths`                             | the key                                                           |
+| `strong_err_l2`, `weak_err`                                    | the accuracy axes (`:l2` and `:weak_final`, matching §1)          |
+| `steps` = `round(T/dt)`, `evals` = `steps × stages(scheme)`    | the **work** axis — language-free (§5, H4)                        |
+| `seconds_min_of_5`, `threads`, `julia_version`, `pkg_versions` | the anchored-time axis plus its caveats                           |
+| `seed`                                                         | pages 1 and 3 set none `[W]`; this script sets one and records it |
+
+It writes `benchmark/references/sciml/comparators.json`. Two rules about where that file lives,
+both copied from the BENCHOP answer key `[R]`: it goes under `benchmark/references/`, **never** in
+`workspace/`, and it is added to the `pipeline-settings.json` deny rules and to the leakage scan
+(**H9**) — it contains both the schemes the pipeline is compared against and the error values it is
+graded near.
+
+The script must also record, per cell, whether it reproduced the published result or hit the
+`BoundsError` of §1a.2. "Still broken at the pinned version" is a finding worth committing.
+
+### 3d. Python side
+
+Nothing new: `uv run python benchmark/...` as today. The EM anchor (§5, step 4) is two files — one
+`.jl` and one `.py` implementing the _same_ Euler–Maruyama on S01 — committed beside the harvest
+script so the ratio can be re-measured on other hardware.
+
+---
+
+### 3e. Step 1 as implemented — the pinned environment `[rev5 2026-11-10, N]`
+
+juliaup installed from the official script; `juliaup add 1.11.9 && juliaup default 1.11.9`;
+`julia +1.11.9 --version` prints `julia version 1.11.9` `[R]`. Note that juliaup installs
+its `release` channel first, which on 2026-11-10 is **1.13.3** — so the pin is not
+cosmetic, and every command in this track names `+1.11.9` explicitly rather than
+trusting the default.
+
+**Rev 2's instruction was right, and the reason was stronger than it knew.** Both
+upstream `Manifest.toml` files instantiate **verbatim** on aarch64-darwin — a platform
+neither published page ran on — and `Pkg.instantiate()` left both byte-identical
+(md5 unchanged before and after). 396 dependencies precompiled in 283 s for the
+non-stiff project; the stiff one needed nothing further, and the reason is the finding:
+
+**The stiff closure is a strict subset of the non-stiff one.** Of 293 packages present in
+both manifests, **zero** disagree on version; the non-stiff manifest holds 39 more
+(`ParameterizedFunctions`' tree) and the stiff manifest holds none the non-stiff one
+lacks. Rev 2 said the two manifests "agree with each other"; what is true is stronger —
+*one of them contains the other* — so a single project reproduces all five notebooks
+with the same bytes of every package, and that is a fact about the dependency graph
+rather than a judgement about which versions matter. Both pairs are committed
+(`benchmark/references/sciml/nonstiff/`, `.../stiff/`) because the two `Project.toml`
+files differ in their *direct* deps and reproducing the stiff notebook needs its own;
+the harvest runs under `nonstiff/`.
+
+Every version §3a predicted is confirmed `[R]`: `StochasticDiffEq 7.2.0`,
+`SDEProblemLibrary 1.2.4`, `DiffEqNoiseProcess 5.36.3`, `DiffEqDevTools 3.6.3`,
+`SciMLBase 3.54.0`, `SciMLLogging 2.1.0` on `julia 1.11.9`, plus
+`OrdinaryDiffEqCore 4.17.2`.
+
+**The `Pkg.add` fallback in §3a is now struck through, because taking it would have been
+a mistake rather than a fallback.** Its version pins are the *stale* ones read off the
+published pages in rev 1 — `StochasticDiffEq 7.1.5`, `DiffEqNoiseProcess 5.36.1`,
+`DiffEqDevTools 3.6.0` — so a run that fell back to it would have resolved a closure that
+matches neither the manifests nor any published page, while looking pinned. The manifest
+is not the *preferred* route to a reproducible environment here; it is the only one.
+
+#### The `BoundsError` cells of §1a.2: the three it names now run; the fourth is unidentified
+
+Run cell by cell in one session at `JULIA_NUM_THREADS=1`, with `GKSwstype=100` so GR is
+headless. §1a.2 says *four* cells fail but names only three — "the 2-D linear and scalar
+linear first cells, and the wave first cell", which are cells 6, 8 and 10 of
+`BasicSDEWorkPrecision.jmd`. **All three pass** (84 s, 34 s, 27 s), as do cells 1–5
+(~19 minutes together).
+
+**The fourth cannot be matched to a cell from the published page text**, and the three
+candidates left — cells 7, 9 and 11, the adaptive-set cells — were **not** run to
+completion: cell 7 ran for over an hour without either finishing or raising, and was
+stopped. So what is established is that the three named failures are fixed upstream, not
+that the whole page now runs. The cost is adaptive timestepping, which §11 excludes from
+the comparison anyway, so the honest reading is that **the §1a.2 repair is no longer
+worth doing** — three of the four named cells demonstrably work and the harvest's value
+is the *numbers*, not the repair — rather than that page 1 has been fully revalidated.
+
+The other four notebooks were run in full and pass completely: `QuadraticStiffness`
+**8/8**, `HighOrderWeakSDEWorkPrecision` **7/7**, `BasicSDEWeakWorkPrecision` **20/20**
+(weave footers skipped in each). `StochasticHeat` was not run: §4a.ii drops its problem
+from the adoption.
+
+#### A live defect with the same signature, on a different code path `[R]`
+
+Found while writing `harvest.jl`, and it is why that script records terminal errors
+rather than SciML's own timeseries `:l2`:
+
+> `saveat` with **three or more** save points, on an `SDEProblem` that carries an
+> `analytic`, raises `BoundsError: attempt to access 2-element Vector{Float64} at index
+> [3]` inside `SciMLBase.calculate_solution_errors!` (`rode_solutions.jl:221`) at
+> SciMLBase 3.54.0 / StochasticDiffEq 7.2.0.
+
+The mechanism is that the function indexes the saved noise `sol.W.W` with the
+*solution's* save index, and `saveat` desynchronises the two. One and two save points
+work; three do not; the index is always `[3]` into a 2-element vector however many
+points are requested; and `calculate_error = false` does **not** suppress it, so the only
+way past it is to solve a problem that carries no `analytic` and evaluate the closed form
+oneself. `DiffEqDevTools`' `WorkPrecisionSet` is unaffected because it saves every step
+rather than using `saveat`, which is exactly why the notebook cells pass while a direct
+three-point `saveat` solve of the same problem does not.
+
+**The shape is the §1a.2 shape** — an `n`-element vector indexed at `n+1`, against a
+published `attempt to access 4-element Vector{Float64} at index [5]`. Whether it is the
+same defect surviving a refactor onto a different path cannot be settled without
+resolving the 6.87.0 closure the published page ran on, which this track does not do. It
+is recorded in `comparators.json` under `upstream_defects` with its mechanism, its
+versions and what it cost here, and the honest statement is that the published failure
+does not reproduce and a failure with its signature is live elsewhere.
+
+---
+
+### 3f. Step 3 as implemented — `comparators.json` `[rev5 2026-11-10, N]`
+
+**279 rows**, every one `status: ok` — no scheme failed on any problem at any step. One
+row per (problem, scheme, `dt`) over the nine entries, 19 distinct schemes, and each
+entry's own published step grid. `harvest.jl` is 800 lines, of which ~230 are a JSON
+reader and writer: the pinned environment is inherited verbatim and contains no JSON
+package, and adding one would rewrite `Manifest.toml` and destroy the one property that
+makes the run reproducible (§3e). That trade was worth naming rather than silently
+taking the other side of.
+
+**The two stacks are provably solving the same problems.** Before any scheme runs,
+`harvest.jl` evaluates the library's own `analytic` at nine sample points per entry —
+three times over the horizon × three Brownian values including `W = 0` and both signs —
+and compares them to this repo's closed forms, read from `harvest_spec.json` (generated
+from `problems.py`, so the configuration cannot drift either). **all 72 checks pass,
+worst relative difference 2.18e-16.** The run *aborts* rather than warns if they
+disagree, because a comparator table between two different problems still looks like a
+comparison. This is the join the plan did not have: §2a confirmed each closed form
+solves its own equation, and this confirms the Julia problem is that equation.
+
+#### Finding 1: measuring the stage counts was not a refinement, it was a correction
+
+§5 says the work axis should use "the published stage count for each Rößler scheme".
+`harvest.jl` measures them instead — wrapping `f` and `g` in counters and differencing
+evaluation totals over 4 and 8 steps, so start-up costs cancel. The two anchors §5 names
+come out exactly right, which is what validates the method:
+
+| scheme | f/step | g/step | **stages** | |
+| ------ | ------ | ------ | ---------- | - |
+| EM, SimplifiedEM | 1 | 1 | **1** | §5 says 1 ✅ |
+| RKMil | 1 | 2 | **2** | §5 says 2 ✅ |
+| SRA1, SRA2, RDI1WM | 2 | 1–2 | **2** | |
+| SRA3, SOSRA, SOSRA2 | 3 | 3 | **3** | |
+| ImplicitEM, ImplicitRKMil | 3 | 1–2 | **3** | no fixed count: the solve iterates |
+| SRIW1 | 2 | 4 | **4** | |
+| SRIW2, SOSRI, SOSRI2 | 4 | 4 | **4** | |
+| **DRI1, PL1WM, RDI2WM** | 2–3 | **9** | **9** | the weak schemes |
+| **SRI** | 10 | 10 | **10** | |
+
+The last two rows are the correction. `SRI` costs **10** evaluation rounds per step and
+the three high-order weak schemes cost **9**, driven by `g` rather than `f` — they need
+many diffusion evaluations to handle non-commutative noise. A stage count taken from a
+paper's tableau would have put most of these at 2–4, under-charging the most expensive
+schemes in the set by up to 5× on the axis the whole comparison is drawn against. The
+measured counts are in every row of `comparators.json` beside `f_evals_per_step` and
+`g_evals_per_step`, so a reader can check the scaling rather than trust it.
+
+#### Finding 2: the work axis and the seconds axis disagree, and in the pipeline's favour
+
+This is the plan-changing one. §5 calls work "a currency no runtime can inflate". True
+across languages — and **false as a proxy for time within one**. Measured at each
+entry's finest run, against Euler–Maruyama on the same entry:
+
+| scheme | stages (× EM) | seconds (× EM) | the `evals` axis over-charges by |
+| ------ | ------------- | -------------- | -------------------------------- |
+| RKMil | 2.0× | 1.0–1.5× | 1.3–2.0× |
+| SRIW1 / SOSRI / SRIW2 | 4.0× | 1.3–2.2× | 1.9–3.0× |
+| **SRI** | 10.0× | **1.6–3.3×** | **3.0–6.2×** |
+| **DRI1, RDI2WM** | 9.0× | **1.6×** | **5.7–5.8×** |
+| ImplicitEM / ImplicitRKMil | 3.0× | 2.7–3.1× | **0.95–1.1×** |
+
+A 10-stage scheme costs 1.6× the seconds of a 1-stage one. The mechanism is that these
+right-hand sides are three or four flops, so the per-step cost is loop overhead and
+noise generation — fixed costs a stage count does not see. The implicit schemes are the
+control: their three drift evaluations are three *nonlinear-solve iterations*, real work,
+and their over-charge is 1.0×.
+
+**Why this matters for step 10 rather than just being a curiosity.** The pipeline will
+ship a 1- or 2-stage scheme (§10 prediction 1), so the `evals` axis *flatters the
+pipeline* by up to 6× against the schemes it is being compared with. Reporting work
+alone would understate the gap; reporting seconds alone would be the cross-runtime
+comparison §0c refuses. Both, with this table beside them, is the only honest form —
+which is what §5 already prescribed, now for a measured reason rather than a cautious
+one, and with the **direction** of the bias known.
+
+#### Finding 3: §10's prediction 1 is not precise enough to be graded, and the two
+readings differ by two orders of magnitude
+
+Prediction 1: *"beaten by SRA1/SRIW1/DRI1 at matched work by ≥ 10× at relative error
+10⁻⁴"*. That sentence holds two axes fixed at once and they cannot both be. Measured both
+ways, on the same 279 rows:
+
+**Reading A — hold work fixed, compare accuracy** (at Euler–Maruyama's finest run):
+
+| entry | EM's error | best other scheme | its error | accuracy gain |
+| ----- | ---------- | ----------------- | --------- | ------------- |
+| M01 linear | 4.19e-3 | SRIW2 | 2.63e-6 | **1593×** |
+| M02 additive | 1.06e-5 | SRA3 | 6.27e-12 | 1.7e6× *(roundoff floor)* |
+| M03 cubic | 4.29e-3 | SRIW2 | 6.72e-6 | **638×** |
+| M04 wave | 1.47e-5 | SRIW2 | 6.84e-11 | 2.1e5× *(roundoff floor)* |
+| M05 nltest | 1.00e-3 | SOSRI2 | 8.91e-6 | **113×** |
+| M06 stiff mild | 2.51e-3 | SRIW1 | 3.82e-5 | **66×** |
+| M07 stiff det | 3.09e-3 | SRIW1 | 2.37e-5 | **131×** |
+| M08 stiff mixed | 2.13e-2 | SRIW1 | 5.86e-4 | **36×** |
+| M09 weak | 1.11e-1 | RDI1WM | 3.68e-2 | **3.0×** |
+
+**Reading B — hold error fixed at 10⁻⁴, compare work** (which is prediction 1's own
+phrasing; `>` means Euler–Maruyama never got there on the published grid, so the figure
+is a lower bound):
+
+| entry | EM's work | best other | its work | work saved |
+| ----- | --------- | ---------- | -------- | ---------- |
+| M01 | > 1.6e7 | SOSRI | 2.5e6 | > 6.2× |
+| M02 | 3.1e6 | SRA1 | 5.0e4 | **62.5×** |
+| M03 | > 2.5e6 | SOSRI2 | 5.0e5 | > 5.0× |
+| M04 | 6.3e5 | RKMil | 5.0e4 | **12.5×** |
+| M05 | > 1.0e7 | SOSRI2 | 2.5e6 | > 4.0× |
+| M06 | > 4.0e5 | SRIW1 | 4.0e5 | > 1.0× |
+| M07 | > 4.0e5 | SRIW1 | 2.0e5 | > 2.0× |
+| **M08** | > 4.0e5 | SRIW1 | **1.6e6** | **0.2×** |
+| M09 | > 2.4e6 | *none reached 10⁻⁴* | — | — |
+
+So prediction 1 is **confirmed under reading A on all nine entries** (36×–1.7e6×, far
+past the ≥10× it claimed) and **falsified under reading B on four of nine** — 6.2×, 5.0×,
+4.0× and 1.0× fall short of 10×, and **on M08 the best Rößler scheme needs five times
+more work than Euler–Maruyama to reach 10⁻⁴**. Both tables come from one set of rows; the
+difference is entirely which axis is pinned. Reading A compares at the far end of the
+grid where an order-1.5 scheme has had maximum room to pull away from an order-0.5 one;
+reading B compares at a fixed error, where the five-fold step grid's granularity and the
+4× stage cost dominate. **The lesson for step 10 is to fix the axis in advance and quote
+both tables**, and the lesson for §10 is that a prediction naming two axes is not a
+prediction.
+
+M08 is the most interesting row in either table, and it is the one §10 prediction 3
+anticipated: at high noise stiffness (`β² = 4900` against `α = 5000`) the high-order
+scheme's order advantage is gone and its 4× per-step cost is all that is left. SciML's
+own text says nothing wins there `[W]`; measured, on the work axis, **Euler–Maruyama
+wins there**.
+
+#### What is in the artefact
+
+`benchmark/references/sciml/comparators.json` (224 KB): per row the key
+(`problem`, `scheme`, `dt`, `paths`, `seed`), three error columns, the work columns
+(`steps`, `f_evals_per_step`, `g_evals_per_step`, `stages`, `evals`), the time columns
+(`seconds_min` over 5 reps after a discarded warm-up, `paths_timed`,
+`ns_per_path_step`), and for M09 all three observables with their Monte-Carlo standard
+errors and the error in units of those. Plus `environment` (julia 1.11.9,
+`threads=1`, apple-m1, every package version), `analytic_cross_checks`,
+`notebook_reproduction` (§3e's per-cell log, folded in so the artefact is
+self-contained), and `upstream_defects`.
+
+`docs/sciml-benchmark-data/comparator_tables.py` produces every table above from it; the
+tables are not transcribed by hand.
+
+**Deliberately not recorded: SciMLBenchmarks' own `error_estimate = :l2`.** It is an
+*absolute* timeseries error (§2a.2), so it is not the suite's gate, and collecting it
+needs `saveat` — which raises the §3e `BoundsError` at the pinned version. What is
+recorded instead is `sde_err_final_abs`, SciMLBase's own `sol.errors[:final]`, which
+agrees with this script's independently computed absolute terminal error to a ratio of
+**exactly 1 on all 255 pathwise rows** (worst `|ratio - 1|` = 0). That is the cross-check that says the script is
+reading the right field.
+
+---
+
+## 4. Harness work list `[rev1 2026-11-09; H1–H4, H8–H10 implemented rev3 2026-11-10 — see §4b]`
+
+Ten items. **H1–H4 and H8 are Phase 1 and are the minimum to run anything**; H5–H7 are Phase 2;
+H9–H10 are hygiene. Line numbers are from the tree at 2026-11-09 `[R]`.
+
+**Seven of the ten are shipped.** §4b is the implementation record and is the authority on what each
+one turned out to need; the item descriptions below are left as written so the plan can be graded
+against the outcome rather than re-narrated. H5, H6 and H7 are Phase 2 and untouched.
+
+### H1 — a pathwise (strong-error) truth route · **Phase 1, required**
+
+Today `verify.py` grades terminal moments, PDE fields, scalar functionals and stability. There is no
+route that compares a solver's path-by-path output to an exact solution. SciML's primary axis is
+exactly that.
+
+- **New `ground_truth_kind = "pathwise"`**, documented in the `problems.py` module docstring
+  alongside `exact` / `reference` / `stability` (`benchmark/problems.py:19-41`).
+- A problem of this kind carries `pathwise_exact(u0, p, T, W_T) -> ndarray`, where `W_T` is the
+  summed supplied increments. All nine Phase-1 entries satisfy this with a one-line formula (§2).
+- `verify.py` supplies `dW` to the solver (the contract already accepts it —
+  `verification_manual.md` §18, `sandbox._crn_increments` at `verifylib/kernel/sandbox.py:206`),
+  sums it, evaluates `pathwise_exact`, and gates the **relative `l2` strong error** over paths.
+- **Build the ladder's increments from one fine draw, aggregated down** — reuse
+  `crn.ladder_spec`'s `aggregate` trick (`verifylib/kernel/sde/crn.py:30-45`) rather than drawing
+  per level, so every `dt` on the curve is driven by the same Brownian path and the levels are
+  comparable rather than independently noisy.
+- `setup.py`'s `contract_footer` gains the sentence that says so (`benchmark/setup.py:64-175`), and
+  the existing rendering for non-pathwise SDE problems must stay **byte-identical** — the rule that
+  file already states in a comment, because churn in a problem statement makes an old run
+  incomparable for a reason unrelated to the solver.
+- **It must extend to the work-precision path too**: `_fold_work_precision_sde`
+  (`verify.py:1674`) and `_wp_solve_sde` (`verify.py:1570`) compute a _moment_ relative error
+  today; for a pathwise problem the series point must carry the strong error, or the comparator
+  table (§5) has nothing to compare.
+- Acceptance: on S01, a hand-written EM reads strong order ≈ 0.5 and a Milstein ≈ 1.0 — checkable
+  against the repo's own measured 0.488 / 1.006 on GBM `[R]`. A solver returning the exact formula
+  reads a strong error at the rounding floor (which H2 then rejects).
+
+### H2 — the degenerate-ladder verdict (`ANALYTIC_TRANSCRIPTION`) · **Phase 1, required**
+
+§0b.2: the detector exists, the verdict does not. Without this, H1 grades transcription.
+
+- `verify.py` records, per problem, whether the terminal states are identical (to rounding) across
+  CRN levels. The reading already has a precedent: `s0 = 9.4e-15` on `sde_bm_with_drift` `[R]`.
+- New verdict string threaded through `report.py`: `VERDICT_LABEL` (`benchmark/report.py:35-47`),
+  `_VERDICT_ORDER` (`:53`), and `compute_verdict` (`:160-189`), which currently has no branch for
+  it. It is **not** a pass and **not** a failure — it is an exclusion from the scheme-matched arm,
+  so it must not land in `_PASS_VERDICTS` (`:51`) and must not be counted as a FAIL in the
+  discrepancy table (`:494`).
+- Acceptance: the pathwise-exact solver of H1's acceptance test is reported
+  `ANALYTIC_TRANSCRIPTION`; a correct EM at the same `dt` is not; a _wrong_ solver is still `FAIL`
+  rather than an exclusion.
+
+### H3 — a noise dimension on benchmark problems · **Phase 1, required for S09**
+
+`[R]` `verifylib/schema.py:372` has `check_noise_dimension` on the _plan spec_ side, but
+`benchmark/problems.py` entries have no `noise_dimension` field at all: every existing SDE problem
+has `m = d` implicitly. S09 is 2 states × 2 noise sources with a **non-commutative** diffusion
+matrix, and `prob_sde_bruss` is 2 × 4.
+
+- Add `noise_dimension` to the problem entry, defaulting to `state_dimension`.
+- Thread it into `setup.py`'s contract text (the `dW` shape the solver is promised is
+  `(num_paths, Nt, m)`, not `(num_paths, Nt)`), into H1's increment generation, and into
+  `validate_ground_truth.py`.
+- Acceptance: S09's brief states the `(paths, Nt, 2)` shape; `crn.ladder_spec(..., m=2)` returns
+  payloads of that shape; a solver that uses one increment for both noise sources fails — the
+  defect `verifylib/kernel/sde/driver.py:1016` already describes but which no problem has exercised.
+
+### H4 — a work-measured cost axis · **Phase 1, required**
+
+§0c: wall-clock alone is a language benchmark. The work-precision point currently records only
+`rel_err`, `solve_s`, `wall_s`, `graded` (`_wp_point`, `verify.py:1504-1511`).
+
+- Add `steps` (`round(T/dt)`), `paths`, and `evals` to each point. `evals = steps × stages`, where
+  `stages` is the scheme's declared stage count read from the plan frontmatter (`scheme_family` is
+  already declared there `[R]`) — **not** self-reported by the solver, and cross-checked against the
+  measured per-step cost so a mis-declaration is visible rather than load-bearing.
+- `_fmt_work_precision` (`verify.py:1920`) and `report.py` render the new columns.
+- Acceptance: a series on S01 at four `dt` values shows `evals` scaling exactly 1:2:4:8 for a
+  one-stage scheme, and the comparator table (§5) can be built from `comparators.json` and the
+  series without either side quoting seconds.
+
+### H5 — general state dimension · **Phase 2**
+
+`[R]` A hard ceiling at `d = 3`, in eight places: `["X","Y","Z"][:d]` at `problems.py:263`,
+`setup.py:80`, `verify.py:333`, `validate_ground_truth.py:381`, and `("X","Y","Z")` at
+`verifylib/kernel/sde/driver.py:727` and `:790`, `verifylib/kernel/sde/dynkin.py:260`,
+`verifylib/reference.py:580`.
+
+- Replace with a generated labelling, exactly as `SYSTEMS_3D_EXTENSION_PLAN.md` did for PDE
+  `fields` `[R]`. Keep the `X`/`Y`/`Z` spelling for `d ≤ 3` so no existing problem statement or
+  archived record changes.
+- Acceptance: `prob_sde_additivesystem` (`d = 4`) runs end to end; all three existing suites'
+  manifests and problem statements are byte-identical before and after.
+
+### H6 — the converged-reference route · **Phase 2, largest item**
+
+§2's fourth truth route: a harness-owned fine-step reference, compared under common random numbers,
+validated by two independent integrators agreeing far below the gate. Reuses `crn.ladder_spec`.
+Acceptance: agreement at least two orders below the gate on `lorenz` and `bruss`, recorded, with the
+second integrator named — the no-closed-form PDE suite's standard `[R]`.
+
+### H7 — the step rule and the solver budget · **see §4a; blocks three Phase-2 problems**
+
+### H8 — suite registration · **Phase 1, required, trivial**
+
+`SUITES = ("main", "no-closed-form", "benchop")` at `benchmark/setup.py:434` gains `"sciml"`;
+`problem_suite` (`:437`) and `apply_suite_filter` (`:447`) need nothing else; the `--suite` choices
+(`:497`) pick it up automatically; `n_by_suite` (`:410`) reports it. The runner refusal that stops
+one suite's records merging into another's baseline already covers it `[R]`. This is the one piece of
+the adoption that is genuinely already built, and it is built because step 9 of the BENCHOP plan
+found four defects here the hard way.
+
+### H9 — leakage scan coverage · **Phase 1, required**
+
+Extend `verifylib/leakage.py` to the new filenames (`benchmark/references/sciml/*`) and add the
+directory to `benchmark/pipeline-settings.json`'s deny rules. §8 says why: those files hold both the
+competitor schemes and the graded error values.
+
+### H10 — the arm switch · **Phase 1, required**
+
+§6's two arms need to be a recorded field, not a convention: each result carries which arm it was
+run under, so the two can never be averaged together in a report. Acceptance: `compare.py` refuses
+to put unrestricted-arm and scheme-matched-arm records in one column.
+
+### 4a. Three findings from reading the harness `[rev1, N]`
+
+**(i) The graded step is forced finer than every published point.**
+`sde_verify_dt = min(problem["dt"], 0.04 / problem["T"])` (`verify.py:271-278`) `[R]`. The `min`
+takes the _smaller_ value, so declaring a fine `dt` for a stiff problem works — S08 can declare
+`dt = 1e-5` and be graded there. But the rule also _caps_ the graded step at `0.04/T`, and on S09
+(`T = 3`) that is `0.0133`, while SciML's weak-error points are `dt = 1, 1/2, 1/4, 1/8` `[W]` — **all
+four published points are coarser than the harness will ever grade at.** The same is true of the
+coarse end of pages 1 and 3.
+**Resolution, and it needs no code:** grade at the rule's step, and put the published steps in
+`work_precision_levels`, which accepts arbitrary `(num_paths, dt)` pairs and is explicitly
+_measurement, never grading_ `[R]`. The comparator table is then built from the **series**, not from
+the verdict. This is why H1 must extend to the work-precision path and why H4 exists; without both,
+the suite produces a verdict at a step no comparator ran at and no table at all.
+
+**(ii) Two Phase-2 problems exceed the solver budget by orders of magnitude.**
+`DEFAULT_SOLVER_TIMEOUT_S = 300`, `DEFAULT_SOLVER_MEM_MB = 4096` (`verify.py:78-79`) `[R]`. With the
+step rule above: `prob_sde_oscilreact` (`T = 4000`) is graded at `dt ≤ 1e-5` — **4×10⁸ steps per
+path**; `oval2ModelExample` (`T = 500`) at `dt ≤ 8e-5` — 6.25×10⁶ steps × 19 states. Neither fits.
+`prob_sde_bruss` (`T = 100`, `dt ≤ 4e-4`, 2.5×10⁵ steps) does fit. **Decision: drop `oscilreact`,
+`oval2` and the stochastic heat equation from the plan** unless a per-problem budget and a
+justified step override are added, and say so in the result rather than discovering it in a run.
+That removes SciML's headline stiff result from the comparison, which is a real loss and is the
+strongest argument for Phase 2 being a separate plan.
+
+**(iii) Phase 1's path counts are comfortable.** S01–S08 at SciML's `N = 1000` (strong) and S09 at
+`numtraj = 1e5` (weak) `[W]`, against the repo's usual 10⁶–4×10⁶ `[R]`, are small. S08 at
+`dt = 1e-5`, `T = 3`, 1000 paths is 3×10⁵ vectorised numpy steps on a 1000-element array — seconds.
+The budget risk in Phase 1 is the work-precision _sweep_ multiplying the count, not any single solve.
+
+### 4b. Step 5 as implemented `[rev3 2026-11-10, N]`
+
+**Shipped: H1, H2, H3, H4, H8, H9, H10**, with the acceptance test of each in
+`benchmark/tests/test_pathwise_route.py` (28 tests). H5-H7 remain Phase 2 and are
+untouched. The existing suites are unaffected, measured rather than asserted: all **66
+problem statements and the entire manifest hash identically** before and after
+(`sha256 984bcb4e…`), and the invariant that produces that is a test rather than the
+hash, so a legitimate future edit to one problem does not read as a regression here.
+
+Unlike §2a, implementing this mostly confirmed the plan. Four things it did not:
+
+**1. The benchmark's SDE contract did not accept `dW` at all, so H1 was bigger than
+one route.** H1 said "the contract already accepts it -- `verification_manual.md` §18,
+`sandbox._crn_increments`", and §18 does specify `dW`, but **that is the kernel's
+contract, not the benchmark's**. `benchmark/setup.py`'s `contract_footer` rendered
+`solve_sde(num_paths, dt, T, seed)` with no `dW` on every problem, and neither
+`_run_and_read_sde` nor `runner.run_solver` had any way to supply one. So H1 needed
+three things rather than one: the route, a contract extension rendered _only_ for the
+new kind, and increment plumbing through the sandbox child. The child builds the
+increments from a seed-and-shape payload rather than receiving an array, which is
+`verifylib/kernel/sandbox.py`'s own convention; the parent builds the same payload to
+evaluate its truth on the very path the solver integrated. **The two builders are
+duplicated on purpose** -- the child imports numpy and the standard library only, which
+is what makes the sandbox a sandbox -- and they are held to bit-equality by a test
+rather than by hope.
+
+**2. The gate had to be measured before it could be set, and the first value was
+wrong.** `SDE_PATHWISE_TOL` was written as 5%, reasoning that a pathwise difference
+under common random numbers has the Monte-Carlo error cancelled out of it and is
+therefore better determined than a sampled moment. That reasoning is correct and
+irrelevant: what sets this gate is the **scheme's discretization error**, not the
+measurement's noise, and a strong error is much larger than a weak one at the same step
+because the errors do not cancel across paths. Measured on SciML's own linear problem
+at this harness's `dt = 0.01`, 4000 paths, against the exact solution on the supplied
+path:
+
+| Solver (one decision apart)                 | Relative strong error        |
+| ------------------------------------------- | ---------------------------- |
+| Milstein                                    | **1.64%**                    |
+| Euler-Maruyama                              | **5.36%**                    |
+| Euler-Maruyama, one wrong drift coefficient | **40.67%**                   |
+| the closed form, transcribed                | **0.00%** (2.6e-16 absolute) |
+
+So 5% **failed a correct Euler-Maruyama** by a hair -- the one thing this repo's
+calibration rule forbids, and invisibly, because a false hard-fail on a correct solver
+does not look like a false positive. The default is now 10%, where a correct EM clears
+by 1.9x, the one-decision-wrong variant fails by 4.1x, and the two are separated by
+**7.6x**. The number and its measurement are in the constant's own docstring, and
+per-entry calibration in step 7 still overrides it: a default is the gate for a problem
+nobody has measured yet, never a substitute for measuring it.
+
+**3. H2 needed the distinction §2a.1 found, not the single verdict H2 specified.** The
+ladder cannot tell a transcribed analytic solution from a _constant_ -- both return
+bit-identical terminal states at every level -- and §2a.1 established that the
+stiff-quadratic entries make the second case real rather than hypothetical. The record
+now names which: `pathwise_exact` where the states vary across paths but not across
+levels, `path_independent` where they do not vary across paths either. Both are
+`ANALYTIC_TRANSCRIPTION`, because both are exclusions rather than defects, but calling
+a constant a transcribed analytic solution would credit it with more than it did.
+`validate_ground_truth.py` additionally refuses a _vacuous entry_ at authoring time, so
+the stiff-quadratic problems cannot be declared at `T = 3` in step 6 and discovered in
+step 9 -- which is the failure §2a.1 was one run away from.
+
+**4. H9's deny-rule half was already done; the hole was elsewhere.**
+`Read(./benchmark/**)` in `pipeline-settings.json` already covers
+`benchmark/references/sciml/**`, so nothing needed adding there. What was missing is
+that `harvest.jl` is a **`.jl` file under `benchmark/`** and every interpreter in the
+deny list is a Python one: `julia benchmark/references/sciml/harvest.jl` was not
+blocked. It is now, along with `juliaup`. The citation scan gained the artefact
+filenames (`comparators.json`, `harvest.jl`, and `benchop_slv.json`, which had never
+been listed either) -- but **not** `StochasticDiffEq`, `SDEProblemLibrary` or
+`SciMLBenchmarks`, which were in the first draft of this change and removed: those are
+public literature, a plan writing "an SRA1 scheme, after Rößler" is citing a paper
+rather than reading an answer key, and flagging it is the false-positive class
+`leakage.py`'s own docstring exists to refuse.
+
+Four smaller things, recorded because step 6 depends on three of them:
+
+- **SciML's `:l2` needs a saved history, so the schema gained one** -- `path_values`,
+  at `pathwise_save_points` equally spaced times. It is **optional and never a gate**:
+  a comparator axis must not be able to fail a solver that is accurate where it is
+  graded, and a full history is not affordable anyway (S08 at the full step grid is
+  ~800 MB). The absolute timeseries error is recorded per work-precision point as
+  `abs_l2`, which is what makes the comparator table buildable from the series.
+- **Nesting is now an authoring constraint on step 6.** Every level -- graded step,
+  ladder, and each work-precision point -- is an aggregation of one Brownian draw, so a
+  declared step that does not divide `pathwise_fine_steps` is reported `not_nested`
+  rather than drawn fresh. SciML's published steps are `5^-k`, `8^-k` and `2^-k`
+  (§2a.8), so `pathwise_fine_steps` has to be declared as a common multiple per entry;
+  `validate_ground_truth.py` checks it without running anything.
+- **The work axis records its own provenance.** `evals = paths x steps x stages`, with
+  `stages` read from the plan's declared `scheme_family` and `stages_source` recording
+  whether it was declared or defaulted to 1, beside `solve_s`. A curve whose work axis
+  rests on a guess has to say so rather than look like a measurement.
+- **`report.harness_error` needed a fourth branch, which is finding F10 again.** That
+  function exists because the per-plan table read `rel_l2_err`, which no
+  functional-graded problem has, and the whole BENCHOP suite printed `-` in its error
+  column. A pathwise record carries neither a field error nor a moment error, so
+  without a branch of its own **every entry in this suite would have printed `-` for
+  exactly the same reason, one route later**. Caught here rather than in step 10 only
+  because the earlier incident is written down; it is the clearest argument in this
+  plan for why these documents record mechanisms and not just outcomes.
+
+---
+
+## 5. The timing problem, and the EM anchor `[N]`
+
+**Primary axis: error vs work, not error vs seconds.** Work is counted in a currency no runtime can
+inflate — `paths × steps × stages` (H4): 1 stage for EM, 2 for RKMil, the published stage count for
+each Rößler scheme. This is what SciML's diagrams are really showing when the schemes are
+fixed-step, and it is the only axis on which numpy and compiled Julia can share a plot without an
+argument.
+
+**Secondary axis: anchored wall-clock.** Implement **the same Euler–Maruyama** in both stacks — same
+problem, same `dt`, same path count, single-threaded — and measure the ratio. That one number is the
+language-and-implementation factor; quote raw seconds _and_ seconds divided by it, with the anchor's
+value and the hardware printed beside every table. Measure the anchor per problem shape, not once:
+`[N]` the factor on a scalar 1000-path problem (numpy vectorises across paths, Julia loops over
+trajectories) and on a many-state few-path problem (Julia loops over floats, numpy pays interpreter
+overhead per step) will not be the same number, and may not have the same sign.
+
+**Three conventions, or the numbers mean nothing** (§3b): pin every version, run single-threaded,
+and never time a first call.
+
+---
+
+### 5a. Step 4 as implemented — the measured anchor `[rev5 2026-11-10, N]`
+
+`benchmark/references/sciml/em_anchor.jl` and `em_anchor.py`: the same
+Euler–Maruyama, same step, same path count, single-threaded, warm-up discarded, minimum
+of five. Increments are drawn **before** the clock starts in both stacks, because the
+contract hands a solver its `dW` (H1), so stepping is the work being compared and a
+random-number generator's speed is a different measurement. Each half is written the way
+its stack is actually written: numpy vectorised across paths (as every SDE solver in this
+benchmark is), Julia looping one trajectory at a time (as `StochasticDiffEq.jl` does).
+
+**§10 prediction 5 is confirmed, and by more than it claimed** — it said the two factors
+would differ by more than 3×; they differ by **8.1×**:
+
+| shape | numpy | julia | factor |
+| ----- | ----- | ----- | ------ |
+| scalar, 1000 paths, 15 625 steps | 4.78 ns/path-step | 4.63 | **1.03×** |
+| 8 states, 10 paths, 15 625 steps | 37.07 ns/path-step | 4.43 | **8.37×** |
+
+#### The scalar parity is an artifact, and the anchor says so
+
+1.03× reads as "numpy matches compiled Julia", and that reading is wrong. The
+trajectory-at-a-time loop is **latency**-bound: `xp += a*xp*dt + b*xp*dW` is a serially
+dependent chain of multiply-adds, so each step waits on the previous one, and 4.6 ns is
+about four FMA latencies on this machine rather than a statement about Julia. Two
+measurements establish it:
+
+- **Interleaving four independent trajectories** in the same loop — breaking the
+  dependency, changing nothing else — runs the identical arithmetic at **1.76 ns**, a
+  **2.6× speedup** from instruction-level parallelism alone.
+- **The array layout is not the cause**: `dW[path, step]` against `dW[step, path]`
+  (contiguous inner loop) differ by **1.04×**, so neither stack is memory-bound here.
+
+numpy has no choice but to vectorise across paths, which hides exactly the latency the
+Julia loop exposes. Comparing against the single-chain loop therefore measures a
+bottleneck one stack was forced out of and the other was not. `em_anchor.jl` ships the
+interleaved variant as a third row and `em_anchor.py` prints the comparison against it,
+labelled as the ceiling:
+
+> **scalar shape, numpy vs the best available Julia: 2.71×** (4.78 ns vs 1.76 ns)
+
+So the anchor is three numbers, not one and not two: **1.03× against the idiomatic
+trajectory loop, 2.71× against the best Julia on the same shape, 8.37× on the many-state
+shape.** The honest statement for a table footer is the middle one on scalar problems and
+the last on systems.
+
+**And it is not a constant even then.** The factor is set by which bottleneck binds, so
+it moves with the cost of the right-hand side: a cheaper one favours numpy (whose
+per-step overhead is amortised over the path axis), an expensive one favours Julia (whose
+temporaries do not grow with the expression). That is §5's "measure it per problem shape"
+instruction, with a mechanism attached — and it is the reason the primary axis stays
+`evals` even though §3f finding 2 shows `evals` is biased too. The two biases are at
+least in known and opposite directions: `evals` over-charges the multi-stage comparators
+by up to 6×, and seconds over-charge numpy by 2.7×–8.4×.
+
+**Where the stiff triple sits.** Those three entries are scalar with 1000 paths, so they
+take the scalar factor; M09 is the only 2-state entry and the only one where the
+many-state factor is even approximately right. No entry in this suite has the 8-state
+shape — it was measured because §5 and §7 step 4 asked for a ≥7-state measurement, and
+what it establishes is the *spread*, not a number any row of the table will be divided
+by. Phase 2's `bruss` and `lorenz` are where it would bind, and they are not authored.
+
+Measurements are committed at
+`docs/sciml-benchmark-data/measurements/em_anchor_{julia,python}.json`
+(julia 1.11.9, `threads=1`, apple-m1, 8 cores / 17 GB; python 3.14.7, numpy 2.4.6).
+
+---
+
+## 6. Two arms, and why the second one is the suite `[N]`
+
+| Arm                | What the pipeline may do                                                                                                         | What it measures                                                                                          | Status                             |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| **Unrestricted**   | anything, including the exact pathwise solution                                                                                  | whether the pipeline _recognises_ an exactly-solvable SDE — a real capability, and the one rule 0 rewards | a one-line result, not a benchmark |
+| **Scheme-matched** | a discretised stepper that consumes the supplied increments; `exact_sampling_components` empty; degenerate ladders rejected (H2) | scheme quality against nine published schemes at matched work                                             | **this is the suite**              |
+
+Report both, never merged (H10). The unrestricted arm is cheap, it will probably look spectacular,
+and presenting it as a win over `StochasticDiffEq.jl` would be indefensible — so the plan writes
+down in advance that it is a capability note, not a comparison, and that the headline table is the
+scheme-matched arm.
+
+---
+
+## 7. Steps
+
+| #   | Step                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Acceptance                                                                                                                                                                                                                                                                                                                                                                                          |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | ~~§3a–3b: juliaup, the pinned project, `Project.toml` + `Manifest.toml` committed to `benchmark/references/sciml/`~~ **DONE 2026-11-10 — §3e** | ✅ met, and the acceptance line's third clause came back negative in the useful direction: both upstream manifests instantiate **verbatim** on aarch64-darwin and were not re-resolved (md5 unchanged), the pinned version set is confirmed package by package, and **the three `BoundsError` cells §1a.2 actually names now run** — it claims four and names three, and the fourth cannot be matched to a cell from the page text, so what is established is that the named failures are fixed upstream rather than that page 1 is fully revalidated; the three adaptive-set cells were not run to completion, at over an hour each for results §11 excludes anyway. The other four notebooks pass in full (8/8, 7/7, 20/20). The stiff closure turns out to be a strict *subset* of the non-stiff one with zero version disagreements, which is stronger than rev 2's claim. A different `BoundsError` with the same signature is live at the pinned version on the `saveat` path, and is recorded rather than worked around silently |
+| 2   | ~~Re-read `SDEProblemLibrary.jl` **raw**, at the pinned version, and reconcile every formula in §2 against it~~ **DONE 2026-11-10 — §2a**                                                                                                                                                                                                                                                                                                                                                                                               | ✅ met, and exceeded: the diff covers the library _and_ all five notebook sources, every `[L]` formula is confirmed or struck through in place, and each closed form was additionally confirmed to _solve_ its stated equation (Milstein order ≈ 1 under CRN for S01–S05; S09's moment derived from its own coefficients). Eight findings, four of which change the plan                            |
+| 3 | ~~§3c: write and run `harvest.jl`; produce `comparators.json` with the per-(problem, scheme, dt) fields of §3c~~ **DONE 2026-11-10 — §3f** | ✅ met: **279 rows**, 19 schemes, every cell `ok`, numbers not plots. Three findings, two of which change how the result must be read — the stage counts are **measured** and `SRI` costs 10 rounds per step against a tableau's 2–4, the `evals` axis **over-charges** multi-stage schemes by up to 6× against measured seconds (so it flatters the pipeline), and §10's prediction 1 is confirmed under one reading of "matched work" and **falsified on four of nine entries** under the other. SciML's `:l2` column is deliberately absent, with the upstream defect that prevents it recorded |
+| 4 | ~~§5: measure the EM anchor on S01 (scalar) and on a ≥7-state problem; commit both EM sources~~ **DONE 2026-11-10 — §5a** | ✅ met, and **§10 prediction 5 confirmed at 8.1× spread** against the >3× it claimed. Three numbers rather than two: the scalar factor of 1.03× is an artifact of a latency-bound dependency chain, proved by interleaving four trajectories for a 2.6× speedup and by ruling out memory layout at 1.04×, so the honest scalar ceiling is **2.71×** and the many-state factor is **8.37×** |
+| 5   | ~~**H1, H2, H3, H4, H8, H9, H10**, with acceptance tests as written in §4~~ **DONE 2026-11-10 — §4b**                                                                                                                                                                                                                                                                                                                                                                                                                                   | ✅ both halves met: all seven items' acceptance lines pass as 28 tests in `benchmark/tests/test_pathwise_route.py`, run against four real solvers one decision apart through the real sandbox; and all **66** problem statements plus the entire manifest hash identically before and after. Four findings, in §4b — the largest being that the benchmark's SDE contract never accepted `dW` at all |
+| 6 | ~~Author S01–S09 (Gauss–Hermite weak truth for the moment gates); validate every truth by a route independent of the entry (`validate_ground_truth.py`); set `work_precision_levels` to **SciML's own published steps** (§4a.i)~~ **DONE 2026-11-10 — §2b** | ✅ met, with two corrections to the row itself. The weak truth needs **no Gauss–Hermite**: the second moments satisfy a closed 3×3 linear system, so all three are exact and `E[X1²] = exp(−3)` to the bit — validated instead against a 4×10⁵-path Euler–Maruyama Richardson-extrapolated across two nested steps, agreeing at 1.6σ / 0.7σ / 1.6σ. And `work_precision_levels` are SciML's published steps only on **four of nine** entries, because three are in no notebook and the stiff triple's graded horizon moves (§2b finding 1). `--suite sciml` runs alone, and the refusal is tested |
+| 7 | ~~**Calibrate every gate both ways**~~ **DONE 2026-11-10, as part of step 6 — §2b.** It could not be deferred: three entries were *vacuous* until calibration found them, so authoring an entry and calibrating it turned out to be one act rather than two. Every gate separates, the narrowest by **4.4x**, none was moved after the fact, and **two of this row's own proposed controls had to be replaced** because they do not separate (§2b findings 3 and 4). Original text, kept so the plan can be graded against it: calibrate every gate both ways, per the repo rule: a correct scheme clears it and a plausible wrong one fails it, at the resolution the entry ships with, with the separation factor recorded and **no gate moved after seeing where a scheme lands**. One-decision wrong variants: a dropped Milstein correction on S03; `β²` omitted from the S06–S08 drift (`[L]` the _only_ difference between the library's Itô and Stratonovich variants); a single Wiener increment shared by both components of S09's non-commutative noise | every gate separates; the narrowest factor recorded; failures recorded rather than re-cut                                                                                                                                                                                                                                                                                                           |
+| 8 | ~~Smoke-test the suite without spending a pipeline call (the step that found four defects on BENCHOP `[R]`)~~ **DONE 2026-11-10 — §7a** | ✅ met, as **97 automated assertions** over the nine staged briefs, and it found four defects here too — plus a fifth the fix for the second one exposed. The per-plan ranking axis was **blank on eight of nine entries**; **nothing in the repo had ever rendered the work-precision series**, which is this suite's primary axis; the report named two suites; and the per-plan record did not say which scheme each plan chose, which is step 10's own acceptance line. One correction to the row: *every* brief cannot state the `dW` shape, because M09 is handed no `dW` |
+| 9 | ~~Run the C0 one-shot baseline on S01–S09, both arms~~ **DONE 2026-11-10 — §9a** | ✅ met: C0@Opus, naked, 9 units per arm, **18/18 PASS** at $0.96 and $1.06. The arms are now genuinely different experiments (§7a defect 6) and the data says so — **0 of 8 degenerate ladders in the scheme-matched arm, 8 of 8 in the unrestricted one**, which confirms §10's prediction 2 at its maximum in one arm and falsifies its premise in the other: told plainly that transcription is detected and excluded, Opus wrote a discretised scheme nine times out of nine. The deterrent measured is the *sentence*, not the detector. Also unpredicted: the baseline ships a stochastic Heun predictor–corrector on two entries, reaching 5.4e-8 on M02 — better than §3f's measured `SRA1` at the same step — with no manual in the prompt |
+| 10 | Run the pipeline (C2), both arms — **PROBED on one problem 2026-11-10, §10a; the other eight not run** | ⏳ one run measured, not met. M01 scheme-matched: **19.6 min**, `VERIFIED_PASS`, 2.06% against the 9.5% gate — so ~3 h for the arm and ~6 h for both. The row's own acceptance line is met by that run (`scheme_family` per plan, as §7a defect 4 made possible) and it immediately produced the run's most interesting result: **`wrong_plan_won: True`** — the conductor shipped Euler–Maruyama at 0.217× gate over its own Heun-SRK plan at 0.012×, a 17.7× gap against a 0.0048 noise margin, and scored the worse plan 10 against the better ones' 8. That field was `null` before §7a defect 1 was fixed. The probe also exposed a vocabulary gap: there is no SRK family in `SDE_FAMILIES`, so an SRK plan declares `other` and its work axis falls back to 1 stage — understating its own cost, which the report now labels a lower bound |
+| 11  | Phase 2 **if it is still wanted**: H5, H6, H7, then `additivesystem` → `bruss` → `lorenz`. §4a.ii drops `oscilreact`, `oval2` and stoch-heat                                                                                                                                                                                                                                                                                                                                                                                            | reference agreement two orders below the gate, with the second integrator named                                                                                                                                                                                                                                                                                                                     |
+
+**Steps 1–10 are the plan. Step 11 is a second plan wearing a row**, and §4a.ii has now removed its
+three most interesting problems, which strengthens that reading rather than weakening it.
+
+---
+
+### 7a. Step 8 as implemented — the smoke test, and seven defects `[rev5 2026-11-10, N]`
+
+The step exists because the same step found four defects on BENCHOP `[R]`. It found four
+here, a fifth while fixing the second, a sixth when step 9 was launched and a seventh when
+step 9's second arm was launched — and — as there — every one of them was on the path step 10 is about to take
+rather than in the entries, which is why authoring and calibrating the suite (steps 6
+and 7) could not have caught any of them.
+
+**What the acceptance line asked for, and what it got.** `setup.py` stages all **75**
+problems (49 + 7 + 10 + 9) and `manifest.json` reads
+`n_by_suite: {main: 49, no-closed-form: 7, benchop: 10, sciml: 9}`;
+`run.py --suite sciml --list` selects exactly M01–M09; `validate_ground_truth.py` passes
+with no failures. The brief checks are automated rather than read:
+**97 assertions** over the nine staged files confirm that each brief states the call its
+verifier will make (`solve_sde(num_paths=…, dt=…, T=…, seed=…)`, compared against
+`sde_verify_dt` and the entry's own fields, not against the `description` string), that
+each pathwise brief states the `dW` shape the CRN payload will actually produce and the
+`path_values` shape beside it, that the graded step divides the horizon exactly, and that
+no brief contains any graded value — tested against the exact terminal state on the
+path the solver is handed, its mean and its spread, each at four roundings, plus
+fourteen closed-form tells (`arctan`, `0.63155`, `np.exp`, `(1 + u0)`, `analytic`, …).
+
+**Finding: the acceptance line over-counted its own suite.** It says *every* brief
+states the `dW` shape. Eight do. **M09 has no `dW` at all** — it is the one entry not on
+the pathwise route, so it draws its own randomness and the contract never mentions an
+increment array. What it needs instead is for the *channel count* to be unmistakable,
+and it says so in prose: "driven by **two independent** Brownian motions", and "using one
+increment for both channels is a different system". That is the information the §7 control
+depends on, so the suite is not short of anything — but a check written from the
+acceptance line as published fails on a correct brief, which is worth recording as a
+caution about acceptance lines written before the thing exists.
+
+#### The four the smoke test itself found
+
+Numbered as the smoke test found them. The fifth came out of fixing the second; the sixth and seventh are below, and neither was findable by testing — each took an actual run.
+
+**1. The per-plan ranking axis was blank on eight of the nine entries.**
+`run.plan_harness_error` had a branch for a PDE's field error, one for SDE moments and
+one for a functional, and the pathwise route is none of the three — so it returned
+`None`, `wrong_plan_won` had nothing to compare the eight on, and the "Every plan,
+graded" table's error column rendered as `-`. This is the *same defect one route later*
+that BENCHOP's step 8 recorded for prices, which is the useful part: adding a grading
+route to this harness has now twice silently removed the per-plan comparison, and
+nothing in the route's own tests noticed either time. Fixed with a pathwise branch
+returning `rel_err / tol` (1.0 exactly at the pass line, as the other branches are), and
+`harness_error_metric` — which had been answering "worst moment error / its gate" for
+eight entries that have no moment gate — now answers "relative strong error / its gate".
+Measured on the planted M01: `harness_error = 0.2166` (= 0.0206 / 0.095).
+
+The margin needed deriving rather than copying. The other branches use a Monte-Carlo
+standard error; the graded number here is a root-mean-square over `n` paths, whose
+standard error is `rms/sqrt(2n)` to leading order, so that is what it uses — **0.0048** on
+the same dimensionless scale at 1000 paths, i.e. two plans within 2.2% of each other's
+error are not distinguishable at this path count.
+
+**2. Nothing rendered the work-precision series. Nothing ever had.**
+`report.py` and `compare.py` contained **zero** occurrences of `work_precision`. BENCHOP's
+step 8 recorded this as something "step 11 inherits" and it stayed true, which was
+survivable there because the series was a nice-to-have. Here it is not: error against
+**work** is this adoption's primary axis (§5) — the only axis on which numpy and compiled
+Julia can share a plot — so a step-10 sweep would have paid for nine five-point curves,
+written them all to `results.json`, displayed none of them, and been unreadable without
+re-running. `report.py` gains an **Error vs work** section: one table per entry with
+`dt | steps | paths | stages | evals | rel err | solve s | graded`, the declared scheme
+family and the provenance of its stage count, and the least-squares log-log slope of
+error against work — reported only from three or more points, because two points make a
+slope out of any pair of numbers. Measured on the planted Euler–Maruyama:
+
+| entry | d log err / d log evals | observed order in `dt` |
+| ----- | ----------------------- | ---------------------- |
+| M01 (pathwise, strong) | −0.53 | **0.53** |
+| M09 (weak, 3 moments)  | −0.83 | **0.76** |
+
+M01's 0.53 is Euler–Maruyama's strong order 1/2, measured through the shipped entry at
+the shipped resolutions by the renderer that step 10 will use — which is the check the
+section had to pass before it could be trusted to display anything.
+
+**3. The report described two suites.** The methodology section named `main` and
+`--no-closed-form` and stopped, so a reader of a `sciml` report had no way to know which
+denominator its pass rate was quoted against, that `benchop` is graded against published
+values while `sciml` is graded against truth this repo owns and *compared* against
+another library's schemes, or that the two arms exist and are never merged. It now names
+all four, both arms and the exclusion.
+
+**4. The per-plan record did not say which scheme each plan chose** — which is step 10's
+own acceptance line, verbatim. The declared `scheme_family` reached the record only
+inside the *winner's* work-precision points, so a comparison across plans — the entire
+point of a scheme benchmark — had nothing to read. `harness_by_plan` now records it per
+plan, declared and never inferred, for the reason `verify.SCHEME_STAGES` gives.
+
+**A fifth, smaller one, found by the renderer the moment it existed.** The free
+work-precision point — the coarse solve the two-level anti-hardcoding check has already
+paid for (§BENCHOP step 9) — carried an error and a clock but **no work axis**: it drew
+as a row of dashes beside five complete rows in M09's table, because
+`_wp_sde_free_level` never asked for `_wp_sde_work`. It is the one point on the curve
+that is free and was the only one that could not be plotted against work. Fixed; the
+two points now agree about what one step of the same solver costs, which is pinned by a
+test that changes the declared family and checks both points move together.
+
+#### What the smoke test measured, end to end
+
+With a correct Euler–Maruyama planted as a plan and **no pipeline call**
+(`run.py --only … --skip-run --arm scheme-matched --results-json <scratch>`), the whole
+non-agent path runs on both routes:
+
+| entry | verdict | graded error | gate | margin |
+| ----- | ------- | ------------ | ---- | ------ |
+| M01 (pathwise) | VERIFIED_PASS, verified score 10 | rel strong err **2.06%** | 9.5% | 4.6× |
+| M09 (weak) | VERIFIED_PASS, verified score 10 | 0.35% / 0.86% / **1.53%** | 2% / 1.6% / 2.9% | 1.9× |
+
+Three things in that table are worth keeping. First, M09's gates had only ever been
+checked against the validator's own Monte-Carlo; this is the first time a *solver* has
+cleared them through the sandbox, and the narrowest of the three clears by 1.9× — the
+tightest margin anywhere in the suite, tighter than the 4.4× of §2b. Second,
+`second_moment_x1`'s error is **0.35%** against a predicted noise floor of 0.349% at
+10⁵ paths (§2b finding 4): the correct scheme's measured error on that observable *is*
+the sampling noise, to two figures, which is the prediction confirmed from the other
+direction. Third, the free coarse point at 25 000 paths scores **1.37%** against the
+graded point's 1.53% — four times fewer paths, *less* error — which is only possible
+because neither number is resolving bias.
+
+**M09's work-precision curve says something about SciML's published steps.** At its four
+published weak step sizes (1, 1/2, 1/4, 1/8 over `[0, 3]`) a correct Euler–Maruyama's
+relative error on `E[X₁²]` is **95%, 86%, 68%, 47%**. Those steps are chosen to display an
+*order* on a log-log plot with no gate anywhere on it; they are roughly 30× too coarse
+for any gate this repo would write. The series is still the right thing to collect — it
+is what makes the comparison a work-precision comparison — but the curve and the gate
+live at different resolutions, and a reader who takes the top of that curve for a result
+would conclude that Euler–Maruyama fails M09, which it does not.
+
+#### A sixth defect, found by trying to start step 9: **the second arm did not exist**
+
+The step-8 smoke test ran `--arm scheme-matched`, which is the default, and that is why it
+missed this. Before launching the step-9 baseline the other arm was staged for the first
+time, and:
+
+- **`setup.py` did not accept `--arm` at all** — the flag lives in `add_suite_arguments`,
+  which only the two runners use.
+- **`contract_footer` never took an arm**, so the brief was byte-identical in both arms:
+  each one told the solver *"A discretised scheme is required"* and that a transcription
+  would be excluded.
+- **`_is_transcription` applied unconditionally**, so the exclusion fired in both arms.
+
+So `--arm unrestricted` was a *label on the scheme-matched experiment*. Running both arms
+as §7 steps 9 and 10 ask would have cost twice, measured once, and **met its own
+acceptance line** — "baseline records, per arm, with the arm field set" — which is the
+property that makes this the worst of the six. §6 anticipated the two arms being
+*pooled* and made the arm a recorded field rather than a convention to prevent it; the
+risk turned out to be the other one, that the field is all there is.
+
+It also explains a result that should have looked wrong earlier: §6's table says the
+unrestricted arm "will probably look spectacular", and nothing in the harness could have
+produced that outcome, because the brief forbade the thing the arm is for.
+
+**The fix makes the arm change the task and the verdict.** `contract_footer(problem, arm)`
+renders one of two paragraphs on a pathwise problem — the existing one, now a named
+constant, or a new one that says in as many words that evaluating the closed form on the
+supplied increments is a correct and expected answer, that the ladder still measures
+whether any discretization error was carried, and that recognising the equation as
+exactly solvable is what is being measured. `_is_transcription(ver, arm)` returns `False`
+in the unrestricted arm, so a transcription there is a PASS on its own merits rather than
+an exclusion — there is nothing to exclude it *from*, since that arm is a capability note
+and not a comparison against another library's schemes. Both runners and `setup.py` now
+thread their arm into staging.
+
+Three properties are pinned rather than assumed, because each of them would quietly
+invalidate earlier work:
+
+| Property | Why it has to hold |
+| -------- | ------------------ |
+| the two arms' briefs differ by **exactly one line** | the arm changes the permission, not the problem |
+| the scheme-matched brief is **byte-identical** to the armless default | every number measured before the arms existed was measured against that text; verified across all **75** staged briefs, 0 differ |
+| a record carrying **no arm** grades exactly as before | every frozen result predates the flag, so the exclusion is the default and not the exception |
+| the unrestricted arm still **fails a wrong solver** | the permission is to use the closed form, not to be wrong — and §2b showed a constant also produces a degenerate ladder |
+| all **67** non-pathwise problems are untouched by the arm | including M09, which is in this suite but not on that route |
+
+**Tests.** `test_sciml_suite.py` gains **N8**, fifteen tests (eight parameterised over the
+pathwise entries): the two briefs differ in one line and in the right direction, the
+default is unchanged, no other problem moves, the verdict flips in both the pipeline and
+baseline paths, an armless record is unaffected, a wrong solver still fails in the
+permissive arm, and all three entry points can state an arm.
+
+#### A seventh defect, found by running the second arm: **the arms shared their artifacts**
+
+With the brief fixed, both arms ran — and the second one deleted the first one's
+evidence. `oneshot.plan_dir_for` keyed the artifact directory on
+`(problem, condition, manuals, model, rep)` and `unit_key` on the same tuple, neither
+including the arm. So:
+
+- **The unrestricted run wrote its `solver.py` over the scheme-matched run's.** On a
+  *scheme* benchmark the solver source is the evidence — it is the only thing that says
+  which scheme was chosen — so the first arm's result survived in the record while the
+  artifact the record is about was gone. Noticed only because a survey of which schemes
+  the baseline picked came back reporting closed forms on problems the records said had
+  non-degenerate ladders.
+- **`unit_key` collided across arms**, which is worse than lost evidence. Two arms
+  written to one results file would have silently deduped to one unit, and `--resume`
+  would have treated a unit already run in one arm as done in the other. §6 made the arm
+  a *recorded field* rather than a convention precisely so that the two could not be
+  pooled; the pooling it prevented was in `compare.py`'s columns, and this one was
+  upstream of that, in the file.
+
+Both now carry the arm, and the default arm's spelling is unchanged — `""` for
+`scheme-matched` or no arm, `-<arm>` otherwise — so every frozen results file still
+matches on `--resume` and every existing artifact directory is still the right one. Both
+arms were re-run afterwards; the pre-fix records agreed with the re-runs on all nine
+verdicts, and were pruned rather than kept, because the artifacts they pointed at no
+longer existed.
+
+**`run.py` has the same shape of hole** and it is recorded here rather than fixed
+blind: the pipeline's workspace is `workspace/{slug}`, with no arm in the path, so a
+second-arm pipeline run would overwrite the first arm's `plans/` — and on this suite the
+plans are the evidence. It does not bite until step 10 is run in both arms, which is
+where it will be fixed, measured against a real two-arm run rather than against a guess.
+
+**Two things the smoke test confirmed rather than found.** `run.py` refuses the standing
+results file for this suite — *"this selection includes the sciml suite, which must not
+be written into the standing main-suite results file"* — which is BENCHOP step 8's
+fix #2 working on a suite that did not exist when it was written. And the planted plan
+carries no `problem_spec.json`, so the kernel block reads `unavailable` and the per-plan
+verdict column reads `UNDERCLAIM`: an artifact of the plant, identical to the one BENCHOP
+recorded, and the reason that column is not quoted as a result here either.
+
+**Tests.** `test_sciml_suite.py` gains **N7**, nine tests — one per defect plus the
+guards: the pathwise per-plan error and its margin (including that four times the paths
+halves it, as a standard error must), 1.0 exactly at the pass line, the metric label on
+all eight entries, the four suite names and both arms in the rendered report, the slope
+refusing two points and refusing a degenerate series, the section rendering a full row
+byte-for-byte, and a one-point series rendering no section at all.
+`test_work_precision.py` gains **I6**, two tests on the free point's work axis.
+
+---
+
+## 8. Leakage `[N]`
+
+A different shape from BENCHOP's, and mostly milder — with one hard rule:
+
+- **Recall of an exact solution is not cheating here**, it is the formulator's job. §0b is about
+  _grading_, not about leakage.
+- **The real vector is the comparator artefacts.** The Julia sources contain the SRK tableaux and,
+  once step 3 runs, `comparators.json` contains the reference error values. If they land inside
+  `workspace/`, the pipeline can read both the schemes it is compared against and the numbers it is
+  graded near. H9 is that fix, and it is required rather than optional.
+- **Scheme recall without justification.** SciML publishes _which scheme wins_; a model can name
+  SOSRI without being able to derive it. The existing order study already charges a plan that
+  claims an order it does not achieve — but note that a correct SRK implementation would be the
+  first scheme in this repo's history whose declared order the CRN ladder has never verified, and
+  §10's prediction 5 is about that.
+- **Shifted-parameter controls are cheap here** (S06–S08 are already the same equation at three
+  parameter sets) and worth one entry, but they defend against the wrong threat; H2 is the defence
+  that matters.
+
+---
+
+## 9. Cost
+
+| Item                                                  | Estimate                                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------ |
+| §3a–3b Julia setup, pinned, notebooks rerun (step 1)  | 1 day, no model calls                                                          |
+| Source reconciliation (step 2)                        | 0.5 day                                                                        |
+| §3c harvest script + `comparators.json` (step 3)      | 1–1.5 days                                                                     |
+| EM anchor (step 4)                                    | 0.5 day                                                                        |
+| **H1 + H2** (pathwise route + transcription verdict)  | 1.5–2 days                                                                     |
+| **H3 + H4 + H8 + H9 + H10**                           | 1–1.5 days                                                                     |
+| Nine problem entries + GH truth + validation (step 6) | 1–1.5 days                                                                     |
+| Calibration and smoke test (steps 7–8)                | 1–1.5 days                                                                     |
+| **Phase 1 subtotal, no model calls**                  | **~8–10 days**                                                                 |
+| C0 + C2 runs, two arms, nine problems (steps 9–10)    | the model-call budget; BENCHOP's ten-problem equivalent is the reference point |
+| H5 + H6 + H7 + three Phase-2 entries (step 11)        | 4–6 days, plus runs                                                            |
+
+**If the budget is one week:** steps 1–8 with S01–S04 and S06–S09 (drop S05, whose `u^{2/3}`
+diffusion is a domain-guard problem more than a scheme problem), scheme-matched arm only, plus the
+C0 baseline. That yields the comparator table and a baseline, and leaves the pipeline run for when
+the manual has an SRK section to run _with_.
+
+---
+
+### 9a. Step 9 as implemented — the C0 baseline, both arms `[rev5 2026-11-10, N]`
+
+`oneshot.py --suite sciml --condition c0 --manuals naked --model opus --c0-max-turns 4`,
+once per arm. Nine units each, **$0.96** and **$1.06**, three minutes per arm, one turn
+per unit. Opus rather than a cheap model because every other suite's baseline in this
+repository was measured at C0@Opus and a baseline that is not comparable is not a
+baseline; `--c0-max-turns 4` because at the default cap of 2 Opus spends both turns
+probing its (denied) tools and commits no solver `[R]`. Naked only — the knowledge
+contrast is deliberately skipped, and §0d says why it would have been predictable:
+`sde_manual.md` contains no Rößler-family scheme at all.
+
+**Every unit passed in both arms, 18/18.** And the two arms are completely different
+experiments, which is the point and was not true until the defect in §7a was fixed:
+
+| entry | scheme-matched | × gate | unrestricted | ladder |
+| ----- | -------------- | ------ | ------------ | ------ |
+| M01 linear | 2.48e-3 | 0.026× | 1.29e-15 | degenerate |
+| M02 additive | 5.43e-8 | 4.5e-5× | 9.78e-17 | degenerate |
+| M03 cubic | 1.94e-4 | 0.004× | 5.04e-16 | degenerate |
+| M04 wave | 3.25e-7 | 0.001× | 5.37e-17 | degenerate |
+| M05 nltest | 3.34e-3 | **0.341×** | 3.35e-16 | degenerate |
+| M06 stiff mild | 6.26e-3 | **0.417×** | 7.83e-16 | degenerate |
+| M07 stiff det | 8.58e-4 | 0.022× | 1.54e-15 | degenerate |
+| M08 stiff mixed | 5.14e-3 | 0.047× | 3.67e-16 | degenerate |
+| M09 weak | worst 1.9e-3 | 0.066× | worst 4.0e-3 | — |
+
+**Degenerate ladders: 0 of 8 in the scheme-matched arm, 8 of 8 in the unrestricted one.**
+
+#### §10's prediction 2, settled in both directions
+
+The prediction: *"at least one of the C0 baseline and the pipeline returns a
+pathwise-exact answer on ≥ 3 of S01–S08, and H2 catches every one of them. If it catches
+**none**, H2 is broken, not vindicated."*
+
+- **Unrestricted arm: 8 of 8, and H2 caught all 8.** Errors of 5e-17 to 1.5e-15 — not
+  "accurate", *exact to rounding* — with the ladder flagging every one. The prediction's
+  floor of 3 was raised to the maximum, and its failure condition (catching none) did not
+  occur.
+- **Scheme-matched arm: 0 of 8.** This is the result worth keeping, because it was not
+  predicted at all. §0b's whole premise is that a transcribed closed form is the obvious
+  move for a single tool-less completion, and §10 prediction 2 expected exactly that. What
+  happened instead is that **one paragraph of brief text suppressed it completely**: told
+  plainly that an exact evaluation is detected and excluded, Opus wrote a discretised
+  scheme nine times out of nine. The detector was not what stopped the transcription; the
+  *disclosure* was. H2 is still necessary — it is the thing that makes the disclosure
+  credible, and it is what caught the other arm's eight — but the measured deterrent is
+  the sentence, not the mechanism.
+
+#### What the baseline chose, and what it means for prediction 1
+
+In the scheme-matched arm Opus shipped **Milstein** on five of the eight (M01, M03, M04,
+M06, M08), a **stochastic Heun / trapezoidal predictor–corrector** on M02 and M07, and
+plain Euler–Maruyama on M05. Prediction 1 says "the pipeline ships Euler–Maruyama or
+Milstein on at least 7 of 9 problems"; the *baseline* already does better than that on
+two entries, with a scheme that is in neither `sde_manual.md` nor the suite's own
+`SCHEME_STAGES` table — chosen with no manual in the prompt at all.
+
+That makes M02 the sharpest row in the table: the predictor–corrector reaches **5.4e-8**,
+which is 22 000× inside the gate and better than §3f's measured `SRA1` at the same step
+count. The reason is the problem rather than the scheme — M02's solution is affine in `t`
+and `W`, the class the SRA schemes integrate exactly (§3f finding 3) — but it means the
+baseline is not the weak comparator §0d assumed, and step 10 has a real opponent on its
+own side of the table.
+
+**The two tightest margins are M06 at 0.417× and M05 at 0.341×**, so the gates set in §2b
+are not trivially clearable: a correct scheme has about 2.4× of room on the hardest entry,
+which is the margin §2b's calibration predicted for a correct Euler–Maruyama and is being
+spent here on a *better* scheme at the same step.
+
+Records: `benchmark/results/baselines/oneshot_sciml_{scheme_matched,unrestricted}.json`.
+Both were re-run after the §7a defect-7 fix so that each arm's solver sources survive on
+disk; the pre-fix records agreed with them on every verdict and were pruned rather than
+kept, since the artifacts they referred to had been overwritten.
+
+---
+
+## 10. Predictions, to be checked against the outcome `[N]`
+
+Written before the runs so the plan can be graded rather than re-narrated:
+
+1. **Scheme-matched arm, non-stiff (S01–S05, S09):** the pipeline ships Euler–Maruyama or Milstein
+   on at least 7 of 9 problems, and is beaten by SRA1/SRIW1/DRI1 at matched work by **≥ 10×** at
+   relative error 10⁻⁴ on the additive and diagonal problems. Mechanism: §0d.
+2. **Unrestricted arm:** at least one of the C0 baseline and the pipeline returns a pathwise-exact
+   answer on ≥ 3 of S01–S08, and H2 catches every one of them. If it catches _none_, H2 is broken,
+   not vindicated.
+3. **S06–S08 (stiff):** no system wins, including `StochasticDiffEq.jl` — SciML's own text says the
+   mixed case defeats adaptivity and implicitness `[W]`. If the pipeline merely _matches_ EM at a
+   small `dt` here, that is a pass, and the suite's most interesting row.
+4. **S09 (weak, non-commutative):** the Monte-Carlo noise floor at 10⁵ paths, not the scheme, sets
+   the resolvable gate. Expect the gate to need widening on noise grounds, and expect that to be the
+   defect the smoke test (step 8) finds — this repo has twice shipped a ranking number with no noise
+   margin on a sampled quantity `[R]`.
+5. **The EM anchor is not one number** (§5): the scalar and many-state factors differ by more than 3×.
+6. **The suite's value is conditional.** If the manual gains an SRK section and prediction 1 is then
+   falsified on a repeat run, the adoption paid for itself. If the suite is run once, loses as
+   predicted, and the manual does not change, it measured a limitation that `sde_manual.md` rule 3
+   already documents in one sentence — and this plan will have cost more than that sentence.
+
+**Scoreboard as of rev 5** `[N]` — three settled, two settled against the plan, one open:
+
+| # | about | verdict |
+| - | ----- | ------- |
+| 1 | the Rößler schemes beat the pipeline by ≥10× at matched work | **ungradable as written** — it pins two axes at once. Holding work fixed: 36×–1.7e6× on all nine (§3f reading A). Holding error fixed at 1e-4, which is its own phrasing: 6.2×, 62.5×, 5.0×, 12.5×, 4.0×, 1.0×, 2.0× and **0.2× on M08** — so ≥10× holds on two of five non-stiff entries and fails on the rest (reading B) |
+| 2 | ≥3 pathwise-exact answers, all caught by H2 | **confirmed at the maximum in one arm, premise overturned in the other** (§9a): 8 of 8 in `unrestricted`, all caught; **0 of 8** in `scheme-matched`. The deterrent measured is the brief's sentence, not the detector |
+| 3 | nothing wins on the stiff triple | **partly confirmed early** (§3f): on the work axis Euler–Maruyama *wins* on M08, where `β² = 4900` against `α = 5000`. Needs step 10 to finish |
+| 4 | the MC floor sets M09's gate, and the gate needs widening | **falsified with its mechanism inverted** (§2b finding 4): the floor binds by putting a correct scheme's error *below its own standard error*, not by forcing the gate wider. No widening was needed |
+| 5 | the EM anchor is not one number; the shapes differ by >3× | **confirmed at 8.1×** (§5a) — and the scalar factor needed a third number, because 1.03× parity is an artifact of a latency-bound dependency chain |
+| 6 | the suite's value is conditional on the manual changing | **open by construction.** It cannot be graded until a second run after an `sde_manual.md` with an SRK section, and §10a has now added a second prerequisite: there is no SRK family in the kernel's vocabulary either |
+
+---
+
+### 10a. Step 10, probed on one problem `[rev5 2026-11-10, N]`
+
+One pipeline run on M01, scheme-matched arm, to measure what the step costs before
+committing nine of them: **19.6 minutes of wall clock**, `VERIFIED_PASS`, verified score
+10, graded relative strong error **2.06%** against the 9.5% gate. Three plans, three
+solver↔evaluator iterations in total. So the scheme-matched arm is ~**3 hours** for nine
+problems and both arms ~**6 hours**, which is the number the step-10 decision needs.
+
+**The pipeline built better schemes than §10 predicted and then shipped the worst of
+them.** The three plans were `1-euler-maruyama`, `2-milstein` and `3-heun-srk` (declared
+`scheme: stochastic-heun-stratonovich`), and the harness grades them:
+
+| plan | declared family | rel err / gate | the conductor's score |
+| ---- | --------------- | -------------- | --------------------- |
+| **1-euler-maruyama** | `euler-maruyama` | **0.2166** | 10 — **winner** |
+| 2-milstein | `milstein` | 0.0261 | 8 |
+| 3-heun-srk | `other` | **0.0122** | 8 |
+
+**`wrong_plan_won: True`**, by 17.7× against a sampling-noise margin of 0.0048. The
+conductor picked the least accurate of its own three plans on a problem where the other
+two were an order of magnitude better, and scored it 10 while scoring them 8.
+
+That single line is the whole argument for §7a's defect 1. **Before that fix this field
+was `null`** — `plan_harness_error` had no pathwise branch, so the harness had no number
+to rank the three plans on and the most interesting result of the run would not have been
+recorded at all. It was fixed two hours before the run that produced it, on the strength
+of a blank column in a smoke test.
+
+#### A vocabulary gap the probe exposed
+
+`3-heun-srk` declares `scheme_family: other`, and it has to: the kernel's SDE vocabulary
+(`verifylib/kernel/plan_meta.SDE_FAMILIES`) is `euler-maruyama | milstein |
+tamed-euler-maruyama | tamed-milstein | implicit | exact-transition |
+quadratic-exponential | other` — **there is no Rößler or SRK family in it**, which is the
+same absence §0d found in `sde_manual.md`, one layer down. `other` carries no cost per
+step, so `_wp_sde_work` falls back to `stages = 1` and records
+`stages_source: "default"`.
+
+The fallback's *direction* is the problem. It **under**-states the work of the plan being
+measured — a stochastic Heun costs 2 stages and an SRK 3 or 4 by §3f's measurements — and
+understating your own side's cost flatters it against comparators whose stages were
+measured honestly. Had `3-heun-srk` won, its curve would have been drawn at a quarter of
+its true work against the very scheme family it is a member of.
+
+Rather than guess a stage count for `other` (which would be the same error with better
+manners), the report now says it: a series resting on a defaulted stage count is labelled
+a **lower bound**, with the direction of the bias stated. Fixing the vocabulary is the
+honest repair and it is not this plan's — it changes what every plan-creator declares — so
+it is recorded here as the thing step 10's headline table depends on.
+
+**And one test broke, legitimately.**
+`verifylib/tests/test_schema.py::test_every_live_sde_spec_declares_a_floor_for_every_family_it_admits`
+is a *census* of what is staged under `workspace/` — "the artifacts, not the rule", in its
+own words — and it pinned "exactly two SDE specs admit a Milstein plan". The probe's
+`problem_spec.json` is a third, and it is right to be: M01 is scalar with multiplicative
+noise and `dg/dX = 0.87` in closed form, which is `agents/formulator.md`'s eligibility
+rule exactly, and the spec declares `expected_strong_order_milstein: 1.0` like the other
+two. So the **rule** the test is about held across a problem family that did not exist
+when it was written, and only the count moved. Updated to the three, named, with a note
+that both numbers are properties of a directory every pipeline run rewrites — a census of
+mutable state will go stale again, and the assertion inside the loop is the invariant.
+
+**Two smaller observations, both from `STATE.md`.** The formulator logged two ambiguities
+of its own accord: *"the kernel SDE evaluation vocabulary has no pathwise-strong-error
+key, so the formulator carried it as `rel_l2_err_max` plus the CRN strong-order study"*
+and *"the stated pathwise gate has no evaluation_thresholds key; carried verbatim as
+`rel_l2_err_max: 0.095`"*. The pathwise route reached the kernel as a relative-L2 bound
+with a strong-order floor beside it — which is a reasonable translation and is *not* the
+quantity the harness grades, so the pipeline's self-score and the harness's verdict agree
+here by construction rather than by measurement. That is worth knowing before nine runs
+are read.
+
+---
+
+## 11. Deliberately not done `[N]`
+
+- **Adaptive-tolerance comparison.** The contract fixes `dt` (_"Use the `dt` you are given"_) `[R]`;
+  adding a tolerance-driven entry point changes every suite's problem statements and breaks
+  comparability with the measured baselines. Fixed-step column only, stated in every table. This
+  also means SciML's adaptive results (its Oval2 headline) are outside the comparison.
+- **`oscilreact`, Oval2 and the stochastic heat equation** — §4a.ii: they exceed the solver budget
+  by orders of magnitude under the current step rule, and Oval2 additionally costs ~60 constants and
+  an undocumented 19th state `[L]`. Dropped rather than deferred, and the loss is named.
+- **PDE entries** — out of scope by the owner's decision, as in the BENCHOP-SLV adoption.
+- **Stratonovich variants** (§2) — indistinguishable from their Itô counterparts by problem text.
+- **Citing any published SciML number.** §1a: there are almost none, four cells error, the prose
+  disagrees with the source, and the runs used 128 threads. Everything is rerun locally or not used.

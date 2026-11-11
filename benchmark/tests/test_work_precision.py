@@ -554,3 +554,38 @@ def test_the_free_point_is_not_re_solved_when_a_declared_level_names_it(priced):
     out = V.verify_problem(prob, plan_dir, plan_dir=plan_dir, sandbox=True)
     assert len(out["work_precision"]["points"]) == 2
     assert len(solves(log)) == 2
+
+
+# --- I6: the free point's work axis (sciml step 8) --------------------------------
+#
+# The sciml adoption made `evals = paths x steps x stages` the primary axis, and the
+# step-8 smoke test found that the one point on the curve which costs nothing was also
+# the only one with no `evals`: unplottable against work, drawn in the report as a row
+# of dashes beside five complete ones.
+
+def test_the_free_point_carries_the_work_axis_too(priced):
+    plan_dir, _log = priced
+    prob = price_problem()
+    out = V.verify_problem(prob, plan_dir, plan_dir=plan_dir, sandbox=True)
+    free, graded = out["work_precision"]["points"]
+    for p in (free, graded):
+        assert p["steps"] == round(prob["T"] / prob["dt"])
+        assert p["stages"] >= 1
+        assert p["evals"] == p["paths"] * p["steps"] * p["stages"]
+    # Fewer paths at the same step is strictly less work, which is the only reason
+    # the point is worth plotting at all.
+    assert free["evals"] < graded["evals"]
+    assert free["paths"] == V._sde_level_paths(prob, prob["num_paths"])
+
+
+def test_the_free_point_counts_stages_from_the_same_declaration_as_the_graded_one(priced):
+    """Declared, never inferred -- so the two points cannot disagree about what one
+    step of the same solver costs."""
+    plan_dir, _log = priced
+    with open(f"{plan_dir}/SOLUTION.md", "w") as fh:
+        fh.write("---\nscheme_family: milstein\n---\n")
+    out = V.verify_problem(price_problem(), plan_dir, plan_dir=plan_dir, sandbox=True)
+    free, graded = out["work_precision"]["points"]
+    assert free["stages"] == graded["stages"]
+    assert {free["stages_source"], graded["stages_source"]} == {"declared"}
+    assert {free["scheme_family"], graded["scheme_family"]} == {"milstein"}
