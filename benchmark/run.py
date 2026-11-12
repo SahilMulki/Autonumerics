@@ -275,11 +275,25 @@ def summarize_pipeline(workspace_dir):
     best_score = max(scores) if scores else None
     if best_plan and best_plan in plans:
         best_score = plans[best_plan].get("score", best_score)
-    elif not best_plan and plans:
+    best_plan_source = "state"
+    best_plan_tied = None
+    if not best_plan and plans:
         # Conductor didn't finalize STATE (e.g. interrupted before Phase 3); fall
         # back to the highest-scoring plan, matching how verification picks a plan.
-        best_plan = max(plans, key=lambda pid: (plans[pid].get("score") or -1,
-                                                -(plans[pid].get("iter") or 0)))
+        best_plan_source = "fallback"
+        ranked = sorted(plans, key=lambda pid: (-(plans[pid].get("score") or -1),
+                                                plans[pid].get("iter") or 0))
+        best_plan = ranked[0]
+        # ...and say so when that key did not actually separate anything. On
+        # `sde_sciml_weak_noncommutative` (sciml 10a) the run timed out before
+        # Phase 3, so STATE carried no `best_plan`, and all three plans sat at
+        # score 8 on iteration 1 -- the fallback returned the first key in
+        # declaration order and the record then read `wrong_plan_won: true`
+        # against it. The pipeline had not chosen a plan; the grader had. Those
+        # are different findings and the record must not spell them the same way.
+        def _key(pid):
+            return (plans[pid].get("score") or -1, plans[pid].get("iter") or 0)
+        best_plan_tied = len(ranked) > 1 and _key(ranked[0]) == _key(ranked[1])
     # What the winner early-exit and VERIFIED_PASS actually turn on, as the
     # conductor recorded it. `best_score` stays beside it: the score answers "how far
     # inside the tolerance", `certified` answers "did every gate come back clean",
@@ -296,6 +310,13 @@ def summarize_pipeline(workspace_dir):
         "blocked_reason": state.get("blocked_reason"),
         "problem_type": state.get("problem_type"),
         "best_plan": best_plan,
+        # Where `best_plan` came from. "state" is the conductor's own Phase 3
+        # ranking; "fallback" is this function's, on a run that never reached it,
+        # and `best_plan_tied` says the fallback's key was exhausted and the
+        # winner is a declaration-order artifact rather than a selection.
+        "best_plan_source": best_plan_source,
+        **({"best_plan_tied": bool(best_plan_tied)}
+           if best_plan_tied is not None else {}),
         "best_score": best_score,
         **({"certified": bool(certified)} if isinstance(certified, bool) else {}),
         "n_plans": len(plans),
@@ -566,6 +587,15 @@ def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, 
                     "harness_error_margin": margin,
                     "wrong_plan_won": bool(best != winner
                                            and graded[winner] > graded[best] + margin)})
+        # A winner the pipeline never picked is not the pipeline ranking wrongly.
+        # The comparison stays in the record -- it is still the right number for
+        # "what should have shipped" -- but it is labelled, so a step-10 table can
+        # separate a ranking defect from an unfinished run.
+        pl = rec.get("pipeline") or {}
+        if pl.get("best_plan_source") == "fallback":
+            out["winner_source"] = "fallback"
+            if pl.get("best_plan_tied"):
+                out["winner_untied"] = True
     else:
         out["wrong_plan_won"] = None
     return out

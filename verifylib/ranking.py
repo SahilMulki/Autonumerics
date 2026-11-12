@@ -516,6 +516,49 @@ def cost_admissible(tol, pool):
     return all(accuracy(s, tol) is not None for s in summaries)
 
 
+def comparable_keys(tol, pool, keys=CERT_COMPONENTS):
+    """The components **every** plan in the pool measured, for ranking them against
+    each other. (sciml 10a, M06)
+
+    :func:`sqi` renormalises over whichever components a plan measured, which is
+    right for a plan on its own and wrong for a comparison: a mean over four terms
+    and a mean over three are different means, so two indices built from different
+    component sets are not comparable as numbers. The docstring there names the half
+    of this that ``score`` already covers -- a plan that *skipped* a check forfeits a
+    circularity break and is capped, so skipping cannot improve its rank. The other
+    half has no such backstop.
+
+    Measured on ``sde_sciml_stiffquad_mild`` (plan-sciml-benchmark.md 10a): three
+    plans, all certified at 10, same provenance. The semi-implicit plan's
+    ``estimated_rel_error`` of 2.545e-3 was **below its own error bar** of 8.82e-3,
+    so :func:`accuracy` returned None under F16 -- correctly, because an error inside
+    its own noise is not located. Its index was then renormalised over the remaining
+    three components and came out 0.708 against 0.722 for a Euler-Maruyama whose
+    error was five times larger and resolved. The ranker reported
+    ``decided_by: sqi``, on a 2% difference between two means over different terms,
+    and shipped the plan the harness measures as **5.1x less accurate**. Nothing
+    capped the winner, because nothing was skipped: the losing component was missing
+    for being *too accurate to resolve*.
+
+    So a component may contribute to a comparison only where every plan in the pool
+    measured it. That is not a new rule -- :func:`cost_admissible` is this same rule
+    stated for one component ("cost is subordinate to correctness and decisive
+    between equals, and the plans have to be equals") -- and this is it applied to
+    all of them. Where a comparison was not made it does not decide, and the keys
+    below the index do.
+
+    A pool of fewer than two is no comparison, so every key stands.
+    """
+    summaries = [s for s in pool if isinstance(s, dict)]
+    if len(summaries) < 2:
+        return tuple(keys)
+    shared = tuple(k for k in keys
+                   if all(components(s, tol, pool).get(k) is not None
+                          for s in summaries))
+    # Every plan missing the same component is not a reason to rank on nothing.
+    return shared or tuple(keys)
+
+
 def components(summary, tol, pool=()):
     return {"accuracy": accuracy(summary, tol), "order": order(summary),
             "structure": structure(summary), "consistency": consistency(summary),
@@ -545,6 +588,14 @@ def sqi(summary, tol, pool=(), *, keys=None):
     where the reporting plan reaches 10 -- and :func:`rank_key` reads ``score``
     before it reads quality. Skipping a check can improve the index; it cannot
     improve the rank.
+
+    **That argument covers skipping and not unmeasurability.** A component can also
+    be absent because the kernel *could not resolve* it -- F16's noise-limited
+    accuracy -- and then no ceiling compensates, because nothing was skipped. Two
+    indices renormalised over different component sets are not comparable as point
+    values at all, so :func:`rank_key` restricts a comparison to
+    :func:`comparable_keys`; this function keeps renormalising, which is what a
+    single plan's index has to do.
     """
     parts = components(summary, tol, pool)
     # `parts` is returned whole -- `cli.py rank` prints every component, `cost`
@@ -589,7 +640,9 @@ def rank_key(entry, pool=()):
         return (1, 0, 0, 0.0, float("inf"), 0)
     summary = m.get("summary") or m
     tol = _tol_of(summary, m)
-    index, _ = sqi(summary, tol, pool)
+    # Ranked over the components the whole pool measured, so the indices being
+    # compared are means over the same terms -- see :func:`comparable_keys`.
+    index, _ = sqi(summary, tol, pool, keys=comparable_keys(tol, pool))
     # `solve_time_s` used to sit here, below the index, breaking exact ties
     # outright -- which is how three of the ten BENCHOP winners were chosen. It is
     # gone for the reason :data:`CERT_COMPONENTS` gives: cost does not measure

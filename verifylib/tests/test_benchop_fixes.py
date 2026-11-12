@@ -1280,3 +1280,121 @@ def test_a_domain_named_initial_state_is_reported_as_a_spelling_mismatch():
     stated = dict(spec, initial_condition={"law": "deterministic",
                                            "value": [100.0, 0.04, 0.1]})
     assert dynkin.initial_moments(stated, phis)[0] is not None
+
+
+# --- sciml 10a / M06: two indices over different components do not compare ----
+#
+# The measurement is in `ranking.comparable_keys`' docstring: three plans on
+# `sde_sciml_stiffquad_mild`, all certified at 10 with the same provenance, and the
+# one whose error was *too small to resolve* lost `decided_by: sqi` to a plan five
+# times less accurate -- because its accuracy component was None under F16 and the
+# other three were renormalised upward in its place. F16 stays exactly as it is:
+# the fix is that a component no comparison was made on does not decide one.
+#
+# The two fixtures are the run's own `<metrics>` blocks, transcribed, because a
+# hand-built pool does not reproduce the failure: it turns on the *interaction*
+# between which component is missing and where the remaining three sit, and any
+# fixture chosen to make the point would be fitted to it.
+
+_M06_TOL = 0.1
+
+_M06_EM = {           # plans/1-euler-maruyama, the plan that shipped
+    "kind": "sde", "estimated_rel_error": 0.0143, "error_is_estimate": False,
+    "observed_order": 0.7528, "order_floor": 0.5, "order_band": "two-sided",
+    "design_order": 0.5, "scheme_family": "euler-maruyama",
+    "invariants_ok": True, "constraints_ok": True,
+    "invariant_max_drift": 5.494e-3, "invariant_worst_headroom": 0.4304,
+    "mean_rel_err": 0.0143, "variance_rel_err": 2.134e-3,
+    "mc_se_rel": 4.412e-3, "resolved": True, "ci_mult": 2.0,
+    "dynkin_z": 0.2195, "dynkin_bar": 2.4284,
+    "variance_rel_err_max": _M06_TOL, "solve_time_s": 0.227, "cost_source": "cpu",
+}
+
+_M06_TRAP = {         # plans/3-trapezoidal-drift-milstein, 5.1x more accurate
+    "kind": "sde", "estimated_rel_error": 2.545e-3, "error_is_estimate": False,
+    "observed_order": 1.0068, "order_floor": 1.0, "order_band": "two-sided",
+    "design_order": 1.0, "scheme_family": "milstein",
+    "invariants_ok": True, "constraints_ok": True,
+    "invariant_max_drift": 5.568e-3, "invariant_worst_headroom": 0.7314,
+    "mean_rel_err": 8.231e-4, "variance_rel_err": 2.545e-3,
+    "mc_se_rel": 4.410e-3, "resolved": True, "ci_mult": 2.0,
+    "dynkin_z": 0.2246, "dynkin_bar": 2.4284,
+    "variance_rel_err_max": _M06_TOL, "solve_time_s": 0.473, "cost_source": "cpu",
+}
+
+
+def test_the_more_accurate_plans_error_is_the_one_inside_its_own_noise():
+    """The premise, stated as a test so the fixtures cannot drift away from it:
+    2.545e-3 is below twice 4.410e-3, so F16 declines to score it -- and 0.0143 is
+    not, so the *less* accurate plan is the one with an accuracy component."""
+    assert ranking.noise_limited(_M06_TRAP) is True
+    assert ranking.accuracy(_M06_TRAP, _M06_TOL) is None
+    assert ranking.noise_limited(_M06_EM) is False
+    assert f"{ranking.accuracy(_M06_EM, _M06_TOL):.3f}" == "0.801"
+
+
+def test_a_component_missing_on_one_plan_is_dropped_from_the_comparison():
+    pool = [_M06_EM, _M06_TRAP]
+    shared = ranking.comparable_keys(_M06_TOL, pool)
+    assert "accuracy" not in shared
+    assert "order" in shared and "structure" in shared
+
+
+def test_the_too_accurate_plan_no_longer_loses_to_the_renormalisation():
+    """The regression this exists for, with the run's own numbers. Unrestricted,
+    the indices are 0.722 for the plan that shipped and 0.708 for the plan that
+    should have -- backwards, and by 2%. Over the components the pool actually
+    compared, the order is right."""
+    pool = [_M06_EM, _M06_TRAP]
+    assert f"{ranking.sqi(_M06_EM, _M06_TOL, pool)[0]:.3f}" == "0.722"
+    assert f"{ranking.sqi(_M06_TRAP, _M06_TOL, pool)[0]:.3f}" == "0.708"
+
+    shared = ranking.comparable_keys(_M06_TOL, pool)
+    assert (ranking.sqi(_M06_TRAP, _M06_TOL, pool, keys=shared)[0]
+            > ranking.sqi(_M06_EM, _M06_TOL, pool, keys=shared)[0])
+
+
+def test_the_rank_key_ships_the_right_plan_on_the_real_pool():
+    """End to end through the key the conductor sorts on, all three plans, with the
+    scores and provenance they really carried -- so the test fails if the fix is
+    undone anywhere between `comparable_keys` and `rank_key`."""
+    mil = dict(_M06_EM, invariant_max_drift=5.493e-3, invariant_worst_headroom=0.4310,
+               mc_se_rel=4.411e-3, scheme_family="milstein", design_order=1.0,
+               observed_order=1.0, solve_time_s=0.271)
+    entries = [{"plan": name, "iter": 1,
+                "kernel": {"score": 10, "provenance": "analytic",
+                           "certified": True, "summary": summary}}
+               for name, summary in (("1-euler-maruyama", _M06_EM),
+                                     ("2-milstein", mil),
+                                     ("3-trapezoidal-drift-milstein", _M06_TRAP))]
+    pool = [e["kernel"]["summary"] for e in entries]
+    entries.sort(key=lambda e: ranking.rank_key(e, pool))
+    assert entries[0]["plan"] == "3-trapezoidal-drift-milstein"
+
+
+def test_a_component_every_plan_measured_still_decides():
+    """The fix must not disarm the index. Where the whole pool resolved its
+    accuracy, accuracy is compared and the more accurate plan wins."""
+    good = dict(_M06_EM, estimated_rel_error=1e-3, mc_se_rel=1e-6)
+    bad = dict(_M06_EM, estimated_rel_error=5e-2, mc_se_rel=1e-6)
+    pool = [good, bad]
+    assert "accuracy" in ranking.comparable_keys(_M06_TOL, pool)
+    assert (ranking.sqi(good, _M06_TOL, pool)[0]
+            > ranking.sqi(bad, _M06_TOL, pool)[0])
+
+
+def test_a_pool_where_nobody_measured_it_does_not_rank_on_nothing():
+    """Every plan missing the same component is not a reason to compare over an
+    empty key set -- that would make every index None and hand the decision to
+    `iter`. And a pool of one is no comparison, so nothing is restricted."""
+    other = dict(_M06_TRAP, estimated_rel_error=2.6e-3)
+    shared = ranking.comparable_keys(_M06_TOL, [_M06_TRAP, other])
+    assert shared and "accuracy" not in shared
+    assert ranking.comparable_keys(_M06_TOL, [_M06_TRAP]) == ranking.CERT_COMPONENTS
+
+
+def test_the_certification_index_is_untouched():
+    """`sqi_cert` is per-plan and must keep renormalising: a certification may not
+    depend on which siblings happened to resolve."""
+    assert (ranking.sqi_cert(_M06_TRAP, _M06_TOL)
+            == ranking.sqi(_M06_TRAP, _M06_TOL)[0])

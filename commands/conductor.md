@@ -229,6 +229,21 @@ When the loop exits:
       [0, 1] and renormalised over whichever were measurable.
    4. fewest iterations
 
+   **The index is compared only over the components the whole pool measured.** `sqi`
+   renormalises over whichever components *a plan* measured, which is right for one plan and
+   wrong for a comparison: a weighted mean over four terms and one over three are different
+   means. Measured on `sde_sciml_stiffquad_mild` (2026-11-11): three plans certified at 10 with
+   the same provenance, and the semi-implicit plan's `estimated_rel_error` of 2.545e-3 sat
+   *below its own error bar* of 8.82e-3, so `accuracy` returned None under F16 — correctly, since
+   an error inside its own noise is not located. Its index was renormalised over the other three
+   components, came out 0.708 against 0.722, and `decided_by: sqi` shipped a plan the harness
+   measures as **5.1× less accurate**. The best plan lost for being too accurate to resolve, and
+   nothing capped the winner because nothing had been *skipped*. `ranking.comparable_keys` now
+   restricts the comparison, which is `cost_admissible`'s rule ("the plans have to be equals,
+   which means the comparison that would have separated them has to have been made") applied to
+   every component rather than one. `cli.py rank` prints the restricted index and names the
+   components it dropped. See `plan-sciml-benchmark.md` 10b.
+
    **Accuracy headroom reads the declared functional where the problem has one.** Wherever the spec
    declares a gated quantity of interest, the plan's accuracy is `functional_rel_error` against
    `functional_rel_tol` — the error on the number the problem is *scored* on — and the state moment

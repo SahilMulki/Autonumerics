@@ -561,3 +561,73 @@ def test_no_state_at_all_is_refused_too(tmp_path, monkeypatch):
     assert calls["n"] == 0
     assert rec["verify"]["status"] == "skipped"
     assert "NOT graded" in rec["run"]["note"]
+
+
+# --- E10: a winner the pipeline never picked --------------------------------
+#
+# `sde_sciml_weak_noncommutative` timed out before the conductor's Phase 3, so its
+# STATE.md carried no `best_plan` at all. `summarize_pipeline`'s fallback took the
+# highest score, all three plans were at 8 on iteration 1, and `max` returned the
+# first key in declaration order -- after which `harness_by_plan` compared the
+# harness errors against it and recorded `wrong_plan_won: true`. The comparison is
+# right and the attribution was not: the pipeline had not chosen a plan, the grader
+# had. A ranking defect and an unfinished run are different findings (sciml 10a).
+
+_PLANS_UNTIED = """---
+phase: running
+problem_type: sde
+plans:
+  1-euler-maruyama-antithetic:
+    iter: 1
+    score: 8
+  2-exact-lognormal-integrating-factor:
+    iter: 1
+    score: 8
+  3-weak-order-2-ito-taylor:
+    iter: 1
+    score: 8
+---
+"""
+
+_PLANS_DECIDED = _PLANS_UNTIED.replace("""  2-exact-lognormal-integrating-factor:
+    iter: 1
+    score: 8""", """  2-exact-lognormal-integrating-factor:
+    iter: 1
+    score: 10""")
+
+
+def _state(tmp_path, body, best_plan=None):
+    """A workspace holding just this STATE.md. `best_plan` goes in last, before the
+    closing fence, which is where the conductor writes it."""
+    ws = tmp_path / "ws"
+    ws.mkdir(exist_ok=True)
+    text = body if best_plan is None else (
+        body[: -len("---\n")] + f"best_plan: {best_plan}\n---\n")
+    (ws / "STATE.md").write_text(text)
+    return str(ws)
+
+
+def test_a_state_that_named_its_own_winner_is_recorded_as_the_conductors(tmp_path):
+    out = RUN.summarize_pipeline(_state(tmp_path, _PLANS_DECIDED,
+                                      best_plan="3-weak-order-2-ito-taylor"))
+    assert out["best_plan"] == "3-weak-order-2-ito-taylor"
+    assert out["best_plan_source"] == "state"
+    # Nothing to say about a tie the fallback never had to break.
+    assert "best_plan_tied" not in out
+
+
+def test_a_fallback_winner_says_it_is_one(tmp_path):
+    out = RUN.summarize_pipeline(_state(tmp_path, _PLANS_DECIDED))
+    assert out["best_plan"] == "2-exact-lognormal-integrating-factor"  # the real 10
+    assert out["best_plan_source"] == "fallback"
+    # The key separated them, so the winner is not a declaration-order artifact.
+    assert out["best_plan_tied"] is False
+
+
+def test_an_exhausted_fallback_key_is_recorded_as_exhausted(tmp_path):
+    """M09's own shape: three plans, same score, same iteration. The fallback still
+    has to return something, and the record has to say that it chose nothing."""
+    out = RUN.summarize_pipeline(_state(tmp_path, _PLANS_UNTIED))
+    assert out["best_plan"] == "1-euler-maruyama-antithetic"
+    assert out["best_plan_source"] == "fallback"
+    assert out["best_plan_tied"] is True

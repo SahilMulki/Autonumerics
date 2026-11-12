@@ -1125,25 +1125,38 @@ def test_the_milstein_cap_does_not_fire_where_it_must_not(spec, plan):
 
 
 def test_the_milstein_cap_stays_off_every_live_spec():
-    """The three ``zero_diffusion_derivative`` specs and the two ``levy_area`` ones,
-    read off ``workspace/`` rather than transcribed. Measured: two live specs declare
-    the Levy-area reason (``gbm_2d_high_corr``, ``multichannel_stiff_m13``) and
-    neither has a Milstein plan, which is why this cap has never fired."""
+    """The ``zero_diffusion_derivative`` specs and the ``levy_area`` ones, read off
+    ``workspace/`` rather than transcribed. Measured: the Levy-area reason is declared
+    by ``gbm_2d_high_corr`` and ``multichannel_stiff_m13`` among others and none of
+    them has a Milstein plan, which is why this cap has never fired.
+
+    **[sciml 10d]** This used to assert ``len(...) == 3`` and went stale the moment a
+    fourth additive-noise problem was run (``sde_sciml_additive``, from the M02
+    probe) -- a transcribed census of a directory that every pipeline run rewrites,
+    which is the failure mode ``test_spec_field_coverage`` has now hit five times.
+    The count is replaced by the property the count was standing in for: the two
+    reasons partition on ``noise_structure``, additive against multiplicative, which
+    is *why* one is cap-free and the other is not. That survives a re-run, and it
+    fails if a spec ever declares a reason its own noise does not support."""
     import glob
 
     from verifylib.kernel.sde.driver import _milstein_claim
 
-    seen = {}
+    seen, structures = {}, {}
     for path in sorted(glob.glob("workspace/sde_*/problem_spec.json")):
         spec = json.loads(open(path).read())
         reason = spec.get("milstein_ineligible_reason")
         if spec.get("milstein_eligible") is False:
             seen.setdefault(reason, []).append(path.split("/")[1])
+            structures.setdefault(reason, set()).add(spec.get("noise_structure"))
             # A Milstein plan on this spec would be capped only for the Levy reason.
             claim = _milstein_claim(spec, {"scheme_family": "milstein"})
             assert (claim is not None) == (reason == "levy_area"), path
     assert set(seen) == {"zero_diffusion_derivative", "levy_area"}, seen
-    assert len(seen["zero_diffusion_derivative"]) == 3, seen
+    assert structures == {"zero_diffusion_derivative": {"additive"},
+                          "levy_area": {"multiplicative"}}, structures
+    assert {"sde_gbm_2d_high_corr", "sde_multichannel_stiff_m13"} <= set(
+        seen["levy_area"]), seen
 
 
 # --- D5's stability criterion, likewise unexercised ---------------------------

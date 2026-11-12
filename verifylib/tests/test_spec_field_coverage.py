@@ -107,9 +107,23 @@ def _declared_keys(node, prefix="", out=None):
 #: time makes this test flap on every run without telling anyone anything new; the
 #: question worth asking is whether `pool.BOUNDARY_FACTS` should grow, and that is a
 #: design decision, not a census entry.
+#: ``verification.pathwise_reference.`` and ``verification.pathwise_exact_solution.``
+#: are the same decision one suite later, and for a stronger reason than convenience
+#: [sciml 10d]. Every sciml formulator that meets a *pathwise* strong error finds no
+#: `evaluation_thresholds` key that accepts one (the gap the `pathwise_exact_solution`
+#: entry below documents), and writes the reference it derived into a block it coins
+#: on the spot. Seven runs have now coined seven spellings -- `W_t`,
+#: `terminal_from_increments`, `exact_solution_expression`, `W_definition`,
+#: `strong_rel_err_definition`, `strong_rel_err_max`, `measured_reference_points` --
+#: inside a `workspace/` directory the next run rewrites. Listing leaves one at a time
+#: pins an agent's wording and makes this test fail on every re-run without naming
+#: anything new; the finding is the *block*, and the repair is a threshold key for a
+#: pathwise strong error, not a census entry per leaf.
 VALUE_SUBTREES = ("parameters.", "requirements.",
                   "evaluation_thresholds.functionals.",
-                  "verification.structural_facts.")
+                  "verification.structural_facts.",
+                  "verification.pathwise_reference.",
+                  "verification.pathwise_exact_solution.")
 
 #: Keys assembled at the call site, which a literal search cannot see.
 #: ``reference._moment_observables`` builds ``f"{kind}_{comp}_from"`` and
@@ -168,6 +182,35 @@ UNREAD = {
         "functional route takes `functionals[].reference` per functional; a block of "
         "values keyed by functional name is the same information in an undeclared "
         "shape, so the repair here is the prompt and the corpus, not a consumer"),
+    # --- invented by a formulator, 2026-11-12: the same gap, four more names ---
+    # The containers and threshold keys the subtree exemption above does not cover.
+    # One finding with the three fields at the top of this registry, counted here
+    # because each is a *declared* key rather than a leaf of a coined block.
+    "pathwise_reference": (
+        "sde_sciml_cubic and sde_sciml_nltest, under `verification`: the block each "
+        "formulator coined to hold the pathwise reference -- the exact solution "
+        "expression, the W it is driven by, the strong-error definition, its bound, "
+        "and the points the formulator measured. Unread because nothing in the "
+        "kernel takes a pathwise reference as a spec field; `benchmark/verify.py` "
+        "computes the strong error itself from the problem's own ground truth. The "
+        "leaves are exempt as a subtree; this is the name of the block"),
+    "pathwise_strong_rel_err_max": (
+        "sde_sciml_wave, under `evaluation_thresholds`: the formulator's bound on "
+        "the relative strong error, written into the one place a threshold belongs "
+        "-- which has no such key, so nothing reads it. The clearest statement yet "
+        "of the missing key: a formulator put the right quantity in the right "
+        "section under a name it had to invent"),
+    "pathwise_strong_rel_err_definition": (
+        "sde_sciml_wave, beside the bound above: the prose defining what that bound "
+        "is a bound on. Carried for the same reason and read by nothing for the same "
+        "reason"),
+    "path_values": (
+        "sde_sciml_stiffquad_det, under `output_contract`: the per-path terminal "
+        "states the contract asks the solver to return. Unread *by this census*, "
+        "which scans kernel source only -- `benchmark/verify.py`, `setup.py` and "
+        "`runner.py` all read it, so this is a scoping artifact rather than a gap, "
+        "and recorded as such so the next reader does not go looking for a consumer "
+        "that already exists"),
     # --- invented by a formulator, 2026-11-06 ---------------------------------
     # Two fields the BENCHOP SDE run coined for itself that are not prose and not
     # covered by a VALUE_SUBTREES entry. Recorded rather than consumed, with what
@@ -412,7 +455,10 @@ def test_a_docstring_mention_is_not_a_consumer():
 #: coins what it coins, and a recorded reason that outlives its example is still the
 #: answer to "why does this field have no consumer" the next time one appears.
 REGENERATED = {"pathwise_exact_solution", "mean_check_applies",
-               "measured_reference_errors", "terminal_moments_at_T"}
+               "measured_reference_errors", "terminal_moments_at_T",
+               # [sciml 10d] the four the 2026-11-12 runs coined, same reasoning
+               "pathwise_reference", "pathwise_strong_rel_err_max",
+               "pathwise_strong_rel_err_definition", "path_values"}
 
 
 def test_the_unread_table_names_only_fields_some_live_spec_declares():

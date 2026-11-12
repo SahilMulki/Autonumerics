@@ -681,11 +681,20 @@ def _rank(workspace, *, as_json=False) -> int:
 
     pool = [e["kernel"]["summary"] for e in entries]
     tol = ranking._tol_of(pool[0], {})
+    # The components every plan in the pool measured. `rank_key` compares the index
+    # over these and no others, so this is the index the table has to print: the
+    # renormalised per-plan one would show the winner with a *lower* number than the
+    # plans it beat, which reads as a contradiction rather than as a restriction.
+    shared = ranking.comparable_keys(tol, pool)
+    dropped = [k for k in ranking.CERT_COMPONENTS if k not in shared]
     for entry in entries:
         summary = entry["kernel"]["summary"]
-        index, parts = ranking.sqi(summary, tol, pool)
+        index, parts = ranking.sqi(summary, tol, pool, keys=shared)
         entry["sqi"] = index
         entry["components"] = parts
+        # Kept beside it: the plan's own index, over whatever it measured, which is
+        # what a certification reads and what `<metrics>` carries.
+        entry["sqi_plan"] = ranking.sqi(summary, tol, pool)[0]
     entries.sort(key=lambda e: ranking.rank_key(e, pool))
 
     if as_json:
@@ -716,6 +725,14 @@ def _rank(workspace, *, as_json=False) -> int:
     decided = (ranking.decided_by(best, entries[1], pool) if len(entries) > 1
                else "sole plan")
     print(f"\nbest: {best['plan']}   decided_by: {decided}")
+    if dropped:
+        print(f"note: the index above is over {', '.join(shared)} only. "
+              f"{', '.join(dropped)} did not resolve on every plan in this pool, and "
+              f"a component no comparison was made on does not decide one -- see "
+              f"ranking.comparable_keys. Each plan's own index, over whatever it "
+              f"measured, is "
+              + ", ".join(f"{e['plan']}={e['sqi_plan']:.3f}" if e['sqi_plan'] is not None
+                          else f"{e['plan']}=-" for e in entries) + ".")
     if decided in ("solve_time_s", "iter", "tie"):
         print(f"warning: the winner was not chosen on quality -- score, provenance "
               f"and the index are all tied and `{decided}` broke it. Spend one "
