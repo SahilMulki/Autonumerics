@@ -21,7 +21,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 PLAN = ROOT / "docs" / "plan-sciml-benchmark.md"
 COMP = ROOT / "benchmark" / "references" / "sciml" / "comparators.json"
 BASE = ROOT / "benchmark" / "results" / "baselines"
-PROBE = ROOT / "benchmark" / "results" / "pipeline" / "sciml_m01_probe.json"
+PROBE = ROOT / "benchmark" / "results" / "pipeline" / "sciml_probe.json"
+KS = (ROOT / "docs" / "sciml-benchmark-data" / "measurements"
+      / "ks_gate_resolution.json")
 
 
 def _load(path):
@@ -42,11 +44,11 @@ def _cost(doc):
 
 def main():
     plan = PLAN.read_text()
-    comp, probe = _load(COMP), _load(PROBE)
+    comp, probe, ks = _load(COMP), _load(PROBE), _load(KS)
     A = _load(BASE / "oneshot_sciml_scheme_matched.json")
     B = _load(BASE / "oneshot_sciml_unrestricted.json")
-    if not all((comp, probe, A, B)):
-        print("cannot audit: re-run step 3, 9 or 10 first")
+    if not all((comp, probe, A, B, ks)):
+        print("cannot audit: re-run step 3, 9 or 10, or ks_gate_resolution.py, first")
         return 2
 
     rows = comp["rows"]
@@ -57,10 +59,19 @@ def main():
     checks_total = sum(c["checks_total"] for c in comp["analytic_cross_checks"])
     checks_pass = sum(c["checks_passed"] for c in comp["analytic_cross_checks"])
     worst = max(c["worst_rel"] for c in comp["analytic_cross_checks"])
-    hbp = probe["results"][0]["harness_by_plan"]
+    m01 = next(r for r in probe["results"] if r["id"] == "M01")
+    hbp = m01["harness_by_plan"]
     em = hbp["plans"]["1-euler-maruyama"]["harness_error"]
     srk = hbp["plans"]["3-heun-srk"]["harness_error"]
-    wall_min = probe["results"][0]["run"]["wall_seconds"] / 60
+    wall_min = m01["run"]["wall_seconds"] / 60
+    kr, k42 = ks["readings"], ks["per_seed"]["42"]
+
+    # The rev-7 probes. Both are read the same way as M01: the per-plan harness error
+    # is the number the plan's tables quote, and the ratio of winner to best is the
+    # claim, because that ratio is the defect.
+    m06 = next(r for r in probe["results"] if r["id"] == "M06")
+    m09 = next(r for r in probe["results"] if r["id"] == "M09")
+    h6, h9 = m06["harness_by_plan"], m09["harness_by_plan"]
 
     #: (label, the value re-derived from the data, a string the plan must contain)
     claims = [
@@ -83,7 +94,7 @@ def main():
          "unrestricted one.**"),
         ("scheme-matched cost", f"{_cost(A):.2f}" == "0.96", "**$0.96**"),
         ("unrestricted cost", f"{_cost(B):.2f}" == "1.06", "**$1.06**"),
-        ("probe verdict", probe["results"][0]["verdict"] == "VERIFIED_PASS",
+        ("probe verdict", m01["verdict"] == "VERIFIED_PASS",
          "`VERIFIED_PASS`"),
         ("probe wall clock", f"{wall_min:.1f}" == "19.6",
          "**19.6 minutes of wall clock**"),
@@ -97,6 +108,117 @@ def main():
         ("the metric label",
          hbp["harness_error_metric"] == "relative strong error / its gate",
          "relative strong error / its gate"),
+        # §10a's diagnosis. The three KS statistics are quoted from the run's own
+        # evaluation.json files, which live under `workspace/` and every later run
+        # overwrites; ks_gate_resolution.py reproduces them to 13 digits from the
+        # parameters alone, so the reproduction is what the prose is held to.
+        ("KS reproduces the run's EM cell", f"{k42['em']['ks']:.6f}" == "0.004602",
+         "| **1-euler-maruyama** | 0.089% | 1.12% | 0.004602 |"),
+        ("KS reproduces the run's Milstein cell",
+         f"{k42['milstein']['ks']:.6f}" == "0.006141", "| 0.006141 |"),
+        ("KS reproduces the run's Heun cell",
+         f"{k42['heun']['ks']:.6f}" == "0.006754", "| 0.006754 |"),
+        ("the critical value", f"{k42['em']['crit']:.6f}" == "0.006074", "0.006074"),
+        ("Milstein's margin, as a fraction of the bar",
+         f"{(k42['milstein']['ks'] / k42['em']['crit'] - 1):.3f}" == "0.011", "1.011×"),
+        ("an exact solver fails the gate at seed 42",
+         k42["exact"]["ks_ok"] is False and k42["exact"]["rel_err"] == 0.0
+         and f"{k42['exact']['ks']:.6f}" == "0.007133", "**0.007133**"),
+        ("...and worse than the EM that passed",
+         k42["exact"]["ks"] > k42["em"]["ks"], "**FAIL, 1.174×**"),
+        ("exact-solver failures over the seed sweep",
+         (len(kr["exact_solver_gate_failures"]), kr["seeds"]) == (5, 9)
+         and kr["exact_solver_gate_failures"] == [42, 3, 5, 7, 8],
+         "**5 of 9** (42, 3, 5, 7, 8)"),
+        ("the configuration is not systematic",
+         kr["em_passes_while_better_fail"] == 1, "| **1/9** |"),
+        ("KS ordering is near a coin flip",
+         (kr["ks_order_matches_error_order"], kr["ks_order_reversed"]) == (6, 3),
+         "| 6/9 |"),
+        ("the between-scheme spread",
+         f"{kr['between_scheme_spread_min']:.5f}-{kr['between_scheme_spread_max']:.5f}"
+         == "0.00062-0.00154", "0.00062–0.00154"),
+        ("the exact solver's own KS range",
+         f"{kr['exact_ks_min']:.4f}-{kr['exact_ks_max']:.4f}" == "0.0035-0.0138",
+         "0.0035–0.0138"),
+        ("the law's kurtosis", f"{kr['law_kurtosis']:.2f}" == "50.65", "`κ = 50.65`"),
+        ("the predicted divisor error",
+         f"{kr['predicted_sd_rel_se']:.4f}" == "0.0158", "**1.58%**"),
+        ("the correlation", f"{kr['corr_ks_vs_sd_error']:.2f}" == "0.70", "**+0.70**"),
+
+        # --- rev 7: M06 -----------------------------------------------------
+        ("M06 inverted too", h6["wrong_plan_won"] is True, "`wrong_plan_won: true`"),
+        ("M06's winner was the first plan",
+         h6["winner"] == "1-euler-maruyama", "**1-euler-maruyama** | `euler-maruyama`"),
+        ("M06's best plan by harness",
+         h6["best_plan_by_harness"] == "3-trapezoidal-drift-milstein",
+         "`3-trapezoidal-drift-milstein`"),
+        ("M06's inversion factor",
+         f"{h6['winner_harness_err'] / h6['best_harness_err']:.1f}" == "5.1", "**5.1×**"),
+        ("M06's margin", f"{h6['harness_error_margin']:.4f}" == "0.0111", "0.0111"),
+        ("M06's three plans all scored 10",
+         sorted(p["score"] for p in m06["pipeline"]["plans"].values()) == [10, 10, 10],
+         "**10 / 10 / 10**"),
+        ("M06's winner's error, over its gate",
+         f"{h6['plans']['1-euler-maruyama']['harness_error']:.4f}" == "0.4955",
+         "**0.4955**"),
+        ("M06's best plan's error, over its gate",
+         f"{h6['plans']['3-trapezoidal-drift-milstein']['harness_error']:.4f}" == "0.0968",
+         "**0.0968**"),
+        ("M06 verified and passed",
+         m06["verdict"] == "VERIFIED_PASS" and m06["verify"]["passed"] is True,
+         "`PASS (verified)`"),
+        ("M06's strong error against its gate",
+         f"{100 * m06['verify']['pathwise_rel_err']:.3f}" == "0.743"
+         and f"{100 * m06['verify']['pathwise_tol_used']:g}" == "1.5",
+         "strong error 0.743% against the 1.5%"),
+        ("M06's wall clock", f"{m06['run']['wall_seconds'] / 60:.1f}" == "21.5",
+         "21.5 min"),
+        ("the two identical self-estimates M06's plans report",
+         (h6["plans"]["1-euler-maruyama"]["kernel"]["estimated_rel_error"]
+          == h6["plans"]["2-milstein"]["kernel"]["estimated_rel_error"] == 0.0143),
+         "an *identical* self-estimate, 1.43e-2"),
+        ("M06's uncapped ledger violation",
+         m06["verify"].get("score_cap") == 3
+         and m06["verify"]["verified_score"] == 10
+         and any(f["path"] == "run_meta.num_paths"
+                 for f in m06["verify"].get("ledger_violations") or []),
+         "`score_cap: 3` — and grades **10 /"),
+
+        # --- rev 7: M09 -----------------------------------------------------
+        ("M09 inverted too", h9["wrong_plan_won"] is True, "`wrong_plan_won: true`"),
+        ("M09's winner was the first plan",
+         h9["winner"] == "1-euler-maruyama-antithetic",
+         "**1-euler-maruyama-antithetic**"),
+        ("M09's best plan by harness",
+         h9["best_plan_by_harness"] == "2-exact-lognormal-integrating-factor",
+         "`2-exact-lognormal-integrating-factor`"),
+        ("M09's inversion factor",
+         f"{h9['winner_harness_err'] / h9['best_harness_err']:.1f}" == "3.3", "**3.3×**"),
+        ("M09's margin", f"{h9['harness_error_margin']:.4f}" == "0.1468", "0.1468"),
+        ("M09's three plans all scored 8",
+         sorted(p["score"] for p in m09["pipeline"]["plans"].values()) == [8, 8, 8],
+         "**8 / 8 / 8**"),
+        ("the harness grades M09's two losers 10 and its winner 8",
+         (h9["plans"]["1-euler-maruyama-antithetic"]["harness"]["verified_score"] == 8
+          and all(h9["plans"][k]["harness"]["verified_score"] == 10 for k in
+                  ("2-exact-lognormal-integrating-factor", "3-weak-order-2-ito-taylor"))),
+         "it shipped the only one of the three its own harness does not score 10"),
+        ("M09's winner's error, over its gate",
+         f"{h9['plans']['1-euler-maruyama-antithetic']['harness_error']:.4f}" == "0.5490",
+         "**0.5490**"),
+        ("M09 was cut by the timeout, and stamped",
+         (m09["run"]["timed_out"] is True
+          and f"{m09['run']['wall_seconds'] / 60:.1f}" == "60.0"
+          and m09["run"]["graded_incomplete"] is True
+          and m09["pipeline"]["phase"] == "running"),
+         "timed out at 60.0 min, `graded_incomplete: true`"),
+        ("M09's three functional gates",
+         sorted(m09["verify"]["functional_tol_used"].values()) == [0.016, 0.02, 0.029],
+         "gates of 0.020 / 0.016 /"),
+        ("M09's final kernel re-run timed out",
+         (m09.get("kernel") or {}).get("status") == "timeout",
+         '`{"status": "timeout"}`'),
     ]
 
     bad = 0

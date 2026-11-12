@@ -576,6 +576,15 @@ def evaluate_sde(spec, plan_dir, agent):
         "mem_mb_limit": m["summary"].get("mem_mb_limit"),
         "mem_fraction_used": m["summary"].get("mem_fraction_used"),
         "moments_ok": m["checks"]["moments_ok"],
+        # `moments_ok` is a four-way conjunction (`_compare`: mean, variance, a
+        # declared cross moment, a declared terminal law) and the rubric's fallback
+        # row could see only the conjunction, so it named the mean for all four.
+        # These are what let `_moments_fail_reason` say which one missed.
+        "mean_ok": moment_detail.get("mean_ok", "unavailable"),
+        "terminal_law_ok": m["checks"].get("terminal_law_ok", "unavailable"),
+        "cross_moment_ok": m["checks"].get("cross_moment_ok", "unavailable"),
+        "ks_statistic": m["summary"].get("ks_statistic"),
+        "ks_critical": m["summary"].get("ks_critical"),
         "variance_ok": m["checks"]["variance_ok"],
         "resolved": m["checks"]["resolved"],
         "orders_ok": m["checks"]["orders_ok"],

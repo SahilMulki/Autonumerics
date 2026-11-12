@@ -455,8 +455,51 @@ def rubric_sde_analytic(evidence):
                        f"not counted against the plan either way)")
         return 10, reason
     if passed(evidence.get("variance_ok")):
-        return 8, "the variance passes; the mean is slightly above threshold"
+        return 8, _moments_fail_reason(evidence)
     return 4, "the variance check fails, though the code ran cleanly"
+
+
+def _moments_fail_reason(evidence):
+    """Which conjunct of ``moments_ok`` actually missed, on the row it lands on.
+
+    ``moments_ok`` is a four-way conjunction -- the mean, the variance, a declared
+    cross moment and a declared ``terminal_law`` (``sde/driver._compare``) -- and this
+    row's wording named *the mean* for all four. Landing here at **8** is the
+    intended outcome and is unchanged; only the sentence is.
+
+    Measured 2026-11-11, the first `sciml` pipeline run (plan-sciml-benchmark §10a):
+    two of three plans failed nothing but the terminal-law KS test, by 1.1% and 11%
+    of its critical value, and both were told "the mean is slightly above threshold"
+    with means 67x and 46x *inside* tolerance. The same guard hid an
+    ``orders_ok: false`` on one of them, because the rubric reads ``orders_ok`` only
+    inside the branch where ``moments_ok`` passed. A reason string that names the
+    wrong check is worse than no string: it is the thing a reader acts on.
+    """
+    named = [(label, key) for label, key in
+             (("the terminal-law shape test", "terminal_law_ok"),
+              ("a declared cross moment", "cross_moment_ok"),
+              ("the mean", "mean_ok"))
+             if failed(evidence.get(key))]
+    if named:
+        reason = ("the variance passes; "
+                  + " and ".join(label for label, _ in named) + " did not")
+        if any(key == "terminal_law_ok" for _, key in named):
+            d, crit = evidence.get("ks_statistic"), evidence.get("ks_critical")
+            if isinstance(d, (int, float)) and isinstance(crit, (int, float)) and crit:
+                reason += (f" (KS D = {float(d):.5f} against {float(crit):.5f}, "
+                           f"{float(d) / float(crit):.2f}x the critical value)")
+            reason += (". The shape test is a *distributional* check and says nothing "
+                       "about pathwise accuracy -- a scheme can be strictly more "
+                       "accurate path by path and still miss it")
+    else:
+        # Truthful rather than specific: better than naming a check at random.
+        reason = ("the variance passes; one of the moment checks folded into "
+                  "`moments_ok` is outside tolerance -- see its detail block for "
+                  "which")
+    if failed(evidence.get("orders_ok")):
+        reason += (". The order study also failed and this row does not grade it: "
+                   "`orders_ok` is read only where `moments_ok` passed")
+    return reason
 
 
 def _orders_fail_reason(evidence):

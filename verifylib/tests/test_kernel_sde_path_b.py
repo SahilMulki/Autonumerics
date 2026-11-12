@@ -781,11 +781,20 @@ def test_the_truncation_guard_holds_a_boundary_a_declared_support_pins():
 
 
 def test_the_live_specs_pin_exactly_one_boundary_between_them():
-    """The blast radius, asserted against the artifacts rather than described. Of
-    the four live specs declaring ``kolmogorov.bounds``, symmetric widening is
-    harmless on three and wrong on one -- and the rejected alternative (widen away
-    from ``x0`` only) would have moved ``sde_bm_with_drift``'s, re-measuring a guard
-    that passes."""
+    """The blast radius, asserted against the artifacts rather than described.
+    Symmetric widening is harmless on most live specs and wrong on the ones with a
+    real support boundary -- and the rejected alternative (widen away from ``x0``
+    only) would have moved ``sde_bm_with_drift``'s, re-measuring a guard that passes.
+
+    ~~Of the four live specs declaring ``kolmogorov.bounds``, ... wrong on one.~~
+    **[rev, sciml 10a]** The set is not pinned any more. ``workspace/`` is rewritten
+    by every pipeline run, so an exact-equality census of it goes stale on a schedule
+    -- it did here when the M06 run added ``sde_sciml_stiffquad_mild``, whose
+    ``tanh`` state has a genuine two-sided support and so is the first spec to pin
+    *both* ends. That is `_widen` behaving correctly on a new shape, which is what
+    this test is for; the equality was only ever incidental. What remains: the four
+    checked-in specs still widen exactly as measured, and every entry agrees with
+    its own declared support."""
     from verifylib.kernel.sde.surrogates import _widen, declared_support
 
     from .conftest import WORKSPACE
@@ -794,12 +803,13 @@ def test_the_live_specs_pin_exactly_one_boundary_between_them():
                 "sde_ornstein_uhlenbeck": ([-9.0, 9.0], []),
                 "sde_double_well_langevin": ([-4.5, 4.5], []),
                 "sde_bm_with_drift": ([-6.75, 9.75], [])}
-    seen = {}
+    seen, specs = {}, {}
     for name in sorted(os.listdir(WORKSPACE)):
         path = os.path.join(WORKSPACE, name, "problem_spec.json")
         if not (name.startswith("sde_") and os.path.exists(path)):
             continue
         spec = json.load(open(path))
+        specs[name] = spec
         bounds = ((spec.get("verification") or {}).get("kolmogorov") or {}).get("bounds")
         if not bounds or any(isinstance(b, (list, tuple)) for b in bounds):
             # `_widen` is scalar, and so is the route that calls it; a
@@ -808,7 +818,18 @@ def test_the_live_specs_pin_exactly_one_boundary_between_them():
             continue
         seen[name] = _widen(bounds, 1.5, declared_support(spec))
         seen[name] = (seen[name][0], seen[name][1])
-    assert seen == expected, seen
+    # The rule, on every entry: an end is pinned exactly when the declared support
+    # bounds it there, and widening is symmetric otherwise.
+    for name, (widened, pinned) in seen.items():
+        spec = specs[name]
+        lo, hi = declared_support(spec) or (None, None)
+        raw = spec["verification"]["kolmogorov"]["bounds"]
+        assert ("lower" in pinned) == (lo is not None and widened[0] == lo), name
+        assert ("upper" in pinned) == (hi is not None and widened[1] == hi), name
+        assert widened[0] <= raw[0] and widened[1] >= raw[1], name
+    # The four specs that are checked in must still read exactly as measured; the
+    # ones a pipeline run stages come and go and are covered by the loop above.
+    assert {k: v for k, v in seen.items() if k in expected} == expected, seen
 
 
 # --- step 2: every component is read, and prose is refused before it burns a run --

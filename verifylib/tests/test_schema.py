@@ -329,18 +329,20 @@ def test_every_live_sde_spec_declares_a_floor_for_every_family_it_admits():
     ``expected_strong_order_milstein: 1.0``, and the other five say
     ``milstein_eligible: false`` with a reason.~~
 
-    **[rev, sciml step 10] The census is 18 specs and three admitters**, the third
-    being ``sde_sciml_linear_ito`` — written by the first `sciml` pipeline run, and
-    correctly admitting Milstein: it is scalar with multiplicative noise and
-    ``dg/dX = 0.87`` in closed form, which is exactly ``agents/formulator.md``'s
-    eligibility rule. It declares ``expected_strong_order_milstein: 1.0`` like the
-    other two, so the *rule* this test is about held across a problem family that did
-    not exist when it was written; only the count moved.
+    ~~**[rev, sciml step 10] The census is 18 specs and three admitters**, the third
+    being ``sde_sciml_linear_ito``.~~
 
-    A note for the next person this fails on: both numbers are properties of whatever
-    is **currently staged** under ``workspace/``, which any pipeline run rewrites. The
-    assertion inside the loop is the invariant; the count below is a census, and a
-    census of a directory that runs mutate will go stale again."""
+    **[rev, sciml step 10a] The pinned list is gone.** It went stale twice in two days
+    — ``sde_sciml_linear_ito`` from the step-10 probe, then
+    ``sde_sciml_stiffquad_mild`` from the M06 run — and both times the *rule* held:
+    each new spec admitted Milstein correctly (scalar multiplicative noise with
+    ``dg/dX`` in closed form, which is ``agents/formulator.md``'s eligibility rule
+    exactly) and declared a positive ``expected_strong_order_milstein``. Only the
+    census moved, because it is a census of whatever is **currently staged** under
+    ``workspace/``, and every pipeline run rewrites that directory. Pinning it bought
+    no coverage the loop body does not already give and cost a false failure per run,
+    so what remains is the invariant plus the one thing the pin genuinely protected:
+    that the loop is not passing vacuously over an empty directory."""
     admits = []
     for path in _specs("sde_*"):
         spec = read_json(path)
@@ -348,8 +350,11 @@ def test_every_live_sde_spec_declares_a_floor_for_every_family_it_admits():
         if spec.get("milstein_eligible") is not False:
             admits.append(os.path.basename(os.path.dirname(path)))
             assert (spec["verification"]["expected_strong_order_milstein"] > 0), path
-    assert sorted(admits) == ["sde_cir_feller_violated", "sde_ginzburg_landau_s6",
-                              "sde_sciml_linear_ito"], admits
+    # Not a census: a floor. The two originals are checked in, so a run of this test
+    # that found fewer than two admitters is testing an empty or truncated workspace
+    # rather than the rule.
+    assert len(admits) >= 2, admits
+    assert {"sde_cir_feller_violated", "sde_ginzburg_landau_s6"} <= set(admits), admits
 
 
 # --- prose in an expr field ([REV 66]) ----------------------------------------

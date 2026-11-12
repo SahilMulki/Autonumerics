@@ -266,6 +266,8 @@ def _looks_like_limit(log_path):
 
 def summarize_pipeline(workspace_dir):
     state = V.parse_state(workspace_dir)
+    state_path = os.path.join(workspace_dir, "STATE.md")
+    state_mtime = os.path.getmtime(state_path) if os.path.exists(state_path) else None
     plans = state.get("plans", {})
     scores = [p.get("score") for p in plans.values() if p.get("score") is not None]
     iters = [p.get("iter") for p in plans.values() if p.get("iter") is not None]
@@ -286,6 +288,11 @@ def summarize_pipeline(workspace_dir):
     certified = plans.get(best_plan, {}).get("certified") if best_plan else None
     return {
         "phase": state.get("phase"),
+        # When this STATE.md was last written. `process` compares it against the
+        # conductor's own start time: a state file older than the run that is being
+        # recorded belongs to some *earlier* exercise in the same workspace, and
+        # grading it reports another run's work under this one's id.
+        "state_mtime": state_mtime,
         "blocked_reason": state.get("blocked_reason"),
         "problem_type": state.get("problem_type"),
         "best_plan": best_plan,
@@ -320,12 +327,17 @@ def process(problem, args):
     S.write_problem_md(problem, WORKSPACE_ROOT, arm=getattr(args, "arm", None))
 
     # 2. run the pipeline (unless skipped)
+    #    `t_launch` is the clock the stale-workspace guard in 3c compares against. It
+    #    stays None under --skip-run, which exists precisely to re-grade state an
+    #    earlier invocation wrote, so staleness is the point there rather than a defect.
+    t_launch = None
     if args.skip_run:
         run = {"status": "completed", "returncode": 0, "timed_out": False,
                "wall_seconds": None, "log": None, "note": "skip-run: used existing STATE"}
     else:
         if args.fresh:
             clear_pipeline_outputs(workspace_dir)
+        t_launch = time.time()
         run = run_conductor(slug, args.timeout, args.skip_permissions,
                             args.permission_mode, args.model)
 
@@ -357,6 +369,53 @@ def process(problem, args):
             "--resume retries it"
         )
 
+    # 3c. stale-workspace guard. The workspace is reused across invocations unless
+    #     --fresh is passed, so a conductor that dies before writing anything -- a
+    #     dropped network, a killed CLI -- leaves the *previous* occupant's STATE.md,
+    #     plans/ and solver.py exactly where they were. Guards 3a and 3b are both
+    #     conditioned on `status == "completed"` and so cannot see it, and step 4
+    #     below would grade those artifacts and file a confident score under this
+    #     run's id. Measured 2026-11-11: an API outage mid-run on
+    #     sde_sciml_weak_noncommutative produced `phase: complete, best_score: 10`
+    #     read from a step-8 smoke-test plant written the previous day, and the
+    #     harness then verified that plant and passed it. Detect by age, refuse to
+    #     grade, and say which file gave it away.
+    stale = (t_launch is not None
+             and pipeline.get("state_mtime") is not None
+             and pipeline["state_mtime"] < t_launch)
+    if stale:
+        age_s = t_launch - pipeline["state_mtime"]
+        run["status"] = "stale_workspace"
+        run["note"] = (
+            f"STATE.md predates this run by {age_s / 60:.0f} min: the conductor wrote "
+            f"nothing and the workspace still holds an earlier exercise's artifacts. "
+            f"NOT graded -- re-run with --fresh, or clear "
+            f"{os.path.relpath(workspace_dir)}"
+        )
+
+    #     The --fresh variant of the same hole: that flag clears STATE.md before the
+    #     conductor starts, so a conductor that writes nothing leaves *no* state
+    #     rather than stale state. There is then nothing to grade, and `phase: None`
+    #     is not a result either.
+    no_state = (not stale and t_launch is not None
+                and pipeline.get("state_mtime") is None)
+    if no_state:
+        stale = True                      # same treatment: do not grade, say why
+        run["status"] = "no_state"
+        run["note"] = ("the conductor wrote no STATE.md at all -- it failed before "
+                       "Phase 1, or its workspace was cleared and never refilled. "
+                       "NOT graded.")
+
+    # 3d. An unfinished run is still a real reading of this run's own work, so it is
+    #     graded -- but it is not a finished pipeline result and must never be read as
+    #     one. `graded_incomplete` is what a table filters on.
+    if not stale and pipeline.get("phase") not in (None, "done", "complete", "blocked"):
+        run["graded_incomplete"] = True
+        run.setdefault("note", None)
+        run["note"] = ((run["note"] + " | ") if run["note"] else "") + (
+            f"conductor left phase={pipeline.get('phase')!r}: graded, but this is a "
+            "partial run, not a pipeline result")
+
     # 4. independent verification, through the same sandbox the baseline uses.
     # Both sides now execute solver.py identically -- fresh subprocess, one wall-clock
     # budget, the same import policy -- so a pipeline-vs-baseline comparison of either
@@ -365,7 +424,10 @@ def process(problem, args):
     # 2.4%, and after the three boundary fixes it reproduces the inline verdict on all
     # 34. --no-verify-sandbox restores the old inline path.
     verify_kw = _verify_kwargs(args)
-    verify = V.verify_problem(problem, workspace_dir, **verify_kw)
+    if stale:
+        verify = {"status": "skipped", "note": run["note"], "passed": None}
+    else:
+        verify = V.verify_problem(problem, workspace_dir, **verify_kw)
 
     # 5. the pipeline's OWN verdict on itself, computed by the kernel rather than
     #    parsed out of prose an agent wrote about its own work. Recorded beside the
@@ -373,7 +435,7 @@ def process(problem, args):
     #    actually correlate with being right, and does `self_convergence` ever hide an
     #    OVERCLAIM? Nothing inside the pipeline can answer that about itself, and on
     #    the no-closed-form suite it is the measurement the suite exists to produce.
-    kernel = (None if getattr(args, "skip_kernel", False)
+    kernel = (None if (stale or getattr(args, "skip_kernel", False))
               else kernel_metrics(V.best_plan_dir(workspace_dir)))
 
     rec = {
@@ -393,7 +455,7 @@ def process(problem, args):
     #    three times -- verify.py on the plans the conductor did *not* pick -- and
     #    each time it produced the finding. `wrong_plan_won` is the number F2 and F3
     #    exist to drive to zero, and it is invisible in a winner-only record.
-    if not getattr(args, "skip_plans", False):
+    if not (stale or getattr(args, "skip_plans", False)):
         rec["harness_by_plan"] = grade_every_plan(
             problem, workspace_dir, rec, verify, kernel,
             rerun_kernel=not getattr(args, "skip_kernel", False),

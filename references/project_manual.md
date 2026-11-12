@@ -153,7 +153,12 @@ with a Dynkin `z` of ~1500 and feedback telling the author to raise `num_paths`.
   abstentions are priced differently on purpose, and `verification_manual.md` §23 gives the
   argument: the order study measures the *scheme*, and something else can measure that; Dynkin
   measures the *equation*, and nothing else can
-- **8**: the variance passes, the mean is slightly above threshold
+- **8**: the variance passes and something else folded into `moments_ok` did not — the mean, a
+  declared cross moment, or a declared `terminal_law`'s shape test. The row names which one;
+  it used to name the mean for all of them, which mislabelled two plans whose means were
+  46x and 67x inside tolerance and whose terminal-law KS test was what missed. Note what a
+  `terminal_law` miss does and does not mean: it is a *distributional* check, so a scheme
+  that is strictly more accurate path by path can still fail it
 - **4**: the variance fails, the code ran cleanly
 
 Until 2026-10-15 this rubric read only the two moment thresholds and the MC resolution, and **not**

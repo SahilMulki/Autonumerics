@@ -121,6 +121,53 @@ CONSTRUCTED = (re.compile(r"^(mean|variance)_[XYZ]?_?(from|expression|value_at_T
 #: guard rather than a freeze. Each entry is a decision, and two of them name the
 #: step that will remove them.
 UNREAD = {
+    # --- invented by a formulator, 2026-11-11: the pathwise vocabulary gap -----
+    # These three are one finding, not three. The sciml suite grades a *pathwise*
+    # relative strong error, `evaluation_thresholds` has no key that accepts such a
+    # bound, and both formulators that met the problem said so in their own
+    # `ambiguities` (M01's R4/R17, M06's R19/R21: "genuine vocabulary gap"). Having
+    # no key, M06's formulator wrote the whole thing into fields it coined -- it even
+    # went and *measured* the convergence table itself while writing the spec. So the
+    # evidence the kernel needed to rank those plans was computed, written down, and
+    # read by nothing. See plan-sciml-benchmark.md §10a; the repair is a threshold key
+    # for a pathwise strong error, which is a cross-suite change and not these tests'.
+    "pathwise_exact_solution": (
+        "sde_sciml_stiffquad_mild, inside analytic_moments: "
+        "'X(t) = np.tanh(np.arctanh(X_0) - alpha*t + beta*W(t))'. The closed form "
+        "problem.md says exists without printing it, transcribed by the formulator so "
+        "the spec would at least *carry* it. Unread because the kernel's analytic "
+        "route is moment-based: it evaluates `mean_expression` and "
+        "`variance_expression`, and has no consumer for a pathwise map against which "
+        "terminal states could be compared path by path. A consumer for this field is "
+        "the pathwise-strong-error check the suite wants and the kernel lacks"),
+    "mean_check_applies": (
+        "sde_sciml_stiffquad_mild, inside analytic_moments: 'abs(mean) = 0.0488 > "
+        "near_zero_mean_threshold = 0.01, so the mean tolerance is live and must not "
+        "be skipped'. A note to a reader about a decision `compare_moment` already "
+        "makes from `near_zero`, so it is a (correct) restatement rather than a "
+        "declaration -- unread, and nothing is missing"),
+    "measured_reference_errors": (
+        "sde_sciml_stiffquad_mild, inside verification: a six-level relative "
+        "strong-error table the formulator measured itself at 20 000 paths "
+        "(Euler-Maruyama 2.637e-2 down to 1.640e-3, Milstein 2.519e-2 down to "
+        "7.799e-4, 'a clean factor of 2.00 per halving, i.e. strong order 1.00'). "
+        "This is the most instructive unread field in the registry: it is exactly the "
+        "quantity the suite grades on and the quantity no `evaluation_thresholds` key "
+        "accepts, so a formulator with nowhere to put it put it in prose. Not to be "
+        "consumed as declared -- a solver-adjacent agent's own measurement cannot "
+        "grade that agent -- but it is the field that says what key is missing"),
+    "terminal_moments_at_T": (
+        "sde_sciml_weak_noncommutative, top level: the three graded functionals' "
+        "exact values at T (0.049787068367863944, 11.213075341441485, "
+        "3668.4138609506863) with the closed forms they came from and a cross-check "
+        "against solve_ivp on the moment ODE at 3.8e-15 / 3.7e-12. The fifth "
+        "instance of the same gap and the clearest: the problem's own statement "
+        "both denies and asserts a terminal-moment reference (the formulator logged "
+        "it as R22), so having derived exact references for the quantities the "
+        "problem is graded on, it had nowhere declared to put them. The kernel's "
+        "functional route takes `functionals[].reference` per functional; a block of "
+        "values keyed by functional name is the same information in an undeclared "
+        "shape, so the repair here is the prompt and the corpus, not a consumer"),
     # --- invented by a formulator, 2026-11-06 ---------------------------------
     # Two fields the BENCHOP SDE run coined for itself that are not prose and not
     # covered by a VALUE_SUBTREES entry. Recorded rather than consumed, with what
@@ -359,15 +406,37 @@ def test_a_docstring_mention_is_not_a_consumer():
     assert "milstein_eligible" in source
 
 
+#: Entries whose declaring spec lives in ``workspace/`` under a slug a pipeline run
+#: regenerates, so the field is present only while that run's spec is staged. They
+#: are exempt from the liveness check below: an agent re-run on the same problem
+#: coins what it coins, and a recorded reason that outlives its example is still the
+#: answer to "why does this field have no consumer" the next time one appears.
+REGENERATED = {"pathwise_exact_solution", "mean_check_applies",
+               "measured_reference_errors", "terminal_moments_at_T"}
+
+
 def test_the_unread_table_names_only_fields_some_live_spec_declares():
     """An exemption for a field no spec carries is dead weight that reads as a known
     gap. Two fields here are PDE-side or stale-spec-side by design, so the assertion
-    is scoped to the SDE census this file guards."""
+    is scoped to the SDE census this file guards.
+
+    **[rev, sciml 10a]** ``REGENERATED`` is excluded. The fields in it were coined by
+    a formulator inside a `workspace/` spec that the next run on that problem
+    rewrites, so pinning their liveness makes this test fail whenever the pipeline is
+    re-run and the agent words things differently -- the third stale-census failure
+    in this suite in two days, all three from asserting equality against a directory
+    that runs mutate (a fourth followed the next day, from M09's
+    ``terminal_moments_at_T``). The registry's purpose is the *reason*, and a reason keeps its
+    value after its example is overwritten."""
     declared = set()
     for path in sorted(glob.glob(os.path.join(WORKSPACE, "*", "problem_spec.json"))):
         _declared_keys(json.load(open(path)), out=(d := {}))
         declared |= set(d)
-    assert set(UNREAD) <= declared, sorted(set(UNREAD) - declared)
+    assert (set(UNREAD) - REGENERATED) <= declared, sorted(
+        (set(UNREAD) - REGENERATED) - declared)
+    # REGENERATED is an exemption list, not a dumping ground: every name in it has to
+    # be in the registry it exempts.
+    assert REGENERATED.issubset(UNREAD), sorted(REGENERATED - set(UNREAD))
 
 
 # --- the third direction: read by the ranker, never carried to it -------------

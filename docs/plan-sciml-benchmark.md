@@ -1,9 +1,19 @@
 # SciMLBenchmarks (SDE) — External Benchmark Adoption Plan
 
-**Status:** **researched 2026-11-09; rev 1 the same day; rev 2–5 2026-11-10 — steps 1–9 of §7
-done, step 10 probed on one problem. The suite exists, is calibrated, is smoke-tested end to end,
-has its comparator numbers and has its C0 baseline in both arms; what remains is the other eight
-pipeline runs (step 10, ~3 h per arm) and the optional Phase 2 (step 11).** Rev 5
+**Status:** **researched 2026-11-09; rev 1 the same day; rev 2–5 2026-11-10; rev 6–7 2026-11-11 —
+steps 1–9 of §7 done, step 10 probed on three problems. The suite exists, is calibrated, is
+smoke-tested end to end, has its comparator numbers and has its C0 baseline in both arms; what
+remains is the other six pipeline runs (step 10, at a per-problem timeout above the 3600 s that
+cut M09) and the optional Phase 2 (step 11).** Rev 6–7 `[2026-11-11]` diagnose the M01 probe and
+run the other two. **`wrong_plan_won: true` on all three problems, by three different
+mechanisms** (§10a): on M01 the scores separated and did so backwards, decided by a terminal-law
+KS statistic that a *pathwise-exact* solver also fails on the run's own increments; on M06 and M09
+no score separated anything (10/10/10 and 8/8/8) and the winner was chosen by plan **index**,
+shipping plans 5.1× and 3.3× worse than the best available. So the inversion is a property of the
+SDE evaluator, not of the pathwise route, and it does not need a failing gate — a tie is enough.
+Three more harness defects came out of these runs (§7a defects 8–10): a dead workspace graded as a
+live run, a `score_cap` that is recorded and never applied, and the formulator-written
+`num_paths` that the uncapped violation was about. Rev 5
 `[2026-11-10]` closes the comparator track and the smoke test: §3e (the pinned environment — both
 upstream manifests instantiate verbatim, and the three published `BoundsError` cells §1a.2 names now run), §3f
 (`comparators.json`, 279 rows over 19 schemes), §5a (the EM anchor, three numbers rather than one)
@@ -1488,7 +1498,7 @@ scheme-matched arm.
 | 7 | ~~**Calibrate every gate both ways**~~ **DONE 2026-11-10, as part of step 6 — §2b.** It could not be deferred: three entries were *vacuous* until calibration found them, so authoring an entry and calibrating it turned out to be one act rather than two. Every gate separates, the narrowest by **4.4x**, none was moved after the fact, and **two of this row's own proposed controls had to be replaced** because they do not separate (§2b findings 3 and 4). Original text, kept so the plan can be graded against it: calibrate every gate both ways, per the repo rule: a correct scheme clears it and a plausible wrong one fails it, at the resolution the entry ships with, with the separation factor recorded and **no gate moved after seeing where a scheme lands**. One-decision wrong variants: a dropped Milstein correction on S03; `β²` omitted from the S06–S08 drift (`[L]` the _only_ difference between the library's Itô and Stratonovich variants); a single Wiener increment shared by both components of S09's non-commutative noise | every gate separates; the narrowest factor recorded; failures recorded rather than re-cut                                                                                                                                                                                                                                                                                                           |
 | 8 | ~~Smoke-test the suite without spending a pipeline call (the step that found four defects on BENCHOP `[R]`)~~ **DONE 2026-11-10 — §7a** | ✅ met, as **97 automated assertions** over the nine staged briefs, and it found four defects here too — plus a fifth the fix for the second one exposed. The per-plan ranking axis was **blank on eight of nine entries**; **nothing in the repo had ever rendered the work-precision series**, which is this suite's primary axis; the report named two suites; and the per-plan record did not say which scheme each plan chose, which is step 10's own acceptance line. One correction to the row: *every* brief cannot state the `dW` shape, because M09 is handed no `dW` |
 | 9 | ~~Run the C0 one-shot baseline on S01–S09, both arms~~ **DONE 2026-11-10 — §9a** | ✅ met: C0@Opus, naked, 9 units per arm, **18/18 PASS** at $0.96 and $1.06. The arms are now genuinely different experiments (§7a defect 6) and the data says so — **0 of 8 degenerate ladders in the scheme-matched arm, 8 of 8 in the unrestricted one**, which confirms §10's prediction 2 at its maximum in one arm and falsifies its premise in the other: told plainly that transcription is detected and excluded, Opus wrote a discretised scheme nine times out of nine. The deterrent measured is the *sentence*, not the detector. Also unpredicted: the baseline ships a stochastic Heun predictor–corrector on two entries, reaching 5.4e-8 on M02 — better than §3f's measured `SRA1` at the same step — with no manual in the prompt |
-| 10 | Run the pipeline (C2), both arms — **PROBED on one problem 2026-11-10, §10a; the other eight not run** | ⏳ one run measured, not met. M01 scheme-matched: **19.6 min**, `VERIFIED_PASS`, 2.06% against the 9.5% gate — so ~3 h for the arm and ~6 h for both. The row's own acceptance line is met by that run (`scheme_family` per plan, as §7a defect 4 made possible) and it immediately produced the run's most interesting result: **`wrong_plan_won: True`** — the conductor shipped Euler–Maruyama at 0.217× gate over its own Heun-SRK plan at 0.012×, a 17.7× gap against a 0.0048 noise margin, and scored the worse plan 10 against the better ones' 8. That field was `null` before §7a defect 1 was fixed. The probe also exposed a vocabulary gap: there is no SRK family in `SDE_FAMILIES`, so an SRK plan declares `other` and its work axis falls back to 1 stage — understating its own cost, which the report now labels a lower bound |
+| 10 | Run the pipeline (C2), both arms — **PROBED on three problems (M01 2026-11-10, M06/M09 2026-11-11), §10a; the other six not run** | ⏳ one run measured, not met. M01 scheme-matched: **19.6 min**, `VERIFIED_PASS`, 2.06% against the 9.5% gate — so ~3 h for the arm and ~6 h for both. The row's own acceptance line is met by that run (`scheme_family` per plan, as §7a defect 4 made possible) and it immediately produced the run's most interesting result: **`wrong_plan_won: True`** — the conductor shipped Euler–Maruyama at 0.217× gate over its own Heun-SRK plan at 0.012×, a 17.7× gap against a 0.0048 noise margin, and scored the worse plan 10 against the better ones' 8. That field was `null` before §7a defect 1 was fixed. The probe also exposed a vocabulary gap: there is no SRK family in `SDE_FAMILIES`, so an SRK plan declares `other` and its work axis falls back to 1 stage — understating its own cost, which the report now labels a lower bound. **Diagnosed rev 6:** the selection was made by *one* of fifteen checks, the terminal-law KS statistic, which Milstein lost by **1.1% of the critical value** — and on the run's own increments a **pathwise-exact** solver fails that same gate at 1.17×, worse than the Euler–Maruyama that passed it. The gate is not ranking schemes. Both losers also carry an incorrect reason string naming the mean, which passed 46–67× inside tolerance. **Probed further rev 7:** M06 and M09 both read `wrong_plan_won: true` as well, by a *different* mechanism — on both, every plan scored the same (10/10/10 and 8/8/8) and the winner was chosen by plan **index**, shipping a plan 5.1× and 3.3× worse than the best. On M09 the shipped plan is the only one of three the harness does not grade 10, and the tie was manufactured by a single `null` in a declared `terminal_law` list disabling the rubric's top two rows for every plan on the problem. So the defect is the SDE evaluator's, not the pathwise route's: a tie is enough, and ties are the common case. M06 ran 21.5 min and passed; M09 hit the 60-min timeout mid-evaluation, so the per-problem budget must be raised. Three more harness defects fell out of these runs (§7a defects 8–10) |
 | 11  | Phase 2 **if it is still wanted**: H5, H6, H7, then `additivesystem` → `bruss` → `lorenz`. §4a.ii drops `oscilreact`, `oval2` and stoch-heat                                                                                                                                                                                                                                                                                                                                                                                            | reference agreement two orders below the gate, with the second integrator named                                                                                                                                                                                                                                                                                                                     |
 
 **Steps 1–10 are the plan. Step 11 is a second plan wearing a row**, and §4a.ii has now removed its
@@ -1496,7 +1506,7 @@ three most interesting problems, which strengthens that reading rather than weak
 
 ---
 
-### 7a. Step 8 as implemented — the smoke test, and seven defects `[rev5 2026-11-10, N]`
+### 7a. Step 8 as implemented — the smoke test, and ten defects `[rev5 2026-11-10; defects 8-10 rev7 2026-11-11, N]`
 
 The step exists because the same step found four defects on BENCHOP `[R]`. It found four
 here, a fifth while fixing the second, a sixth when step 9 was launched and a seventh when
@@ -1727,6 +1737,53 @@ refusing two points and refusing a degenerate series, the section rendering a fu
 byte-for-byte, and a one-point series rendering no section at all.
 `test_work_precision.py` gains **I6**, two tests on the free point's work axis.
 
+#### Three more defects, found by the step-10 probe runs `[rev7 2026-11-11]`
+
+The M06/M09 probes took three attempts — the first lost to an API/DNS outage
+(`ENOTFOUND` on both problems), the second to a usage limit 21.9 minutes into M06. The
+two lost attempts are the only reason the first of these was found at all.
+
+**Defect 8: a dead workspace was graded as a live run.** Attempt 1 returned `RUN ERROR`
+on both problems and M09's record still read `phase: complete, best_score: 10`,
+`verified: true`, `passed: true`. It had graded the **step-8 smoke test's planted
+`STATE.md` and `solver.py`, dated the previous day**. The existing guards 3a/3b are
+conditioned on `run["status"] == "completed"`; the status was `"error"`, so they never
+fired, and `clear_pipeline_outputs` only runs under `--fresh`. A conductor that dies
+before writing anything therefore inherits whatever the last run left in
+`workspace/{slug}` and reports it as this run's result — the one failure mode that
+produces a *passing* record out of a run that did nothing.
+
+`summarize_pipeline` now records the mtime of the `STATE.md` it read, and `process`
+refuses to grade a workspace whose state predates the launch (`status:
+stale_workspace`), skipping verify, kernel and `harness_by_plan` rather than recording
+them from stale files. `--skip-run` is exempt, because re-grading old state is its
+purpose. A first fix left a hole of its own — under `--fresh` there is no stale
+`STATE.md`, so a conductor writing nothing at all would fall through the check — closed
+by a second branch (`status: no_state`). A non-terminal phase is still graded, but
+stamped `graded_incomplete` with a note, which is what M09's timed-out record carries
+below. **Nine tests**, `test_orchestration.py` section **E9**.
+
+**Defect 9: `score_cap` is recorded and never applied.** M06's verified record carries
+an error-severity ledger violation and `score_cap: 3` — and grades **10 /
+`VERIFIED_PASS`**. `ledger_audit` sets the cap (`benchmark/verify.py:2489`), `run.py:504`
+folds it into the record, one wiring test asserts the folding, and **nothing reads it to
+bound a score or a verdict**. The docstring says "the score is capped and the review
+names the ledger entry"; only the second half happens. Recorded, not fixed: the fix
+changes scores on a suite whose baseline is already measured, so it belongs with the
+step-11 rework rather than between two probe runs.
+
+**Defect 10: the violation defect 9 failed to apply is the formulator's, not the
+solver's.** `audit_sde_output` compares `run_meta.num_paths` against
+`evaluation_thresholds.num_paths` (`verifylib/audit.py:162`). M06 is graded by the suite
+at `num_paths: 1000` (`benchmark/problems.py:4445`); its formulator wrote
+`num_paths: 100000` into the spec it hands the solver, and put the real 1000 in
+`graded_num_paths` — a field that means the **larger** count, used for the kernel's
+memory projection (`agents/formulator.md:215`). Across the twenty live SDE specs,
+`graded_num_paths >= num_paths` everywhere except the two SciML entries, which are the
+only two where it was read as "the count that is graded". So the audit was right, it was
+pointing at the spec rather than the run, and the cap that would have made it visible is
+defect 9.
+
 ---
 
 ## 8. Leakage `[N]`
@@ -1885,7 +1942,7 @@ Written before the runs so the plan can be graded rather than re-narrated:
 
 ---
 
-### 10a. Step 10, probed on one problem `[rev5 2026-11-10, N]`
+### 10a. Step 10, probed on three problems `[rev5 2026-11-10; diagnosis rev6, probes M06/M09 rev7 2026-11-11, N]`
 
 One pipeline run on M01, scheme-matched arm, to measure what the step costs before
 committing nine of them: **19.6 minutes of wall clock**, `VERIFIED_PASS`, verified score
@@ -1956,6 +2013,258 @@ with a strong-order floor beside it — which is a reasonable translation and is
 quantity the harness grades, so the pipeline's self-score and the harness's verdict agree
 here by construction rather than by measurement. That is worth knowing before nine runs
 are read.
+
+#### What actually decided the run: one check, at its own noise floor
+
+The three plans differ on **exactly one** of the kernel's fifteen checks.
+`constraints_ok`, `invariants_ok`, `resolved`, `richardson_stable`,
+`reported_moments_agree` and `provenance_as_expected` pass on all three, and so do
+*both* moments, with room to spare:
+
+| plan | mean rel err (tol 5%) | var rel err (tol 20%) | KS `D` | critical | ratio | `terminal_law_ok` | `moments_ok` | score |
+| ---- | --------------------- | --------------------- | ------ | -------- | ----- | ----------------- | ------------ | ----- |
+| **1-euler-maruyama** | 0.089% | 1.12% | 0.004602 | 0.006074 | **0.76×** | **true** | true | **10** |
+| 2-milstein | 0.075% | 1.35% | 0.006141 | 0.006074 | **1.011×** | false | false | 8 |
+| 3-heun-srk | 0.107% | 1.71% | 0.006754 | 0.006074 | **1.112×** | false | false | 8 |
+
+The selection was made by the terminal-law Kolmogorov–Smirnov statistic
+(`verifylib/kernel/sde/laws.ks_standardized`), and **Milstein lost it by 1.1% of the
+critical value**.
+
+**And the reason string the two losers carry is wrong.** Both read *"the variance
+passes; the mean is slightly above threshold"* — `verifylib/kernel/score.py:458` —
+while their means sit 67× and 46× *inside* tolerance. That row is a fallback, not a
+diagnosis: `moments_ok` is a conjunction that includes `terminal_law_ok`, and the
+rubric reads `orders_ok`, `invariants_ok` and the Dynkin gap only *inside*
+`if passed(moments_ok) and passed(resolved) and passed(constraints_ok)`
+(score.py:427). A plan that fails only the law test falls past every explanatory row
+to the variance fallback and is told it failed on the mean. `3-heun-srk` also has
+`orders_ok: false`, and that is swallowed by the same guard — two different failures,
+one identical and incorrect sentence.
+
+#### The statistic reproduces exactly, and a pathwise-*exact* solver fails it
+
+`docs/sciml-benchmark-data/ks_gate_resolution.py` re-runs the kernel's own test —
+same standardization, same `KS_C95 = 1.3581`, same n = 50 000, same `dt = 0.0016`,
+increments drawn as one `(paths, steps)` block as every graded solver draws them — on
+four solvers sharing one Brownian path. Three of them are the run's plans and the
+fourth is the pathwise-exact map `X_T = X_0 exp((μ − σ²/2)T + σ W_T)`. At seed 42 it
+reproduces the run to six digits, which is what licenses the fourth row:
+
+| solver at seed 42 | rel strong err | KS `D` | verdict |
+| ----------------- | -------------- | ------ | ------- |
+| **exact** (zero error, same increments) | 0 | **0.007133** | **FAIL, 1.174×** |
+| euler-maruyama | 2.18e-2 | 0.004602 | pass, 0.758× |
+| milstein | 2.54e-3 | 0.006141 | FAIL, 1.011× |
+| heun | 1.18e-3 | 0.006754 | FAIL, 1.112× |
+
+**On the run's own draw, a solver with no error at all fails the gate — and fails it
+worse than the Euler–Maruyama that passed.** The gate did not rank the three schemes
+badly; it is not ranking schemes at all.
+
+Over nine seeds:
+
+| reading | over 9 seeds |
+| ------- | ------------ |
+| KS order == pathwise-error order | 6/9 |
+| KS order == exactly **reversed** | 3/9 |
+| the configuration this run produced (EM passes, both better schemes fail) | **1/9** |
+| seeds where the **pathwise-exact** solver fails the gate | **5 of 9** (42, 3, 5, 7, 8) |
+| the exact solver's own KS `D` | 0.0035–0.0138, against a bar of 0.0061 |
+| between-scheme spread `\|D(milstein) − D(em)\|` | 0.00062–0.00154, i.e. **10–25% of the bar** |
+
+The schemes separate by a tenth to a quarter of the critical value; the *draw* moves
+the statistic by four times the critical value. The run's outcome was a coin landing
+on its edge, and it is 1-in-9, not systematic — the earlier reading, that the gate
+penalises accuracy, was wrong in that direction and is corrected here.
+
+#### Why, with the number
+
+`laws.py`'s docstring is explicit that the sample is standardized to remove the
+location and scale bias "which is what the `O(dt)` error mostly is", leaving shape.
+That is right, and its finding 4 is real — three defect classes pass every other SDE
+check. But the standardization divides by an **estimate**, and on this law that
+estimate is the noisy quantity. The relative standard error of a sample standard
+deviation is `sqrt((κ − 1)/4n)`; M01's terminal lognormal has excess kurtosis 47.65,
+so `κ = 50.65` and at n = 50 000 the divisor itself carries **1.58%** error. Measured
+over the nine seeds the exact sample's `|sd/sd_exact − 1|` runs 0.04%–2.94%, as
+predicted, and its KS `D` correlates with that error at **+0.70**. A random scale
+error is not removed by the standardization — it *is* the standardization — and here
+it dominates the shape signal the test is for.
+
+Two consequences, both outside this plan's scope and recorded for the same reason the
+vocabulary gap is:
+
+1. `KS_C95/√n` is the distribution-free Kolmogorov value, and this statistic is not
+   distribution-free once its divisor is estimated from the sample. The honest bar is
+   a parametric-bootstrap critical value: sample the declared law at the same `n`,
+   standardize the same way, take the 95th percentile. That is one cheap simulation
+   per spec and it is *exact* rather than asymptotic.
+2. Until then, `terminal_law_ok` should be **reported and not conjoined into
+   `moments_ok`** — the same treatment `orders_ok`'s abstention already gets at
+   score.py:447, and for the same stated reason: it is a property of the kernel's
+   estimator, not of the solver.
+
+`laws.py`'s own calibration table came within a hair of finding this — it records
+correct Euler–Maruyama on GBM at `D = 0.00580` against `crit = 0.00607` and calls it
+"pass, by a hair". What it never ran was the exact sampler as the control, which is
+the row that shows the hair is noise.
+
+#### The plan also lost for converging too fast
+
+`3-heun-srk` declared `expected_strong_order: 0.5` and measured **0.983** (median
+0.970, se 0.015) over `dt ∈ {0.02, 0.01, 0.005}`. The band is two-sided at ±0.4, so
+`[0.1, 0.9]`, and 0.983 is *above* it: `strong_ok: false`. A Stratonovich Heun on
+scalar commutative noise is strong order 1.0, so the plan-creator under-declared and
+the two-sided band charged it for the discrepancy. The band is right to be two-sided
+— a scheme converging faster than its design order usually means the error estimate
+is broken, not that the scheme is better — but on a *conservatively declared* plan it
+converts a correct result into a failed check. Had `moments_ok` passed, this alone
+would have capped the best of the three plans at 8.
+
+#### The pipeline's own self-estimate is the variance error, not an accuracy
+
+`STATE.md` records `est_err` 1.12e-2 / 1.35e-2 / 1.71e-2 against measured relative
+strong errors of 2.06e-2 / 2.48e-3 / 1.16e-3 — an ordering that is exactly reversed.
+That is not a bad accuracy estimate; it is **not an accuracy estimate**:
+`estimated_rel_error` is byte-identical to `variance_rel_err` in all three
+`evaluation.json`s. At 50 000 paths every one of the three sits below its own
+`mc_se_rel` of ~0.0316, which the conductor noticed and logged under
+`unmeasured_accuracy` for two of the three plans. The pipeline had no number
+describing how accurate any of its plans was, said so in its own record, and ranked
+them anyway — by `score`, per `ranker: 'decided_by: score'`.
+
+#### And the two better plans were never finished
+
+`notes` in `STATE.md`: *"winner early-exit fired in round 1 (Path A, certified: true);
+plans 2 and 3 left unfinished at iter 1, neither plateaued nor at max_iter."* Both
+better plans are parked at `state: await_solver`. The early exit is a cost control and
+it is triggered by `certified`, which here means "passed a KS test at 0.76× of a bar
+an exact solver fails at 1.17×". One check at its noise floor both selected the
+winner and stopped the work on its competitors.
+
+#### What this changes about step 10
+
+Nothing about the suite, and the headline it was built for still stands: the harness
+graded all three plans correctly, ranked them correctly (`wrong_plan_won: true`, 17.7×
+against a margin of 0.0048), and the comparator table is unaffected. What changes is
+what the remaining runs *measure*. The step-10 table will read "the pipeline shipped
+the worst of its own plans" on every entry whose spec declares a `terminal_law` the
+kernel can build, and that sentence will be about `laws.py`'s critical value rather
+than about scheme choice. Both must therefore be reported in the same table: the
+plan the pipeline shipped, and the plan its own harness-graded errors say it should
+have shipped. `harness_by_plan` now carries both, which is §7a defect 1.
+
+~~The two probes the next runs are for — **M06** (tightest gate margin, 0.417×, and
+stiff) and **M09** (the only functional-route entry, so a different instrument
+entirely) — test exactly one thing: whether this is a property of the pathwise route
+or of the SDE evaluator. M09 is the sharper of the two, because its gates are moment
+gates and it has no pathwise error for the vocabulary to be missing.~~ **Both ran — see below. The answer is the evaluator.**
+
+#### The answer: three problems, three mechanisms, one defect `[rev7 2026-11-11]`
+
+Both probes ran. **`wrong_plan_won: true` on all three problems, by three different
+routes, only one of which is the KS gate.** The question the probes were for — pathwise
+route, or SDE evaluator — resolves to the evaluator:
+
+| | route | plans | pipeline scores | winner / best by harness | ratio | margin | how the winner was chosen |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **M01** | pathwise | 3 | 10 / 8 / 8 | `1-euler-maruyama` / `3-heun-srk` | **17.7×** | 0.0048 | scores *separated*, by a gate reading its own estimator's noise |
+| **M06** | pathwise | 3 | **10 / 10 / 10** | `1-euler-maruyama` / `3-trapezoidal-drift-milstein` | **5.1×** | 0.0111 | flat tie — plan **index** |
+| **M09** | functional | 3 | **8 / 8 / 8** | `1-euler-maruyama-antithetic` / `2-exact-lognormal-integrating-factor` | **3.3×** | 0.1468 | flat tie — plan **index** |
+
+The common factor is not the gate, it is that **the pipeline's scores do not separate
+plans its own harness separates cleanly**, and that when they tie the winner is whichever
+plan was written first. On M01 one check out of fifteen did the separating and did it
+backwards; on M06 and M09 nothing separated them at all and the tie-break is `plans/`
+in lexical order. All three shipped the worst or near-worst of three plans.
+
+**M06 — `PASS (verified)`, 21.5 min, score 10, strong error 0.743% against the 1.5%
+gate.** Three plans, three iterations, every one certified at 10:
+
+| plan | declared family | design order | kernel est. err | strong err / gate |
+| --- | --- | --- | --- | --- |
+| **1-euler-maruyama** | `euler-maruyama` | 0.5 | 1.43e-2 | **0.4955** — winner |
+| 2-milstein | `milstein` | 1.0 | 1.43e-2 | 0.4171 |
+| 3-trapezoidal-drift-milstein | `milstein` | 1.0 | 2.55e-3 | **0.0968** |
+
+This is the cleanest demonstration of the defect, because here **no gate failed
+anybody**. M06 deliberately declares no `terminal_law` — "tanh(Normal) is not a law the
+kernel implements" — so the statistic that decided M01 cannot fire, and with every plan
+certified at 10 the conductor had nothing to choose on. The semi-implicit plan, the one
+that solved the actual stated challenge (`sde_manual.md` rule 3 calls implicit schemes
+"not yet supported", and it built a trapezoidal-drift Milstein anyway), is **5.1× more
+accurate** than the Euler–Maruyama that shipped, and placed third by filename. Note also
+that plans 1 and 2 report an *identical* self-estimate, 1.43e-2, while their true errors
+differ by 19% — §10a's note that the self-estimate is a variance error, not an accuracy,
+again.
+
+**M09 — `RUN ERROR`, timed out at 60.0 min, `graded_incomplete: true`, phase
+`running`.** This is the sharpest result of the three and it is worth stating carefully,
+because the pipeline's own grade is a partial run while the harness numbers are complete:
+
+| plan | declared family | worst functional err | / its gate | harness verified score | pipeline score |
+| --- | --- | --- | --- | --- | --- |
+| **1-euler-maruyama-antithetic** | `euler-maruyama` | 1.50e-2 | **0.5490** — winner | **8** | 8 |
+| 2-exact-lognormal-integrating-factor | `exact-transition` | 3.317e-3 | 0.1658 | **10** | 8 |
+| 3-weak-order-2-ito-taylor | `other` | 3.318e-3 | 0.1659 | **10** | 8 |
+
+The harness grades the winner **8** and the other two **10**, on gates of 0.020 / 0.016 /
+0.029 for the three declared functionals. So on M09 the pipeline did not merely rank its
+plans wrongly — it shipped the only one of the three its own harness does not score 10,
+and the flat tie that let it do so was **manufactured by a problem-wide cap**:
+
+- `verification.terminal_law` was declared `[{lognormal}, null]`. `laws.build(None)`
+  returns `"terminal_law is not an object"` (`laws.py:118`), that component reports
+  `unresolved`, and `_distribution` folds **any** `unresolved` into
+  `moments_ok: "unavailable"` (`driver.py:1004-1005`) — which makes the rubric's 9 and 10
+  rows unreachable for **every plan on the problem**. One `null` in a list disables the
+  top of the rubric for all of them. All three evaluators diagnosed this independently;
+  the conductor confirmed it against the kernel source and re-dispatched the formulator,
+  and the spec on disk now carries a one-entry list, so the repair happened *inside* the
+  run. The X2 law is a non-trivial mixture and is genuinely not declarable — the kernel
+  only checks declared entries, so dropping the placeholder loses nothing.
+- A second, independent 8-cap on plans 1 and 3: the two-sided strong-order band
+  (0.5 ± 0.4) failed them for **overshooting** — measured 0.973 and 1.049 against a
+  declared 0.5 — which `references/project_manual.md` itself calls noise rather than a
+  defect, and which `ranking.order` no longer charges. Same shape as M01's `3-heun-srk`
+  losing for converging too fast.
+
+Two further observations from M09's record. The conductor logged **two more vocabulary
+gaps** of its own: `R22`, a problem statement that both denies and asserts a
+terminal-moment reference (resolved by deriving the moments and marking them
+non-authoritative), and `R25`, *"no `evaluation_thresholds` key expresses a
+cross-path-count non-identity test"* — the check that a value identical at 100 000 and
+25 000 paths is a constant rather than an estimate is enforced **only by the external
+harness**, by no spec field. That is the third and fourth independent formulator report
+of the same class of gap — and a **fifth** turned up in the test suite afterwards: M09's
+spec carries a top-level `terminal_moments_at_T` holding the exact values of all three
+graded functionals, cross-checked against `solve_ivp` on the moment ODE at 3.8e-15, in a
+field nothing reads. Five instances, four formulators, one missing vocabulary. (It is
+also the **fourth** stale-census test failure in two days, all four from asserting
+equality against a `workspace/` directory that every pipeline run rewrites; registered
+with the others under `REGENERATED`.) And the final `kernel_metrics` re-run hit its own 900 s
+timeout, so M09's top-level `kernel` block reads `{"status": "timeout"}` and the
+per-plan `kernel_rerun.reason` fields are `null`; the per-plan `kernel` blocks from the
+run itself are intact and are what the table above uses.
+
+**The timeout is not a defect.** 60.0 min of monotonic time took 82 min of wall clock
+because the machine slept mid-run; `run_conductor` measures on the monotonic clock
+deliberately (`run.py:185`), which is the §8 finding about a laptop sleeping through a
+40-minute timeout, working as intended. What it does mean is that **one hour is not
+enough for a 2-D functional problem with three plans** — M06 finished in 21.5 min and
+M09 was still inside its third evaluation at the cut — so the step-10 budget for the
+remaining entries should be read off M09, not M06.
+
+**What the three probes change about step 10.** The §10a conclusion stands and widens:
+the step-10 table must carry both the plan the pipeline shipped and the plan its
+harness-graded errors say it should have shipped, on **every** entry, because the
+inversion does not need a `terminal_law` to happen — a tie is enough, and ties are the
+common case once more than one plan certifies. Two concrete consequences for the
+remaining seven runs: raise the per-problem timeout above 3600 s, and expect the
+"shipped the worst of its own plans" column to be populated by plan index rather than by
+any measurement.
+
 
 ---
 

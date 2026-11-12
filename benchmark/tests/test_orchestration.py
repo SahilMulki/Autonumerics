@@ -5,6 +5,7 @@ solver. Pure functions, monkeypatched where they would shell out.
 import json
 import os
 import subprocess
+import time
 
 import pytest
 
@@ -396,3 +397,167 @@ def test_a_phrase_is_anchored_only_on_word_character_edges():
     assert not pattern.startswith(r"\b"), (
         "a leading \\b beside a non-word character can never match")
     assert pattern.endswith(r"\b")
+
+
+# --- E9: a failed conductor must not be graded on the last run's leftovers --------
+# Found by running, 2026-11-11: an API/DNS outage killed the conductor on
+# `sde_sciml_weak_noncommutative` before it wrote anything, and because the workspace
+# is reused between invocations the runner read the *step-8 smoke test's* planted
+# STATE.md from the previous day -- `phase: complete, best_score: 10` -- then verified
+# that plant's solver.py and recorded it as this run's result. Guards 3a and 3b could
+# not see it: both are conditioned on `status == "completed"`, and this run's status
+# was "error". Nothing in the record said which day its artifacts came from.
+
+
+class _Args:
+    """The subset of the parsed argv that `process` reads."""
+
+    def __init__(self, **kw):
+        self.skip_run = False
+        self.fresh = False
+        self.timeout = 60
+        self.skip_permissions = True
+        self.permission_mode = None
+        self.model = None
+        self.arm = "scheme-matched"
+        self.skip_kernel = True
+        self.skip_plans = True
+        self.verify_sandbox = False
+        self.verify_timeout = 5
+        self.verify_mem_mb = 256
+        self.work_precision = False
+        self.__dict__.update(kw)
+
+
+@pytest.fixture
+def staged(tmp_path, monkeypatch):
+    """A workspace with STATE.md on disk, and a conductor that writes nothing.
+
+    Returns ``run(prob, *, age_s, phase, **argkw)``: ``age_s`` seconds of back-dating
+    on STATE.md, i.e. how long before this invocation that state was written.
+    """
+    prob = problem("sde_sciml_weak_noncommutative")
+    monkeypatch.setattr(RUN, "WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setattr(RUN.S, "write_problem_md", lambda *a, **k: None)
+    graded = {"n": 0}
+
+    def _verify(*a, **k):
+        graded["n"] += 1
+        return {"status": "ok", "passed": True, "worst_mean_rel_err": 0.0,
+                "worst_variance_rel_err": 0.0, "verified_score": 8}
+
+    monkeypatch.setattr(RUN.V, "verify_problem", _verify)
+
+    def _run(prob_or_slug, *, age_s, phase="complete", returncode=1, **argkw):
+        ws = tmp_path / prob["slug"]
+        ws.mkdir(exist_ok=True)
+        state = ws / "STATE.md"
+        state.write_text(f"---\nphase: {phase}\nbest_plan: plan-a\n"
+                         "plans:\n  plan-a:\n    iter: 1\n    score: 10\n---\n")
+        launch = time.time()
+        os.utime(state, (launch - age_s, launch - age_s))
+        monkeypatch.setattr(RUN, "run_conductor", lambda *a, **k: {
+            "status": "completed" if returncode == 0 else "error",
+            "returncode": returncode, "timed_out": False, "wall_seconds": 1.0,
+            "log": None, "limit_hit": False})
+        return RUN.process(prob, _Args(**argkw)), graded
+
+    return prob, _run
+
+
+def test_summarize_pipeline_records_when_the_state_it_read_was_written(tmp_path):
+    """The staleness check needs the age of the file, and nothing recorded it."""
+    ws = tmp_path / "slug"
+    ws.mkdir()
+    assert RUN.summarize_pipeline(str(ws))["state_mtime"] is None
+    (ws / "STATE.md").write_text("---\nphase: done\nplans: {}\n---\n")
+    mtime = RUN.summarize_pipeline(str(ws))["state_mtime"]
+    assert mtime == pytest.approx(os.path.getmtime(str(ws / "STATE.md")))
+
+
+def test_a_state_file_older_than_the_run_is_refused_rather_than_graded(staged):
+    """The measured defect: yesterday's artifacts, this run's id, a confident score."""
+    prob, run = staged
+    rec, graded = run(prob, age_s=20 * 3600)       # written ~a day before this run
+    assert rec["run"]["status"] == "stale_workspace"
+    assert graded["n"] == 0, "a stale workspace must not reach the harness at all"
+    assert rec["verify"]["status"] == "skipped"
+    assert rec["verify"]["passed"] is None
+    assert "kernel" not in rec and "harness_by_plan" not in rec
+    assert rec["verdict"] == "RUN_ERROR"
+    # The note has to be actionable: what gave it away, and what to do.
+    note = rec["run"]["note"]
+    assert "STATE.md predates this run" in note and "NOT graded" in note
+    assert "--fresh" in note and prob["slug"] in note
+
+
+def test_the_pipeline_block_still_carries_what_was_found(staged):
+    """Refusing to *grade* it is not the same as hiding it: the stale state is still
+    reported, so the record says what was on disk rather than going silent."""
+    prob, run = staged
+    rec, _ = run(prob, age_s=20 * 3600)
+    assert rec["pipeline"]["phase"] == "complete"
+    assert rec["pipeline"]["best_score"] == 10
+    assert rec["pipeline"]["state_mtime"] is not None
+
+
+def test_state_written_during_the_run_is_graded_normally(staged):
+    """The guard must key on age, not on the conductor's exit code: a run that fails
+    *after* writing its own state is a real partial reading of its own work."""
+    prob, run = staged
+    rec, graded = run(prob, age_s=-5, phase="complete")   # written after launch
+    assert rec["run"]["status"] != "stale_workspace"
+    assert graded["n"] == 1
+    assert rec["verify"]["status"] == "ok"
+
+
+def test_skip_run_is_exempt_because_regrading_old_state_is_its_purpose(staged):
+    """`--skip-run` exists to re-grade what an earlier invocation wrote. Applying the
+    staleness guard there would make the flag refuse every workspace it has."""
+    prob, run = staged
+    rec, graded = run(prob, age_s=20 * 3600, skip_run=True)
+    assert rec["run"]["status"] == "completed"
+    assert graded["n"] == 1
+
+
+def test_an_unfinished_phase_is_graded_but_stamped(staged):
+    """The other half of the same run: `sde_sciml_stiffquad_mild` left `phase: running`
+    with all three plans at `await_solver`, and was graded with nothing in the record
+    to stop a table reading it as a finished pipeline result."""
+    prob, run = staged
+    rec, graded = run(prob, age_s=-5, phase="running")
+    assert graded["n"] == 1, "its own work is still worth measuring"
+    assert rec["run"]["graded_incomplete"] is True
+    assert "partial run" in rec["run"]["note"]
+
+
+@pytest.mark.parametrize("phase", ["done", "complete", "blocked"])
+def test_a_terminal_phase_is_not_stamped_incomplete(staged, phase):
+    prob, run = staged
+    rec, _ = run(prob, age_s=-5, phase=phase)
+    assert "graded_incomplete" not in rec["run"]
+
+
+def test_no_state_at_all_is_refused_too(tmp_path, monkeypatch):
+    """The `--fresh` variant: that flag clears STATE.md before launch, so a conductor
+    that writes nothing leaves no state rather than stale state, and the age check
+    has nothing to compare. `phase: None` is not a result."""
+    prob = problem("sde_sciml_weak_noncommutative")
+    monkeypatch.setattr(RUN, "WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setattr(RUN.S, "write_problem_md", lambda *a, **k: None)
+    calls = {"n": 0}
+
+    def _verify(*a, **k):
+        calls["n"] += 1
+        return {"status": "ok", "passed": True}
+
+    monkeypatch.setattr(RUN.V, "verify_problem", _verify)
+    monkeypatch.setattr(RUN, "run_conductor", lambda *a, **k: {
+        "status": "error", "returncode": 1, "timed_out": False,
+        "wall_seconds": 1.0, "log": None, "limit_hit": False})
+    (tmp_path / prob["slug"]).mkdir()
+    rec = RUN.process(prob, _Args(fresh=True))
+    assert rec["run"]["status"] == "no_state"
+    assert calls["n"] == 0
+    assert rec["verify"]["status"] == "skipped"
+    assert "NOT graded" in rec["run"]["note"]

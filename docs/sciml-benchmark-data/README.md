@@ -1,7 +1,7 @@
 # SciML adoption — measurement evidence
 
 Scripts that reproduce the measured claims in
-[plan-sciml-benchmark.md](../plan-sciml-benchmark.md) §2a, §2b, §3f and §5a. The first two are
+[plan-sciml-benchmark.md](../plan-sciml-benchmark.md) §2a, §2b, §3f, §5a and §10a. The first two are
 standalone (numpy only, no repo imports) and need no Julia; the rest import the benchmark.
 
 | Script | Reproduces | Run |
@@ -13,7 +13,10 @@ standalone (numpy only, no repo imports) and need no Julia; the rest import the 
 | `emit_harvest_spec.py` | writes `benchmark/references/sciml/harvest_spec.json` from `sciml_problems()` — the horizon, step grid, path count, seed, save grid and gate of each entry, plus sample points of this repo's closed forms for the Julia side to check the library's own `analytic` against. It exists so the comparator runs cannot drift off the problems the suite actually grades; the coefficients deliberately stay in `SDEProblemLibrary` | `uv run python docs/sciml-benchmark-data/emit_harvest_spec.py` |
 | `comparator_tables.py` | every table in §3f, read out of `comparators.json` rather than transcribed: the measured stage counts, work to reach each entry's gate, the matched-work and matched-seconds comparisons, work to reach a fixed relative error, and the measured disagreement between the two cost axes | `uv run python docs/sciml-benchmark-data/comparator_tables.py benchmark/references/sciml/comparators.json` |
 
-| `audit_plan_claims.py` | re-derives the 21 numbers §3f, §9a and §10a quote from `comparators.json`, the two baseline result files and the step-10 probe, and checks the plan still says each one. It is not a test — it reads gitignored result files — but it is what to run before trusting a figure quoted out of that document. It exists because it caught a real error: an over-broad line rewrite had replaced a row of §2b's measured save-grid table with a row of the step table, and nothing else would have noticed | `uv run python docs/sciml-benchmark-data/audit_plan_claims.py` |
+| `ks_gate_resolution.py` | §10a's diagnosis of the first pipeline run: it re-runs the kernel's own terminal-law KS test (`verifylib/kernel/sde/laws.ks_standardized`, same standardization, same `1.3581/√n` bar, same n = 50 000 and `dt`) on four solvers sharing one Brownian path — the run's three plans plus the **pathwise-exact** map. At seed 42 it reproduces the run's three statistics to 13 digits, which is what licenses the fourth row: a solver with *zero* error fails that gate, and fails it worse than the Euler–Maruyama that passed. Then nine seeds, and the mechanism — the statistic divides by an estimated standard deviation whose own relative error is 1.58% on this law, and reads it | `uv run python docs/sciml-benchmark-data/ks_gate_resolution.py` (~5 min) |
+| `audit_plan_claims.py` | re-derives the 60 numbers §3f, §9a and §10a quote from `comparators.json`, the two baseline result files, the step-10 probes (all three problems) and `measurements/ks_gate_resolution.json`, and checks the plan still says each one. It is not a test — it reads gitignored result files — but it is what to run before trusting a figure quoted out of that document. It exists because it caught a real error: an over-broad line rewrite had replaced a row of §2b's measured save-grid table with a row of the step table, and nothing else would have noticed | `uv run python docs/sciml-benchmark-data/audit_plan_claims.py` |
+
+`measurements/ks_gate_resolution.json` is `ks_gate_resolution.py`'s output, kept so the audit can hold §10a's prose to it: the per-seed cells live under a `workspace/` that every later pipeline run overwrites, so the reproduction is the durable record, not the run.
 
 `measurements/em_anchor_{julia,python}.json` are the two halves of the §5a anchor as measured
 (julia 1.11.9 single-threaded on apple-m1; python 3.14.7 / numpy 2.4.6). The scripts that produce
