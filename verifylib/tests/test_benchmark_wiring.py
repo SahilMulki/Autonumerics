@@ -76,6 +76,59 @@ def test_ledger_audit_caps_on_a_shortened_horizon(tmp_path):
     assert folded["ledger_violations"][0]["path"] == "t_final"
 
 
+def test_a_declared_threshold_the_harness_does_not_run_at_reports_without_capping(tmp_path):
+    """The SS10j fix, end to end through `verify.ledger_audit`.
+
+    The formulator declares `num_paths=50000`; the harness runs the problem at 1000
+    and hands the solver that number as a call argument. The disagreement is real and
+    must be recorded -- under its own key, naming the ledger field -- and it must not
+    move the solver's score, because the solver never chose either value.
+
+    This is the exact shape that capped seven of nine SciML entries, every one of
+    which the harness had independently graded 10/10.
+    """
+    import json
+
+    (tmp_path / "problem_spec.json").write_text(json.dumps({
+        "state_dimension": 1, "time_interval": {"T0": 0.0, "T": 1.0},
+        "evaluation_thresholds": {"num_paths": 50000, "seed": 42},
+        "requirements": [{"id": "R5", "kind": "evaluation",
+                          "quote": "solve_sde(num_paths=1000, dt=0.0016, T=1, seed=42)",
+                          "status": "mapped",
+                          "spec_path": "evaluation_thresholds.num_paths"}],
+    }))
+    out = {"run": {"num_paths": 1000, "dt": 0.0016, "T": 1.0, "seed": 42}}
+    folded = verify.ledger_audit(str(tmp_path), str(tmp_path), out)
+
+    assert "score_cap" not in folded, folded
+    assert "ledger_violations" not in folded, folded
+    defects = folded["ledger_spec_defects"]
+    assert len(defects) == 1, defects
+    assert defects[0]["severity"] == "spec"
+    assert defects[0]["path"] == "evaluation_thresholds.num_paths"
+    assert "R5" in defects[0]["message"], "the finding still cites the ledger entry"
+
+    # The same run with a ledger that declares what the harness runs is silent.
+    (tmp_path / "problem_spec.json").write_text(json.dumps({
+        "state_dimension": 1, "time_interval": {"T0": 0.0, "T": 1.0},
+        "evaluation_thresholds": {"num_paths": 1000, "seed": 42},
+    }))
+    assert verify.ledger_audit(str(tmp_path), str(tmp_path), out) == {}
+
+
+def test_the_spec_defect_is_recorded_per_plan():
+    """A finding that caps nothing still has to reach the record, or it is invisible
+    to every reader of a results file -- and a finding nobody can see is the state
+    `score_cap` was already in when SS10j found it."""
+    import run as RUN
+
+    assert "ledger_spec_defects" in RUN.RECORDED_HARNESS, \
+        "the per-plan record drops the finding, so nothing downstream can see it"
+    # The cap it replaces is still recorded too: it remains live for PDE output
+    # findings, which do read the solver's own returned field.
+    assert "score_cap" in RUN.RECORDED_HARNESS
+
+
 def test_ledger_audit_never_crashes_a_good_run(tmp_path):
     """An audit that raises must not fail a run it was only inspecting."""
     (tmp_path / "problem_spec.json").write_text("{not json")

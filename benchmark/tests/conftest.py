@@ -25,13 +25,14 @@ for path in (BENCHMARK, REPO):
         sys.path.insert(0, path)
 
 import benchop as BO  # noqa: E402  -- the BENCHOP-SLV derivations (step 6)
+import compare as C  # noqa: E402  -- the head-to-head pass predicates (SS10i)
 import problems as P  # noqa: E402
 import report as R  # noqa: E402
 import run as RUN  # noqa: E402
 import setup as S  # noqa: E402
 import verify as V  # noqa: E402
 
-__all__ = ["BO", "P", "R", "RUN", "S", "V", "REPO", "BENCHMARK"]
+__all__ = ["BO", "C", "P", "R", "RUN", "S", "V", "REPO", "BENCHMARK"]
 
 
 def problem(slug):

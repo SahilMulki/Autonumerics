@@ -236,7 +236,7 @@ def test_h2_a_transcribed_solution_is_excluded_not_passed(tmp_path):
            "pipeline": {"best_score": 10}, "verify": out}
     assert R.compute_verdict(rec) == "ANALYTIC_TRANSCRIPTION"
     # Neither a success nor a defect of the run.
-    assert "ANALYTIC_TRANSCRIPTION" not in R._PASS_VERDICTS
+    assert "ANALYTIC_TRANSCRIPTION" not in R._VERIFIED_VERDICTS
     assert "ANALYTIC_TRANSCRIPTION" in R._VERDICT_ORDER
     assert "ANALYTIC_TRANSCRIPTION" in R.VERDICT_LABEL
 

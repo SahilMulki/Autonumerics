@@ -519,21 +519,7 @@ def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, 
                                          **(verify_kw or {})))
         block = solution_metrics(plan_dir)
         entry = {
-            "harness": {k: harness.get(k) for k in (
-                "status", "passed", "verified_score", "rel_l2_err", "observed_order",
-                "order_ok", "converged", "constraint_violation", "error", "solver_drift",
-                "score_cap",
-                # SDE: there is no field error, so the moments and their standard
-                # errors are the record. Dropping them left `wrong_plan_won` with
-                # nothing to compare on every SDE.
-                "gt_kind", "worst_variance_rel_err", "worst_mean_rel_err",
-                "components",
-                # The quantity of interest, on either problem type. For a problem
-                # scored only on a price it *is* the result, and results.json
-                # carried the verdict without the number it rests on.
-                "functional_errs", "functional_abs_errs", "functional_tol",
-                "functional_tol_used", "worst_functional_rel_err", "functional_ok",
-                "reference_abs_err", "functional_levels") if k in harness},
+            "harness": {k: harness.get(k) for k in RECORDED_HARNESS if k in harness},
             "kernel": block,
             "is_winner": bool(is_winner),
             # Step 10's own acceptance line is that the per-plan record shows which
@@ -735,6 +721,31 @@ def _functional_sampling_se(levels, name):
     if not isinstance(delta, (int, float)) or delta != delta:
         return 0.0
     return abs(float(delta)) / math.sqrt(n_hi / n_lo - 1.0)
+
+
+#: The harness fields `process` copies into each plan's record. Named for the same
+#: reason as :data:`RECORDED_METRICS`: it is read downstream, so a field dropped here
+#: is a fact nothing outside this file can see, and a test should be able to say so.
+RECORDED_HARNESS = (
+    "status", "passed", "verified_score", "rel_l2_err", "observed_order",
+    "order_ok", "converged", "constraint_violation", "error", "solver_drift",
+    "score_cap",
+    # [sciml 10j] Recorded beside the cap, and the distinction matters: a
+    # ledger/harness disagreement is a real defect that the *solver* is not
+    # answerable for, so it has to stay visible without moving a score. Folding it
+    # into `score_cap` took seven of nine SciML entries from a harness-verified 10
+    # to a 3 for a `num_paths` the formulator invented.
+    "ledger_spec_defects",
+    # SDE: there is no field error, so the moments and their standard errors are the
+    # record. Dropping them left `wrong_plan_won` with nothing to compare on every
+    # SDE.
+    "gt_kind", "worst_variance_rel_err", "worst_mean_rel_err", "components",
+    # The quantity of interest, on either problem type. For a problem scored only on
+    # a price it *is* the result, and results.json carried the verdict without the
+    # number it rests on.
+    "functional_errs", "functional_abs_errs", "functional_tol",
+    "functional_tol_used", "worst_functional_rel_err", "functional_ok",
+    "reference_abs_err", "functional_levels")
 
 
 #: The `<metrics>` fields `solution_metrics` copies into the per-plan record.

@@ -18,6 +18,12 @@ What follows from that is the gate/warn split (§5b):
 * **source-derived** findings come from reading ``solver.py``. They catch
   ``eps = 1e-2`` and miss ``eps = 1e-3 * 10``, and they false-positive on a
   nondimensionalised solver where the parameter never appears literally. These warn.
+* **spec-derived** findings are about neither the run's output nor the solver's
+  source: they are disagreements between what the ledger declares and what the
+  *harness* runs. The split above missed this third case and the SDE run-parameter
+  check landed in the wrong half of it for seven of nine SciML entries, capping
+  solvers the harness had graded 10/10 for a number the formulator invented. These
+  are reported and never cap (§10j, :func:`audit_sde_output`).
 
 A false hard-fail on a correct solver is worse than a missed relaxation, because it
 is invisible as a false positive: it looks exactly like a caught bug.
@@ -30,7 +36,7 @@ import os
 
 import numpy as np
 
-from .findings import Finding, error, warning
+from .findings import Finding, error, spec_defect, warning
 
 #: Relative slack on a returned float. Domain bounds and horizons are floating-point
 #: results of a solver's own stepping, not exact transcriptions of the spec.
@@ -155,8 +161,51 @@ def _audit_dirichlet(spec, result, grid) -> list[Finding]:
     return out
 
 
+#: Where each audited SDE run parameter is declared, for a finding to point at. The
+#: run is not in this table on purpose -- see :func:`audit_sde_output`.
+_SDE_DECLARED_AT = {"num_paths": "evaluation_thresholds.num_paths",
+                    "seed": "evaluation_thresholds.seed",
+                    "T": "time_interval.T"}
+
+
 def audit_sde_output(spec, run_meta) -> list[Finding]:
-    """SDE run parameters are already reported in ``run_meta``, so all four gate."""
+    """The ledger's declared run parameters against the ones the harness runs.
+
+    ~~SDE run parameters are already reported in ``run_meta``, so all four gate.~~
+    **Corrected (plan-sciml-benchmark.md SS10j).** They are reported in ``run_meta``,
+    and that is the problem: **``run_meta`` is the harness's own call, not the
+    solver's conduct.** ``benchmark/runner.run_solver`` builds
+    ``spec["call"] = {"num_paths": problem["num_paths"], "dt": ..., "T": ...,
+    "seed": ...}``, the sandbox child invokes ``solve_sde(**call)``, and ``run_meta``
+    is then constructed *from that same dict*. The inline path builds it from
+    ``problem[...]`` directly. Every field this function can see is therefore a
+    keyword argument the solver was handed, and **none of the four was ever a choice
+    it made** -- so a mismatch here cannot be evidence about the solver, and capping
+    its score on one is charging it for someone else's number.
+
+    What a mismatch *is* evidence about is the ledger. Since ``run_meta`` echoes the
+    harness's problem definition verbatim, comparing it against
+    ``evaluation_thresholds`` is already exactly the comparison worth making --
+    declared versus graded -- and the comparison is kept unchanged. Only the
+    attribution moves: the finding now names the ledger field it came from, says
+    which value the harness actually runs, and is raised as a
+    :func:`~verifylib.findings.spec_defect`, which is reported in full and caps
+    nothing.
+
+    Measured on the nine SciML entries, which is what forced this: the formulator
+    declared ``num_paths`` of 20000 to 100000 on seven of them, a figure appearing
+    nowhere in the brief it was given -- whose only path count is its own
+    ``solve_sde(num_paths=1000, ...)`` contract line -- while ``problems.py``, the
+    brief and the executed run all read 1000. The old gate fired on exactly those
+    seven, spared the two whose formulator declared correctly (``cap`` iff
+    ``declared != executed``, 9 of 9), and every one of the seven had been graded
+    **10/10 by the harness independently**. It was diagnosing the formulator and
+    billing the solver.
+
+    The PDE output checks above are untouched and still gate: those read the
+    solver's *returned field* -- its grid, its horizon, its Dirichlet edges -- which
+    is conduct the solver is answerable for.
+    """
     out = []
     thresholds = spec.get("evaluation_thresholds") or {}
     checks = (("num_paths", thresholds.get("num_paths")),
@@ -167,15 +216,24 @@ def audit_sde_output(spec, run_meta) -> list[Finding]:
         if got is None or want is None:
             continue
         if not _close(got, want):
-            out.append(error(
-                "ledger-audit", f"run_meta.{key}",
-                f"the run used {key}={got}, the spec asks for {want}. "
-                f"Ledger: {_cite(spec, 'evaluation', 'evaluation_thresholds')}",
+            out.append(spec_defect(
+                "ledger-audit", _SDE_DECLARED_AT[key],
+                f"the ledger declares {key}={want}, but the harness runs this "
+                f"problem at {key}={got}. The solver is handed {key} as a call "
+                f"argument and has no say in it, so this is a defect in the spec "
+                f"(or in the problem definition it was written from) and not in the "
+                f"run. Ledger: {_cite(spec, 'evaluation', 'evaluation_thresholds')}",
             ))
     dt, T = (run_meta or {}).get("dt"), _declared_horizon(spec)
     if dt is not None and T is not None and float(dt) > float(T):
-        out.append(error("ledger-audit", "run_meta.dt",
-                         f"dt={dt} exceeds the whole horizon T={T}"))
+        # Both sides of this are the harness's too, so it is the same kind of claim:
+        # a step coarser than the whole horizon is a broken problem definition, not a
+        # solver that misbehaved.
+        out.append(spec_defect(
+            "ledger-audit", "time_interval.T",
+            f"the harness grades this problem at dt={dt}, which exceeds its whole "
+            f"declared horizon T={T}. Both come from the problem definition, not "
+            f"from the solver."))
     return out
 
 

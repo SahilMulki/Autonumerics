@@ -2464,6 +2464,12 @@ def ledger_audit(workspace_dir, plan_dir, out):
     and false-positive on a nondimensionalised solver, and a false hard-fail on a
     correct solver is worse than a missed relaxation because it is invisible as a
     false positive.
+
+    [sciml 10j] A third kind lands in ``ledger_spec_defects`` and caps nothing: a
+    confirmed disagreement between the ledger and *this harness's own* problem
+    definition, which the solver is not answerable for. That is what the SDE
+    run-parameter checks produce, because every field they can see is a call argument
+    the harness supplied -- see ``verifylib.audit.audit_sde_output``.
     """
     spec_path = os.path.join(workspace_dir, "problem_spec.json")
     if not os.path.exists(spec_path):
@@ -2481,9 +2487,18 @@ def ledger_audit(workspace_dir, plan_dir, out):
 
     gates = [f.as_dict() for f in findings if f.severity == "error"]
     warns = [f.as_dict() for f in findings if f.severity == "warning"]
+    # [sciml 10j] The third severity, and the reason it exists. A `spec` finding is a
+    # confirmed disagreement between what the formulator's ledger declares and what
+    # *this harness* runs -- so it is recorded in full, under its own key, and caps
+    # nothing. Folding it in with `gates` took seven of nine SciML entries from a
+    # harness-verified 10 to a 3 for a `num_paths` the solver was handed as a keyword
+    # argument and the formulator had invented.
+    specs = [f.as_dict() for f in findings if f.severity == "spec"]
     result = {}
     if warns:
         result["ledger_warnings"] = warns
+    if specs:
+        result["ledger_spec_defects"] = specs
     if gates:
         result["ledger_violations"] = gates
         result["score_cap"] = 3

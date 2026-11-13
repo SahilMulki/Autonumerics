@@ -59,7 +59,36 @@ VERDICT_LABEL = {
 # discretizations; scoring it as a failure would call a correct answer wrong. It is an
 # exclusion: the run is reported, named, and left out of the arm that compares schemes
 # (plan-sciml-benchmark.md §0b, H2).
-_PASS_VERDICTS = ("VERIFIED_PASS", "STABLE_PASS")
+# What the **independent check** confirmed, whatever the pipeline claimed about it.
+#
+# This replaces `_PASS_VERDICTS`, which was `("VERIFIED_PASS", "STABLE_PASS")` and is
+# removed rather than kept beside it, because its name read like "the passes" while it
+# was the wrong set for every question about *accuracy* -- and it was being used for
+# three of them: the executive summary's "Independently confirmed pass", the
+# by-type/by-tier "Independently verified" column, and `compare.py`'s pipeline side.
+#
+# It was also not internally consistent, which is the clearest sign it was never one
+# quantity: `VERIFIED_PASS` carries a self-score conjunct ("the harness passed it AND
+# the pipeline claimed 10") and `STABLE_PASS` carries none at all, being returned off
+# `ver["passed"]` alone on a stability problem. So the old set mixed a conjunction with
+# a non-conjunction and could not have been measuring a single thing.
+#
+# The asymmetry that makes this a correctness bug rather than a naming one is stated
+# fifteen lines down: **a baseline solver has no self-score**, so `_ONESHOT_PASS_VERDICTS`
+# cannot carry the second conjunct and `UNDERCLAIM` is a verdict a baseline can never
+# receive. Comparing one against the other charges the pipeline for a category the
+# thing it is being compared to is structurally incapable of entering. Measured on the
+# sciml arm (plan-sciml-benchmark.md SS10i): the pipeline reads **5/9** against the C0
+# one-shot's **9/9**, while the harness independently passed **9 of 9** on both sides --
+# a 4-entry deficit that is entirely the pipeline's self-score being conservative, which
+# is the one direction of error this benchmark exists to *reward*.
+#
+# `UNDERCLAIM` is a subset of the verified passes by construction (`compute_verdict`
+# returns it only where `verified_pass` is true), so adding it here cannot admit an
+# unverified run. The exclusions stay excluded: `ANALYTIC_TRANSCRIPTION` and
+# `CONSTRAINT_VIOLATION` are returned *before* the pass branches, so neither can reach
+# this set.
+_VERIFIED_VERDICTS = ("VERIFIED_PASS", "UNDERCLAIM", "STABLE_PASS")
 # The order verdicts are listed in the distribution table.
 _VERDICT_ORDER = ("VERIFIED_PASS", "STABLE_PASS", "OVERCLAIM", "BLOWUP",
                   "CONSTRAINT_VIOLATION", "UNDERCLAIM", "FAIL", "UNVERIFIED",
@@ -451,7 +480,7 @@ def generate_report(results, config=None):
 
     n = len(results)
     pipeline_pass = [r for r in results if (r.get("pipeline", {}).get("best_score") or 0) >= 10]
-    independently_passed = [r for r in indep if r["_verdict"] in _PASS_VERDICTS]
+    independently_passed = [r for r in indep if r["_verdict"] in _VERIFIED_VERDICTS]
     verified_pass = [r for r in gt if r["_verdict"] == "VERIFIED_PASS"]
     overclaims = [r for r in results if r["_verdict"] == "OVERCLAIM"]
     blowups = [r for r in results if r["_verdict"] == "BLOWUP"]
@@ -513,7 +542,7 @@ def generate_report(results, config=None):
         for tier in (1, 2, 3):
             bucket = [r for r in results if r["type"] == typ and r["tier"] == tier]
             indepb = [r for r in bucket if _has_independent_check(r)]
-            ipass = sum(1 for r in indepb if r["_verdict"] in _PASS_VERDICTS)
+            ipass = sum(1 for r in indepb if r["_verdict"] in _VERIFIED_VERDICTS)
             ppass = sum(1 for r in bucket if (r.get("pipeline", {}).get("best_score") or 0) >= 10)
             rows.append([typ.upper(), f"Tier {tier}", len(bucket),
                          f"{ppass}/{len(bucket)}",
@@ -673,7 +702,8 @@ def generate_report(results, config=None):
 
     # ---- failures detail --------------------------------------------------
     # ANALYTIC_TRANSCRIPTION is not here: it is an exclusion, not a defect of the run
-    # (see _PASS_VERDICTS). It appears in the distribution table under its own name.
+    # (see _VERIFIED_VERDICTS). It appears in the distribution table under its own
+    # name.
     fails = [r for r in results if r["_verdict"] in ("FAIL", "OVERCLAIM", "BLOWUP", "RUN_ERROR",
                                                      "UNVERIFIED", "SPEC_BLOCKED")]
     ap("## Failures and errors\n")

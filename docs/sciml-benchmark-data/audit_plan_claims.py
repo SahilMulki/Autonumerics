@@ -378,6 +378,164 @@ PRE_10H_WHITELIST = (
     "solver_sha256")
 
 
+def _c2_records():
+    """The nine completed step-10 records, M09's third attempt last (§10e)."""
+    out = {}
+    for doc in (_load(PROBE), _load(REST), _load(M09R)):
+        for r in (doc or {}).get("results", []):
+            out[r["id"]] = r
+    return out
+
+
+def _verdict_axes():
+    """`(C2 on the old conjunction, C2 on the fix, C2 harness, C0, underclaims)` (§10i).
+
+    Re-derived by driving the real verdict functions rather than quoted, so the claim
+    fails if either one changes.
+    """
+    import compare as _C
+    import report as _R
+
+    old = ("VERIFIED_PASS", "STABLE_PASS")   # `_PASS_VERDICTS`, as it was
+    c2 = list(_c2_records().values())
+    c0 = (_load(BASE / "oneshot_sciml_scheme_matched.json") or {}).get("results", [])
+    return (sum(1 for r in c2 if _R.compute_verdict(r) in old),
+            sum(1 for r in c2 if _C._pipeline_pass(r)),
+            sum(1 for r in c2 if (r.get("verify") or {}).get("passed")),
+            sum(1 for r in c0 if _C._oneshot_pass(r)),
+            sorted(r["id"] for r in c2 if _R.compute_verdict(r) == "UNDERCLAIM"))
+
+
+def _underclaim_is_a_verified_pass():
+    """No `UNDERCLAIM` record fails the harness, and no baseline record can be one
+    (§10i). The first is why the widening is safe; the second is why it was needed."""
+    import report as _R
+
+    for r in _c2_records().values():
+        verdict = _R.compute_verdict(r)
+        if verdict == "UNDERCLAIM" and not (r.get("verify") or {}).get("passed"):
+            return False
+        if _R.compute_oneshot_verdict(r) == "UNDERCLAIM":
+            return False
+    return True
+
+
+def _score_cap_incidence():
+    """`(entries capped, their verified scores, distinct violation paths)` (§10i).
+
+    The step-4 caveat rests on all seven violations being one finding, so the third
+    element is what makes that checkable rather than asserted.
+    """
+    caps, scores, paths = 0, set(), set()
+    for r in _c2_records().values():
+        v = r.get("verify") or {}
+        if v.get("score_cap"):
+            caps += 1
+            scores.add(v.get("verified_score"))
+            for viol in (v.get("ledger_violations") or []):
+                paths.add(viol.get("path"))
+    return caps, sorted(scores), sorted(paths)
+
+
+def _num_paths_provenance():
+    """Per entry, `(problems.py, the brief's own call, the formulator's declared
+    threshold, the executed count, score_cap)` (§10j).
+
+    The claim this supports is a correlation, so it is derived rather than quoted:
+    the cap fires exactly where the declared threshold disagrees with the run, and
+    the first two columns agree with the fourth on every entry.
+    """
+    import re
+
+    import problems as _P
+
+    spec = {p["slug"]: p for p in _P.PROBLEMS}
+    out = {}
+    for r in _c2_records().values():
+        slug = r["slug"]
+        v = r.get("verify") or {}
+        ps = ROOT / "workspace" / slug / "problem_spec.json"
+        pm = ROOT / "workspace" / slug / "problem.md"
+        declared = None
+        if ps.exists():
+            declared = ((json.loads(ps.read_text()).get("evaluation_thresholds") or {})
+                        .get("num_paths"))
+        brief = None
+        if pm.exists():
+            m = re.search(r"solve_sde\(num_paths=(\d+)", pm.read_text())
+            brief = int(m.group(1)) if m else None
+        out[r["id"]] = (spec[slug]["num_paths"], brief, declared,
+                        (v.get("run") or {}).get("num_paths"), v.get("score_cap"))
+    return out
+
+
+def _cap_tracks_the_formulator():
+    """`(entries where cap <=> declared != ran, total, uncapped ids)` (§10j).
+
+    If this ever stops being unanimous, the cap has started depending on something
+    other than the formulator's declared threshold and §10j needs re-deriving.
+    """
+    prov = _num_paths_provenance()
+    agree = sum(1 for _ps, _b, d, ran, cap in prov.values()
+                if bool(cap) == (d is not None and d != ran))
+    consistent = all(ps == brief == ran
+                     for ps, brief, d, ran, cap in prov.values())
+    return agree, len(prov), sorted(k for k, v in prov.items() if not v[4]), consistent
+
+
+def _declared_count_is_absent_from_the_brief():
+    """Does any capped entry's brief actually contain its declared count? (§10j)"""
+    for eid, (_ps, _brief, declared, _ran, cap) in _num_paths_provenance().items():
+        if not cap or declared is None:
+            continue
+        slug = next(r["slug"] for r in _c2_records().values() if r["id"] == eid)
+        pm = ROOT / "workspace" / slug / "problem.md"
+        if pm.exists() and str(declared) in pm.read_text():
+            return False
+    return True
+
+
+def _reaudited_under_the_fix():
+    """`(entries the fix would cap, entries reporting a spec defect, their paths)`
+    for the nine recorded runs (§10j rev17).
+
+    Drives the real `audit_run` against each entry's own `problem_spec.json` and
+    recorded `run_meta`, so the claim fails if the severity or the attribution moves.
+    """
+    from verifylib.audit import audit_run
+
+    capped, reported, paths = 0, 0, set()
+    for r in _c2_records().values():
+        ps = ROOT / "workspace" / r["slug"] / "problem_spec.json"
+        if not ps.exists():
+            continue
+        found = audit_run(json.loads(ps.read_text()),
+                          run_meta=(r.get("verify") or {}).get("run"))
+        capped += any(f.severity == "error" for f in found)
+        sd = [f for f in found if f.severity == "spec"]
+        reported += bool(sd)
+        paths.update(f.path for f in sd)
+    return capped, reported, sorted(paths)
+
+
+def _pde_output_still_gates():
+    """The re-attribution is scoped: a PDE output finding still caps (§10j rev17)."""
+    import numpy as np
+
+    from verifylib.audit import audit_run
+
+    spec = {"spatial_variables": ["x"], "domain": {"bounds": {"x": [0.0, 1.0]}},
+            "parameters": {"t_final": 0.5}}
+
+    def _run(t_final=0.5):
+        return {"numerical_solution": np.zeros(9),
+                "grid": {"x": np.linspace(0, 1, 9)}, "t_final": t_final}
+
+    short = audit_run(spec, result=_run(t_final=0.25))
+    return (any(f.severity == "error" for f in short)
+            and audit_run(spec, result=_run()) == [])
+
+
 def _whitelist():
     """`run.RECORDED_METRICS` as it stands now."""
     from benchmark import run
@@ -862,6 +1020,36 @@ def main():
           and f"{_study('truncated')[0]['vs_c0']:.3f}" == "5.291"
           and _study("whitelisted")[0]["picks_best"] == 5),
          "**bit-identical on all 18 pools across both suites**"),
+        # --- SS10i: the UNDERCLAIM accounting -------------------------------
+        ("the old conjunction read 5/9 against the baseline's 9/9",
+         (_verdict_axes()[:4] == (5, 9, 9, 9)),
+         "| the old `_PASS_VERDICTS` / `_ONESHOT_PASS_VERDICTS` | **5/9** | **9/9** |"),
+        ("and the four it lost are the four underclaims",
+         (_verdict_axes()[4] == ["M02", "M04", "M05", "M08"]),
+         "every\none of them `UNDERCLAIM`"),
+        ("the widening admits nothing the harness failed, and is one-sided",
+         _underclaim_is_a_verified_pass(),
+         "`UNDERCLAIM`\nis a subset of the verified passes by construction"),
+        ("seven entries carry a cap, all graded 10, all one finding",
+         (_score_cap_incidence() == (7, [10], ["run_meta.num_paths"])),
+         "7 of 9,\nall with `verified_score: 10`, all with one `ledger_violations` entry"),
+        # --- SS10j: defect 9 settled ----------------------------------------
+        ("problems.py, the brief and the run agree, and the cap tracks the formulator",
+         (_cap_tracks_the_formulator() == (9, 9, ["M05", "M09"], True)),
+         "**cap \u27fa declared \u2260 executed, 9 of 9**"),
+        ("no capped entry's brief contains the count its formulator declared",
+         _declared_count_is_absent_from_the_brief(),
+         "returns **nothing**\non all seven"),
+        ("the seven capped entries were all graded 10 by the harness",
+         (_score_cap_incidence() == (7, [10], ["run_meta.num_paths"])),
+         "graded **10/10 by the harness independently**"),
+        ("the fix caps nothing and reports the defect against the ledger field",
+         (_reaudited_under_the_fix()
+          == (0, 7, ["evaluation_thresholds.num_paths"])),
+         "| entries capped | **7/9** | **0/9** |"),
+        ("and the PDE output checks still gate",
+         _pde_output_still_gates(),
+         "**The PDE output checks are untouched and still gate.**"),
         ("step 10 is complete at nine of nine",
          (sum(1 for r in by.values() if r["verdict"] == "VERIFIED_PASS") == 5
           and sum(1 for r in by.values() if r["verdict"] == "UNDERCLAIM") == 4

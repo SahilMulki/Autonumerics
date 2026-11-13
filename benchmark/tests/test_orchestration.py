@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from .conftest import RUN, P, R, S, problem, record
+from .conftest import RUN, C, P, R, S, problem, record
 
 # --- E1: the suite split ---------------------------------------------------------
 
@@ -207,6 +207,77 @@ def test_compute_verdict_on_the_no_closed_form_shapes(kind, best_score, verify, 
     prob = {**problem("pde_kuramoto_sivashinsky"), "ground_truth_kind": kind}
     rec = record(prob, best_score=best_score, verify=verify)
     assert R.compute_verdict(rec) == expected
+
+
+def test_an_underclaim_counts_as_a_pass_on_the_axis_the_baseline_shares():
+    """The comparison has to be made on a quantity both sides possess (SS10i).
+
+    `UNDERCLAIM` is "the harness passed it and the pipeline scored itself below 10".
+    A baseline has no self-score, so `compute_oneshot_verdict` cannot return that
+    verdict for any input -- it reads `PASS` off the same `verify` block. Counting
+    the pipeline's `UNDERCLAIM` as a failure while counting the baseline's `PASS` as
+    a success therefore charges the pipeline for a category the thing it is compared
+    against is structurally incapable of entering, and in the one direction this
+    benchmark exists to reward: being conservative about its own success.
+
+    Measured on the sciml arm, that was a 4-entry deficit -- 5/9 against the
+    one-shot's 9/9, where the harness independently passed 9 of 9 on both sides.
+    """
+    prob = problem("pde_kuramoto_sivashinsky")
+    passed = {"status": "ok", "passed": True, "rel_l2_err": 1e-4}
+
+    modest = record(prob, best_score=8, verify=passed)
+    assert R.compute_verdict(modest) == "UNDERCLAIM"
+
+    # The same evidence, scored as a baseline: there is no self-score to miss.
+    assert R.compute_oneshot_verdict(modest) == "PASS"
+
+    # So both sides of the comparison must agree, and that is the fix.
+    assert C._pipeline_pass(modest), "an UNDERCLAIM is an independently-verified pass"
+    assert C._oneshot_pass(modest)
+    assert C._pipeline_pass(modest) == C._oneshot_pass(modest)
+
+
+def test_no_baseline_record_can_ever_be_an_underclaim():
+    """The asymmetry is structural, not a property of these nine runs.
+
+    Sweeping the self-score over the whole range leaves the baseline verdict fixed,
+    because `compute_oneshot_verdict` never reads it. If this ever fails, the two
+    verdict functions have stopped being different and `_VERIFIED_VERDICTS` can go
+    back to being a conjunction.
+    """
+    prob = problem("pde_kuramoto_sivashinsky")
+    for score in (0, 1, 3, 8, 9, 10):
+        for ok in (True, False):
+            rec = record(prob, best_score=score,
+                         verify={"status": "ok", "passed": ok, "rel_l2_err": 1e-4})
+            assert R.compute_oneshot_verdict(rec) == ("PASS" if ok else "FAIL")
+            assert R.compute_oneshot_verdict(rec) != "UNDERCLAIM"
+
+
+def test_the_verified_set_admits_nothing_the_harness_did_not_pass():
+    """`_VERIFIED_VERDICTS` widens what counts as a pass, so the guard is that it
+    widens it only over verdicts the independent check already confirmed (SS10i).
+
+    `UNDERCLAIM` is returned only where `verified_pass` is true, so it cannot smuggle
+    an unverified run in; and the two exclusions are returned *before* the pass
+    branches, so neither can reach the set.
+    """
+    assert set(R._VERIFIED_VERDICTS) == {"VERIFIED_PASS", "UNDERCLAIM", "STABLE_PASS"}
+    for verdict in ("OVERCLAIM", "FAIL", "UNVERIFIED", "CONSTRAINT_VIOLATION",
+                    "ANALYTIC_TRANSCRIPTION", "RUN_ERROR", "SPEC_BLOCKED",
+                    "SELF_ONLY", "BLOWUP"):
+        assert verdict not in R._VERIFIED_VERDICTS, verdict
+
+    prob = problem("pde_kuramoto_sivashinsky")
+    # Every verdict in the set implies the harness passed it -- checked by driving
+    # `compute_verdict` rather than by reasoning about it.
+    for score in (0, 8, 10):
+        for ok in (True, False):
+            rec = record(prob, best_score=score,
+                         verify={"status": "ok", "passed": ok, "rel_l2_err": 1e-4})
+            if R.compute_verdict(rec) in R._VERIFIED_VERDICTS:
+                assert ok, f"score={score} admitted a run the harness failed"
 
 
 def test_a_run_that_did_not_complete_is_never_a_verdict_about_the_solver():

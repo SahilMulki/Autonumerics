@@ -18,8 +18,14 @@ and renders results/COMPARISON.md:
 Everything keys off problems.py, so it is robust to partial data: columns with no
 data for a bucket render "-", and problems added later appear automatically. Pass
 on BOTH sides means the same thing -- an independently-confirmed pass
-(VERIFIED_PASS / STABLE_PASS for the pipeline; PASS / STABLE_PASS for a baseline) --
-so the comparison is apples-to-apples.
+(VERIFIED_PASS / UNDERCLAIM / STABLE_PASS for the pipeline; PASS / STABLE_PASS for a
+baseline) -- so the comparison is apples-to-apples.
+
+~~VERIFIED_PASS / STABLE_PASS for the pipeline~~ **corrected SS10i**: that set also
+required the pipeline to have claimed the pass, which a baseline has no self-score to
+do, so the pipeline was charged for `UNDERCLAIM` -- a verdict the other side cannot
+receive. The claim one line up was false for exactly the four sciml entries where the
+harness passed a solution the conductor had scored below 10.
 
 Examples
 --------
@@ -66,7 +72,16 @@ def _load(path):
 
 
 def _pipeline_pass(rec):
-    return R.compute_verdict(rec) in R._PASS_VERDICTS
+    """An independently-confirmed pass, on the one axis both sides have.
+
+    `R._VERIFIED_VERDICTS`, not `R._PASS_VERDICTS`: the latter also requires the
+    pipeline to have *claimed* the pass, and a baseline has no self-score to claim
+    with, so `UNDERCLAIM` is a verdict only this side of the comparison can receive.
+    Scoring it as a failure here charged the pipeline for being too modest about a
+    solution the harness confirmed -- 5/9 against the C0 one-shot's 9/9 on the sciml
+    arm, where the harness passed 9 of 9 on both sides (SS10i).
+    """
+    return R.compute_verdict(rec) in R._VERIFIED_VERDICTS
 
 
 def _oneshot_pass(rec):

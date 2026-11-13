@@ -4,6 +4,7 @@ import pytest
 
 from verifylib.audit import audit_parameters, audit_run, scan_parameter_bindings
 from verifylib.findings import ERROR, WARNING
+from verifylib.findings import SPEC as SPEC_SEVERITY  # `SPEC` below is a PDE fixture
 
 SPEC = {
     "spatial_variables": ["x"],
@@ -70,12 +71,58 @@ SDE_SPEC = {
 }
 
 
-def test_sde_run_meta_gates():
+def test_sde_run_meta_reports_a_spec_defect_and_never_caps_the_solver():
+    """~~`test_sde_run_meta_gates`~~ **corrected, sciml SS10j.**
+
+    The old test asserted `[ERROR]` for each of the three fields, which is what made
+    the defect durable: `run_meta` is the *harness's own call* -- `runner.run_solver`
+    builds `spec["call"]` from `problems.py` and then constructs `run_meta` out of
+    that same dict -- so none of these fields is a choice the solver made, and an
+    `ERROR` here caps a score for someone else's number.
+
+    A mismatch is still a real finding and still reported; it is attributed to the
+    ledger field it came from rather than to the run. On the nine SciML entries the
+    old severity took seven solvers the harness had graded 10/10 down to 3, for a
+    `num_paths` the formulator had invented.
+    """
     good = {"num_paths": 50000, "dt": 0.01, "T": 1.0, "seed": 42}
     assert audit_run(SDE_SPEC, run_meta=good) == []
-    for key, bad in (("num_paths", 5000), ("seed", 7), ("T", 0.5)):
+    for key, bad, where in (("num_paths", 5000, "evaluation_thresholds.num_paths"),
+                            ("seed", 7, "evaluation_thresholds.seed"),
+                            ("T", 0.5, "time_interval.T")):
         findings = audit_run(SDE_SPEC, run_meta={**good, key: bad})
-        assert [f.severity for f in findings] == [ERROR], f"{key} not gated"
+        assert [f.severity for f in findings] == [SPEC_SEVERITY], \
+            f"{key} should be reported, not gated"
+        # The finding points at where the defect is, not where it was noticed.
+        assert findings[0].path == where, findings[0].path
+        assert "has no say in it" in findings[0].message
+        # Both numbers are named, so a reader does not have to go and find them.
+        assert f"{key}={bad}" in findings[0].message, findings[0].message
+
+
+def test_a_step_coarser_than_the_horizon_is_also_not_the_solvers_fault():
+    """Both `dt` and `T` come from the problem definition, so a `dt > T` reading is a
+    broken problem rather than a misbehaving solver (SS10j)."""
+    findings = audit_run(SDE_SPEC, run_meta={"num_paths": 50000, "seed": 42,
+                                             "T": 1.0, "dt": 2.0})
+    assert [f.severity for f in findings] == [SPEC_SEVERITY]
+    assert "not from the solver" in " ".join(findings[0].message.split())
+
+
+def test_the_pde_output_checks_still_gate():
+    """The re-attribution is scoped to the SDE run parameters. A PDE output finding
+    reads the solver's own returned field -- its grid, horizon and Dirichlet edges --
+    which is conduct the solver *is* answerable for, so those still cap (SS10j).
+    """
+    # The three PDE output findings, each still an ERROR: a shortened horizon, a
+    # shrunken domain, and a violated Dirichlet edge.
+    assert [f.severity for f in audit_run(SPEC, result=_run(t_final=0.25))] == [ERROR]
+    assert all(f.severity == ERROR
+               for f in audit_run(SPEC, result=_run(lo=0.0, hi=0.5)))
+    assert any(f.severity == ERROR and "boundary_conditions" in f.path
+               for f in audit_run(SPEC, result=_run(edge=0.4)))
+    # And a correct run stays silent, so the widening added no new noise.
+    assert audit_run(SPEC, result=_run()) == []
 
 
 # --- source-derived: warnings only -------------------------------------------

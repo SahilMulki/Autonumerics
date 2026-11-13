@@ -1,7 +1,7 @@
 # SciMLBenchmarks (SDE) — External Benchmark Adoption Plan
 
 **Status:** **researched 2026-11-09; rev 1 the same day; rev 2–5 2026-11-10; rev 6–7 2026-11-11;
-rev 8–10 2026-11-12; rev 11–14 2026-11-13 — steps 1–10 of §7 done on the scheme-matched arm. The suite exists, is
+rev 8–10 2026-11-12; rev 11–17 2026-11-13 — steps 1–10 of §7 done on the scheme-matched arm. The suite exists, is
 calibrated, is smoke-tested end to end, has its comparator numbers, has its C0 baseline in both
 arms, and has **all nine of its entries through the pipeline** — 5 `VERIFIED_PASS`, 4
 `UNDERCLAIM`, **zero overclaims**, 139.3 min of wall time. Rev 12 then answers what the suite was
@@ -22,7 +22,31 @@ pool's worst plan on 8 of 9 sciml pools and its best on 5 of 9 holdout pools. Tw
 The third was understated: the record's whitelist is a **ranking input**, and it was dropping four
 components, one of which it *fabricated* rather than lost. Fixed, and the record now reproduces
 the conductor's own ranking **bit-identically** — 0.931× where reading the record cost 5.291×.
-What remains is the unrestricted arm and the optional Phase 2 (step 11).** Rev 6–7 `[2026-11-11]` diagnose the M01 probe and
+**Rev 15 settles the UNDERCLAIM accounting** (10i) before any
+number leaves: `_PASS_VERDICTS` required the pipeline to have *claimed* the pass as well as
+the harness to have confirmed it, while the baseline it was compared against **has no
+self-score** — so `UNDERCLAIM` was scored a failure on one side and was a verdict the other
+side is structurally incapable of receiving. On this arm that read **5/9 against the
+one-shot's 9/9** where the harness independently passed **9 of 9 on both**, and the four
+lost entries are the pipeline being too modest about its own success — the one error
+direction this benchmark exists to reward. Fixed to a tie at 9/9; it moves no measurement in
+10f–10h, which read harness errors and not verdicts. **Rev 16 settles defect 9** (10j) and
+**retires it**: the `score_cap: 3` on seven of nine entries is a **false positive**. The
+`num_paths=1000` it objects to is the *harness's own call parameter* — `problems.py`, the
+brief's own `solve_sde(num_paths=1000, …)` and the executed run agree on all nine — and a
+solver cannot choose it, since `runner` builds the call and then copies `run_meta` out of it.
+The cap fires exactly where the **formulator** declared a threshold its brief does not
+contain: **cap ⟺ declared ≠ executed, 9 of 9**, with M05 and M09 — the two that declared
+correctly — the two uncapped. Applying it as step 4 proposed would have taken seven entries
+the harness graded **10/10** down to 3 on a number they never chose. **Rev 17 fixes the real
+defect**: a third severity, `findings.SPEC`, for a confirmed disagreement the solver is not
+answerable for — reported in full under `ledger_spec_defects`, capping nothing. The
+comparison is unchanged, since `run_meta` echoing the harness *is* declared-versus-graded;
+only the attribution moved, onto the ledger field where the defect is. Re-audited: **7/9
+capped → 0/9**, with the same 7/9 still reporting the defect, now against
+`evaluation_thresholds.num_paths`. The PDE output checks still gate, and the test that had
+*pinned* the false positive is corrected. What remains is the unrestricted arm and the
+optional Phase 2 (step 11).** Rev 6–7 `[2026-11-11]` diagnose the M01 probe and
 run the other two. **`wrong_plan_won: true` on all three problems, by three different
 mechanisms** (§10a): on M01 the scores separated and did so backwards, decided by a terminal-law
 KS statistic that a *pathwise-exact* solver also fails on the run's own increments; on M06 and M09
@@ -1542,7 +1566,7 @@ scheme-matched arm.
 | 7 | ~~**Calibrate every gate both ways**~~ **DONE 2026-11-10, as part of step 6 — §2b.** It could not be deferred: three entries were *vacuous* until calibration found them, so authoring an entry and calibrating it turned out to be one act rather than two. Every gate separates, the narrowest by **4.4x**, none was moved after the fact, and **two of this row's own proposed controls had to be replaced** because they do not separate (§2b findings 3 and 4). Original text, kept so the plan can be graded against it: calibrate every gate both ways, per the repo rule: a correct scheme clears it and a plausible wrong one fails it, at the resolution the entry ships with, with the separation factor recorded and **no gate moved after seeing where a scheme lands**. One-decision wrong variants: a dropped Milstein correction on S03; `β²` omitted from the S06–S08 drift (`[L]` the _only_ difference between the library's Itô and Stratonovich variants); a single Wiener increment shared by both components of S09's non-commutative noise | every gate separates; the narrowest factor recorded; failures recorded rather than re-cut                                                                                                                                                                                                                                                                                                           |
 | 8 | ~~Smoke-test the suite without spending a pipeline call (the step that found four defects on BENCHOP `[R]`)~~ **DONE 2026-11-10 — §7a** | ✅ met, as **97 automated assertions** over the nine staged briefs, and it found four defects here too — plus a fifth the fix for the second one exposed. The per-plan ranking axis was **blank on eight of nine entries**; **nothing in the repo had ever rendered the work-precision series**, which is this suite's primary axis; the report named two suites; and the per-plan record did not say which scheme each plan chose, which is step 10's own acceptance line. One correction to the row: *every* brief cannot state the `dW` shape, because M09 is handed no `dW` |
 | 9 | ~~Run the C0 one-shot baseline on S01–S09, both arms~~ **DONE 2026-11-10 — §9a** | ✅ met: C0@Opus, naked, 9 units per arm, **18/18 PASS** at $0.96 and $1.06. The arms are now genuinely different experiments (§7a defect 6) and the data says so — **0 of 8 degenerate ladders in the scheme-matched arm, 8 of 8 in the unrestricted one**, which confirms §10's prediction 2 at its maximum in one arm and falsifies its premise in the other: told plainly that transcription is detected and excluded, Opus wrote a discretised scheme nine times out of nine. The deterrent measured is the *sentence*, not the detector. Also unpredicted: the baseline ships a stochastic Heun predictor–corrector on two entries, reaching 5.4e-8 on M02 — better than §3f's measured `SRA1` at the same step — with no manual in the prompt |
-| 10 | ~~Run the pipeline (C2), both arms~~ **DONE on the scheme-matched arm — §10a–10e; ~~8 of 9 entries completed, M09 a run-error at the old timeout~~ all 9 completed 2026-11-13** | ✅ met on one arm.  M01 scheme-matched: **19.6 min**, `VERIFIED_PASS`, 2.06% against the 9.5% gate — so ~3 h for the arm and ~6 h for both. The row's own acceptance line is met by that run (`scheme_family` per plan, as §7a defect 4 made possible) and it immediately produced the run's most interesting result: **`wrong_plan_won: True`** — the conductor shipped Euler–Maruyama at 0.217× gate over its own Heun-SRK plan at 0.012×, a 17.7× gap against a 0.0048 noise margin, and scored the worse plan 10 against the better ones' 8. That field was `null` before §7a defect 1 was fixed. The probe also exposed a vocabulary gap: there is no SRK family in `SDE_FAMILIES`, so an SRK plan declares `other` and its work axis falls back to 1 stage — understating its own cost, which the report now labels a lower bound. **Diagnosed rev 6:** the selection was made by *one* of fifteen checks, the terminal-law KS statistic, which Milstein lost by **1.1% of the critical value** — and on the run's own increments a **pathwise-exact** solver fails that same gate at 1.17×, worse than the Euler–Maruyama that passed it. The gate is not ranking schemes. Both losers also carry an incorrect reason string naming the mean, which passed 46–67× inside tolerance. **Probed further rev 7:** M06 and M09 both read `wrong_plan_won: true` as well, by a *different* mechanism — on both, every plan scored the same (10/10/10 and 8/8/8) and the winner was chosen by a key *below* `score`, shipping a plan 5.1× and 3.3× worse than the best. ~~by plan **index**~~ **rev 8 (10b) locates both:** on M06 the quality index decided it, `decided_by: sqi` by 0.014, because the best plan's error sat inside its own Monte-Carlo bar so `accuracy` returned None and its index was renormalised over three components against the winner's four — the best plan lost for being too accurate to resolve; on M09 the ranker never ran, the run having timed out before Phase 3, and the winner is `run.py`'s fallback taking the first plan in declaration order. Both fixed, with the corpus-wide effect measured: one winner improved by 5.1× and two moved inside their own noise margins. On M09 the shipped plan is the only one of three the harness does not grade 10, and the tie was manufactured by a single `null` in a declared `terminal_law` list disabling the rubric's top two rows for every plan on the problem. So the defect is the SDE evaluator's, not the pathwise route's: a tie is enough, and ties are the common case. M06 ran 21.5 min and passed; M09 hit the 60-min timeout mid-evaluation, so the per-problem budget must be raised. Three more harness defects fell out of these runs (§7a defects 8–10). **Rev 9:** M02 run under the fix at the raised timeout — `UNDERCLAIM`, 13.0 min, harness-verified 10 at a strong error of 1.34e-7 against a 1.2e-3 gate; the conductor shipped the ranker's winner rather than the first plan, which is the first case where those two differ, so compliance is confirmed. `wrong_plan_won: true` once more, but now between two plans 1980× and 4879× better than the Euler–Maruyama, decided on the fourth significant figure of a structural diagnostic because no plan's accuracy resolved (10c). **Rev 10:** the remaining five (M03, M04, M05, M07, M08) run in one invocation at 7200 s — all five completed, none timed out, **80.0 min** for five problems, **2 `VERIFIED_PASS` and 3 `UNDERCLAIM`, no overclaim**. Across the eight completed entries: 4 pass, 4 underclaim, **zero overclaims**. The fix flips no winner on the five and widens M07's margin **8.8×**; `wrong_plan_won: true` once more, on M05, by **622×** and 44.6× outside the margin, with the whole selection resting on `('structure',)` alone because that problem's order check never ran. And the vocabulary gap turns out to be an **incentive**: M05's order-1.5 plan withholds `scheme_family` on purpose, with the correct reason written above its metrics block — no kernel family key maps to order 1.5, so a correct scheme fails every band it could declare. Defects 9 and 10 now stand at **seven of ~~eight~~ nine** completed entries (10d, 10e). ~~Eight of nine entries run; M09 to re-run at the raised timeout~~ **Rev 11 `[2026-11-13]`: M09 completed on the third attempt in 312.1 s (10e), `VERIFIED_PASS` at 10/certified.** Neither earlier failure was the problem or the timeout — the second stopped on the Claude Pro 5-hour cap, on a window that had opened 40 min before launch, with the machine clamshell-sleeping 8 min in (`caffeinate -ims` does not prevent lid-close sleep, and `run.py:185`'s monotonic clock does not advance through it: 124.1 reported minutes across 4 h 18 min real). The re-run was cheap because the **conductor recovered its own crash** — it diagnosed the stale `STATE.md`, verified via `solver_sha256` that the two certified scores on disk belonged to the files there, and completed the one half-cycle by reusing saved kernel output instead of re-paying ~1500 s of ladder time. The winner is the plan a **pool gate** caused to exist: no plan had declared `exact_sampling_components: 1`, the conductor re-dispatched the plan-creator once, and the Rao-Blackwellised plan it added won — the first time a gap declared in the *pool* produced the shipped plan. First case too where the ranker's winner and `best_plan_by_harness` differ and `wrong_plan_won` is correctly **false**: 0.0590 against 0.0571 of gate, inside a 0.0617 margin, the ranker preferring a real 3.2× variance reduction a single realisation cannot see. The rev-8 fix is inert again, but for a new reason — `order` is `None` on every plan because the record's per-plan `kernel` block **does not carry `observed_order`** although `SOLUTION.md` does, so the fix's input is truncated by the recorder (second instance after M08's headroom). Step 10 complete: **9 of 9, 5 pass / 4 underclaim / 0 overclaims, 139.3 min**. **Rev 12 (10f)** then re-ranks all nine pools offline against the C0 baseline at equal budget — same `dt`, path count and evals on both sides — and the answer is the one the suite was built to get: the pipeline **as shipped is 1.412× worse than Opus cold** (better on 1 of 9, bit-identical on `M03`, within 1e-16 on two more), while **the best plan in each pool is 2.65× better** — `M05`'s pool held one **625×** better than Opus. Of the three remaining ranker misses, only one is the ranker's: `M01` is `decided_by: score` over an index that already ranks it right, and repairing that score alone takes the arm to **0.855×, i.e. better than the one-shot**; `M05` needs a measurement it skipped, not a weight. `abstain` and `discriminating` measure **inert**, and the resolution floor 10c called for is **withdrawn as harmful** — monotonic on sciml, opposite sign on the BENCHOP holdout, because a tie falls to declaration order, which is the worst plan on 9 of 9 sciml pools and the best on 5 of 9 BENCHOP ones. **Rev 13 (10g)** makes the one fix 10f identified: `KS_C95 / sqrt(n)` is the Kolmogorov bar and this statistic standardizes by its own sample mean and sd, so it is the **Lilliefors** situation and has no closed-form null. A parametric bootstrap of the declared law replaces it — **0.66–0.73×** the old bar on a normal, a mild lognormal and a Feller-satisfying CIR, i.e. a *tighter* gate, and 2.99× / 40.97× only on the two heavy-tailed laws it was mis-grading; the normal case reproduces Lilliefors' published `0.886/√n` to within 2%, which is the outside check. Re-graded, M01's `2-milstein` goes **8 → 10**, its regret **17.706 → 2.132**, `decided_by` `score` → `sqi`, and the arm reaches **0.931× — better than Opus answering cold**. Two costs recorded, not tuned away: Rademacher increments are no longer caught at 625 steps (CLT, and the old bar “caught” them only as it caught a zero-error solver on 5 of 9 seeds), and on a Feller-violating CIR the test has almost no power — margin 1.18× where it read 48× of the wrong bar. The residual on M01, and the 0.377× the oracle shows, are now behind the **order band**. **Rev 14 (10h)** prices step 2's three ranker defects and ships one of them. The `comparable_keys` fallback is **dead code on all 18 recorded pools** — M02 and M05 were decided on correctly *restricted* sets of two and one — so item 1's premise is false; the real defect is a shared set of one, and abstaining on it is harmful by all three routes (`abstain` inert, `thin:2` 0.931× → 2.174×, `thin:3` → 3.501×, the floor monotonic again under the new scorer), because every route lands on **declaration order**: the first-declared plan is the pool's **worst on 8 of 9** sciml pools (`1-euler-maruyama`, all nine) and its **best on 5 of 9** holdout pools. The one non-fitted fall-through, `observed_order`, improves sciml to 6/9 and 0.846× and is still **not shipped**: holdout is untouched only because the gate never fires there, and at the breadth where it does, holdout falls to 2/9 — an **exact sampler has no order to measure**, so the closed forms that are the best plan in 7 of 9 holdout pools sort last. Item 3 was the understated one: the record's whitelist is a **ranking input**, and it was costing `order` and `structure` entirely, **fabricating** `accuracy` where the kernel had abstained (M05: three unresolved plans scored 0.141/0.008/0.046, the highest being the plan 651× worse), and silently substituting a **wrong `dynkin_bar`** — that last found by the census test, not by a run. Twelve fields added and the record now reproduces the conductor **bit-identically** on all 18 pools: **3/9 and 5.291× → 5/9 and 0.931×** |
+| 10 | ~~Run the pipeline (C2), both arms~~ **DONE on the scheme-matched arm — §10a–10e; ~~8 of 9 entries completed, M09 a run-error at the old timeout~~ all 9 completed 2026-11-13** | ✅ met on one arm.  M01 scheme-matched: **19.6 min**, `VERIFIED_PASS`, 2.06% against the 9.5% gate — so ~3 h for the arm and ~6 h for both. The row's own acceptance line is met by that run (`scheme_family` per plan, as §7a defect 4 made possible) and it immediately produced the run's most interesting result: **`wrong_plan_won: True`** — the conductor shipped Euler–Maruyama at 0.217× gate over its own Heun-SRK plan at 0.012×, a 17.7× gap against a 0.0048 noise margin, and scored the worse plan 10 against the better ones' 8. That field was `null` before §7a defect 1 was fixed. The probe also exposed a vocabulary gap: there is no SRK family in `SDE_FAMILIES`, so an SRK plan declares `other` and its work axis falls back to 1 stage — understating its own cost, which the report now labels a lower bound. **Diagnosed rev 6:** the selection was made by *one* of fifteen checks, the terminal-law KS statistic, which Milstein lost by **1.1% of the critical value** — and on the run's own increments a **pathwise-exact** solver fails that same gate at 1.17×, worse than the Euler–Maruyama that passed it. The gate is not ranking schemes. Both losers also carry an incorrect reason string naming the mean, which passed 46–67× inside tolerance. **Probed further rev 7:** M06 and M09 both read `wrong_plan_won: true` as well, by a *different* mechanism — on both, every plan scored the same (10/10/10 and 8/8/8) and the winner was chosen by a key *below* `score`, shipping a plan 5.1× and 3.3× worse than the best. ~~by plan **index**~~ **rev 8 (10b) locates both:** on M06 the quality index decided it, `decided_by: sqi` by 0.014, because the best plan's error sat inside its own Monte-Carlo bar so `accuracy` returned None and its index was renormalised over three components against the winner's four — the best plan lost for being too accurate to resolve; on M09 the ranker never ran, the run having timed out before Phase 3, and the winner is `run.py`'s fallback taking the first plan in declaration order. Both fixed, with the corpus-wide effect measured: one winner improved by 5.1× and two moved inside their own noise margins. On M09 the shipped plan is the only one of three the harness does not grade 10, and the tie was manufactured by a single `null` in a declared `terminal_law` list disabling the rubric's top two rows for every plan on the problem. So the defect is the SDE evaluator's, not the pathwise route's: a tie is enough, and ties are the common case. M06 ran 21.5 min and passed; M09 hit the 60-min timeout mid-evaluation, so the per-problem budget must be raised. Three more harness defects fell out of these runs (§7a defects 8–10). **Rev 9:** M02 run under the fix at the raised timeout — `UNDERCLAIM`, 13.0 min, harness-verified 10 at a strong error of 1.34e-7 against a 1.2e-3 gate; the conductor shipped the ranker's winner rather than the first plan, which is the first case where those two differ, so compliance is confirmed. `wrong_plan_won: true` once more, but now between two plans 1980× and 4879× better than the Euler–Maruyama, decided on the fourth significant figure of a structural diagnostic because no plan's accuracy resolved (10c). **Rev 10:** the remaining five (M03, M04, M05, M07, M08) run in one invocation at 7200 s — all five completed, none timed out, **80.0 min** for five problems, **2 `VERIFIED_PASS` and 3 `UNDERCLAIM`, no overclaim**. Across the eight completed entries: 4 pass, 4 underclaim, **zero overclaims**. The fix flips no winner on the five and widens M07's margin **8.8×**; `wrong_plan_won: true` once more, on M05, by **622×** and 44.6× outside the margin, with the whole selection resting on `('structure',)` alone because that problem's order check never ran. And the vocabulary gap turns out to be an **incentive**: M05's order-1.5 plan withholds `scheme_family` on purpose, with the correct reason written above its metrics block — no kernel family key maps to order 1.5, so a correct scheme fails every band it could declare. Defects 9 and 10 now stand at **seven of ~~eight~~ nine** completed entries (10d, 10e). ~~Eight of nine entries run; M09 to re-run at the raised timeout~~ **Rev 11 `[2026-11-13]`: M09 completed on the third attempt in 312.1 s (10e), `VERIFIED_PASS` at 10/certified.** Neither earlier failure was the problem or the timeout — the second stopped on the Claude Pro 5-hour cap, on a window that had opened 40 min before launch, with the machine clamshell-sleeping 8 min in (`caffeinate -ims` does not prevent lid-close sleep, and `run.py:185`'s monotonic clock does not advance through it: 124.1 reported minutes across 4 h 18 min real). The re-run was cheap because the **conductor recovered its own crash** — it diagnosed the stale `STATE.md`, verified via `solver_sha256` that the two certified scores on disk belonged to the files there, and completed the one half-cycle by reusing saved kernel output instead of re-paying ~1500 s of ladder time. The winner is the plan a **pool gate** caused to exist: no plan had declared `exact_sampling_components: 1`, the conductor re-dispatched the plan-creator once, and the Rao-Blackwellised plan it added won — the first time a gap declared in the *pool* produced the shipped plan. First case too where the ranker's winner and `best_plan_by_harness` differ and `wrong_plan_won` is correctly **false**: 0.0590 against 0.0571 of gate, inside a 0.0617 margin, the ranker preferring a real 3.2× variance reduction a single realisation cannot see. The rev-8 fix is inert again, but for a new reason — `order` is `None` on every plan because the record's per-plan `kernel` block **does not carry `observed_order`** although `SOLUTION.md` does, so the fix's input is truncated by the recorder (second instance after M08's headroom). Step 10 complete: **9 of 9, 5 pass / 4 underclaim / 0 overclaims, 139.3 min**. **Rev 12 (10f)** then re-ranks all nine pools offline against the C0 baseline at equal budget — same `dt`, path count and evals on both sides — and the answer is the one the suite was built to get: the pipeline **as shipped is 1.412× worse than Opus cold** (better on 1 of 9, bit-identical on `M03`, within 1e-16 on two more), while **the best plan in each pool is 2.65× better** — `M05`'s pool held one **625×** better than Opus. Of the three remaining ranker misses, only one is the ranker's: `M01` is `decided_by: score` over an index that already ranks it right, and repairing that score alone takes the arm to **0.855×, i.e. better than the one-shot**; `M05` needs a measurement it skipped, not a weight. `abstain` and `discriminating` measure **inert**, and the resolution floor 10c called for is **withdrawn as harmful** — monotonic on sciml, opposite sign on the BENCHOP holdout, because a tie falls to declaration order, which is the worst plan on 9 of 9 sciml pools and the best on 5 of 9 BENCHOP ones. **Rev 13 (10g)** makes the one fix 10f identified: `KS_C95 / sqrt(n)` is the Kolmogorov bar and this statistic standardizes by its own sample mean and sd, so it is the **Lilliefors** situation and has no closed-form null. A parametric bootstrap of the declared law replaces it — **0.66–0.73×** the old bar on a normal, a mild lognormal and a Feller-satisfying CIR, i.e. a *tighter* gate, and 2.99× / 40.97× only on the two heavy-tailed laws it was mis-grading; the normal case reproduces Lilliefors' published `0.886/√n` to within 2%, which is the outside check. Re-graded, M01's `2-milstein` goes **8 → 10**, its regret **17.706 → 2.132**, `decided_by` `score` → `sqi`, and the arm reaches **0.931× — better than Opus answering cold**. Two costs recorded, not tuned away: Rademacher increments are no longer caught at 625 steps (CLT, and the old bar “caught” them only as it caught a zero-error solver on 5 of 9 seeds), and on a Feller-violating CIR the test has almost no power — margin 1.18× where it read 48× of the wrong bar. The residual on M01, and the 0.377× the oracle shows, are now behind the **order band**. **Rev 14 (10h)** prices step 2's three ranker defects and ships one of them. The `comparable_keys` fallback is **dead code on all 18 recorded pools** — M02 and M05 were decided on correctly *restricted* sets of two and one — so item 1's premise is false; the real defect is a shared set of one, and abstaining on it is harmful by all three routes (`abstain` inert, `thin:2` 0.931× → 2.174×, `thin:3` → 3.501×, the floor monotonic again under the new scorer), because every route lands on **declaration order**: the first-declared plan is the pool's **worst on 8 of 9** sciml pools (`1-euler-maruyama`, all nine) and its **best on 5 of 9** holdout pools. The one non-fitted fall-through, `observed_order`, improves sciml to 6/9 and 0.846× and is still **not shipped**: holdout is untouched only because the gate never fires there, and at the breadth where it does, holdout falls to 2/9 — an **exact sampler has no order to measure**, so the closed forms that are the best plan in 7 of 9 holdout pools sort last. Item 3 was the understated one: the record's whitelist is a **ranking input**, and it was costing `order` and `structure` entirely, **fabricating** `accuracy` where the kernel had abstained (M05: three unresolved plans scored 0.141/0.008/0.046, the highest being the plan 651× worse), and silently substituting a **wrong `dynkin_bar`** — that last found by the census test, not by a run. Twelve fields added and the record now reproduces the conductor **bit-identically** on all 18 pools: **3/9 and 5.291× → 5/9 and 0.931×**. **Rev 15 (10i)** fixes the pass-rate accounting the comparison would have been published on: `_PASS_VERDICTS` is a conjunction (harness passed **and** pipeline claimed 10) and the baseline's is not, because a baseline has no self-score — so C2 read **5/9** against C0's **9/9** while the harness passed **9 of 9 on both sides**, and `compare.py`'s own docstring asserted the comparison was apples-to-apples in as many words. The four lost entries (M02, M04, M05, M08) are all `UNDERCLAIM`: the conductor scoring itself below 10 on a solution the harness confirmed. Replaced by `_VERIFIED_VERDICTS`, which also retires a set that was never internally consistent — `VERIFIED_PASS` carries the self-score conjunct and `STABLE_PASS` carries none. Both sides now read 9/9, and no measurement in 10f–10h moves. **Step 4 is also re-scoped by a finding rather than done**: the 7-of-9 `score_cap: 3` incidence is confirmed, but all seven violations are the *same* `num_paths=1000` finding, the harness deliberately re-derives truth at the executed level, and the ledger rule the message quotes is about grading *mode* and not path count — so applying the cap could understate seven of nine scores from 10 to 3, and what the step needs first is whose choice that 1000 was. **Rev 16 (10j) answers it: the harness's, and correctly.** `problems.py`, the brief's own contract line and the executed run read 1000 on all nine entries; `runner.run_solver` builds `spec["call"]["num_paths"]` from `problems.py` and `run_meta` is a verbatim copy of that call, so a solver cannot influence the field it is being capped on. The cap instead tracks the **formulator's** `evaluation_thresholds.num_paths` — 20000 to 100000, a figure absent from every one of the seven briefs — at **cap ⟺ declared ≠ executed, 9 of 9**, with M05 and M09 the control: the only two whose formulator declared the right number and the only two uncapped. All seven capped entries were graded **10/10 by the harness independently**. So defect 9 is retired as written and two real ones are recorded in its place: the formulator **fabricating** a threshold (the same class of fault as 10h's invented `accuracy`, and plausibly SciML's published path counts leaking in), and `audit_sde_output` charging it to the solver — all four of its gated fields live in the harness's own `call` dict, so the check cannot detect solver misconduct at all. **Rev 17 fixes it**: `findings.SPEC` is a third severity for a finding that is certain and is about someone other than the solver — the gate/warn split had no room for it, both halves being claims about the solver differing only in reliability. All four SDE run-parameter findings now raise that way, each pointing at the ledger field rather than the run, and land in `ledger_spec_defects` with no cap; the harness whitelist was extracted to `run.RECORDED_HARNESS` so a test can assert the finding still reaches the record. Re-auditing the nine: **7/9 capped → 0/9**, 7/9 still reporting, now against `evaluation_thresholds.num_paths`, with M05 and M09 still silent. PDE output findings are untouched and still cap, pinned by a test. And the test that asserted `[ERROR]` on all three fields — which is why the false positive was not merely unnoticed but *pinned* — is corrected with the reasoning in its docstring |
 | 11  | Phase 2 **if it is still wanted**: H5, H6, H7, then `additivesystem` → `bruss` → `lorenz`. §4a.ii drops `oscilreact`, `oval2` and stoch-heat                                                                                                                                                                                                                                                                                                                                                                                            | reference agreement two orders below the gate, with the second integrator named                                                                                                                                                                                                                                                                                                                     |
 
 **Steps 1–10 are the plan. Step 11 is a second plan wearing a row**, and §4a.ii has now removed its
@@ -3391,6 +3415,254 @@ Three items for the queue, in the order the evidence supports them:
    `thin` and `ordertie` are powerless on the pool with 622× of regret — and why M05's shared
    set is `('structure',)` in the first place. The thin-pool problem on that entry is a *data*
    gap, not a ranking rule.
+
+#### 10i. The UNDERCLAIM accounting: the comparison was charging the pipeline for a category the baseline cannot enter `[rev15 2026-11-13]`
+
+**Status: step 3 done.** A reporting-integrity fix, no model cost. It changes no measurement
+— every number in 10f–10h is a harness error or a regret and none of them reads a verdict —
+but it changes the **headline** a reader would quote out of this repo, in the pipeline's
+favour, which is why it had to be settled before any number leaves.
+
+##### The defect
+
+`report._PASS_VERDICTS` was `("VERIFIED_PASS", "STABLE_PASS")`, and `VERIFIED_PASS` is a
+**conjunction**: `compute_verdict` returns it only where the harness passed the solution
+*and* the pipeline scored itself 10. `_ONESHOT_PASS_VERDICTS` is `("PASS", "STABLE_PASS")`,
+and `compute_oneshot_verdict` has no second conjunct to apply — a baseline has no
+self-score. So the two sets were not measuring the same thing, and three call sites
+compared them as if they were:
+
+| site | label it printed | what it computed |
+| --- | --- | --- |
+| `report.py` executive summary | **"Independently confirmed pass"** | verified **and** self-claimed |
+| `report.py` by type / by tier | **"Independently verified"** | verified **and** self-claimed |
+| `compare.py:69` (`_pipeline_pass`) | pass, against the baseline's pass | verified **and** self-claimed |
+
+Measured on the nine sciml entries:
+
+| axis | C2 pipeline | C0 one-shot |
+| --- | --- | --- |
+| the old `_PASS_VERDICTS` / `_ONESHOT_PASS_VERDICTS` | **5/9** | **9/9** |
+| the harness's own `verify.passed` | **9/9** | 9/9 |
+
+The four-entry gap is `sde_sciml_additive` (M02), `wave` (M04), `nltest` (M05) and
+`stiffquad_mixed` (M08) — every
+one of them `UNDERCLAIM`, which is to say *the harness passed a solution the conductor had
+scored below 10*. `compare.py`'s own module docstring asserted the comparison was
+apples-to-apples in as many words (*"Pass on BOTH sides means the same thing"*); that
+sentence was false for exactly those four.
+
+And the direction matters. `UNDERCLAIM` is the pipeline being **too conservative about its
+own success** — the one error direction this benchmark is built to reward, since the whole
+point of the verdict taxonomy is that `OVERCLAIM` is the finding that costs something. The
+accounting was penalising modesty and calling the result an accuracy comparison. C0's
+verdict spread across all nine entries is literally `['PASS']`: there is no self-score to
+miss, so `UNDERCLAIM` is a verdict the baseline is **structurally incapable** of receiving.
+
+##### The fix
+
+A new set, `report._VERIFIED_VERDICTS = ("VERIFIED_PASS", "UNDERCLAIM", "STABLE_PASS")` —
+what the independent check confirmed, whatever the pipeline claimed about it — used at all
+three sites. `_PASS_VERDICTS` is **removed** rather than kept beside it, for two reasons.
+It had no remaining caller, and a constant named like "the passes" that is wrong for every
+accuracy question is a trap rather than a spare part. The second reason is sharper and was
+found while writing the comment: the old set was **not internally consistent**.
+`VERIFIED_PASS` carries the self-score conjunct and `STABLE_PASS` carries none at all,
+being returned off `ver["passed"]` alone on a stability problem. So it mixed a conjunction
+with a non-conjunction and could not have been measuring one quantity even before anything
+was compared against it.
+
+The widening admits nothing unverified, and that is checked rather than argued:
+`compute_verdict` returns `UNDERCLAIM` only where `verified_pass` is true, so `UNDERCLAIM`
+is a subset of the verified passes by construction — confirmed against the records, where
+no `UNDERCLAIM` entry has `verify.passed` false. The two exclusions are returned *before*
+the pass branches, so neither `ANALYTIC_TRANSCRIPTION` (an exclusion, not a defect — §0b,
+H2) nor `CONSTRAINT_VIOLATION` can reach the set.
+
+After the fix both sides read **9/9**, which is also what the harness read on both sides all
+along.
+
+##### What this does and does not change
+
+It does **not** move 10f–10h. Those sections measure `harness_error` and regret per plan;
+none of them reads a verdict, and the 1.412× / 2.65× / 0.931× figures are untouched. What
+changes is the pass-rate line, and on the sciml arm the honest version of that line is a
+**tie at 9/9** rather than a 5/9-against-9/9 loss. The interesting number on this arm was
+never the pass rate — both systems clear every gate — it is the accuracy ratio in 10f, and
+this fix is what stops a reader taking the wrong one.
+
+Three tests, in `benchmark/tests/test_orchestration.py`: that an `UNDERCLAIM` record scores
+as a pass on both predicates and that the two agree; that **no** baseline record can be an
+`UNDERCLAIM` for any self-score in `0..10` (the asymmetry is structural, not a property of
+these nine runs); and that every verdict in `_VERIFIED_VERDICTS` implies the harness passed
+it, driven through `compute_verdict` rather than reasoned about.
+
+##### A finding against step 4, which should not be applied as written
+
+Step 4 is *"apply defect 9: `score_cap: 3` is recorded and never applied on seven of nine
+entries, every one of which was graded 10"*. The incidence is confirmed exactly — 7 of 9,
+all with `verified_score: 10`, all with one `ledger_violations` entry. But the seven
+violations are the **same finding**, and it is not obviously the solver's:
+
+```
+run_meta.num_paths: the run used num_paths=1000, the spec asks for 50000.
+Ledger: R4 'This problem is graded path by path, not in distribution. ...'
+```
+
+Two things make applying a 10 → 3 cap on this premature. First, `run_meta` is the level
+*actually executed*, and `verify.py` deliberately **accommodates** it — the comment at the
+re-level step says the truth *"has to be evaluated on the path that run was handed rather
+than on the graded one"*, and it re-derives the exact solution at 1000 paths. So the grade
+is self-consistent at the level the audit is flagging. Second, the quoted ledger rule is
+about the **grading mode** (path by path, not in distribution) and not about the path count;
+on a pathwise strong-error problem a smaller `num_paths` raises the Monte-Carlo noise of the
+aggregate error estimate without making the scheme wrong, which is a different charge from
+the one the message cites.
+
+So the open question is whose choice the 1000 was — the solver's, or a default on the
+sandboxed path (`_run_and_read_sde` takes `run_meta` straight from the injected sandbox
+result). If it is the harness's own, the cap is a false positive and applying it would
+understate seven of nine entries from 10 to 3; if it is the solver's, the cap is right and
+the *message* still needs repairing to cite the rule it actually breaks. Either way the fix
+is not "apply the recorded cap" — **it is to determine which, first.** Recorded here rather
+than acted on, for the same reason the resolution floor was withdrawn in 10f: a correction
+in the wrong direction is worse than the defect, and this one would move seven of nine
+published scores.
+
+#### 10j. Defect 9 settled: the `score_cap` is a false positive, and the real defect is the formulator's `[rev16–17 2026-11-13]`
+
+**Status: step 4 answered, retired as written, and the real defect fixed `[rev17]`.** The
+question §10i left open — whose choice the `num_paths=1000` was — has a definite answer:
+**the harness's, and it is the correct one.**
+
+##### The provenance, end to end
+
+| id | `problems.py` | the brief's own call | formulator's `evaluation_thresholds` | executed | `score_cap` |
+| --- | --- | --- | --- | --- | --- |
+| M01 `linear_ito` | 1000 | 1000 | **50000** | 1000 | 3 |
+| M02 `additive` | 1000 | 1000 | **20000** | 1000 | 3 |
+| M03 `cubic` | 1000 | 1000 | **20000** | 1000 | 3 |
+| M04 `wave` | 1000 | 1000 | **50000** | 1000 | 3 |
+| M05 `nltest` | 1000 | 1000 | 1000 | 1000 | **none** |
+| M06 `stiffquad_mild` | 1000 | 1000 | **100000** | 1000 | 3 |
+| M07 `stiffquad_det` | 1000 | 1000 | **50000** | 1000 | 3 |
+| M08 `stiffquad_mixed` | 1000 | 1000 | **50000** | 1000 | 3 |
+| M09 `weak_noncommutative` | 100000 | 100000 | 100000 | 100000 | **none** |
+
+`problems.py`, the brief, and the executed run agree on **all nine**. The cap fires exactly
+where the *formulator's declared threshold* disagrees with them, and not otherwise:
+**cap ⟺ declared ≠ executed, 9 of 9**. The two uncapped entries are the two whose
+formulator declared the number its own brief states.
+
+M05 is the control that makes this a measurement rather than an argument: same harness, same
+executed 1000, same solver population, and no cap — the only difference is that its
+formulator wrote 1000 into `evaluation_thresholds` where the other seven wrote a number
+their brief does not contain. Grepping each brief for its declared count returns **nothing**
+on all seven; the brief's only path count is the `solve_sde(num_paths=1000, ...)` in its own
+contract block.
+
+##### Why the solver cannot be the author of this
+
+`num_paths` is not a choice a solver makes. `runner.run_solver` builds
+`spec["call"] = {"num_paths": int(npaths), "dt": ..., "T": ..., "seed": ...}` with
+`npaths = problem["num_paths"]` where no `sde_num_paths` override is passed (and none is on
+the graded path — the override exists for work-precision points), the sandbox child calls
+`_timed(fn, **call)`, and `meta["run_meta"]` is then built **from `call` itself**. So
+`run_meta.num_paths` is a verbatim copy of the harness's own call parameter. A solver cannot
+influence it, and capping its score on the strength of it charges it for a number it was
+handed as a keyword argument.
+
+That generalises past this one field, and is the part worth keeping.
+`audit.audit_sde_output`'s docstring reads *"SDE run parameters are already reported in
+``run_meta``, so all four gate"* — but all four of the things it gates (`num_paths`, `seed`,
+`T`, and the `dt > T` check) live in that same `call` dict. **Every one of them audits the
+harness's own parameters and attributes a mismatch to the solver.** The check is structurally
+incapable of detecting solver misconduct on these fields; the only finding it can ever emit
+is a disagreement between the formulator's spec and the harness's problem definition, priced
+as a three-point cap on a third party.
+
+The seven capped entries were all graded **10/10 by the harness independently**. A gate that
+fires on seven of seven perfect solvers and spares the one whose *formulator* happened to
+transcribe correctly is diagnosing the formulator.
+
+##### So the defect is real, and it is somewhere else
+
+Two defects, neither of them the one step 4 names:
+
+1. **The formulator fabricates `evaluation_thresholds.num_paths` on 7 of 9 entries** — a
+   number with no support in the brief it was given. This is the same class of fault as
+   §10h's fabricated `accuracy`: not a missing value but an invented one, and in a field
+   whose whole purpose is to carry the brief's constraints forward (the `SPEC_BLOCKED`
+   verdict exists for the *opposite* failure, a ledger that drops a constraint). It is
+   plausibly SciML's published path counts leaking in from the model's own knowledge, which
+   would make it a leakage finding as well as a transcription one — the published
+   `linear_ito` comparison does use far more paths than 1000.
+2. **The audit charges it to the solver.** `score_cap` is the wrong instrument for a
+   formulator defect, and `run_meta` is the wrong evidence for a solver one.
+
+##### The fix `[rev17]`
+
+The second shape was chosen, and implementing it simplified the change: since `run_meta`
+echoes the harness's problem definition **verbatim**, comparing it against
+`evaluation_thresholds` *is already* the comparison worth making — declared versus graded.
+The comparison was never wrong. Only the attribution and the consequence were. So the
+comparison is kept unchanged and nothing is re-plumbed.
+
+A third severity, `findings.SPEC`, carries the distinction the gate/warn split had no room
+for. That split is about how reliably a finding can be read off the solver — output-derived
+facts gate, source-derived guesses warn — and both halves are claims *about the solver*. A
+`spec` finding is a different kind of claim: certain, and about someone else. It is reported
+in full, under its own `ledger_spec_defects` key, and caps nothing.
+
+`audit_sde_output` now raises all four of its findings that way, each pointing at the field
+where the defect actually is rather than at the run where it was noticed:
+
+| finding | old path | new path | old severity | new |
+| --- | --- | --- | --- | --- |
+| `num_paths` mismatch | `run_meta.num_paths` | `evaluation_thresholds.num_paths` | error → cap 3 | **spec** |
+| `seed` mismatch | `run_meta.seed` | `evaluation_thresholds.seed` | error → cap 3 | **spec** |
+| `T` mismatch | `run_meta.T` | `time_interval.T` | error → cap 3 | **spec** |
+| `dt > T` | `run_meta.dt` | `time_interval.T` | error → cap 3 | **spec** |
+
+The message changed with the attribution — it now names both numbers, says which one the
+harness runs, and states that the solver is handed the field as a call argument and has no
+say in it, while still citing the ledger entry by id and quote.
+
+Re-auditing the nine recorded entries against the fix:
+
+| | before | after |
+| --- | --- | --- |
+| entries capped | **7/9** | **0/9** |
+| entries reporting the defect | 7/9, as `ledger_violations` on the solver | **7/9, as `ledger_spec_defects` on `evaluation_thresholds.num_paths`** |
+
+Nothing is lost and nothing is charged to the wrong party. The defect stays as visible as it
+was — more so, since it now names the formulator's field — and M05 and M09 remain silent,
+which is the control holding.
+
+**The PDE output checks are untouched and still gate.** They read the solver's own returned
+field — its grid, its horizon, its Dirichlet edges — which is conduct the solver *is*
+answerable for, and `score_cap` stays live for them; a test pins all three. The harness
+whitelist was extracted to `run.RECORDED_HARNESS` for the same reason §10h extracted
+`RECORDED_METRICS`: a finding that caps nothing still has to reach the record, and a test
+should be able to say so. A finding nobody can see is exactly the state `score_cap` was
+already in when this step found it.
+
+Six tests. The one that matters most is the **correction of the test that made the defect
+durable**: `test_sde_run_meta_gates` asserted `[ERROR]` for each of the three fields, so the
+false positive was not merely unnoticed, it was *pinned*. It is now
+`test_sde_run_meta_reports_a_spec_defect_and_never_caps_the_solver`, with the reasoning in
+its docstring so the next reader does not restore the old assertion.
+
+The extraction then broke one existing test and improved it.
+`test_the_results_record_keeps_the_number_the_verdict_rests_on` had been reading
+`inspect.getsource(RUN)` and slicing it between two string literals, so it asserted that a
+key appeared *somewhere in the file's text* and failed the moment the list moved — a false
+negative waiting on any refactor, and a false *positive* for a key written in a comment. It
+now reads `RUN.RECORDED_HARNESS`, which is the only thing it was ever trying to establish.
+That is the second time this round that naming a whitelist turned a source-text assertion
+into a real one (the first was §10h's `RECORDED_METRICS` census).
+
+Recorded with its own audit claims, so the correlation and the provenance cannot drift.
 
 ---
 

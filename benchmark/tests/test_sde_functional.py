@@ -521,14 +521,17 @@ def test_a_problem_with_moments_and_a_price_reports_both():
 
 def test_the_results_record_keeps_the_number_the_verdict_rests_on():
     """``run.py`` copies a fixed key list into results.json. A price-only problem
-    whose price is not on that list is a verdict with no number behind it."""
-    import inspect
-    src = inspect.getsource(RUN)
-    block = src[src.index('"gt_kind", "worst_variance_rel_err"'):]
-    block = block[:block.index("if k in harness")]
+    whose price is not on that list is a verdict with no number behind it.
+
+    ~~Scraped `inspect.getsource(RUN)` between two string literals.~~ Reads
+    `RUN.RECORDED_HARNESS` since sciml SS10j extracted it, which is what the constant
+    was named for: a source-text slice asserted the key was *written somewhere in the
+    file* and broke the moment the list moved, where this asserts the only thing that
+    matters -- that the recorder carries the key.
+    """
     for key in ("functional_errs", "functional_abs_errs", "functional_tol_used",
                 "reference_abs_err", "functional_levels"):
-        assert f'"{key}"' in block, key
+        assert key in RUN.RECORDED_HARNESS, key
 
 
 # --- K6: the ranking margin on a price-only problem (step 10) --------------------
