@@ -737,9 +737,90 @@ def _functional_sampling_se(levels, name):
     return abs(float(delta)) / math.sqrt(n_hi / n_lo - 1.0)
 
 
+#: The `<metrics>` fields `solution_metrics` copies into the per-plan record.
+#: Named rather than inline because `benchmark/rank_study.py` imports it to measure
+#: what a re-rank from the record is worth: a copy of this list would drift, and the
+#: measurement would then be of the copy (SS10h).
+RECORDED_METRICS = (
+        "score", "certified", "provenance", "estimated_rel_error",
+        "estimated_rel_error_T", "error_horizon", "d1_outcome", "reference_outcome",
+        "design_order", "invariant_max_drift", "dynkin_z", "solve_time_s",
+        # [sciml 10h] The order component, whole. See the docstring: the record
+        # carried the *declared* rate and not the measured one, so the one component
+        # that separates a Milstein from an Euler-Maruyama was invisible to every
+        # reader of this file except the conductor that wrote it.
+        "observed_order", "order_check", "order_floor", "scheme_family",
+        # Reported, not read by `ranking.order()` (it retired the `order_band`
+        # branch), and kept because they are what `crn.guards` applied in deciding
+        # whether the order passed -- the audit trail for the number above it.
+        "observed_order_se", "order_band",
+        # [sciml 10h] `ranking.structure()` reads `invariant_worst_headroom`. The
+        # field above it is `invariant_max_drift`, a *different* quantity, so the
+        # record carried a structure number nothing reads and omitted the one
+        # something does: `structure` was None for every plan in all nine pools.
+        "invariant_worst_headroom",
+        # [sciml 10h] The error bar, and the reason this list is a correctness
+        # concern and not a reporting one. `ranking.accuracy()` abstains under F16
+        # where the error sits inside its own noise, and it learns that from
+        # `uncertainty()` = `mc_se_rel * ci_mult`. Without these two
+        # `noise_limited()` returns False -- not "unknown" -- so accuracy falls
+        # through to `headroom_fraction` and **invents** a value where the kernel
+        # correctly declined to locate one. Measured on M05: the cut block scored
+        # accuracy 0.141 / 0.008 / 0.046 on three plans the kernel had all marked
+        # unresolved, ranked the pool on that fabricated component alone, and the
+        # highest of the three belonged to `1-euler-maruyama` -- the worst plan in
+        # the pool by a factor of 651. A dropped field is not always less
+        # information; here it was false information.
+        "mc_se_rel", "ci_mult",
+        # [sciml 10h] Found by the census test rather than by a run, and the clearest
+        # case for having one. `ranking.consistency()` reads `dynkin_bar` with a
+        # hardcoded fallback of 2.43, and the nine pools carry 2.4284, 2.5310 and
+        # 2.8049. Dropping the field therefore did not abstain and did not visibly
+        # break: it silently substituted a *different, tighter* bar, and the two
+        # pools inspected by hand happened to carry 2.4284 -- so the error was
+        # invisible to the measurement and only the census found it.
+        "dynkin_bar",
+        # `order()`'s SDE-branch selector. Absent on every plan recorded so far
+        # (`scheme_family` is what currently carries it), so this changes nothing
+        # today and stops the branch going quiet the first time a spec sets it.
+        "kind",
+        # Roache's factor of safety, divided back out of the error by
+        # `headroom_decades`. Absent on SDEs; on a PDE pool re-ranked from the
+        # record, omitting it overstates every plan's error by fs (1.25 to 3.0).
+        "error_fs",
+        # The graded quantity of interest, where the spec declares one: the error on
+        # the number the problem is *scored* on, its own tolerance, and which half of
+        # it binds. `estimated_rel_error` beside them is a state-moment proxy, which
+        # on a priced problem is not the answer's error at all -- so a report that
+        # quotes only the proxy is quoting the wrong number
+        # (docs/improving-autonumerics/11-sde-accuracy-fixes.md §1).
+        "functional_name", "functional_rel_tol", "functional_rel_error",
+        "functional_bias_rel", "functional_se_rel", "functional_limited_by",
+        "solver_sha256")
+
+
 def solution_metrics(plan_dir):
     """The kernel's own block for a plan, as the conductor ranked it: ``score``,
-    ``provenance``, ``estimated_rel_error`` and the ``solver_sha256`` it scored."""
+    ``provenance``, ``estimated_rel_error`` and the ``solver_sha256`` it scored.
+
+    **The whitelist is a ranking input, not a report field.** Anything that re-ranks
+    a finished pool reads this block -- `benchmark/rank_study.py`'s `truncated`
+    variant is exactly that read -- so a field dropped here is a component the
+    re-ranker scores as absent. Measured on the nine sciml pools
+    (plan-sciml-benchmark.md SS10e, SS10h): the block carried `design_order` and not
+    `observed_order`, so `ranking.order()` returned None for **every plan in every
+    pool**, and re-ranking from the record picked the best plan on 3 of 9 against the
+    conductor's 5 of 9, at a regret geomean of 14.0 against 3.1.
+
+    `observed_order` on its own does not fix that, which is why four fields land here
+    together: `ranking.order()` reads the measurement (`observed_order`), the gate
+    that says whether it may be read at all (`order_check` -- a waiver or an
+    abstention returns None), the bar a shortfall is measured from (`order_floor`),
+    and the selector for the SDE branch (`scheme_family`). Three of the four are
+    useless without the others. `scheme_family` is also recorded beside this block
+    per plan, deliberately duplicated: `ranking.order()` reads it off the *summary*,
+    and a ranker that has to join two blocks to score one component is a ranker that
+    will be run without the join."""
     path = os.path.join(plan_dir, "SOLUTION.md")
     if not os.path.exists(path):
         return None
@@ -751,19 +832,7 @@ def solution_metrics(plan_dir):
         return {"error": f"{type(exc).__name__}: {exc}"}
     if not block:
         return None
-    return {k: block.get(k) for k in (
-        "score", "certified", "provenance", "estimated_rel_error",
-        "estimated_rel_error_T", "error_horizon", "d1_outcome", "reference_outcome",
-        "design_order", "invariant_max_drift", "dynkin_z", "solve_time_s",
-        # The graded quantity of interest, where the spec declares one: the error on
-        # the number the problem is *scored* on, its own tolerance, and which half of
-        # it binds. `estimated_rel_error` beside them is a state-moment proxy, which
-        # on a priced problem is not the answer's error at all -- so a report that
-        # quotes only the proxy is quoting the wrong number
-        # (docs/improving-autonumerics/11-sde-accuracy-fixes.md §1).
-        "functional_name", "functional_rel_tol", "functional_rel_error",
-        "functional_bias_rel", "functional_se_rel", "functional_limited_by",
-        "solver_sha256") if k in block}
+    return {k: block.get(k) for k in RECORDED_METRICS if k in block}
 
 
 def kernel_metrics(plan_dir, timeout_s=900):

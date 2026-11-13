@@ -44,16 +44,43 @@ fixing, each isolated so its effect is attributable:
   weighted mean (`rank_key`'s own docstring). It is here to answer one question --
   how many of the ranker's misses are the *scorer's* misses -- and the answer is
   worth having before any ranking weight is touched.
+* `thin:K`   -- `abstain`, plus the index must have **K** components that actually
+  separate the pool before it may decide it. This is the defect `abstain` was
+  supposed to be: the all-four fallback turns out never to fire (SS10h -- `shared` is
+  non-empty on all 18 recorded pools), while a shared set of *one* is real and is how
+  `sde_sciml_nltest` was decided. Measured **harmful** and recorded, not shipped.
+* `ordertie:K` -- `thin:K`, but ties fall through to the higher `observed_order`
+  instead of to declaration order. The one candidate here that is not fitted to a
+  suite, since a measured convergence order is a property of the method and a
+  position in a list is not. Also not shipped, and the reason is worth more than the
+  variant: an **exact** sampler has no order to measure, so the closed-form plans
+  that are the best plan in 7 of 9 holdout pools sort last.
+* `whitelisted` -- `regraded`, then cut down to `run.RECORDED_METRICS`. This is how a
+  change to the **recorder** is priced: it reads the full block and throws away
+  exactly what the record throws away, so a whitelist change can be measured without
+  spending a pipeline run on it. `truncated` measures the record as it *was* written;
+  this measures it as it *will be*.
 * `truncated` -- `current`, but reading the *record's* per-plan `kernel` summary
   instead of `SOLUTION.md`. Not a candidate either: it measures how much the
   recorder's field truncation (10e) costs anything that re-ranks from the record.
+* `regraded` -- `current`, reading each plan's `evaluation.json`, which is what
+  `verifylib/cli.py evaluate` rewrites. That is the kernel as it stands *now*, so
+  this is how a change to the **scorer** is priced: re-grade the plans, then
+  re-rank. SS10g uses it to measure the terminal-law bar fix.
 
 A variant that ties falls through to `iter` and then to declaration order, exactly as
 the live ranker does, so "abstaining" is never a silent coin flip -- it is the pool's
 own ordering, and the report says when that is what decided.
 
+`--source` overrides the block a variant's grades are read from, which is what makes
+a candidate priceable against the *re-graded* scorer rather than the one that shipped:
+`--variant abstain --source evaluation` is `abstain` crossed with SS10g's fix. Without
+it each variant is locked to one source and the two effects cannot be separated.
+
 Run:  uv run python benchmark/rank_study.py
       uv run python benchmark/rank_study.py --variant floor:0.05 --sweep
+      uv run python benchmark/rank_study.py --variant thin:2 --source evaluation
+      uv run python benchmark/rank_study.py --variant whitelisted --holdout
 """
 
 from __future__ import annotations
@@ -70,6 +97,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from benchmark.run import RECORDED_METRICS  # noqa: E402
 from verifylib import ranking  # noqa: E402
 
 #: The nine sciml pools, across the three files step 10 wrote (§10a, 10d, 10e). The
@@ -148,7 +176,14 @@ def _same_run(summary, parsed):
     return mine is None or theirs is None or mine == theirs
 
 
-def pools(paths, *, truncated=False):
+#: Where a plan's ranker input comes from. `metrics` is what the conductor reads and
+#: is the default. `record` is the results file's truncated copy. `evaluation` is the
+#: kernel's own output file, which `cli.py evaluate` rewrites -- so re-grading a pool
+#: and reading `evaluation` prices a change to the scorer.
+SOURCES = ("metrics", "record", "evaluation")
+
+
+def pools(paths, *, truncated=False, source="metrics"):
     """One entry per problem: its plans, each plan's ranker input and its harness
     error. Plans the harness could not grade are kept and ranked -- excluding them
     would hand the ranker an answer it does not have -- but they cannot be `best`."""
@@ -165,20 +200,34 @@ def pools(paths, *, truncated=False):
         by_plan = (record.get("harness_by_plan") or {}).get("plans") or {}
         if not by_plan:
             continue
+        want = "record" if truncated else source
         plans, sources = [], set()
         for name, entry in by_plan.items():
-            summary, source = entry.get("kernel") or {}, "summary"
-            if not truncated:
-                solution = (ROOT / "workspace" / record["slug"] / "plans" / name
-                            / "SOLUTION.md")
+            summary, source_used = entry.get("kernel") or {}, "summary"
+            plan_dir = ROOT / "workspace" / record["slug"] / "plans" / name
+            if want == "metrics":
+                solution = plan_dir / "SOLUTION.md"
                 if solution.exists():
                     parsed = parse_metrics(solution.read_text(encoding="utf-8"))
                     # A metrics block is only this pool's if the solver it scored is
                     # the one on disk. Without that check an overwritten workspace
                     # silently supplies another run's numbers.
                     if parsed and _same_run(summary, parsed):
-                        summary, source = parsed, "metrics"
-            sources.add(source)
+                        summary, source_used = parsed, "metrics"
+            elif want == "evaluation":
+                graded = plan_dir / "evaluation.json"
+                if graded.exists():
+                    doc = json.loads(graded.read_text())
+                    # `cli.py evaluate` writes score/provenance/certified at the top
+                    # level and the ranked components under `summary`; `rank_key`
+                    # wants them flattened as a `<metrics>` block carries them.
+                    fresh = {**(doc.get("summary") or {}),
+                             "score": doc.get("score"),
+                             "provenance": doc.get("provenance"),
+                             "certified": doc.get("certified")}
+                    if _same_run(summary, fresh):
+                        summary, source_used = fresh, "regraded"
+            sources.add(source_used)
             error = entry.get("harness_error")
             plans.append({
                 "name": name,
@@ -200,16 +249,33 @@ def pools(paths, *, truncated=False):
             "best": min(graded, key=lambda p: p["error"]),
             "margin": (record.get("harness_by_plan") or {}).get(
                 "harness_error_margin"),
-            "source": "metrics" if sources == {"metrics"}
-                      else ("summary" if sources == {"summary"} else "mixed"),
+            "source": sources.pop() if len(sources) == 1 else "mixed",
         })
     return out
 
 
-def _keys(variant, tol, summaries):
-    if variant in ("current", "truncated", "noscore"):
+def _restrict_to_record(pool_list):
+    """Each plan's summary cut down to `run.RECORDED_METRICS` (SS10h).
+
+    `truncated` measures the record **as written** -- by the whitelist that was live
+    when the run happened. This measures the record as it *will be* written, so a
+    change to the whitelist can be priced before a pipeline run is spent on it. It
+    reads the evaluation block and then throws away exactly what the recorder throws
+    away, which is why it imports the real tuple instead of restating it.
+    """
+    for pool in pool_list:
+        for plan in pool["plans"]:
+            if plan["summary"]:
+                plan["summary"] = {k: v for k, v in plan["summary"].items()
+                                   if k in RECORDED_METRICS}
+    return pool_list
+
+
+def _keys(variant, tol, summaries, breadth=0):
+    if variant in ("current", "truncated", "regraded", "noscore", "whitelisted"):
         return ranking.comparable_keys(tol, summaries)
-    # `abstain`, `floor:` and `discriminating` share this: no fallback. Where the
+    # `abstain`, `floor:`, `thin:`, `ordertie:` and `discriminating` share this: no
+    # fallback. Where the
     # pool shares no component there is no comparison to make, and the index says so.
     if len(summaries) < 2:
         return ranking.CERT_COMPONENTS
@@ -221,14 +287,26 @@ def _keys(variant, tol, summaries):
         # component that separates nothing should not dilute one that does.
         keys = [k for k in keys
                 if max(p[k] for p in parts) - min(p[k] for p in parts) > 1e-12]
+    if breadth:
+        # `thin:K` (SS10h). The *empty* shared set this file was built to price turns
+        # out never to occur -- on all 18 recorded pools `comparable_keys` restricted
+        # to something non-empty and the fallback was dead code. What does occur is a
+        # shared set of **one**: M05 ranked on ('structure',) alone and shipped a plan
+        # 622x worse. So the quantity to price is not emptiness but *breadth* -- how
+        # many components have to separate the pool before a weighted mean over them
+        # is allowed to decide it.
+        varying = [k for k in keys
+                   if max(p[k] for p in parts) - min(p[k] for p in parts) > 1e-12]
+        if len(varying) < breadth:
+            return ()
     return tuple(keys)
 
 
-def key_of(plan, variant, summaries, floor):
+def key_of(plan, variant, summaries, floor, breadth=0):
     """`rank_key`, with the variant's key restriction and resolution floor."""
     summary = plan["summary"]
     tol = ranking._tol_of(summary, summary)
-    keys = _keys(variant, tol, summaries)
+    keys = _keys(variant, tol, summaries, breadth)
     index = (ranking.sqi(summary, tol, summaries, keys=keys)[0] if keys else None)
     if index is not None and floor:
         # Quantising is how a floor becomes a *tie* rather than a nudge: two indices
@@ -242,20 +320,32 @@ def key_of(plan, variant, summaries, floor):
     iters = ranking._num(plan["entry"].get("iter")) or 0.0
     if variant == "noscore":
         return (0 if summary else 1, provenance, quality, -score, iters)
+    if variant == "ordertie":
+        # SS10h. Every abstention route -- `abstain`, `floor:E`, `thin:K` -- falls
+        # through to **declaration order**, and that is measured to be the thing
+        # that hurts: the first-declared plan is the pool's worst on 8 of 9 sciml
+        # pools and its best on 5 of 9 holdout pools. So the question is not whether
+        # to abstain but what to abstain *to*. `observed_order` is a property of the
+        # method rather than a position in a list, so preferring the higher measured
+        # order is a prior that cannot be suite-fitted the way declaration order is.
+        order = ranking._num(summary.get("observed_order"))
+        return (0 if summary else 1, -score, provenance, quality, iters,
+                -(order if order is not None else -1.0))
     return (0 if summary else 1, -score, provenance, quality, iters)
 
 
-def rank(pool, variant, floor):
+def rank(pool, variant, floor, breadth=0):
     summaries = [p["summary"] for p in pool["plans"] if p["summary"]]
-    ordered = sorted(pool["plans"], key=lambda p: key_of(p, variant, summaries, floor))
+    ordered = sorted(pool["plans"],
+                     key=lambda p: key_of(p, variant, summaries, floor, breadth))
     return ordered
 
 
-def study(pool_list, variant, floor, baseline=None):
+def study(pool_list, variant, floor, baseline=None, breadth=0):
     baseline = {} if baseline is None else baseline
     rows = []
     for pool in pool_list:
-        ordered = rank(pool, variant, floor)
+        ordered = rank(pool, variant, floor, breadth)
         top, best = ordered[0], pool["best"]
         error = top["error"]
         regret = (error / best["error"]) if (error and best["error"]) else None
@@ -274,19 +364,20 @@ def study(pool_list, variant, floor, baseline=None):
             "vs_c0": ((error / baseline[pool["id"]])
                       if (error and baseline.get(pool["id"])) else None),
             "outside_margin": bool(outside),
-            "decided_by": decided(ordered, variant, floor),
+            "decided_by": decided(ordered, variant, floor, breadth),
         })
     return rows
 
 
-def decided(ordered, variant, floor):
+def decided(ordered, variant, floor, breadth=0):
     """Which key separated the top two, by the same rule `ranking.decided_by` uses."""
     if len(ordered) < 2:
         return "only-plan"
     summaries = [p["summary"] for p in ordered if p["summary"]]
-    a = key_of(ordered[0], variant, summaries, floor)
-    b = key_of(ordered[1], variant, summaries, floor)
+    a = key_of(ordered[0], variant, summaries, floor, breadth)
+    b = key_of(ordered[1], variant, summaries, floor, breadth)
     names = (("provenance", "sqi", "score", "iter") if variant == "noscore"
+             else (*ranking.RANK_KEYS, "observed_order") if variant == "ordertie"
              else ranking.RANK_KEYS)
     for name, left, right in zip(names, a[1:], b[1:], strict=True):
         if left != right:
@@ -336,25 +427,41 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--variant", default="current",
                     help="current | abstain | discriminating | floor:E | "
-                         "noscore | truncated")
+                         "thin:K | ordertie:K | noscore | truncated | regraded | "
+                         "whitelisted")
     ap.add_argument("--sweep", action="store_true",
                     help="sweep the floor over a decade and print the table")
+    ap.add_argument("--source", choices=SOURCES,
+                    help="override which block the plans' grades are read from, so "
+                         "a key-restriction variant can be priced against the "
+                         "*re-graded* scorer rather than the one that shipped "
+                         "(SS10h). Default: the variant's own source.")
     ap.add_argument("--holdout", action="store_true",
                     help="also score the held-out BENCHOP / no-closed-form pools")
     ap.add_argument("--json", metavar="PATH", help="write the rows to a JSON file")
     args = ap.parse_args(argv)
 
-    variant, floor = args.variant, 0.0
+    variant, floor, breadth = args.variant, 0.0, 0
     if variant.startswith("floor:"):
         floor = float(variant.split(":", 1)[1])
         variant = "floor"
+    if variant.startswith("thin:"):
+        breadth = int(variant.split(":", 1)[1])
+        variant = "abstain"
+    if variant.startswith("ordertie:"):
+        breadth = int(variant.split(":", 1)[1])
+        variant = "ordertie"
 
     base = c0_errors()
-    sciml = pools(SCIML, truncated=(args.variant == "truncated"))
+    src = args.source or ("evaluation" if args.variant == "regraded" else "metrics")
+    cut = _restrict_to_record if args.variant == "whitelisted" else (lambda x: x)
+    if args.variant == "whitelisted":
+        src = args.source or "evaluation"
+    sciml = cut(pools(SCIML, truncated=(args.variant == "truncated"), source=src))
     sets = [("sciml, 9 pools", sciml)]
     if args.holdout:
-        sets.append(("holdout", pools(HOLDOUT,
-                                      truncated=(args.variant == "truncated"))))
+        sets.append(("holdout", cut(pools(
+            HOLDOUT, truncated=(args.variant == "truncated"), source=src))))
 
     out = {}
     for label, pool_list in sets:
@@ -362,8 +469,10 @@ def main(argv=None):
             print(f"\n=== {label}: no pools found (gitignored results?)")
             continue
         rows = study(pool_list, variant, floor,
-                     base if label.startswith("sciml") else None)
-        out[label] = {"rows": rows, "summary": show(f"{label} -- {args.variant}", rows)}
+                     base if label.startswith("sciml") else None, breadth)
+        tag = args.variant if src == ("evaluation" if args.variant == "regraded"
+                                      else "metrics") else f"{args.variant}+{src}"
+        out[label] = {"rows": rows, "summary": show(f"{label} -- {tag}", rows)}
 
     if args.sweep:
         for label, pool_list in sets:

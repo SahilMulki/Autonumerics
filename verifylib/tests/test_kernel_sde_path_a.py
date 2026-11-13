@@ -218,9 +218,15 @@ def test_rademacher_increments_are_invisible_on_additive_noise(tmp_path):
     """A measured correction to §4a, which lists this defect under "the
     distributional check (3b)". On a linear additive-noise SDE the terminal state is
     a **sum** of the increments, so the CLT makes the law Gaussian to within the
-    test's resolution: 0.00233 against a bar of 0.00607 at the spec's dt, and the
-    Gaussian-increment control sits at 0.00295. A check that rejected this would be
-    wrong. The defect is real and the terminal law is not where it shows."""
+    test's resolution: 0.00233 at the spec's dt, and the Gaussian-increment control
+    sits at 0.00295. A check that rejected this would be wrong. The defect is real
+    and the terminal law is not where it shows.
+
+    The bar it clears used to be the asymptotic 0.00607; since SS10g it is the
+    parametric-bootstrap value, which for a *normal* law is **tighter** -- 0.66x of
+    it, and within 2% of Lilliefors' published 0.886/sqrt(n). This still passes, by
+    less, and that is the right direction: the margin here was never the point, the
+    verdict was."""
     m = _run(tmp_path, "sde_uniform_increments.py")
     assert m["checks"]["terminal_law_ok"] is True, m["detail"]["terminal_law_ok"]
     assert m["summary"]["ks_statistic"] < m["summary"]["ks_critical"]
@@ -380,17 +386,40 @@ def test_full_truncation_moves_mass_to_an_atom_the_ks_test_sees(tmp_path):
     correctly. Full truncation clips the state at zero, so 12% of the paths land
     *exactly* at 0 where the true noncentral-chi-squared density has no atom at all.
     The first two moments cannot see it: the mean is 4.96% out against a 5% tolerance
-    and the variance 1.8% against 10%. The standardized KS statistic is 0.295 against
-    a 0.0061 bar -- **48x** -- which is Finding 4's third defect class, "a clipped
-    state that moves mass to a point and leaves the mean inside tolerance", caught on
-    a real scheme rather than on a canary written to be caught.
+    and the variance 1.8% against 10%. The standardized KS statistic is 0.295, which
+    is Finding 4's third defect class, "a clipped state that moves mass to a point and
+    leaves the mean inside tolerance", caught on a real scheme rather than on a canary
+    written to be caught.
 
     This is a property of the scheme and not of this implementation, which is why it
     is asserted as a *finding* rather than fixed: the live spec declares no
-    `terminal_law`, so nothing sees it there, and declaring one is formulator work."""
+    `terminal_law`, so nothing sees it there, and declaring one is formulator work.
+
+    **The margin, and why it shrank** (plan-sciml-benchmark.md SS10g). This used to
+    assert ``> 20x`` the bar, on the asymptotic ``KS_C95 / sqrt(n)`` of 0.0061 that
+    the statistic was never entitled to -- the ratio there was 48x. Against the
+    parametric-bootstrap bar `laws.bootstrap_critical` now computes it is **1.18x**:
+    the defect is still caught, and the *verdict* is unchanged, but barely. That is
+    not the bar being wrong, it is this law being the worst case for the statistic.
+    ``df = 4*kappa*theta/sigma**2 = 0.5``, so the noncentral-chi-squared density
+    diverges at the origin and the standardized CDF is near-vertical there, which
+    makes a small error in the sample standard deviation the statistic divides by move
+    ``D`` enormously: its bootstrap bar is **41x** the asymptotic value, against
+    0.66-0.73x for a normal, a mild lognormal and a Feller-satisfying CIR. So this
+    assertion is now a bound on how little power the test has on a pathological law,
+    which is the honest reading and is why the number is spelled out rather than
+    rounded to a comfortable multiple."""
     m = run(_spec("sde_spec_cir.json"), _plan(tmp_path, "sde_cir_truncated.py"), {})
     assert m["checks"]["terminal_law_ok"] is False, m["detail"]["moments_ok"]
-    assert m["summary"]["ks_statistic"] > 20 * m["summary"]["ks_critical"]
+    d, crit = m["summary"]["ks_statistic"], m["summary"]["ks_critical"]
+    assert d > crit, (d, crit)
+    assert 1.1 < d / crit < 1.3, (d, crit, d / crit)
+    # The bar it is measured against is the bootstrapped one, not the asymptotic
+    # value -- and on this law they differ by a factor of 40, so a test that did not
+    # say which bar it meant would be meaningless.
+    per = m["detail"]["moments_ok"]["terminal_law"]["per_component"][0]
+    assert per["ks_critical_kind"] == "parametric_bootstrap", per
+    assert d / per["ks_critical_asymptotic"] > 20
     law = m["detail"]["moments_ok"]["terminal_law"]["per_component"][0]
     assert law["law"] == "noncentral_chi2"
     # The mean and the variance are both inside tolerance -- that is the point.
@@ -455,3 +484,131 @@ def test_a_generator_that_cannot_be_built_does_not_certify_either(tmp_path):
     assert m["checks"]["moments_ok"] is True
     assert m["score"] == 9 and m["certified"] is False
     assert "could not run" in m["certification"]["reason"]
+
+
+def test_the_shape_bar_is_bootstrapped_and_reproduces_lilliefors_constant():
+    """The critical value's own correctness check (plan-sciml-benchmark.md §10g).
+
+    Standardizing the sample by its own mean and standard deviation estimates two
+    parameters from the data under test, so the null is the Lilliefors distribution
+    rather than Kolmogorov's. For the **normal** law that distribution is published:
+    the asymptotic 5% critical value is ``0.886 / sqrt(n)``. If
+    `laws.bootstrap_critical` is right it has to land there without being told, which
+    is the one case in this module where an outside number can check it.
+    """
+    import numpy as np
+
+    from verifylib.kernel.sde import laws
+
+    law, _ = laws.build({"law": "normal", "mean": 0.0, "variance": 1.0}, {})
+    for n in (5_000, 50_000):
+        bar = laws.bootstrap_critical(law, n)
+        lilliefors = 0.886 / np.sqrt(n)
+        # The bootstrap's own quantile error is ~1.8% at B = 1000, measured; 5% is
+        # that with room, and still far tighter than the 1.4x-to-41x corrections
+        # this bar makes to the asymptotic Kolmogorov value.
+        assert abs(bar / lilliefors - 1.0) < 0.05, (n, bar, lilliefors)
+        # And it is *below* Kolmogorov's: estimating the parameters makes the fit
+        # better, so the honest bar for a well-behaved law is **tighter** than the
+        # one this check used to use. That direction is the whole reason the change
+        # is not a loosening.
+        assert bar < laws.KS_C95 / np.sqrt(n)
+
+
+def test_the_bar_widens_only_where_the_statistic_cannot_see_through_its_own_divisor():
+    """Which laws the bootstrap tightens and which it loosens, and why (§10g).
+
+    The statistic divides the sample by its own standard deviation and the reference
+    by the law's exact one. That asymmetry is harmless where the sample standard
+    deviation is a good statistic and ruinous where it is not, so the honest bar
+    moves in **both** directions -- and the two laws it loosens are exactly the two
+    the old asymptotic bar was mis-grading.
+    """
+    import numpy as np
+
+    from verifylib.kernel.sde import laws
+
+    n = 50_000
+    asymptotic = laws.KS_C95 / np.sqrt(n)
+    cir = {"law": "noncentral_chi2",
+           "scale": "sigma**2*(1-np.exp(-kappa*T))/(4*kappa)",
+           "df": "4*kappa*theta/sigma**2",
+           "nc": "X_0*np.exp(-kappa*T)/(sigma**2*(1-np.exp(-kappa*T))/(4*kappa))"}
+    ratios = {}
+    for name, spec, params in (
+            ("normal", {"law": "normal", "mean": 0.0, "variance": 1.0}, {}),
+            ("mild lognormal", {"law": "lognormal", "log_mean": 0.0,
+                                "log_variance": 0.09}, {}),
+            ("feller-ok cir", cir,
+             {"X_0": 0.5, "kappa": 1.0, "theta": 1.0, "sigma": 1.0, "T": 1.0}),
+            ("M01 lognormal", {"law": "lognormal", "log_mean": -0.0616,
+                               "log_variance": 0.7569}, {}),
+            ("feller-violating cir", cir,
+             {"X_0": 0.5, "kappa": 1.0, "theta": 0.5, "sigma": 2.0, "T": 1.0})):
+        law, why = laws.build(spec, params)
+        assert law is not None, (name, why)
+        ratios[name] = laws.bootstrap_critical(law, n) / asymptotic
+
+    # Well-behaved laws: the bar *tightens* by about a third.
+    for name in ("normal", "mild lognormal", "feller-ok cir"):
+        assert 0.6 < ratios[name] < 0.8, (name, ratios[name])
+    # M01's lognormal, excess kurtosis 47.65: the bar triples, which is what stopped
+    # it failing a pathwise-exact solver at 1.17x of the old one.
+    assert 2.5 < ratios["M01 lognormal"] < 3.5, ratios
+    # df = 0.5, so the density diverges at the origin and the standardized CDF is
+    # near-vertical there. Two orders of magnitude, and the honest reading is that
+    # the test has almost no power on this law -- recorded, not fixed: the repair is
+    # a different statistic, and a rule for when to abstain needs more than the two
+    # data points above to fit.
+    assert ratios["feller-violating cir"] > 20, ratios
+    assert ratios["normal"] < ratios["mild lognormal"] < ratios["feller-ok cir"] \
+        < ratios["M01 lognormal"] < ratios["feller-violating cir"], ratios
+
+
+def test_the_bar_is_the_same_number_every_time_it_is_asked_for():
+    """A grading bar that moved between two gradings of the same solver would be
+    worse than a bar a few percent off, and a bootstrap is random. The seed is fixed
+    and the result memoized on the law's **shape** -- location and scale divide out
+    of a statistic standardized on both sides, so two laws differing only in those
+    must share one bar and pay for it once.
+    """
+    from verifylib.kernel.sde import laws
+
+    a, _ = laws.build({"law": "lognormal", "log_mean": 0.0, "log_variance": 0.09}, {})
+    b, _ = laws.build({"law": "lognormal", "log_mean": 5.0, "log_variance": 0.09}, {})
+    assert a.shape_key == b.shape_key, (a.shape_key, b.shape_key)
+    assert laws.bootstrap_critical(a, 20_000) == laws.bootstrap_critical(b, 20_000)
+    assert laws.bootstrap_critical(a, 20_000) == laws.bootstrap_critical(a, 20_000)
+    # A different shape is a different bar.
+    c, _ = laws.build({"law": "lognormal", "log_mean": 0.0, "log_variance": 0.81}, {})
+    assert c.shape_key != a.shape_key
+    assert laws.bootstrap_critical(c, 20_000) > laws.bootstrap_critical(a, 20_000)
+
+
+def test_a_law_with_no_sampler_falls_back_to_the_asymptotic_bar_and_says_so():
+    """An ungradable check is worse than a conservative one, so a law the kernel can
+    describe but not sample keeps the old bar -- and the record says which bar the
+    verdict came from, because on a Feller-violating CIR the two differ by 41x.
+    """
+    import numpy as np
+
+    from verifylib.kernel.sde import laws
+
+    law, _ = laws.build({"law": "normal", "mean": 0.0, "variance": 1.0}, {})
+    rng = np.random.default_rng(0)
+    sample = rng.standard_normal(5_000)
+
+    _, crit, detail = laws.ks_standardized(sample, law)
+    assert detail["ks_critical_kind"] == "parametric_bootstrap"
+    assert detail["ks_bootstrap_draws"] == laws.KS_BOOTSTRAP_DRAWS
+    assert crit == laws.bootstrap_critical(law, 5_000)
+    # The asymptotic value is reported either way, so a reader can see what the
+    # other bar would have said without rerunning anything.
+    assert detail["ks_critical_asymptotic"] == laws.KS_C95 / np.sqrt(5_000)
+
+    law._rvs = None                      # a family with no sampler wired up
+    laws._BARS.clear()
+    d, crit, detail = laws.ks_standardized(sample, law)
+    assert detail["ks_critical_kind"] == "asymptotic"
+    assert crit == laws.KS_C95 / np.sqrt(5_000)
+    assert "no sampler" in detail["ks_critical_note"]

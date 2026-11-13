@@ -1,7 +1,7 @@
 # SciMLBenchmarks (SDE) — External Benchmark Adoption Plan
 
 **Status:** **researched 2026-11-09; rev 1 the same day; rev 2–5 2026-11-10; rev 6–7 2026-11-11;
-rev 8–10 2026-11-12; rev 11–12 2026-11-13 — steps 1–10 of §7 done on the scheme-matched arm. The suite exists, is
+rev 8–10 2026-11-12; rev 11–14 2026-11-13 — steps 1–10 of §7 done on the scheme-matched arm. The suite exists, is
 calibrated, is smoke-tested end to end, has its comparator numbers, has its C0 baseline in both
 arms, and has **all nine of its entries through the pipeline** — 5 `VERIFIED_PASS`, 4
 `UNDERCLAIM`, **zero overclaims**, 139.3 min of wall time. Rev 12 then answers what the suite was
@@ -9,7 +9,20 @@ built to ask (10f): on an equal-budget comparison the pipeline **as shipped is 1
 Opus answering cold**, while **the best plan in each of its own pools is 2.65× better** — so the
 deficit is selection, not generation. Measuring the three candidate ranker fixes retires two as
 inert and **withdraws the resolution floor as harmful**; the one fix that crosses the line is in
-the *scorer*. What remains is that fix, the unrestricted arm, and the optional Phase 2 (step 11).** Rev 6–7 `[2026-11-11]` diagnose the M01 probe and
+the *scorer*. **Rev 13 makes that fix** (10g): the terminal-law KS gate was judged against the
+Kolmogorov critical value, which is the wrong bar for a statistic that estimates its own divisor,
+and a parametric bootstrap of the declared law replaces it — **tighter** by a third on three of the
+five laws the kernel builds, looser only on the two it was mis-grading, and validated against
+Lilliefors' published `0.886/√n` to within 2%. Re-graded, **the pipeline now beats Opus cold:
+0.931× against 1.177×**. **Rev 14 prices the three ranker defects** (10h): the `comparable_keys`
+fallback turns out to be **dead code on all 18 recorded pools**, so the first item's premise is
+false; the real defect is a shared set of *one*, and abstaining on it — by any of three routes —
+is measured harmful, because every route falls through to **declaration order**, which names the
+pool's worst plan on 8 of 9 sciml pools and its best on 5 of 9 holdout pools. Two items withdrawn.
+The third was understated: the record's whitelist is a **ranking input**, and it was dropping four
+components, one of which it *fabricated* rather than lost. Fixed, and the record now reproduces
+the conductor's own ranking **bit-identically** — 0.931× where reading the record cost 5.291×.
+What remains is the unrestricted arm and the optional Phase 2 (step 11).** Rev 6–7 `[2026-11-11]` diagnose the M01 probe and
 run the other two. **`wrong_plan_won: true` on all three problems, by three different
 mechanisms** (§10a): on M01 the scores separated and did so backwards, decided by a terminal-law
 KS statistic that a *pathwise-exact* solver also fails on the run's own increments; on M06 and M09
@@ -1529,7 +1542,7 @@ scheme-matched arm.
 | 7 | ~~**Calibrate every gate both ways**~~ **DONE 2026-11-10, as part of step 6 — §2b.** It could not be deferred: three entries were *vacuous* until calibration found them, so authoring an entry and calibrating it turned out to be one act rather than two. Every gate separates, the narrowest by **4.4x**, none was moved after the fact, and **two of this row's own proposed controls had to be replaced** because they do not separate (§2b findings 3 and 4). Original text, kept so the plan can be graded against it: calibrate every gate both ways, per the repo rule: a correct scheme clears it and a plausible wrong one fails it, at the resolution the entry ships with, with the separation factor recorded and **no gate moved after seeing where a scheme lands**. One-decision wrong variants: a dropped Milstein correction on S03; `β²` omitted from the S06–S08 drift (`[L]` the _only_ difference between the library's Itô and Stratonovich variants); a single Wiener increment shared by both components of S09's non-commutative noise | every gate separates; the narrowest factor recorded; failures recorded rather than re-cut                                                                                                                                                                                                                                                                                                           |
 | 8 | ~~Smoke-test the suite without spending a pipeline call (the step that found four defects on BENCHOP `[R]`)~~ **DONE 2026-11-10 — §7a** | ✅ met, as **97 automated assertions** over the nine staged briefs, and it found four defects here too — plus a fifth the fix for the second one exposed. The per-plan ranking axis was **blank on eight of nine entries**; **nothing in the repo had ever rendered the work-precision series**, which is this suite's primary axis; the report named two suites; and the per-plan record did not say which scheme each plan chose, which is step 10's own acceptance line. One correction to the row: *every* brief cannot state the `dW` shape, because M09 is handed no `dW` |
 | 9 | ~~Run the C0 one-shot baseline on S01–S09, both arms~~ **DONE 2026-11-10 — §9a** | ✅ met: C0@Opus, naked, 9 units per arm, **18/18 PASS** at $0.96 and $1.06. The arms are now genuinely different experiments (§7a defect 6) and the data says so — **0 of 8 degenerate ladders in the scheme-matched arm, 8 of 8 in the unrestricted one**, which confirms §10's prediction 2 at its maximum in one arm and falsifies its premise in the other: told plainly that transcription is detected and excluded, Opus wrote a discretised scheme nine times out of nine. The deterrent measured is the *sentence*, not the detector. Also unpredicted: the baseline ships a stochastic Heun predictor–corrector on two entries, reaching 5.4e-8 on M02 — better than §3f's measured `SRA1` at the same step — with no manual in the prompt |
-| 10 | ~~Run the pipeline (C2), both arms~~ **DONE on the scheme-matched arm — §10a–10e; ~~8 of 9 entries completed, M09 a run-error at the old timeout~~ all 9 completed 2026-11-13** | ✅ met on one arm.  M01 scheme-matched: **19.6 min**, `VERIFIED_PASS`, 2.06% against the 9.5% gate — so ~3 h for the arm and ~6 h for both. The row's own acceptance line is met by that run (`scheme_family` per plan, as §7a defect 4 made possible) and it immediately produced the run's most interesting result: **`wrong_plan_won: True`** — the conductor shipped Euler–Maruyama at 0.217× gate over its own Heun-SRK plan at 0.012×, a 17.7× gap against a 0.0048 noise margin, and scored the worse plan 10 against the better ones' 8. That field was `null` before §7a defect 1 was fixed. The probe also exposed a vocabulary gap: there is no SRK family in `SDE_FAMILIES`, so an SRK plan declares `other` and its work axis falls back to 1 stage — understating its own cost, which the report now labels a lower bound. **Diagnosed rev 6:** the selection was made by *one* of fifteen checks, the terminal-law KS statistic, which Milstein lost by **1.1% of the critical value** — and on the run's own increments a **pathwise-exact** solver fails that same gate at 1.17×, worse than the Euler–Maruyama that passed it. The gate is not ranking schemes. Both losers also carry an incorrect reason string naming the mean, which passed 46–67× inside tolerance. **Probed further rev 7:** M06 and M09 both read `wrong_plan_won: true` as well, by a *different* mechanism — on both, every plan scored the same (10/10/10 and 8/8/8) and the winner was chosen by a key *below* `score`, shipping a plan 5.1× and 3.3× worse than the best. ~~by plan **index**~~ **rev 8 (10b) locates both:** on M06 the quality index decided it, `decided_by: sqi` by 0.014, because the best plan's error sat inside its own Monte-Carlo bar so `accuracy` returned None and its index was renormalised over three components against the winner's four — the best plan lost for being too accurate to resolve; on M09 the ranker never ran, the run having timed out before Phase 3, and the winner is `run.py`'s fallback taking the first plan in declaration order. Both fixed, with the corpus-wide effect measured: one winner improved by 5.1× and two moved inside their own noise margins. On M09 the shipped plan is the only one of three the harness does not grade 10, and the tie was manufactured by a single `null` in a declared `terminal_law` list disabling the rubric's top two rows for every plan on the problem. So the defect is the SDE evaluator's, not the pathwise route's: a tie is enough, and ties are the common case. M06 ran 21.5 min and passed; M09 hit the 60-min timeout mid-evaluation, so the per-problem budget must be raised. Three more harness defects fell out of these runs (§7a defects 8–10). **Rev 9:** M02 run under the fix at the raised timeout — `UNDERCLAIM`, 13.0 min, harness-verified 10 at a strong error of 1.34e-7 against a 1.2e-3 gate; the conductor shipped the ranker's winner rather than the first plan, which is the first case where those two differ, so compliance is confirmed. `wrong_plan_won: true` once more, but now between two plans 1980× and 4879× better than the Euler–Maruyama, decided on the fourth significant figure of a structural diagnostic because no plan's accuracy resolved (10c). **Rev 10:** the remaining five (M03, M04, M05, M07, M08) run in one invocation at 7200 s — all five completed, none timed out, **80.0 min** for five problems, **2 `VERIFIED_PASS` and 3 `UNDERCLAIM`, no overclaim**. Across the eight completed entries: 4 pass, 4 underclaim, **zero overclaims**. The fix flips no winner on the five and widens M07's margin **8.8×**; `wrong_plan_won: true` once more, on M05, by **622×** and 44.6× outside the margin, with the whole selection resting on `('structure',)` alone because that problem's order check never ran. And the vocabulary gap turns out to be an **incentive**: M05's order-1.5 plan withholds `scheme_family` on purpose, with the correct reason written above its metrics block — no kernel family key maps to order 1.5, so a correct scheme fails every band it could declare. Defects 9 and 10 now stand at **seven of ~~eight~~ nine** completed entries (10d, 10e). ~~Eight of nine entries run; M09 to re-run at the raised timeout~~ **Rev 11 `[2026-11-13]`: M09 completed on the third attempt in 312.1 s (10e), `VERIFIED_PASS` at 10/certified.** Neither earlier failure was the problem or the timeout — the second stopped on the Claude Pro 5-hour cap, on a window that had opened 40 min before launch, with the machine clamshell-sleeping 8 min in (`caffeinate -ims` does not prevent lid-close sleep, and `run.py:185`'s monotonic clock does not advance through it: 124.1 reported minutes across 4 h 18 min real). The re-run was cheap because the **conductor recovered its own crash** — it diagnosed the stale `STATE.md`, verified via `solver_sha256` that the two certified scores on disk belonged to the files there, and completed the one half-cycle by reusing saved kernel output instead of re-paying ~1500 s of ladder time. The winner is the plan a **pool gate** caused to exist: no plan had declared `exact_sampling_components: 1`, the conductor re-dispatched the plan-creator once, and the Rao-Blackwellised plan it added won — the first time a gap declared in the *pool* produced the shipped plan. First case too where the ranker's winner and `best_plan_by_harness` differ and `wrong_plan_won` is correctly **false**: 0.0590 against 0.0571 of gate, inside a 0.0617 margin, the ranker preferring a real 3.2× variance reduction a single realisation cannot see. The rev-8 fix is inert again, but for a new reason — `order` is `None` on every plan because the record's per-plan `kernel` block **does not carry `observed_order`** although `SOLUTION.md` does, so the fix's input is truncated by the recorder (second instance after M08's headroom). Step 10 complete: **9 of 9, 5 pass / 4 underclaim / 0 overclaims, 139.3 min**. **Rev 12 (10f)** then re-ranks all nine pools offline against the C0 baseline at equal budget — same `dt`, path count and evals on both sides — and the answer is the one the suite was built to get: the pipeline **as shipped is 1.412× worse than Opus cold** (better on 1 of 9, bit-identical on `M03`, within 1e-16 on two more), while **the best plan in each pool is 2.65× better** — `M05`'s pool held one **625×** better than Opus. Of the three remaining ranker misses, only one is the ranker's: `M01` is `decided_by: score` over an index that already ranks it right, and repairing that score alone takes the arm to **0.855×, i.e. better than the one-shot**; `M05` needs a measurement it skipped, not a weight. `abstain` and `discriminating` measure **inert**, and the resolution floor 10c called for is **withdrawn as harmful** — monotonic on sciml, opposite sign on the BENCHOP holdout, because a tie falls to declaration order, which is the worst plan on 9 of 9 sciml pools and the best on 5 of 9 BENCHOP ones |
+| 10 | ~~Run the pipeline (C2), both arms~~ **DONE on the scheme-matched arm — §10a–10e; ~~8 of 9 entries completed, M09 a run-error at the old timeout~~ all 9 completed 2026-11-13** | ✅ met on one arm.  M01 scheme-matched: **19.6 min**, `VERIFIED_PASS`, 2.06% against the 9.5% gate — so ~3 h for the arm and ~6 h for both. The row's own acceptance line is met by that run (`scheme_family` per plan, as §7a defect 4 made possible) and it immediately produced the run's most interesting result: **`wrong_plan_won: True`** — the conductor shipped Euler–Maruyama at 0.217× gate over its own Heun-SRK plan at 0.012×, a 17.7× gap against a 0.0048 noise margin, and scored the worse plan 10 against the better ones' 8. That field was `null` before §7a defect 1 was fixed. The probe also exposed a vocabulary gap: there is no SRK family in `SDE_FAMILIES`, so an SRK plan declares `other` and its work axis falls back to 1 stage — understating its own cost, which the report now labels a lower bound. **Diagnosed rev 6:** the selection was made by *one* of fifteen checks, the terminal-law KS statistic, which Milstein lost by **1.1% of the critical value** — and on the run's own increments a **pathwise-exact** solver fails that same gate at 1.17×, worse than the Euler–Maruyama that passed it. The gate is not ranking schemes. Both losers also carry an incorrect reason string naming the mean, which passed 46–67× inside tolerance. **Probed further rev 7:** M06 and M09 both read `wrong_plan_won: true` as well, by a *different* mechanism — on both, every plan scored the same (10/10/10 and 8/8/8) and the winner was chosen by a key *below* `score`, shipping a plan 5.1× and 3.3× worse than the best. ~~by plan **index**~~ **rev 8 (10b) locates both:** on M06 the quality index decided it, `decided_by: sqi` by 0.014, because the best plan's error sat inside its own Monte-Carlo bar so `accuracy` returned None and its index was renormalised over three components against the winner's four — the best plan lost for being too accurate to resolve; on M09 the ranker never ran, the run having timed out before Phase 3, and the winner is `run.py`'s fallback taking the first plan in declaration order. Both fixed, with the corpus-wide effect measured: one winner improved by 5.1× and two moved inside their own noise margins. On M09 the shipped plan is the only one of three the harness does not grade 10, and the tie was manufactured by a single `null` in a declared `terminal_law` list disabling the rubric's top two rows for every plan on the problem. So the defect is the SDE evaluator's, not the pathwise route's: a tie is enough, and ties are the common case. M06 ran 21.5 min and passed; M09 hit the 60-min timeout mid-evaluation, so the per-problem budget must be raised. Three more harness defects fell out of these runs (§7a defects 8–10). **Rev 9:** M02 run under the fix at the raised timeout — `UNDERCLAIM`, 13.0 min, harness-verified 10 at a strong error of 1.34e-7 against a 1.2e-3 gate; the conductor shipped the ranker's winner rather than the first plan, which is the first case where those two differ, so compliance is confirmed. `wrong_plan_won: true` once more, but now between two plans 1980× and 4879× better than the Euler–Maruyama, decided on the fourth significant figure of a structural diagnostic because no plan's accuracy resolved (10c). **Rev 10:** the remaining five (M03, M04, M05, M07, M08) run in one invocation at 7200 s — all five completed, none timed out, **80.0 min** for five problems, **2 `VERIFIED_PASS` and 3 `UNDERCLAIM`, no overclaim**. Across the eight completed entries: 4 pass, 4 underclaim, **zero overclaims**. The fix flips no winner on the five and widens M07's margin **8.8×**; `wrong_plan_won: true` once more, on M05, by **622×** and 44.6× outside the margin, with the whole selection resting on `('structure',)` alone because that problem's order check never ran. And the vocabulary gap turns out to be an **incentive**: M05's order-1.5 plan withholds `scheme_family` on purpose, with the correct reason written above its metrics block — no kernel family key maps to order 1.5, so a correct scheme fails every band it could declare. Defects 9 and 10 now stand at **seven of ~~eight~~ nine** completed entries (10d, 10e). ~~Eight of nine entries run; M09 to re-run at the raised timeout~~ **Rev 11 `[2026-11-13]`: M09 completed on the third attempt in 312.1 s (10e), `VERIFIED_PASS` at 10/certified.** Neither earlier failure was the problem or the timeout — the second stopped on the Claude Pro 5-hour cap, on a window that had opened 40 min before launch, with the machine clamshell-sleeping 8 min in (`caffeinate -ims` does not prevent lid-close sleep, and `run.py:185`'s monotonic clock does not advance through it: 124.1 reported minutes across 4 h 18 min real). The re-run was cheap because the **conductor recovered its own crash** — it diagnosed the stale `STATE.md`, verified via `solver_sha256` that the two certified scores on disk belonged to the files there, and completed the one half-cycle by reusing saved kernel output instead of re-paying ~1500 s of ladder time. The winner is the plan a **pool gate** caused to exist: no plan had declared `exact_sampling_components: 1`, the conductor re-dispatched the plan-creator once, and the Rao-Blackwellised plan it added won — the first time a gap declared in the *pool* produced the shipped plan. First case too where the ranker's winner and `best_plan_by_harness` differ and `wrong_plan_won` is correctly **false**: 0.0590 against 0.0571 of gate, inside a 0.0617 margin, the ranker preferring a real 3.2× variance reduction a single realisation cannot see. The rev-8 fix is inert again, but for a new reason — `order` is `None` on every plan because the record's per-plan `kernel` block **does not carry `observed_order`** although `SOLUTION.md` does, so the fix's input is truncated by the recorder (second instance after M08's headroom). Step 10 complete: **9 of 9, 5 pass / 4 underclaim / 0 overclaims, 139.3 min**. **Rev 12 (10f)** then re-ranks all nine pools offline against the C0 baseline at equal budget — same `dt`, path count and evals on both sides — and the answer is the one the suite was built to get: the pipeline **as shipped is 1.412× worse than Opus cold** (better on 1 of 9, bit-identical on `M03`, within 1e-16 on two more), while **the best plan in each pool is 2.65× better** — `M05`'s pool held one **625×** better than Opus. Of the three remaining ranker misses, only one is the ranker's: `M01` is `decided_by: score` over an index that already ranks it right, and repairing that score alone takes the arm to **0.855×, i.e. better than the one-shot**; `M05` needs a measurement it skipped, not a weight. `abstain` and `discriminating` measure **inert**, and the resolution floor 10c called for is **withdrawn as harmful** — monotonic on sciml, opposite sign on the BENCHOP holdout, because a tie falls to declaration order, which is the worst plan on 9 of 9 sciml pools and the best on 5 of 9 BENCHOP ones. **Rev 13 (10g)** makes the one fix 10f identified: `KS_C95 / sqrt(n)` is the Kolmogorov bar and this statistic standardizes by its own sample mean and sd, so it is the **Lilliefors** situation and has no closed-form null. A parametric bootstrap of the declared law replaces it — **0.66–0.73×** the old bar on a normal, a mild lognormal and a Feller-satisfying CIR, i.e. a *tighter* gate, and 2.99× / 40.97× only on the two heavy-tailed laws it was mis-grading; the normal case reproduces Lilliefors' published `0.886/√n` to within 2%, which is the outside check. Re-graded, M01's `2-milstein` goes **8 → 10**, its regret **17.706 → 2.132**, `decided_by` `score` → `sqi`, and the arm reaches **0.931× — better than Opus answering cold**. Two costs recorded, not tuned away: Rademacher increments are no longer caught at 625 steps (CLT, and the old bar “caught” them only as it caught a zero-error solver on 5 of 9 seeds), and on a Feller-violating CIR the test has almost no power — margin 1.18× where it read 48× of the wrong bar. The residual on M01, and the 0.377× the oracle shows, are now behind the **order band**. **Rev 14 (10h)** prices step 2's three ranker defects and ships one of them. The `comparable_keys` fallback is **dead code on all 18 recorded pools** — M02 and M05 were decided on correctly *restricted* sets of two and one — so item 1's premise is false; the real defect is a shared set of one, and abstaining on it is harmful by all three routes (`abstain` inert, `thin:2` 0.931× → 2.174×, `thin:3` → 3.501×, the floor monotonic again under the new scorer), because every route lands on **declaration order**: the first-declared plan is the pool's **worst on 8 of 9** sciml pools (`1-euler-maruyama`, all nine) and its **best on 5 of 9** holdout pools. The one non-fitted fall-through, `observed_order`, improves sciml to 6/9 and 0.846× and is still **not shipped**: holdout is untouched only because the gate never fires there, and at the breadth where it does, holdout falls to 2/9 — an **exact sampler has no order to measure**, so the closed forms that are the best plan in 7 of 9 holdout pools sort last. Item 3 was the understated one: the record's whitelist is a **ranking input**, and it was costing `order` and `structure` entirely, **fabricating** `accuracy` where the kernel had abstained (M05: three unresolved plans scored 0.141/0.008/0.046, the highest being the plan 651× worse), and silently substituting a **wrong `dynkin_bar`** — that last found by the census test, not by a run. Twelve fields added and the record now reproduces the conductor **bit-identically** on all 18 pools: **3/9 and 5.291× → 5/9 and 0.931×** |
 | 11  | Phase 2 **if it is still wanted**: H5, H6, H7, then `additivesystem` → `bruss` → `lorenz`. §4a.ii drops `oscilreact`, `oval2` and stoch-heat                                                                                                                                                                                                                                                                                                                                                                                            | reference agreement two orders below the gate, with the second integrator named                                                                                                                                                                                                                                                                                                                     |
 
 **Steps 1–10 are the plan. Step 11 is a second plan wearing a row**, and §4a.ii has now removed its
@@ -1973,7 +1986,7 @@ Written before the runs so the plan can be graded rather than re-narrated:
 
 ---
 
-### 10a. Step 10, probed on three problems `[rev5 2026-11-10; diagnosis rev6, probes M06/M09 rev7 2026-11-11; fix 10b rev8, M02 10c rev9, the other five 10d rev10 2026-11-12; M09 10e rev11, the offline re-rank 10f rev12 2026-11-13, N]`
+### 10a. Step 10, probed on three problems `[rev5 2026-11-10; diagnosis rev6, probes M06/M09 rev7 2026-11-11; fix 10b rev8, M02 10c rev9, the other five 10d rev10 2026-11-12; M09 10e rev11, the offline re-rank 10f rev12, the KS bar fix 10g rev13 2026-11-13, N]`
 
 One pipeline run on M01, scheme-matched arm, to measure what the step costs before
 committing nine of them: **19.6 minutes of wall clock**, `VERIFIED_PASS`, verified score
@@ -3040,6 +3053,344 @@ evidence, and this section's own numbers depend on not using it.
 5. **Carry `observed_order` into the record.** Not for the ranker; for every reader of it.
 6. **`M05` needs a measurement, not a weight.** Run the skipped order study, or earn the
    cross-plan break.
+
+---
+
+#### 10g. The terminal-law bar, fixed: the pipeline overtakes its own baseline `[rev13 2026-11-13]`
+
+10f found that `M01` was the one entry where repairing the *scorer* would take the arm
+past the C0 one-shot, and that no ranking change could reach it: the index already
+ranked that pool correctly and `score` overrode it, because the kernel scored
+Euler–Maruyama **10** and the two better plans **8**. The 8s came from one check —
+`terminal_law_ok`, the standardized Kolmogorov–Smirnov shape test — which §10a had
+diagnosed and left recorded. This section fixes it.
+
+#### What was actually wrong: the bar, not the statistic's idea
+
+§10a's reading was that the statistic sits at its own noise floor. That is right, and
+the precise defect is narrower and fixable: **`KS_C95 / sqrt(n)` is the wrong critical
+value for this statistic.** The Kolmogorov constant holds for a sample compared against
+a *fully specified* distribution. `ks_standardized` divides the sample by its own mean
+and standard deviation before comparing it against the law's standardized CDF, so two
+parameters are estimated from the data under test — the **Lilliefors** situation, whose
+null distribution has no closed form.
+
+The direction of the error is the part worth stating, because it is not the obvious one.
+Estimating location and scale normally makes `D` *smaller*, so the honest bar should be
+**tighter**. It is, for a well-behaved law. But this standardization is **asymmetric** —
+the sample is divided by its own standard deviation while the reference is divided by the
+law's exact one — and where the sample standard deviation is a poor statistic that
+mismatch dominates. The relative standard error of a sample standard deviation is
+`sqrt((κ − 1)/4n)`, and M01's terminal lognormal has excess kurtosis **47.65**, so at
+`n = 50 000` the divisor alone carries 1.58% error. So the bar has to move in **both**
+directions, by law:
+
+| declared law | excess kurtosis | bootstrap bar ÷ asymptotic |
+|---|---|---|
+| normal | 0.00 | **0.66×** (tighter) |
+| lognormal, log sd 0.30 | 1.64 | **0.69×** |
+| CIR non-central χ², `df = 4.0` (Feller satisfied) | 2.59 | **0.73×** |
+| **M01's lognormal, log sd 0.87** | **47.65** | **2.99×** (looser) |
+| CIR non-central χ², `df = 0.5` (Feller violated) | 17.06 | **40.97×** |
+
+**So this is not a loosening.** On three of the five laws the kernel can build, the new
+bar is a third *tighter* than the one it replaces, and the gate is correspondingly
+stronger. It loosens on exactly the two laws where the old bar was mis-grading.
+
+#### The implementation, and the one check that validates it from outside
+
+`laws.bootstrap_critical(law, n)` samples the **declared** law at the same `n`,
+standardizes each draw the same way the statistic does, and takes the 95th percentile of
+`B = 1000` replications. Three decisions are worth recording:
+
+- **It samples the declared law, never the solver's output.** Resampling the solver would
+  carry that solver's own shape error into its own critical value.
+- **The seed is fixed** (`KS_BOOTSTRAP_SEED`). A grading bar that moved between two
+  gradings of the same solver would be worse than a bar 2% off; and because every plan on
+  a problem is judged against the *same* number, the plan-to-plan comparison stays exact.
+  The bar's own quantile error across bootstrap seeds is **1.83% at B = 1000** (6.0% at
+  B = 200, 3.0% at B = 600), which is why B is 1000 and not 200.
+- **It is memoized on the law's *shape*.** Both sides of the statistic are standardized,
+  so location and scale divide out: a lognormal with `log_mean` 0 and one with `log_mean`
+  5 share a bar and pay for it once. Cost is ~3 s for a lognormal and ~12 s for a
+  non-central χ², against a kernel that already spends ~1500 s on the CRN ladder.
+
+**The outside check.** For the normal law the Lilliefors null *is* published: the
+asymptotic 5% critical value is `0.886/√n`. The bootstrap has to land there without being
+told, and it does — **1.0069, 1.0203 and 1.0041** of it at n = 5 000, 20 000 and 50 000.
+That agreement is the reason to believe the 2.99× and the 40.97× rows above rather than
+treat them as a bug.
+
+#### What it does to M01, re-graded
+
+`verifylib/cli.py evaluate` re-run on all three of M01's plans, against the same
+`solver.py` files the original run scored — reproducible with
+
+```
+uv run python verifylib/cli.py evaluate workspace/sde_sciml_linear_ito/plans/<plan> --json
+```
+
+which rewrites that plan's `evaluation.json` in place. The pre-fix verdicts are not lost
+by that: they are in the record (`sciml_probe.json`'s per-plan `kernel` and
+`kernel_rerun` blocks), which is where `audit_plan_claims.py` reads them from, and only
+`workspace/` — gitignored — is rewritten.
+
+| plan | KS `D` | old bar 0.006074 | new bar 0.018164 | score before | score after |
+|---|---|---|---|---|---|
+| `1-euler-maruyama` | 0.004602 | pass, 0.76× | pass, **0.25×** | 10 | 10 |
+| `2-milstein` | 0.006141 | **FAIL, 1.01×** | pass, **0.34×** | 8 | **10** |
+| `3-heun-srk` | 0.006754 | **FAIL, 1.11×** | pass, **0.37×** | 8 | 8 |
+
+`2-milstein` is no longer failed for a statistic that failed a pathwise-**exact** solver
+at 1.17× on the same draw. `3-heun-srk` — the pool's genuinely best plan at 0.01223 of
+gate — stays at 8, and **for the other §10a defect**: it declared `expected_strong_order:
+0.5`, measured 0.983, and the two-sided ±0.4 band fails it *by overshoot*. That is the
+same declaration-ladder defect 10d found on M05 and 10e found on M09's plan 1, and it is
+untouched here.
+
+#### The price, measured
+
+`benchmark/rank_study.py` gained a `regraded` source for this: it reads each plan's
+`evaluation.json`, which is what `cli.py evaluate` rewrites, so a change to the **scorer**
+can be priced the same way 10f priced changes to the ranker. Only two sciml specs declare
+a `terminal_law` at all — M01 and M02 — and M02's three plans passed the check under both
+bars (0.52× of the old, **0.786×** of the new, tighter one), so M01 is the only entry the
+fix moves and the arm below is complete.
+
+| | picks the best plan | outside the margin | regret geomean | vs C0 |
+|---|---|---|---|---|
+| as shipped (at run time) | 4/9 | 4 | 3.741 | 1.412× worse |
+| `current` (10f, rev-8 fix only) | 5/9 | 3 | 3.120 | 1.177× worse |
+| **`regraded` (this fix)** | 5/9 | 3 | **2.466** | **0.931× — better** |
+| oracle | 9/9 | 0 | 1.000 | 0.377× better |
+
+**M01's regret falls from 17.706 to 2.132 and `decided_by` moves from `score` to `sqi`**,
+and the arm crosses the line: **AutoNumerics now beats Opus answering cold**, 0.931×
+against 1.177× before. 10f predicted 0.855× from the `noscore` diagnostic; the real
+figure is 0.931×, and the difference is the residual above — `noscore` let `3-heun-srk`
+win, and the order band still caps it at 8, so the pool ships `2-milstein` instead. On
+M01 that is numerically what C0 wrote, hence `vs C0` of exactly **1.000** on that entry
+rather than 0.47×.
+
+**The honest summary of the gain**: this converts M01 from an 8.3× loss to a tie. The
+remaining 2.132× of regret on it, and the 0.377× the oracle shows is available, are now
+both behind the *order band*, not the law test.
+
+#### Two costs, recorded rather than tuned away
+
+**1. The test loses its grip on one defect class at fine steps.** Finding 4's calibration
+used Rademacher increments, which at `dt = 0.01` (100 steps) land at **2.52–3.01×** the
+bootstrap bar and are still caught cleanly. At M01's `dt = 0.0016` — 625 steps — they land
+at **0.95–1.09×** and are not reliably caught. That is the central limit theorem, not the
+bar: summing 625 iid ±√dt increments gives a terminal law very close to the lognormal, so
+there is little shape error left. The old bar "caught" it there only in the same sense
+that it caught the exact solver, which it failed on **five of nine seeds**. A detection
+that fires on a zero-error solver is not a detection, and the apparent power it gave was
+a bias. Nothing was tuned to make this control pass: the bootstrap seed is a date.
+
+**2. On a Feller-violating CIR the test has almost no power, and now says so.** With
+`df = 4κθ/σ² = 0.5` the non-central χ² density diverges at the origin, so the standardized
+CDF is near-vertical there and a small error in the divisor moves `D` enormously — bar
+**40.97×** the asymptotic value. The canary that catches full truncation (12% of paths
+clipped to an atom at zero, both moments inside tolerance) still **fails** it, which is the
+finding, but at **1.18×** of the bar where it used to read 48× of the wrong one.
+`test_full_truncation_moves_mass_to_an_atom_the_ks_test_sees` now asserts that interval
+explicitly, so the number is a recorded bound on how little power the test has on a
+pathological law rather than a comfortable multiple.
+
+**What would repair both** is a change to the *statistic*, not its bar: standardizing the
+reference by the sample's moments as well, which removes the divisor mismatch and narrows
+the null. That is a cross-suite recalibration of every SDE spec that declares a law, and
+the two rows above are the only data points available to fit an abstention rule against —
+"report instead of grade where the bootstrap bar exceeds the asymptotic one by more than
+R" needs more than R ∈ (2.99, 40.97) to be anything but a guess. Recorded, not guessed,
+for the same reason the index's resolution floor was withdrawn in 10f.
+
+#### 10h. The three ranker defects, priced: two withdrawn, and the record made a faithful input `[rev14 2026-11-13]`
+
+**Status: step 2 done. Item 3 shipped and verified lossless; items 1 and 2 withdrawn as
+measured-harmful, with the mechanism identified.** No model cost — every number here is an
+offline re-rank of pools already paid for.
+
+Step 2 named three defects. The first two do not survive measurement, and the third was
+larger than it looked.
+
+##### Item 1: `comparable_keys` must abstain, not fall back — *the premise is false*
+
+The step said the fallback "is exactly how M02 was decided on the fourth significant figure
+of `invariant_worst_headroom` and M05 on `('structure',)` alone". It is not. Instrumenting
+`comparable_keys` against all 18 recorded pools:
+
+| suite | pools | `shared` empty (fallback fires) | shared set of one | only one component *varies* |
+| --- | --- | --- | --- | --- |
+| sciml | 9 | **0** | 1 (M05) | 2 (M02, M05) |
+| holdout | 9 | **0** | 0 | 0 |
+
+The fallback at `ranking.py:559` is **dead code on every pool ever run**. M02 was decided on
+`('order', 'structure')` and M05 on `('structure',)` — and those *are* the correctly
+restricted shared sets. The restriction already works. §10f had already found this on the
+nine sciml pools (*"never fires: given its proper input, every one of the nine pools shares
+at least one component"*); what is added here is the holdout half and the instrumentation
+that makes it a standing claim rather than an observation. Changing the fallback is therefore a
+measured no-op: `--variant abstain --source evaluation` is bit-identical to `regraded` on
+18/18 pools.
+
+What is real is the defect one step over: a shared set can narrow to **one component**, and
+then a four-term weighted mean is a one-component vote. So the quantity to price is not
+emptiness but **breadth** — how many components must separate a pool before the index may
+decide it. `--variant thin:K` does that, against the re-graded scorer:
+
+| variant | sciml picks best | sciml geomean | sciml vs C0 | holdout picks best | holdout geomean |
+| --- | --- | --- | --- | --- | --- |
+| `regraded` (ships) | 5/9 | 2.466 | **0.931×** | 6/9 | 2.015 |
+| `thin:2` | 5/9 | 5.761 | 2.174× | 6/9 | 2.015 |
+| `thin:3` | 3/9 | 9.280 | 3.501× | 6/9 | 1.815 |
+
+Abstaining is **harmful**, and monotonically so. The cause is not the abstention rule; it is
+what abstention *lands on*. Every route — `abstain`, `floor:E`, `thin:K` — falls through to
+declaration order, and declaration order is measured:
+
+| suite | first-declared plan's mean rank (1 = best of 3) | best on | **worst on** | first-declared name |
+| --- | --- | --- | --- | --- |
+| sciml | 2.89 / 3 | 0/9 | **8/9** | `1-euler-maruyama`, all nine |
+| holdout | 1.56 / 3 | 5/9 | 1/9 | eight different, usually the exact method |
+
+Declaration order is not a neutral tiebreak. It carries the formulator's convention, and the
+convention is opposite across the two suites: a baseline is written first on a scheme
+benchmark (where it is the control, and the worst plan), an exact method is written first
+where a closed form exists (and it is the best plan). This is the single cause of all three
+§10f failures, and it is why none of them is fittable.
+
+**The one non-fitted fall-through**, and why it is still not shipped. `observed_order` is a
+property of the method rather than a position in a list, so preferring the higher measured
+order cannot be suite-fitted the way declaration order is. `--variant ordertie:K`:
+
+| variant | sciml picks best | sciml geomean | sciml vs C0 | holdout picks best | holdout geomean |
+| --- | --- | --- | --- | --- | --- |
+| `regraded` | 5/9 | 2.466 | 0.931× | 6/9 | 2.015 |
+| `ordertie:2` | **6/9** | **2.242** | **0.846×** | 6/9 | 2.015 |
+| `ordertie:3` | 6/9 | 2.242 | 0.846× | **2/9** | **4.247** |
+
+`ordertie:2` is a strict improvement on sciml and leaves holdout untouched — and the second
+half of that is **absence of evidence, not confirmation**: holdout's breadth is 2 on all nine
+pools, so the K = 2 gate never fires there. At K = 3 it does fire, and holdout collapses to
+2/9. The reason is mechanical: an **exact** sampler has no convergence order to measure, so
+`observed_order` is None for the closed-form plans that are the best plan in 7 of 9 holdout
+pools, and the tiebreak sorts them last.
+
+So `observed_order` is a sound prior among discretisation schemes and actively wrong wherever
+a closed form is in the pool. And the sciml gain is one pool: M02. M05's three plans all carry
+`observed_order: None` (its order study was skipped — §10d), so the tiebreak cannot touch the
+622× pool at all. **One pool of benefit against a mechanistically understood regression on
+every pool holding an exact method** is fitting to the arm, so it is recorded and not shipped.
+`rank_study.py` keeps the variant so the next reader re-derives the finding instead of the
+hope.
+
+What would actually fix a thin pool is the other half of the step's own sentence — *"or
+trigger `cli.py compare`"*: where the index cannot separate the pool, **measure** the plans
+against each other instead of voting on the components. That is a pipeline change costing a
+solve per pool, not a ranker edit, and it is the first item that has survived this round.
+
+##### Item 2: give the index a resolution floor — *withdrawn, re-measured*
+
+§10f withdrew the floor against the shipped scorer. Re-measured against the **re-graded**
+scorer, in case the scorer fix changed the picture, it did not:
+
+| floor ε | sciml picks best | sciml geomean | sciml ties | holdout picks best | holdout geomean |
+| --- | --- | --- | --- | --- | --- |
+| 0.000 | 5/9 | **2.466** | 0 | 6/9 | 2.015 |
+| 0.005 | 5/9 | 3.386 | 3 | 6/9 | 2.015 |
+| 0.030 | 3/9 | 10.030 | 6 | 6/9 | 2.015 |
+| 0.050 | 4/9 | 9.944 | 7 | **7/9** | 1.677 |
+| 0.200 | 2/9 | 16.097 | 9 | 7/9 | **1.394** |
+| 0.300 | 1/9 | 41.358 | 9 | 6/9 | 2.183 |
+
+Same split, same cause, same conclusion: **monotonically harmful on sciml, helpful on
+holdout**, because a tie falls through to declaration order. Still not fittable. The floor
+remains the right idea for the wrong layer — the index genuinely has no notion of its own
+precision, and the fix for that is a floor on a tiebreak that is *itself* a measurement.
+
+##### Item 3: carry `observed_order` into the record — *shipped; one field became nine*
+
+Real, undone, and understated. `run.solution_metrics`' whitelist is not a reporting list, it
+is a **ranking input**: anything that re-ranks a finished pool reads it. `observed_order`
+alone would have been inert, because `ranking.order()` also needs the gate that says whether
+the measurement may be read (`order_check` — a waiver or an abstention returns None), the bar
+a shortfall is measured from (`order_floor`), and the SDE-branch selector (`scheme_family`).
+Three of those four are useless without the others.
+
+Cutting a full summary down to the old whitelist and recomputing components found two more
+defects, of different kinds:
+
+| component | reads | in the old whitelist | effect of the omission |
+| --- | --- | --- | --- |
+| `order` | `observed_order`, `order_check`, `order_floor`, `scheme_family` | `design_order` only | None for **every plan in all nine pools** |
+| `structure` | `invariant_worst_headroom` | `invariant_max_drift` — a *different* field | None for every plan |
+| `accuracy` | `mc_se_rel`, `ci_mult` (via `uncertainty`) | neither | **fabricates a value** |
+| `consistency` | `dynkin_bar` | no (fallback 2.43) | **silently substitutes a wrong bar** |
+
+The third row is the one that matters, and it inverts the usual reading of a truncation.
+`accuracy()` abstains under F16 where the error sits inside its own bar; without the bar,
+`noise_limited()` returns **False** — not "unknown" — so accuracy falls through to
+`headroom_fraction` and produces a confident number for a quantity the kernel declined to
+locate. On M05 the cut block scored three unresolved plans at 0.141 / 0.008 / 0.046, had only
+that fabricated component to rank on, and put the 0.141 first: `1-euler-maruyama`, the pool's
+worst plan by 651×. **A dropped field is not always less information. Here it was false
+information.**
+
+The fourth row was found by the census test rather than by any run, and is the clearest case
+for having one. `consistency()` reads `dynkin_bar` with a hardcoded fallback of 2.43; the nine
+pools carry 2.4284, 2.5310 and 2.8049. Dropping it neither abstained nor failed — it
+substituted a different, tighter bar — and the two pools inspected by hand happened to carry
+2.4284, so the error was invisible to the measurement that was looking for it.
+
+Twelve fields added — `observed_order`, `order_check`, `order_floor`, `scheme_family`,
+`invariant_worst_headroom`, `mc_se_rel`, `ci_mult`, `dynkin_bar`, `kind`, `error_fs`, plus
+`observed_order_se` and `order_band` as the audit trail — taking the whitelist from 19 to 31,
+and the list extracted to
+`run.RECORDED_METRICS` so `rank_study.py` imports the real tuple rather than a copy that would
+drift. Priced with `--variant whitelisted`, which reads the full block and then throws away
+exactly what the recorder throws away:
+
+| reading the record | picks best | geomean | P90 | max | vs C0 |
+| --- | --- | --- | --- | --- | --- |
+| old whitelist (`truncated`, as written) | 3/9 | 14.023 | 4879.1 | 4879.1 | 5.291× |
+| old whitelist + re-graded scorer | 3/9 | 11.083 | 4879.1 | 4879.1 | 4.182× |
+| **new whitelist (`whitelisted`)** | **5/9** | **2.466** | 622.2 | 622.2 | **0.931×** |
+| the full block (`regraded`, the conductor's own view) | 5/9 | 2.466 | 622.2 | 622.2 | 0.931× |
+
+The last two rows are **bit-identical on all 18 pools across both suites** — verified by
+diffing the JSON rows, not by comparing summary lines. The record is now a lossless ranking
+input, where before it cost a reader 4.5× in regret and the difference between beating the
+one-shot baseline and losing to it by 5×.
+
+`kind` and `error_fs` change nothing today: `kind` is absent on every plan recorded so far
+(`scheme_family` carries the branch) and `error_fs` is a PDE field. They are whitelisted
+because `ranking.py` reads them, which is the rule the census test now enforces — and because
+a PDE pool re-ranked from the record would otherwise overstate every plan's error by Roache's
+factor of safety, 1.25 to 3.0.
+
+##### What this round cost and left
+
+Five tests added to `benchmark/tests/test_rank_study.py`. The durable one is the **census**:
+it scans `verifylib/ranking.py` for `summary.get(...)` and asserts `RECORDED_METRICS` carries
+every field, so the next component the ranker learns to read cannot go quiet in the record.
+The other four pin the fabrication (accuracy inventing a value without its bar), the
+end-to-end losslessness, the `thin:K` gate, and both halves of `ordertie` — including the
+exact-sampler failure that kept it unshipped.
+
+Three items for the queue, in the order the evidence supports them:
+
+1. **`cli.py compare` as the fall-through for a thin pool.** The only candidate left standing
+   for items 1 and 2, and the step's own suggestion. Costs a solve per pool; nothing else
+   measured here does better than declaration order without being fitted to a suite.
+2. **The score rubric's order band is still two-sided** (`order_band: "two-sided"` on all
+   three M01 plans), where `ranking.order()` has been one-sided since rev 8. Unchanged from
+   §10g's queue and still the binding *scoring* defect; `--variant regraded` prices it free.
+3. **M05's skipped order study.** Its `observed_order: None` on all three plans is why both
+   `thin` and `ordertie` are powerless on the pool with 622× of regret — and why M05's shared
+   set is `('structure',)` in the first place. The thin-pool problem on that entry is a *data*
+   gap, not a ranking rule.
 
 ---
 

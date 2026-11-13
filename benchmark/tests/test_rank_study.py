@@ -152,3 +152,184 @@ def test_regret_is_measured_against_the_harness_and_not_the_ranker():
     assert row["regret"] == 50.0
     assert row["outside_margin"] is True
     assert row["picks_best"] is False
+
+
+def test_the_source_decides_which_file_the_ranker_is_fed(tmp_path, monkeypatch):
+    """Three sources, three different answers, and §10f/§10g both depend on the
+    distinction: `metrics` is what the conductor reads, `record` is the results
+    file's truncated copy (which costs 4.5x in regret, §10e/§10f), and `evaluation`
+    is the kernel's own output file — the one `cli.py evaluate` rewrites, so reading
+    it is how a change to the *scorer* gets priced (§10g).
+    """
+    import json
+
+    slug = "sde_demo"
+    plan = tmp_path / "workspace" / slug / "plans" / "1-only"
+    plan.mkdir(parents=True)
+    (plan / "SOLUTION.md").write_text(
+        "<metrics>\nscore: 8\nprovenance: analytic\n"
+        "solver_sha256: abc\ninvariant_worst_headroom: 0.5\n</metrics>\n")
+    (plan / "evaluation.json").write_text(json.dumps(
+        {"score": 10, "provenance": "analytic", "certified": True,
+         "summary": {"solver_sha256": "abc", "invariant_worst_headroom": 0.5}}))
+    results = tmp_path / "r.json"
+    results.write_text(json.dumps({"results": [{
+        "id": "X", "slug": slug,
+        "harness_by_plan": {"plans": {"1-only": {
+            "kernel": {"score": 3, "provenance": "analytic",
+                       "solver_sha256": "abc"},
+            "harness_error": 0.5, "is_winner": True}}}}]}))
+    monkeypatch.setattr(rank_study, "ROOT", tmp_path)
+
+    seen = {}
+    for source in rank_study.SOURCES:
+        pool, = rank_study.pools(
+            ["r.json"], truncated=(source == "record"), source=source)
+        seen[source] = (pool["source"], pool["plans"][0]["summary"]["score"])
+    assert seen == {"metrics": ("metrics", 8.0),
+                    "record": ("summary", 3),
+                    "evaluation": ("regraded", 10)}, seen
+
+
+def test_a_regraded_plan_is_refused_when_its_solver_is_not_the_one_scored():
+    """The `solver_sha256` guard applies to `evaluation.json` too, and has to: a
+    re-grade run against a solver that has since changed would price a fix on the
+    wrong code.
+    """
+    assert rank_study._same_run({"solver_sha256": "abc"}, {"solver_sha256": "abc"})
+    assert not rank_study._same_run({"solver_sha256": "abc"},
+                                    {"solver_sha256": "zzz"})
+
+
+def test_the_record_carries_every_field_the_ranker_reads():
+    """A census over `verifylib/ranking.py`, not a frozen list (sciml SS10h).
+
+    The per-plan record is a *ranking input*: `rank_study`'s `truncated` variant
+    re-ranks finished pools from it, and so would anything else that wanted to
+    without paying for a pipeline run. So every field the ranker reads off a
+    summary has to survive `run.solution_metrics`' whitelist, and the way to keep
+    that true is to ask `ranking.py` what it reads rather than to restate the answer
+    here.
+
+    This is the test that found `dynkin_bar`. Dropping it neither abstained nor
+    failed: `consistency()` reads it with a hardcoded fallback of 2.43, the pools
+    carry 2.4284 / 2.5310 / 2.8049, and the pools inspected by hand happened to
+    carry the one that matches the fallback. Only a census sees that.
+    """
+    import re
+
+    from benchmark import run
+
+    src = (ROOT / "verifylib" / "ranking.py").read_text(encoding="utf-8")
+    # `[A-Za-z_0-9]`, not `[a-z_0-9]`: `estimated_rel_error_T` is a real field name
+    # and a lowercase-only class skips it. Nothing capitalised is read off a summary
+    # today, so this is a blind spot in a test whose entire job is the ones added
+    # later.
+    read = set(re.findall(r'summary\.get\("([A-Za-z_0-9]+)"', src))
+    assert read, "the scan found no summary reads at all -- it has stopped working"
+    missing = sorted(read - set(run.RECORDED_METRICS))
+    assert not missing, (
+        f"`ranking.py` reads {missing} off a plan summary and "
+        "`run.RECORDED_METRICS` does not carry them, so anything that re-ranks "
+        "from the record scores those components as absent -- or, where the reader "
+        "has a fallback, as something quietly wrong. Add them to the whitelist.")
+
+
+def test_dropping_the_error_bar_fabricates_an_accuracy_instead_of_abstaining():
+    """Why the whitelist is a correctness concern and not a reporting one (SS10h).
+
+    `ranking.accuracy()` abstains under F16 where the reported error sits inside the
+    plan's own error bar, and it learns the bar from `uncertainty()` =
+    `mc_se_rel * ci_mult`. Those two fields going missing does not make the check
+    return "unknown" -- `noise_limited()` returns **False**, accuracy falls through
+    to `headroom_fraction`, and the record ends up holding a confident number for a
+    quantity the kernel declined to locate.
+
+    Measured consequence, M05: the cut block scored three unresolved plans at 0.141
+    / 0.008 / 0.046, had only that component to rank on, and put the 0.141 first --
+    `1-euler-maruyama`, the worst plan in the pool by 651x.
+    """
+    from verifylib import ranking
+
+    full = {"estimated_rel_error": 1e-4, "mc_se_rel": 1e-3, "ci_mult": 2.0}
+    assert ranking.noise_limited(full), "1e-4 is inside a 2e-3 bar"
+    assert ranking.accuracy(full, 1e-2) is None, "an unresolved error is not located"
+
+    cut = {k: v for k, v in full.items() if k in ("estimated_rel_error",)}
+    assert not ranking.noise_limited(cut), "no bar reads as resolved, not as unknown"
+    assert ranking.accuracy(cut, 1e-2) is not None, (
+        "this is the defect being guarded: without the bar, accuracy invents a value")
+
+    from benchmark import run
+    for field in ("mc_se_rel", "ci_mult"):
+        assert field in run.RECORDED_METRICS, field
+
+
+def test_the_record_whitelist_loses_nothing_the_ranker_would_have_used():
+    """End to end on a synthetic pool: cutting a summary to the whitelist leaves
+    every ranking component bit-identical (SS10h).
+
+    On the nine real sciml pools this is what took a re-rank from the record from
+    3 of 9 and a regret geomean of 14.0 to the conductor's own 5 of 9 and 2.47 --
+    bit-identical rows, both suites.
+    """
+    from benchmark import run
+    from verifylib import ranking
+
+    full = {"score": 10, "provenance": "analytic", "solver_sha256": "abc",
+            "estimated_rel_error": 2e-3, "mc_se_rel": 1e-3, "ci_mult": 2.0,
+            "observed_order": 0.98, "design_order": 1.0, "order_floor": 1.0,
+            "order_check": "true", "scheme_family": "milstein",
+            "invariant_worst_headroom": 0.42, "dynkin_z": 1.1, "dynkin_bar": 2.53,
+            "solve_time_s": 3.0, "notes_for_a_human": "not a ranking input"}
+    cut = {k: v for k, v in full.items() if k in run.RECORDED_METRICS}
+
+    assert "notes_for_a_human" not in cut, "the whitelist is still a whitelist"
+    assert (ranking.components(cut, 1e-2, [cut, cut])
+            == ranking.components(full, 1e-2, [full, full]))
+
+
+def test_the_thin_gate_abstains_only_below_the_breadth_it_is_given():
+    """`thin:K` drops the index where fewer than K components separate the pool.
+
+    Recorded as measured-harmful rather than shipped (SS10h): abstaining lands on
+    declaration order, and that is the pool's worst plan on 8 of 9 sciml pools. The
+    gate itself still has to do what it says, or the measurement that retired it
+    would have been of something else.
+    """
+    from verifylib import ranking
+
+    # `structure` separates these two; nothing else does.
+    a = {"invariant_worst_headroom": 0.9, "dynkin_z": 1.0, "dynkin_bar": 2.43}
+    b = {"invariant_worst_headroom": 0.1, "dynkin_z": 1.0, "dynkin_bar": 2.43}
+    pool = [a, b]
+    varying = [k for k in ranking.CERT_COMPONENTS
+               if len({ranking.components(s, 1e-2, pool).get(k) for s in pool}) > 1]
+    assert varying == ["structure"], varying
+
+    assert rank_study._keys("abstain", 1e-2, pool, 0), "no gate: the keys stand"
+    assert rank_study._keys("abstain", 1e-2, pool, 1), "breadth 1 is satisfied"
+    assert rank_study._keys("abstain", 1e-2, pool, 2) == (), "breadth 2 is not"
+
+
+def test_ordertie_prefers_the_higher_measured_order_and_says_why_it_was_not_shipped():
+    """`ordertie:K` replaces declaration order as the fall-through.
+
+    It is the one non-fitted candidate -- `observed_order` is a property of the
+    method, not a position in a list -- and it is still not shipped, because an
+    **exact** sampler has no convergence order to measure. `observed_order` is None
+    for the closed-form plans that are the best plan in 7 of 9 holdout pools, so the
+    tiebreak sorts them last: holdout falls to 2 of 9 at K=3, where the gate first
+    fires there. This pins both halves of that.
+    """
+    hi = {"observed_order": 1.0, "score": 10, "provenance": "analytic"}
+    lo = {"observed_order": 0.5, "score": 10, "provenance": "analytic"}
+    exact = {"score": 10, "provenance": "analytic"}  # a closed form: no order at all
+
+    def key(s):
+        return rank_study.key_of(_plan("p", s), "ordertie", [hi, lo], 0.0)
+
+    assert key(hi) < key(lo), "a higher measured order wins the tiebreak"
+    assert key(lo) < key(exact), (
+        "and this is the defect that kept it unshipped: an exact sampler has no "
+        "order, so it loses to a discretisation scheme with a measured one")

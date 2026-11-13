@@ -1,4 +1,4 @@
-"""Check the numbers quoted in plan-sciml-benchmark.md §3f/§9a/§10a–10f against the data.
+"""Check the numbers quoted in plan-sciml-benchmark.md §3f/§9a/§10a–10g against the data.
 
 A plan that records measured findings in prose is only as good as the prose matching the
 artifacts, and prose drifts silently: a table edited after a re-run, a figure rounded
@@ -95,6 +95,79 @@ def _family(plan_dir):
     return (meta["scheme_family"], meta["scheme_family_source"], meta["declared"])
 
 
+def _bar_ratios():
+    """Each buildable law's bootstrap critical value as a multiple of the asymptotic
+    Kolmogorov one, at n = 50 000 (§10g). Calls the shipped code, so a change to the
+    bar or to B shows up here rather than in a stale table."""
+    import numpy as np
+
+    from verifylib.kernel.sde import laws
+
+    n = 50_000
+    asymptotic = laws.KS_C95 / np.sqrt(n)
+    cir = {"law": "noncentral_chi2",
+           "scale": "sigma**2*(1-np.exp(-kappa*T))/(4*kappa)",
+           "df": "4*kappa*theta/sigma**2",
+           "nc": "X_0*np.exp(-kappa*T)/(sigma**2*(1-np.exp(-kappa*T))/(4*kappa))"}
+    out = {}
+    for name, spec, params in (
+            ("normal", {"law": "normal", "mean": 0.0, "variance": 1.0}, {}),
+            ("mild_lognormal", {"law": "lognormal", "log_mean": 0.0,
+                                "log_variance": 0.09}, {}),
+            ("feller_ok_cir", cir,
+             {"X_0": 0.5, "kappa": 1.0, "theta": 1.0, "sigma": 1.0, "T": 1.0}),
+            ("m01_lognormal", {"law": "lognormal", "log_mean": -0.0616,
+                               "log_variance": 0.7569}, {}),
+            ("feller_violating_cir", cir,
+             {"X_0": 0.5, "kappa": 1.0, "theta": 0.5, "sigma": 2.0, "T": 1.0})):
+        law, _ = laws.build(spec, params)
+        out[name] = laws.bootstrap_critical(law, n) / asymptotic
+    return out
+
+
+def _terminal_law_specs():
+    """Which live sciml specs declare a ``terminal_law`` at all -- the set the §10g
+    fix can possibly move."""
+    out = []
+    for spec in sorted((ROOT / "workspace").glob("sde_sciml_*/problem_spec.json")):
+        doc = json.loads(spec.read_text())
+        if (doc.get("verification") or {}).get("terminal_law"):
+            out.append(spec.parent.name)
+    return out
+
+
+def _m02_regraded_scores():
+    return [json.loads((p / "evaluation.json").read_text()).get("score")
+            for p in sorted((ROOT / "workspace" / "sde_sciml_additive"
+                             / "plans").iterdir())
+            if (p / "evaluation.json").exists()]
+
+
+def _lilliefors_agreement():
+    """How close the bootstrap's normal-law bar is to the published 0.886/sqrt(n),
+    per sample size -- the one check on this bar that comes from outside the repo."""
+    import numpy as np
+
+    from verifylib.kernel.sde import laws
+
+    law, _ = laws.build({"law": "normal", "mean": 0.0, "variance": 1.0}, {})
+    return {n: laws.bootstrap_critical(law, n) / (0.886 / np.sqrt(n))
+            for n in (5_000, 20_000, 50_000)}
+
+
+def _m01_regraded():
+    """M01's three plans as the kernel scores them **now**, best-plan-first by the
+    harness's measured error (§10g's re-grade table)."""
+    _, ordered = _m01_plans_by_error()
+    out = []
+    for plan in ordered:
+        doc = json.loads(((ROOT / "workspace" / "sde_sciml_linear_ito" / "plans"
+                           / plan["name"] / "evaluation.json").read_text()))
+        out.append((plan["name"], doc.get("score"),
+                    (doc.get("checks") or {}).get("terminal_law_ok")))
+    return out
+
+
 def _decl_order_best():
     """``(sciml best-on, sciml n, holdout best-on, holdout n)`` for the plan that
     comes first in declaration order -- the key a resolution floor falls through
@@ -167,7 +240,7 @@ def _cost(doc):
     return sum(float((r.get("run") or {}).get("cost_usd") or 0) for r in doc["results"])
 
 
-def _study(variant, floor=0.0, holdout=False):
+def _study(variant, floor=0.0, holdout=False, source=None):
     """One row of §10f's variant table, re-derived by running the study (§10f).
 
     Imported rather than shelled out to, so a signature change here is a failure
@@ -177,9 +250,159 @@ def _study(variant, floor=0.0, holdout=False):
 
     paths = rank_study.HOLDOUT if holdout else rank_study.SCIML
     base = None if holdout else rank_study.c0_errors()
-    pool_list = rank_study.pools(paths, truncated=(variant == "truncated"))
-    rows = rank_study.study(pool_list, variant, floor, base)
+    # Same variant -> (source, breadth) mapping `rank_study.main` uses. Without it a
+    # `regraded` claim silently reads the `<metrics>` blocks and measures `current`.
+    breadth = 0
+    name = variant
+    if ":" in variant and not variant.startswith("floor:"):
+        name, n = variant.split(":", 1)
+        breadth = int(n)
+        name = "abstain" if name == "thin" else name
+    # `main()`'s mapping exactly, and no more: SS10f's variant table was measured
+    # against the scorer that *shipped*, so `abstain`/`discriminating`/`floor`
+    # default to `metrics`. SS10h's rows cross those variants with the re-graded
+    # scorer and pass `source="evaluation"` to say so.
+    src = source or ("evaluation" if variant in ("regraded", "whitelisted")
+                     else "metrics")
+    pool_list = rank_study.pools(
+        paths, truncated=(variant == "truncated"), source=src)
+    if variant == "whitelisted":
+        pool_list = rank_study._restrict_to_record(pool_list)
+    rows = rank_study.study(pool_list, name, floor, base, breadth)
     return rank_study.summarise(rows), rows
+
+
+def _fallback_fires():
+    """`(fallback fires, shared set of one, only one component varies)` over all 18
+    recorded pools (§10h).
+
+    The three are different numbers and the plan's table keeps them apart. The
+    fallback needs an **empty** shared set, which never happens. A shared set of
+    *one* is M05 alone. M02 shares two components but only one of them *varies*
+    across the pool, which is the one-component vote by another route -- and the
+    reason `discriminating` and `thin:K` are separate variants.
+    """
+    from benchmark import rank_study
+    from verifylib import ranking
+
+    empty, one, onevary = 0, [], []
+    for paths in (rank_study.SCIML, rank_study.HOLDOUT):
+        for pool in rank_study.pools(paths, source="evaluation"):
+            sums = [q["summary"] for q in pool["plans"] if q["summary"]]
+            if len(sums) < 2:
+                continue
+            tol = ranking._tol_of(sums[0], sums[0])
+            parts = [ranking.components(q, tol, sums) for q in sums]
+            shared = [k for k in ranking.CERT_COMPONENTS
+                      if all(q.get(k) is not None for q in parts)]
+            varying = [k for k in shared
+                       if max(q[k] for q in parts) - min(q[k] for q in parts) > 1e-12]
+            empty += not shared
+            if len(shared) == 1:
+                one.append(pool["id"])
+            if len(varying) == 1:
+                onevary.append(pool["id"])
+    return empty, sorted(one), sorted(onevary)
+
+
+def _decl_order_stats():
+    """The first-declared plan's rank by harness error, per suite (§10h)."""
+    from benchmark import rank_study
+
+    out = {}
+    for label, paths in (("sciml", rank_study.SCIML),
+                         ("holdout", rank_study.HOLDOUT)):
+        ranks = []
+        for pool in rank_study.pools(paths, source="evaluation"):
+            byerr = sorted([q for q in pool["plans"] if q["error"]],
+                           key=lambda q: q["error"])
+            first = pool["plans"][0]["name"]
+            r = next((i + 1 for i, q in enumerate(byerr) if q["name"] == first), None)
+            if r is not None:
+                ranks.append((r, len(byerr)))
+        out[label] = (round(statistics.mean(r for r, _ in ranks), 2),
+                      sum(1 for r, _ in ranks if r == 1),
+                      sum(1 for r, n in ranks if r == n))
+    return out
+
+
+def _record_is_lossless():
+    """Does a re-rank from the record reproduce one from the full block, row for
+    row, on both suites (§10h)? This is the item-3 fix's acceptance line."""
+    for holdout in (False, True):
+        full = _study("regraded", holdout=holdout)[1]
+        cut = _study("whitelisted", holdout=holdout)[1]
+        strip = [[{k: v for k, v in r.items() if k != "source"} for r in rows]
+                 for rows in (full, cut)]
+        if strip[0] != strip[1]:
+            return False
+    return True
+
+
+def _whitelist_census():
+    """`(fields ranking.py reads that the record drops, whitelist size)` (§10h)."""
+    import re
+
+    from benchmark import run
+
+    src = (ROOT / "verifylib" / "ranking.py").read_text(encoding="utf-8")
+    read = set(re.findall(r'summary\.get\("([A-Za-z_0-9]+)"', src))
+    return sorted(read - set(run.RECORDED_METRICS)), len(run.RECORDED_METRICS)
+
+
+def _dynkin_bars():
+    """The `dynkin_bar` values the pools carry, against the 2.43 fallback (§10h)."""
+    from benchmark import rank_study
+    from verifylib import ranking
+
+    seen = set()
+    for paths in (rank_study.SCIML, rank_study.HOLDOUT):
+        for pool in rank_study.pools(paths, source="evaluation"):
+            for q in pool["plans"]:
+                v = ranking._num((q["summary"] or {}).get("dynkin_bar"))
+                if v is not None:
+                    seen.add(round(v, 4))
+    return sorted(seen)
+
+
+#: `run.RECORDED_METRICS` as it stood before SS10h, verbatim from `git show
+#: HEAD~1:benchmark/run.py`. Hardcoded because it is the *historical* fact the
+#: fabrication claim is about: cutting to the current whitelist now correctly
+#: abstains, which is the fix, not the defect.
+PRE_10H_WHITELIST = (
+    "score", "certified", "provenance", "estimated_rel_error",
+    "estimated_rel_error_T", "error_horizon", "d1_outcome", "reference_outcome",
+    "design_order", "invariant_max_drift", "dynkin_z", "solve_time_s",
+    "functional_name", "functional_rel_tol", "functional_rel_error",
+    "functional_bias_rel", "functional_se_rel", "functional_limited_by",
+    "solver_sha256")
+
+
+def _whitelist():
+    """`run.RECORDED_METRICS` as it stands now."""
+    from benchmark import run
+
+    return run.RECORDED_METRICS
+
+
+def _m05_accuracy(whitelist):
+    """M05's accuracy component with each plan's summary cut to `whitelist` (§10h).
+
+    `None` means the kernel's abstention survived the cut. A number means the cut
+    manufactured one: `uncertainty()` lost its inputs, so `noise_limited()` returned
+    False rather than "unknown" and accuracy fell through to `headroom_fraction`.
+    """
+    from benchmark import rank_study
+    from verifylib import ranking
+
+    pool = next(q for q in rank_study.pools(rank_study.SCIML, source="evaluation")
+                if q["id"] == "M05")
+    plans = [(q["name"], {k: v for k, v in (q["summary"] or {}).items()
+                          if whitelist is None or k in whitelist})
+             for q in pool["plans"]]
+    sums = [sm for _, sm in plans]
+    tol = ranking._tol_of(sums[0], sums[0])
+    return [(name, ranking.accuracy(sm, tol)) for name, sm in plans]
 
 
 def main():
@@ -562,6 +785,83 @@ def main():
                    if r["id"] == "M01") == "score"
           and _m01_scores() == [8.0, 8.0, 10.0]),
          "the **index already ranks it correctly** (0.6046 / 0.5972 / 0.5828"),
+        # --- 10g: the terminal-law bar ---------------------------------------
+        ("the bootstrap bar tightens three laws and loosens the two it was "
+         "mis-grading",
+         (all(0.6 < _bar_ratios()[k] < 0.8
+              for k in ("normal", "mild_lognormal", "feller_ok_cir"))
+          and f"{_bar_ratios()['m01_lognormal']:.2f}" == "2.99"
+          and f"{_bar_ratios()['feller_violating_cir']:.2f}" == "40.97"),
+         "| normal | 0.00 | **0.66\u00d7** (tighter) |"),
+        ("the normal-law bar reproduces Lilliefors' published constant",
+         ([f"{v:.4f}" for v in _lilliefors_agreement().values()]
+          == ["1.0069", "1.0203", "1.0041"]),
+         "**1.0069, 1.0203 and 1.0041**"),
+        ("M01 re-graded: the milstein goes 8 to 10 and the heun stays 8",
+         (_m01_regraded() == [("3-heun-srk", 8, True),
+                              ("2-milstein", 10, True),
+                              ("1-euler-maruyama", 10, True)]),
+         "| `2-milstein` | 0.006141 | **FAIL, 1.01\u00d7** | pass, **0.34\u00d7** | 8 | **10** |"),
+        ("and that takes the arm past the C0 one-shot",
+         (f"{_study('regraded')[0]['geomean']:.3f}" == "2.466"
+          and f"{_study('regraded')[0]['vs_c0']:.3f}" == "0.931"
+          and f"{next(r['regret'] for r in _study('regraded')[1] if r['id'] == 'M01'):.3f}"
+          == "2.132"
+          and next(r["decided_by"] for r in _study("regraded")[1]
+                   if r["id"] == "M01") == "sqi"),
+         "| **`regraded` (this fix)** | 5/9 | 3 | **2.466** | **0.931\u00d7 \u2014 better** |"),
+        ("only M01 and M02 declare a terminal law, and M02 is unmoved",
+         (_terminal_law_specs() == ["sde_sciml_additive", "sde_sciml_linear_ito"]
+          and all(v == 9 for v in _m02_regraded_scores())),
+         "0.52\u00d7 of the old, **0.786\u00d7** of the new"),
+        # --- SS10h: the three ranker defects -------------------------------
+        ("the comparable_keys fallback is dead code on all 18 recorded pools",
+         (_fallback_fires() == (0, ["M05"], ["M02", "M05"])),
+         "The fallback at `ranking.py:559` is **dead code on every pool ever run**"),
+        ("abstaining is bit-identical to shipping, so item 1 is a measured no-op",
+         ([{k: v for k, v in r.items() if k != "source"}
+           for r in _study("abstain", source="evaluation")[1]]
+          == [{k: v for k, v in r.items() if k != "source"}
+              for r in _study("regraded")[1]]),
+         "bit-identical to `regraded` on\n18/18 pools"),
+        ("the thin gate is harmful, monotonically",
+         (f"{_study('thin:2', source='evaluation')[0]['vs_c0']:.3f}" == "2.174"
+          and f"{_study('thin:3', source='evaluation')[0]['vs_c0']:.3f}" == "3.501"
+          and f"{_study('thin:2', source='evaluation')[0]['geomean']:.3f}"
+          == "5.761"),
+         "| `thin:2` | 5/9 | 5.761 | 2.174\u00d7 | 6/9 | 2.015 |"),
+        ("declaration order is the worst plan on sciml and the best on holdout",
+         (_decl_order_stats() == {"sciml": (2.89, 0, 8),
+                                  "holdout": (1.56, 5, 1)}),
+         "| sciml | 2.89 / 3 | 0/9 | **8/9** | `1-euler-maruyama`, all nine |"),
+        ("ordertie wins on sciml and breaks holdout where its gate first fires",
+         (_study("ordertie:2", source="evaluation")[0]["picks_best"] == 6
+          and f"{_study('ordertie:2', source='evaluation')[0]['vs_c0']:.3f}"
+          == "0.846"
+          and _study("ordertie:3", holdout=True,
+                     source="evaluation")[0]["picks_best"] == 2
+          and f"{_study('ordertie:3', holdout=True, source='evaluation')[0]['geomean']:.3f}"
+          == "4.247"),
+         "| `ordertie:3` | 6/9 | 2.242 | 0.846\u00d7 | **2/9** | **4.247** |"),
+        ("the record carried a wrong dynkin_bar, not an absent one",
+         (_dynkin_bars() == [2.4284, 2.531, 2.8049]),
+         "the nine\npools carry 2.4284, 2.5310 and 2.8049"),
+        ("the old record fabricated M05's accuracy where the kernel abstained",
+         (all(v is None for _, v in _m05_accuracy(None))
+          and ([f"{v:.3f}" for _, v in _m05_accuracy(PRE_10H_WHITELIST)]
+               == ["0.141", "0.008", "0.046"])
+          # and the fix is that the current whitelist no longer does
+          and all(v is None for _, v in _m05_accuracy(_whitelist()))),
+         "scored three unresolved plans at 0.141 / 0.008 / 0.046"),
+        ("the whitelist now carries every field the ranker reads",
+         (_whitelist_census() == ([], 31)),
+         "taking the whitelist from 19 to 31"),
+        ("and the record is a lossless ranking input, both suites",
+         (_record_is_lossless()
+          and f"{_study('truncated')[0]['geomean']:.3f}" == "14.023"
+          and f"{_study('truncated')[0]['vs_c0']:.3f}" == "5.291"
+          and _study("whitelisted")[0]["picks_best"] == 5),
+         "**bit-identical on all 18 pools across both suites**"),
         ("step 10 is complete at nine of nine",
          (sum(1 for r in by.values() if r["verdict"] == "VERIFIED_PASS") == 5
           and sum(1 for r in by.values() if r["verdict"] == "UNDERCLAIM") == 4
