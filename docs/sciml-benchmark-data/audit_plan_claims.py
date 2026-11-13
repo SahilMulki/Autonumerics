@@ -1,9 +1,9 @@
-"""Check the numbers quoted in plan-sciml-benchmark.md §3f/§9a/§10a–10d against the data.
+"""Check the numbers quoted in plan-sciml-benchmark.md §3f/§9a/§10a–10f against the data.
 
 A plan that records measured findings in prose is only as good as the prose matching the
 artifacts, and prose drifts silently: a table edited after a re-run, a figure rounded
 twice, a count that was true of an earlier sweep. This re-derives each quoted number from
-`comparators.json`, the two baseline result files and **both** step-10 results files, and
+`comparators.json`, the two baseline result files and **all three** step-10 results files, and
 checks that the plan still says it. A few claims read a plan's `SOLUTION.md` directly,
 because the per-plan record carries only a subset of the `<metrics>` fields.
 
@@ -17,6 +17,7 @@ Exits non-zero if any claim no longer matches.
 
 import json
 import pathlib
+import statistics
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -28,6 +29,10 @@ PROBE = ROOT / "benchmark" / "results" / "pipeline" / "sciml_probe.json"
 #: earlier records are not merged over (§10d).
 REST = (ROOT / "benchmark" / "results" / "pipeline" / "sciml_rest"
         / "sciml_probe_rest.json")
+#: M09's third attempt, again in its own file (§10e). The `RUN_ERROR` row for the
+#: same slug in :data:`PROBE` is the first attempt and is superseded by this one.
+M09R = (ROOT / "benchmark" / "results" / "pipeline" / "sciml_m09"
+        / "sciml_probe_m09.json")
 KS = (ROOT / "docs" / "sciml-benchmark-data" / "measurements"
       / "ks_gate_resolution.json")
 
@@ -90,17 +95,103 @@ def _family(plan_dir):
     return (meta["scheme_family"], meta["scheme_family_source"], meta["declared"])
 
 
+def _decl_order_best():
+    """``(sciml best-on, sciml n, holdout best-on, holdout n)`` for the plan that
+    comes first in declaration order -- the key a resolution floor falls through
+    to, and the reason the floor's sign flips between corpora (§10f)."""
+    from benchmark import rank_study
+
+    out = []
+    for paths in (rank_study.SCIML, rank_study.HOLDOUT):
+        best_on = total = 0
+        for pool in rank_study.pools(paths):
+            graded = sorted((p for p in pool["plans"] if p["error"] is not None),
+                            key=lambda p: p["error"])
+            first = min(pool["plans"], key=lambda p: p["name"])
+            if first["error"] is None:
+                continue
+            total += 1
+            best_on += graded[0]["name"] == first["name"]
+        out += [best_on, total]
+    return tuple(out)
+
+
+def _decl_order_mean_rank():
+    """``(sciml, holdout)`` mean rank of the declaration-order first plan among the
+    graded plans of its pool, 1 being the best (§10f)."""
+    from benchmark import rank_study
+
+    out = []
+    for paths in (rank_study.SCIML, rank_study.HOLDOUT):
+        ranks = []
+        for pool in rank_study.pools(paths):
+            graded = sorted((p for p in pool["plans"] if p["error"] is not None),
+                            key=lambda p: p["error"])
+            first = min(pool["plans"], key=lambda p: p["name"])
+            if first["error"] is None:
+                continue
+            ranks.append([p["name"] for p in graded].index(first["name"]) + 1)
+        out.append(sum(ranks) / len(ranks))
+    return tuple(out)
+
+
+def _m01_plans_by_error():
+    from benchmark import rank_study
+
+    pool, = [p for p in rank_study.pools(rank_study.SCIML) if p["id"] == "M01"]
+    return pool, sorted((p for p in pool["plans"] if p["error"] is not None),
+                        key=lambda p: p["error"])
+
+
+def _m01_scores():
+    """M01's scores, best plan first: the evaluator scored the two better plans 8
+    and the worst one 10, which is what `score` then ranks on (§10f)."""
+    _, ordered = _m01_plans_by_error()
+    return [p["summary"].get("score") for p in ordered]
+
+
+def _m01_indices():
+    """M01's three quality indices, best plan first -- the counterfactual behind
+    10f's claim that the index ranks M01 right and ``score`` overrides it."""
+    from verifylib import ranking
+
+    pool, ordered = _m01_plans_by_error()
+    sums = [p["summary"] for p in pool["plans"]]
+    tol = ranking._tol_of(sums[0], sums[0])
+    keys = ranking.comparable_keys(tol, sums)
+    return [ranking.sqi(p["summary"], ranking._tol_of(p["summary"], p["summary"]),
+                        sums, keys=keys)[0] for p in ordered]
+
+
 def _cost(doc):
     return sum(float((r.get("run") or {}).get("cost_usd") or 0) for r in doc["results"])
 
 
+def _study(variant, floor=0.0, holdout=False):
+    """One row of §10f's variant table, re-derived by running the study (§10f).
+
+    Imported rather than shelled out to, so a signature change here is a failure
+    rather than a silently different number.
+    """
+    from benchmark import rank_study
+
+    paths = rank_study.HOLDOUT if holdout else rank_study.SCIML
+    base = None if holdout else rank_study.c0_errors()
+    pool_list = rank_study.pools(paths, truncated=(variant == "truncated"))
+    rows = rank_study.study(pool_list, variant, floor, base)
+    return rank_study.summarise(rows), rows
+
+
 def main():
+    from verifylib import ranking
+
     plan = PLAN.read_text()
     comp, probe, ks = _load(COMP), _load(PROBE), _load(KS)
     rest = _load(REST)
+    m09r_doc = _load(M09R)
     A = _load(BASE / "oneshot_sciml_scheme_matched.json")
     B = _load(BASE / "oneshot_sciml_unrestricted.json")
-    if not all((comp, probe, A, B, ks, rest)):
+    if not all((comp, probe, A, B, ks, rest, m09r_doc)):
         print("cannot audit: re-run step 3, 9 or 10, or ks_gate_resolution.py, first")
         return 2
 
@@ -132,7 +223,13 @@ def main():
     # The rev-10 five. `by` indexes both result files together, because the defect
     # tallies in 10d are over every completed entry, not over one invocation.
     five = {r["id"]: r for r in rest["results"]}
-    by = {r["id"]: r for r in probe["results"] + rest["results"]}
+    # M09 last, so the completed third attempt overrides the superseded RUN_ERROR
+    # row the first attempt left in `probe` (§10e).
+    by = {r["id"]: r
+          for r in probe["results"] + rest["results"] + m09r_doc["results"]}
+    m09r = by["M09"]
+    h9r = m09r["harness_by_plan"]
+    nc = ROOT / "workspace" / "sde_sciml_weak_noncommutative"
     m05 = five["M05"]
     h5 = m05["harness_by_plan"]
     nl = ROOT / "workspace" / "sde_sciml_nltest" / "plans"
@@ -362,11 +459,115 @@ def main():
          (all(h < 0 for h in _headrooms("sde_sciml_stiffquad_mixed"))
           and five["M08"]["verify"]["verified_score"] == 10),
          "\u22120.7693 / \u22120.7726 / \u22120.7480"),
-        ("defects 9 and 10 now stand at seven of eight completed entries",
-         (len(capped) == 7 and "M05" not in capped
+        ("defects 9 and 10 now stand at seven of nine completed entries",
+         (len(capped) == 7 and "M05" not in capped and "M09" not in capped
           and sum(1 for r in by.values()
-                  if r["run"]["status"] == "completed") == 8),
-         "**seven of eight**"),
+                  if r["run"]["status"] == "completed") == 9),
+         "**seven of ~~eight~~ nine**"),
+        # --- 10e: M09's third attempt ----------------------------------------
+        ("M09 completed on the third attempt, and fast",
+         (m09r["run"]["status"] == "completed"
+          and not m09r["run"]["timed_out"]
+          and f"{m09r['run']['wall_seconds']:.1f}" == "312.1"),
+         "**The third attempt cost 312.1 s.**"),
+        ("M09's verdict and winner",
+         (m09r["verdict"] == "VERIFIED_PASS"
+          and h9r["winner"] == "4-conditional-mc-rao-blackwell"
+          and m09r["kernel"]["score"] == 10
+          and m09r["kernel"]["certified"] is True),
+         "winner `4-conditional-mc-rao-blackwell`, **score 10**, `certified: true`"),
+        ("M09 is the first case where the ranker and the harness name different "
+         "plans and the flag is correctly down",
+         (h9r["wrong_plan_won"] is False
+          and h9r["winner"] != h9r["best_plan_by_harness"]
+          and h9r["best_plan_by_harness"] == "2-exact-lognormal-exponential"
+          and f"{h9r['best_harness_err']:.4f}" == "0.0571"
+          and f"{h9r['winner_harness_err']:.4f}" == "0.0590"
+          and f"{h9r['harness_error_margin']:.4f}" == "0.0617"),
+         "**0.0571** of gate\nagainst the winner's **0.0590**"),
+        ("the winner's advantage is a real variance reduction",
+         (f"{h9r['plans']['4-conditional-mc-rao-blackwell']['kernel']['functional_se_rel']:.4g}"
+          == "0.0008152"
+          and f"{h9r['plans']['2-exact-lognormal-exponential']['kernel']['functional_se_rel']:.4g}"
+          == "0.002568"),
+         "**8.152e-04** against\nplan 2's **2.568e-03**"),
+        ("the winner is the pool's most expensive plan and cost did not decide",
+         (max((p["kernel"]["solve_time_s"], n)
+              for n, p in h9r["plans"].items())[1]
+          == h9r["winner"]),
+         "the pool's **most expensive** plan by 3.4\u00d7"),
+        ("M09's order component is None on every plan although all three measured one",
+         (all("observed_order" not in p["kernel"] for p in h9r["plans"].values())
+          and (_field("sde_sciml_weak_noncommutative", "observed_order")
+               == [0.9514, 0.5265, 0.5104])
+          and (_field("sde_sciml_weak_noncommutative", "order_check")
+               == [True, "unresolved", "unresolved"])),
+         "the ranking fix's input is\nbeing truncated by the recorder"),
+        ("and carrying it would have changed nothing, because two plans abstain",
+         (ranking.order({"kind": "sde", "order_check": "unresolved",
+                         "observed_order": 0.5265, "design_order": 0.5}) is None
+          and ranking.order({"kind": "sde", "order_check": "true",
+                             "observed_order": 0.9514, "design_order": 0.5}) == 1.0),
+         "The defect is\ntherefore **latent, not active**"),
+        ("M09's pool gate produced a fourth plan, and it won",
+         ("exact_sampling_components: 1" in (nc / "STATE.md").read_text()
+          and m09r["pipeline"]["n_plans"] == 4
+          and (nc / "plans" / "4-conditional-mc-rao-blackwell").is_dir()),
+         "the conductor **re-dispatched the plan-creator once**"),
+        ("M09's conductor recorded a crash recovery",
+         "recovery_note:" in (nc / "STATE.md").read_text(),
+         "this is the first time in this corpus it has\nfired"),
+        ("M09 ran at the spec's own path count, which is why it is not capped",
+         (m09r["verify"]["run"]["num_paths"] == 100000
+          and json.loads((nc / "problem_spec.json").read_text())
+              ["evaluation_thresholds"]["num_paths"] == 100000),
+         "matching `evaluation_thresholds.num_paths` *and*\n`graded_num_paths`"),
+        ("the re-formulated M09 spec re-spelled the same coined field",
+         (("exact_values_at_T"
+           in json.loads((nc / "problem_spec.json").read_text())["analytic_moments"])
+          and "terminal_moments_at_T" not in (nc / "problem_spec.json").read_text()),
+         "**dropped that name entirely**"),
+        # --- 10f: the offline re-rank ----------------------------------------
+        ("10f's C0 comparison: shipped loses, the pool wins",
+         (f"{_study('current')[0]['vs_c0']:.3f}" == "1.177"
+          and f"{statistics.geometric_mean([r['best_err'] / r['c0'] for r in _study('current')[1] if r['c0']]):.3f}"
+          == "0.377"),
+         "**geomean 1.412\u00d7 worse** | **geomean 0.377\u00d7**"),
+        ("10f's variant table, every row",
+         all(f"{_study(v, f)[0]['geomean']:.3f}" == g
+             and _study(v, f)[0]["picks_best"] == pb
+             for v, f, g, pb in (("current", 0.0, "3.120", 5),
+                                 ("abstain", 0.0, "3.120", 5),
+                                 ("discriminating", 0.0, "3.120", 5),
+                                 ("noscore", 0.0, "2.267", 6),
+                                 ("truncated", 0.0, "14.023", 3))),
+         "| **`current`** (with the rev-8 fix) | **5/9** | **3** | **3.120** |"),
+        ("the one fix that crosses the line is the scorer's",
+         (f"{_study('noscore')[0]['vs_c0']:.3f}" == "0.855"
+          and _study("noscore")[0]["outside_margin"] == 2),
+         "from **1.177\u00d7 worse than C0 to 0.855\u00d7\nbetter**"),
+        ("the floor is harmful on sciml and helps on the holdout",
+         (f"{_study('floor', 0.05)[0]['geomean']:.3f}" == "9.944"
+          and f"{_study('floor', 0.05, holdout=True)[0]['geomean']:.3f}" == "1.264"
+          and _study("floor", 0.05, holdout=True)[0]["picks_best"] == 8
+          and f"{_study('abstain', 0.0, holdout=True)[0]['geomean']:.3f}" == "1.519"),
+         "| 0.05 | 4/9 \u00b7 9.944 | **8/9 \u00b7 1.264** |"),
+        ("the floor's sign flips because of declaration order, measured both ways",
+         (_decl_order_best() == (0, 9, 5, 9)
+          and [f"{r:.2f}" for r in _decl_order_mean_rank()] == ["2.89", "1.56"]),
+         "best plan on 0 of 9 pools**, mean rank **2.89 of"),
+        ("M01's index already ranks it correctly; score overrides it",
+         ([f"{i:.4f}" for i in _m01_indices()] == ["0.6046", "0.5972", "0.5828"]
+          and next(r["decided_by"] for r in _study("current")[1]
+                   if r["id"] == "M01") == "score"
+          and _m01_scores() == [8.0, 8.0, 10.0]),
+         "the **index already ranks it correctly** (0.6046 / 0.5972 / 0.5828"),
+        ("step 10 is complete at nine of nine",
+         (sum(1 for r in by.values() if r["verdict"] == "VERIFIED_PASS") == 5
+          and sum(1 for r in by.values() if r["verdict"] == "UNDERCLAIM") == 4
+          and f"{sum(r['run']['wall_seconds'] for r in by.values()) / 60:.1f}"
+          == "139.3"),
+         "Verdicts: **5\n`VERIFIED_PASS`, 4 `UNDERCLAIM`, zero overclaims.**"),
     ]
 
     bad = 0

@@ -211,6 +211,34 @@ UNREAD = {
         "`runner.py` all read it, so this is a scoping artifact rather than a gap, "
         "and recorded as such so the next reader does not go looking for a consumer "
         "that already exists"),
+    # --- invented by a formulator, 2026-11-13: the same gap, re-spelled -------
+    # The M09 re-run (plan-sciml-benchmark.md 10e) re-formulated a problem that had
+    # already been formulated once, and coined a *different* name for the identical
+    # content. That is the sharpest evidence in the registry that the missing key
+    # produces arbitrary spellings rather than a convention settling on its own:
+    # seven spellings across seven different problems could be seven formulators'
+    # taste, but the same problem re-spelling itself cannot be.
+    "exact_values_at_T": (
+        "sde_sciml_weak_noncommutative, inside `analytic_moments`: the terminal "
+        "mean and variance of both components, under a note saying FOR VERIFICATION "
+        "ONLY. This is `terminal_moments_at_T` above, re-coined -- the first run on "
+        "this problem wrote the same values at top level under that name, the "
+        "re-run dropped it and wrote them here under this one, and the live spec "
+        "no longer carries the old name at all. Unread for the same reason: the "
+        "kernel's analytic route evaluates `mean_expression` and "
+        "`variance_expression`, which this spec also declares, so the block is a "
+        "restatement of values already present in a readable form"),
+    "parameter_provenance": (
+        "sde_sciml_weak_noncommutative, top level: one line per coefficient saying "
+        "where it came from in problem.md ('a22: -(-785/512 + sqrt(2)/8) = "
+        "785/512 - sqrt(2)/8 ... the coefficient multiplying X2 is +1.3564264297', "
+        "with the sign reasoning spelled out). Read by nothing, and the most "
+        "pointed omission in this registry: this run's single largest caveat is "
+        "that its Path-A provenance rests on the formulator's own transcription, "
+        "and its REPORT says a reference derived from a mis-transcribed equation "
+        "would validate identically. This field is the audit trail for exactly that "
+        "-- invented, unprompted, by the formulator whose transcription is in "
+        "question. A consumer for it is a real design item, not a gap to paper over"),
     # --- invented by a formulator, 2026-11-06 ---------------------------------
     # Two fields the BENCHOP SDE run coined for itself that are not prose and not
     # covered by a VALUE_SUBTREES entry. Recorded rather than consumed, with what
@@ -458,7 +486,9 @@ REGENERATED = {"pathwise_exact_solution", "mean_check_applies",
                "measured_reference_errors", "terminal_moments_at_T",
                # [sciml 10d] the four the 2026-11-12 runs coined, same reasoning
                "pathwise_reference", "pathwise_strong_rel_err_max",
-               "pathwise_strong_rel_err_definition", "path_values"}
+               "pathwise_strong_rel_err_definition", "path_values",
+               # [sciml 10e] the two the 2026-11-13 M09 re-run coined, same reasoning
+               "exact_values_at_T", "parameter_provenance"}
 
 
 def test_the_unread_table_names_only_fields_some_live_spec_declares():

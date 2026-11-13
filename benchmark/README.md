@@ -65,13 +65,15 @@ benchmark/
 ├── oneshot.py                BASELINE runner: C0 (one-shot) / C1 (single agent + tools)
 ├── baseline_select.py        pick a matched baseline's answer with the conductor's own rule
 ├── compare.py                head-to-head: pipeline vs baselines (accuracy + cost)
+├── rank_study.py             OFFLINE: re-rank finished pools from the recorded data and score
+│                            a candidate ranker against the harness's verdict (regret)
 ├── report.py                 REPORT.md generator (verdicts, discrepancies, tiers)
 ├── manifest.json             generated: the authoritative per-problem record (suite included)
 ├── pipeline-settings.json    the deny rules that keep this directory out of the pipeline's reach
 ├── design/                   the suite's own design record — plans, candidate routes, lit reviews
 ├── references/               generated: {slug}.npz reference fields + benchop_slv.json (never read by the pipeline)
 ├── results/                  generated run artifacts + the committed REPORT.md
-└── tests/                    464 tests on the harness itself; no model calls, no workspace
+└── tests/                    629 tests on the harness itself; no model calls, no workspace
 ```
 
 `benchmark/` is a directory of scripts, not a package: each module puts its own directory on
@@ -583,7 +585,7 @@ tighter than the variance gate, 10%).
 
 ## tests/
 
-464 tests on the harness itself (`--collect-only`, 2026-10-21; 15 of them `slow`). They never run
+629 tests on the harness itself (`--collect-only`, 2026-11-13; 15 of them `slow`). They never run
 `claude` and never touch `workspace/`: they feed `verify.py` synthetic solver output built from the
 harness's own ground truth — a reference field with noise added, an exact eigenfunction with a
 wrong eigenvalue beside it — and check what the verdict says. Deterministic, and seconds apart
