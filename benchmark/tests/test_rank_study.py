@@ -333,3 +333,118 @@ def test_ordertie_prefers_the_higher_measured_order_and_says_why_it_was_not_ship
     assert key(lo) < key(exact), (
         "and this is the defect that kept it unshipped: an exact sampler has no "
         "order, so it loses to a discretisation scheme with a measured one")
+
+
+def test_relorder_is_the_shipped_reading_until_the_floor_stops_discriminating():
+    """`relorder:C` -- route (i) of SS10l, and its first guard.
+
+    `ranking.order` scores a *shortfall against a floor*, so on a pool where every
+    plan clears its own floor it returns 1.0 for all of them and carries no
+    information. That is SS10l's measured hole: M05's three plans read strong orders
+    0.9650 / 0.9981 / 1.5851, in perfect rank agreement with the harness, and the
+    component mapped them to 1.000 / 0.998 / 1.000 -- tying the pool's best plan with
+    its worst.
+
+    The guard is the kernel's own band and not exact equality. `base` saturates at
+    1.0 only at or above the floor *exactly*, so `min(base) == 1.0` excluded M05 on
+    `2-milstein`'s 0.00195 miss, and M01, M03, M04 and M08 on misses of 1-5% --
+    every one of which `crn.guards` had passed, because they are inside
+    `STRONG_BAND`.
+    """
+    def plan(order, se, floor):
+        return {"kind": "sde", "observed_order": order, "observed_order_se": se,
+                "order_floor": floor, "design_order": floor, "order_check": "true"}
+
+    # M05's three, to four figures.
+    em = plan(0.9650, 0.0313, 0.5)
+    mil = plan(0.9981, 0.00034, 1.0)
+    taylor = plan(1.5851, 0.0438, 0.5)
+    pool = [em, mil, taylor]
+
+    from verifylib import ranking
+    assert [round(ranking.order(s), 4) for s in pool] == [1.0, 0.9981, 1.0], (
+        "the shipped reading ties the best plan with the worst")
+
+    rel = [rank_study._rel_order(s, pool) for s in pool]
+    assert rel[2] == 1.0, "the pool's best measured rate anchors the scale"
+    assert rel[0] < rel[2] and rel[1] < rel[2], rel
+    assert rel[0] < 1.0 and rel[1] < 1.0, (
+        "and `2-milstein`'s 0.00195 miss no longer blocks the whole pool")
+
+    # Guard 1: one plan short of its floor by more than the gate's band, and the
+    # pool comparison stands down -- a real shortfall is not overruled by it.
+    short = plan(0.40, 0.01, 1.0)
+    blocked = [em, mil, taylor, short]
+    assert [rank_study._rel_order(s, blocked) for s in blocked] == [
+        ranking.order(s) for s in blocked], "guard 1: fidelity still decides"
+
+
+def test_relorder_abstains_where_the_two_plans_it_would_reorder_are_not_resolved():
+    """`relorder`'s second guard, and the one pool that proves it is load-bearing.
+
+    SS19's rule is that *an order far above the theoretical one is noise, not a
+    bonus*, so a pool-relative reading needs a resolution test or it is exactly the
+    rule SS19 forbids. The endpoints are the wrong pair to test: on M01 the spread
+    0.4804..0.98647 is resolved many times over, while the **top two** (0.98647 +/-
+    0.0096 and 0.98312 +/- 0.0150) are 0.0033 apart against a 2-sigma bar of 0.0357.
+
+    Firing there is not harmless -- the *lower* of those two is M01's best plan by
+    the harness's own measurement, so it ranks `2-milstein` over `3-heun-srk` and
+    undoes SS10k. Measured: with this guard disabled (`C = 0`) M01 goes back to
+    `2-milstein` at regret 2.132 and the arm from 7/9 to 6/9. That is the whole
+    reason the guard exists, so it is pinned here.
+    """
+    def plan(order, se, floor):
+        return {"kind": "sde", "observed_order": order, "observed_order_se": se,
+                "order_floor": floor, "design_order": floor, "order_check": "true"}
+
+    from verifylib import ranking
+    # M01's three, to five figures.
+    m01 = [plan(0.48040, 0.01523, 0.5), plan(0.98647, 0.00960, 1.0),
+           plan(0.98312, 0.01504, 0.5)]
+    assert [rank_study._rel_order(s, m01) for s in m01] == [
+        ranking.order(s) for s in m01], "the top two are inside their own error bars"
+
+    # The same pool with the top two separated: now it fires.
+    far = [plan(0.48040, 0.01523, 0.5), plan(1.9, 0.0096, 1.0),
+           plan(0.98312, 0.01504, 0.5)]
+    assert rank_study._rel_order(far[1], far) == 1.0
+    assert rank_study._rel_order(far[2], far) < 1.0
+
+    # And with the guard switched off, M01's unresolved pair is ranked after all --
+    # the regression this is here to stop.
+    off = [rank_study._rel_order(s, m01, 0.0) for s in m01]
+    assert off[1] > off[2], "C=0 ranks a pair separated by a tenth of its error bar"
+
+
+def test_structadm_applies_cost_admissible_to_structure_and_is_measured_harmful():
+    """`structadm` -- route (ii) of SS10l. A transplant, not a new rule.
+
+    `ranking.cost_admissible` already argues it for `cost`: a component subordinate
+    to accuracy may contribute only where **every** plan in the pool had its accuracy
+    measured, since "a component promoted by the absence of the one it is subordinate
+    to is not breaking a tie, it is deciding". SS10l measured `structure` in exactly
+    that position on M05.
+
+    Recorded **harmful** and not shipped: it fixes M05 on its own (regret 1.000) and
+    costs four other pools, because on sciml `accuracy` is unresolved on 7 of 9 pools
+    and the rule therefore removes `structure` almost everywhere -- 4/9 and 2.378x
+    against the one-shot, where the shipped ranker is 6/9 and 0.855x. The gate still
+    has to do what it says, or that measurement was of something else.
+    """
+    from verifylib import ranking
+
+    resolved = {"kind": "sde", "estimated_rel_error": 1e-4, "resolved": True,
+                "invariant_worst_headroom": 0.3, "mean_rel_err": 1e-4}
+    unresolved = {"kind": "sde", "invariant_worst_headroom": 0.3}
+
+    pool_ok = [dict(resolved), dict(resolved)]
+    assert ranking.cost_admissible(1e-2, pool_ok), "accuracy resolved on both"
+    assert "structure" in rank_study._keys("structadm", 1e-2, pool_ok, 0)
+
+    pool_bad = [dict(unresolved), dict(unresolved)]
+    assert not ranking.cost_admissible(1e-2, pool_bad)
+    keys = rank_study._keys("structadm", 1e-2, pool_bad, 0)
+    assert "structure" not in keys, keys
+    assert "structure" in ranking.comparable_keys(1e-2, pool_bad), (
+        "which is the difference from what ships")

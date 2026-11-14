@@ -299,6 +299,55 @@ def evaluate_sde(spec, plan_dir, agent):
     provisional = 10 if (metrics.passed(moments_ok) and resolved_detail["resolved"]
                          and not d2["gate_failed"]) else 6
     would_certify = provisional >= (10 if path == "A" else 9)
+    # §10l. `would_certify` is false for three distinguishable reasons, and the two
+    # skips below treated them alike. Two of the three are *findings about the
+    # solver*: the moments failed, which `run_orders` already runs the ladder for,
+    # or a declared constraint gate failed, which caps the score on that finding and
+    # so decides the rank by `score` without either study. The third is not about
+    # the solver at all -- `resolved` is false when the Monte-Carlo half-width admits
+    # more than the accuracy bar, and `rubric_sde_analytic`'s own reason for the 6
+    # says so in as many words: "the error bars are too wide to decide. Raise num_paths -- this
+    # is not a solver bug".
+    #
+    # In that third case the skip's stated justification is false. Nothing has been
+    # settled, and these two studies are the only checks left that could settle
+    # anything. So a skip taken on a *scoring* argument removes two of the quality
+    # index's four components -- `observed_order` feeds `ranking.order` and
+    # `dynkin_z` feeds `ranking.consistency` -- and §10b's whole-pool rule means one
+    # plan's skip removes them for every plan on the problem.
+    #
+    # The score cannot move either way, and that is the point rather than a
+    # limitation: `rubric_sde_analytic` is Path A's rubric and its
+    # `failed(resolved) -> 6` row sits above every row that reads `orders_ok` or
+    # `dynkin_ok`, so an unresolved Path-A plan is a 6 whatever the two studies
+    # return. (`rubric_sde` *does* place a clean-orders 9 above its own `resolved`
+    # row, but that is Path B, which runs both studies unconditionally, so no plan
+    # reaches it through this skip.) Running them therefore buys ranking inputs at
+    # no risk of changing a verdict: nothing here can lift a 6 or cap a 10.
+    #
+    # Measured on M05 `sde_sciml_nltest`: all three plans unresolved at
+    # `ci_width_rel` 0.0905 against a 0.05 bar, both studies skipped,
+    # `comparable_keys` left with `('structure',)` alone, and that one component
+    # anti-correlated with quality -- the pool shipped a plan **622x** worse than one
+    # it had already written. What it costs to run them is three ladders on one
+    # problem: across the **68** SDE `<metrics>` blocks on disk `order_check:
+    # not_run` appears on exactly those three, because Path B runs both studies
+    # unconditionally and every other Path A pool resolved. §24's saving has never
+    # applied anywhere else -- `audit_plan_claims._not_run_census` keeps that a
+    # standing claim rather than an observation.
+    #
+    # `metrics.passed(moments_ok)` and not merely "not failed": one asymmetry is
+    # recorded here rather than fixed. `run_crn_ladder` carries `not
+    # passed(moments_ok)` and `run_dynkin` does not, so a Path-A plan whose moments
+    # *failed* gets the ladder and not the generator check -- and that is the plan
+    # where Dynkin would say which of the two it is ("the wrong equation integrated
+    # correctly, a sign or a coefficient, not too few paths"). Running it there is
+    # not free the way this is: `failed(dynkin_ok)` is the top row of both SDE
+    # rubrics, so it would move scores and needs its own measurement first. No pool
+    # on disk is in that state.
+    inconclusive_only = bool(metrics.passed(moments_ok)
+                             and not resolved_detail["resolved"]
+                             and not d2["gate_failed"])
     # 1c: the `expected_strong >= 1.0` conjunct is gone. Measuring a floor of 0.5
     # and getting 0.0 is exactly how a solver that ignores `dW` is caught, and that
     # condition exempted every Euler-Maruyama plan in the set from the only check
@@ -312,7 +361,7 @@ def evaluate_sde(spec, plan_dir, agent):
     # false-failed a correct additive-noise solver on about six of the 23 problems.
     run_orders = cfg.set("run_crn_ladder",
                          bool(path == "B" or not metrics.passed(moments_ok)
-                              or would_certify),
+                              or would_certify or inconclusive_only),
                          "kernel_default")
     # 1b: Dynkin on Path A too, once, at certification. §24 argues it "adds nothing
     # on Path A that exact moments do not already do better", and the fabrication
@@ -324,7 +373,17 @@ def evaluate_sde(spec, plan_dir, agent):
     # `would_certify` rather than unconditionally, so the ~7x cost lands only where
     # a 10 is actually in play -- and after step 5, so a seed-driven z cannot cap a
     # correct solver without the median rule seeing it first.
-    run_dynkin = cfg.set("run_dynkin", bool(path == "B" or would_certify),
+    #
+    # ~~`would_certify` alone~~ **§10l: `or inconclusive_only`.** A 10 not being
+    # in play is the argument for paying the cost, not against it: where the moment
+    # comparison was inconclusive this is the only evidence left about the plan, and
+    # `dynkin_z` is `ranking.consistency`'s sole input. Measured on M05 the three
+    # z-values come back 0.2054 / 0.2038 / 0.2035 against a 2.428 bar -- clean on
+    # all three and ~~discriminating~~ **inert**, which is recorded in §10l rather
+    # than tuned: `cbrt(X)` has `L phi = b/3 = 2` exactly and all three schemes
+    # integrate the right generator, so the probe agrees with them all.
+    run_dynkin = cfg.set("run_dynkin",
+                         bool(path == "B" or would_certify or inconclusive_only),
                          "kernel_default")
     dynkin_levels = int(cfg.pick("dynkin_levels", agent,
                                  thresholds.get("dynkin_levels"), 3))
@@ -337,10 +396,21 @@ def evaluate_sde(spec, plan_dir, agent):
             exact_sampling=exact_sampling)
     else:
         ladder = []
+        # ~~"the moments match an exact reference and the scheme's strong order is
+        # below 1, so the order study cannot distinguish anything the moment
+        # comparison has not already settled"~~ -- false in two ways on the only
+        # three plans that ever read it (§10l). It names the `expected_strong >= 1.0`
+        # conjunct that 1c above had already removed, so the clause was stale on any
+        # plan with a floor of 1.0 (M05's `2-milstein` read it at exactly 1.0); and
+        # it asserts the moment comparison had settled something when the comparison
+        # was `resolved: false`. Same class as `_moments_fail_reason` and
+        # `_orders_fail_reason` -- a reason string that cannot be true in the case it
+        # is emitted in. Now that `inconclusive_only` runs the study, the one
+        # remaining skip is a failed constraint gate, and the text says that.
         orders, order_detail = "not_run", {
-            "reason": "the moments match an exact reference and the scheme's strong order "
-                      "is below 1, so the order study cannot distinguish anything the "
-                      "moment comparison has not already settled"}
+            "reason": "a declared constraint gate failed, so the score is capped on "
+                      "that finding and no order study can lift it -- the one case "
+                      "§24's cost skip still covers"}
     # F18's discovery gap. `guards` can only abstain on a declaration the plan made,
     # and a plan that does not know the field exists reads the bare "erratic in dt"
     # and has nowhere to go -- measured on B03, where it cost a correct QE plan the
@@ -385,6 +455,18 @@ def evaluate_sde(spec, plan_dir, agent):
         # abstain. Reported beside it, never gating, until it is shown to track the
         # mean-based estimate on a plan where that estimate is already tight.
         m["summary"]["observed_order_median"] = strong_detail["median_order"]
+    # `"true"` here means **a verdict was produced**, not that the order passed. The
+    # field is the gate *state* -- `ranking.order` reads it only to decide whether the
+    # estimate may be read at all, and its PDE counterpart `_order_verdict` returns
+    # the same "true" / "waived_spec" / "waived_chaotic" vocabulary with no false
+    # state either. So `order_check: "true"` beside `checks.orders_ok: False` is this
+    # field working, not two fields disagreeing: the first says the study ran and is
+    # readable, the second carries the verdict.
+    #
+    # §10k: recorded because the pairing reads as a contradiction and was taken for
+    # one. The real defect on those plans was in the verdict (a two-sided band failing
+    # an overshoot), not here -- but a name that invites the misreading is worth one
+    # comment, since the two fields are adjacent in every evaluation.json.
     m["summary"]["order_check"] = (orders if metrics.is_skip(orders) else "true")
     if order_detail.get("strong_band"):
         # The band `guards` actually applied, carried so `ranking.order` reads the
@@ -392,6 +474,14 @@ def evaluate_sde(spec, plan_dir, agent):
         m["summary"]["order_band"] = order_detail["strong_band"]
     if order_detail.get("abstained"):
         m["summary"]["order_abstained"] = order_detail["abstained"]
+    if order_detail.get("strong_order_above_band"):
+        # §10k. Reported, never gating -- `weak_order_out_of_band`'s own rule
+        # ("flagged rather than fatal") applied to the order the gate *does* read.
+        # A declared family measuring materially above its own expected order is a
+        # real disagreement between what the plan says it implements and what it
+        # does, and it is worth a reader's attention; it is not the solver
+        # converging too slowly, which is the only claim `orders_ok` carries.
+        m["summary"]["strong_order_above_band"] = True
     if order_detail.get("weak_order_out_of_band"):
         # [REV 46]: `guards` has computed this since it was written and no code read
         # it -- the metrics-side instance of the declared-and-never-read pattern. Its
@@ -465,10 +555,18 @@ def evaluate_sde(spec, plan_dir, agent):
             spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult,
             levels=dynkin_levels, m=noise_dim, replicates=replicates, margin=margin)
     else:
+        # ~~"the plan is not in reach of certification on this path, so the
+        # generator check cannot change the outcome"~~ -- true of the *score* and
+        # false of the outcome (§10l). `dynkin_z` is `ranking.consistency`'s only
+        # input, so on an unresolved plan the check still decides which plan the
+        # pool ships; and `failed(dynkin_ok)` sits above every row in both SDE
+        # rubrics, so a skip here also declines to look for the one finding that
+        # outranks everything else. `inconclusive_only` now runs it, and what
+        # remains is a failed gate, where the cap is already a finding of its own.
         outcome, detail = "not_run", {
-            "reason": "the plan is not in reach of certification on this path, so the "
-                      "generator check cannot change the outcome (manual §24's cost "
-                      "rule); it runs on every certifying plan, both paths"}
+            "reason": "a declared constraint gate failed, so the score is capped on "
+                      "that finding and the generator check cannot lift it (manual "
+                      "§24's cost rule); it runs on every other plan, both paths"}
     metrics.record(m, "dynkin_ok", outcome, **detail)
     # How far the extrapolated generator residual sits from zero, in its own standard
     # errors. `dynkin_ok` is that distance against the family-wise bar; the distance
@@ -1291,9 +1389,15 @@ def _worst_component(per, expected_strong):
     def rank(entry):
         verdict = _VERDICT_RANK.get(entry["orders_ok"], 1)
         strong = entry.get("strong_order")
-        distance = (-abs(float(strong) - float(expected_strong))
-                    if isinstance(strong, (int, float)) else 0.0)
-        return (verdict, distance)
+        # §10k: signed, not `-abs(...)`. `min` picks the smallest, so the old form
+        # picked the component furthest from the floor *on either side* and reported
+        # an overshooting component as the worst one -- the same two-sided reading
+        # `guards` has now dropped. Ranking by `strong - expected` ascending puts the
+        # lowest order first, which is what "worst" means for a convergence rate, and
+        # still reports the most marginal component among a set that all passed.
+        shortfall = (float(strong) - float(expected_strong)
+                     if isinstance(strong, (int, float)) else 0.0)
+        return (verdict, shortfall)
 
     return min(per, key=rank)
 

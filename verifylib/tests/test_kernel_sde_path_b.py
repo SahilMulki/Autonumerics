@@ -496,11 +496,18 @@ def test_orders_ok_gates_on_the_strong_order_alone():
     assert indeterminate["orders_ok"] is True and indeterminate["weak_ok"] is True
 
 
-def test_an_inferred_family_loosens_the_band_and_a_declared_one_narrows_it(tmp_path):
-    """I15 through the frontmatter: ``scheme: euler-maruyama`` (inferred) keeps a
-    one-sided band that accepts the log-transform's strong order of 1.019 against
-    a 0.5 default; ``scheme_family: milstein`` (declared) selects the spec's
-    Milstein order and the two-sided band around it."""
+def test_an_inferred_family_loosens_the_floor_and_a_declared_one_raises_it(tmp_path):
+    """I15 through the frontmatter: ``scheme: euler-maruyama`` (inferred) accepts the
+    log-transform's strong order of 1.019 against a 0.5 default; ``scheme_family:
+    milstein`` (declared) selects the spec's Milstein order of 1.0 and holds the plan
+    to it.
+
+    ~~``test_an_inferred_family_loosens_the_band_and_a_declared_one_narrows_it``, and
+    "the two-sided band around it".~~ §10k: what the declaration decides is the
+    *floor*, not the side. Both branches gate on a shortfall alone, so a declared
+    family is held to a higher bar -- 1.0 - 0.4 rather than min(0.5, 1.0) - 0.4 --
+    and neither can fail a plan for converging faster than its floor.
+    """
     verification = {"expected_strong_order": 0.5, "expected_strong_order_milstein": 1.0}
     detail = {"s0": 1.0, "s1": 0.5}
 
@@ -519,9 +526,14 @@ def test_an_inferred_family_loosens_the_band_and_a_declared_one_narrows_it(tmp_p
         verification, meta["scheme_family"], declared=meta["scheme_family_source"] == "declared")
     assert (expected, declared) == (1.0, True)
     assert crn.guards(1.0, 1.0, expected, 1.0, detail, declared=True,
-                      candidates=candidates)["strong_band"] == "two-sided"
+                      candidates=candidates)["strong_band"] == crn.BAND_DECLARED
+    # 0.5 against a declared floor of 1.0 is short by more than the band: still False.
     assert crn.guards(0.5, 1.0, expected, 1.0, detail, declared=True,
                       candidates=candidates)["orders_ok"] is False
+    # ...and the same 0.5 is *inside* the band of the inferred floor, which is the
+    # whole point of the two branches: the floor moved, not the side.
+    assert crn.guards(0.5, 1.0, 0.5, 1.0, detail, declared=False,
+                      candidates=[0.5, 1.0])["orders_ok"] is True
 
 
 # --- the three analytic_moments shapes (I11) -----------------------------------
@@ -849,10 +861,18 @@ def test_the_order_study_reads_every_component_and_the_worst_one_decides():
     assert _worst_component([good, mute], 1.0)["component"] == 2
     assert _worst_component([mute, slow], 1.0)["component"] == 1   # a failure beats a skip
     assert _worst_component([good], 1.0)["component"] == 0
-    # Among equals, the component furthest from the expectation is the one reported.
+    # Among equals, the component with the **lowest** order is the one reported.
+    #
+    # ~~the component furthest from the expectation~~ (§10k). That was a two-sided
+    # distance, `-abs(strong - expected)`, so of two passing components it reported
+    # the one measuring *above* the expectation as the worse -- 1.4 over 0.95 here --
+    # and published its number as the plan's observed order. It is the same reading
+    # `crn.guards` has now dropped from the verdict and `ranking.order` dropped from
+    # the rank, in the one place that decides which number gets published.
     near = {"orders_ok": True, "strong_order": 0.95, "component": 0}
     far = {"orders_ok": True, "strong_order": 1.4, "component": 1}
-    assert _worst_component([near, far], 1.0)["component"] == 1
+    assert _worst_component([near, far], 1.0)["component"] == 0
+    assert _worst_component([far, near], 1.0)["component"] == 0, "not input order"
 
 
 def test_each_component_gets_its_own_order_estimate():
@@ -1281,3 +1301,57 @@ def test_the_richardson_shift_is_reported_in_its_own_standard_errors():
     one = crn.richardson_moment([base[:1] + 0.02, base[:1]], 1.0)
     assert one["se_shift"] is None and one["shift_in_se"] is None
     assert one["shift_within_noise"] is None
+
+
+# --- §10k: one side, in the gate as well as in the rank ----------------------
+
+def test_an_order_above_its_floor_is_flagged_and_never_failed():
+    """§19's own sentence, applied to the gate that was contradicting it: *"an order
+    far above the theoretical one is noise, not a bonus"*. Noise is not a penalty
+    either -- the correction `ranking.order` already carries and `crn.guards` did not.
+
+    The two cases are the two SciML plans the old two-sided branch failed, with their
+    measured numbers. Both were graded correct by every other check;
+    `sde_sciml_linear_ito/3-heun-srk` was capped at 8 while the two plans it beats on
+    harness error by 2.1x scored 10, and `rank_key` reads `score` before quality.
+    """
+    detail = {"s0": 1.0, "s1": 0.5}
+    for strong, floor in ((0.9831, 0.5), (0.9514, 0.5)):
+        out = crn.guards(strong, 1.0, floor, 1.0, detail, declared=True,
+                         candidates=[floor])
+        assert out["orders_ok"] is True, (strong, floor, out)
+        # Reported rather than discarded: the disagreement between what the plan
+        # declares and what it measures is real, it is just not a slow solver.
+        assert out["strong_order_above_band"] is True
+        assert out["strong_band"] == crn.BAND_DECLARED
+
+    # Inside the band is neither failed nor flagged.
+    inside = crn.guards(0.85, 1.0, 0.5, 1.0, detail, declared=True, candidates=[0.5])
+    assert inside["orders_ok"] is True and inside["strong_order_above_band"] is False
+
+    # A shortfall is still a failure -- the one true positive the gate has.
+    below = crn.guards(0.05, 1.0, 1.0, 1.0, detail, declared=True, candidates=[1.0])
+    assert below["orders_ok"] is False and below["strong_order_above_band"] is False
+
+    # Undeclared, there is no expectation to be above, so nothing is flagged.
+    undeclared = crn.guards(2.0, 1.0, 1.0, 1.0, detail, declared=False,
+                            candidates=[1.0])
+    assert undeclared["orders_ok"] is True
+    assert undeclared["strong_order_above_band"] is False
+    assert undeclared["strong_band"] == crn.BAND_UNDECLARED
+
+
+def test_a_ladder_whose_differences_do_not_shrink_still_fails_at_any_order():
+    """The conjunct that survives, and the reason `_orders_fail_reason` has to ask
+    which one failed rather than assuming a shortfall. A fitted slope through
+    differences that are not shrinking is not a convergence rate, whatever its
+    value, so the number may sit anywhere -- here, exactly on its floor."""
+    flat = {"s0": 0.5, "s1": 1.0}
+    out = crn.guards(1.0, 1.0, 1.0, 1.0, flat, declared=True, candidates=[1.0])
+    assert out["orders_ok"] is False
+    assert out["strong_order_shrinking"] is False
+    assert out["strong_order_gate_floor"] == 1.0
+    # ...and with the differences shrinking, the same number passes.
+    ok = crn.guards(1.0, 1.0, 1.0, 1.0, {"s0": 1.0, "s1": 0.5}, declared=True,
+                    candidates=[1.0])
+    assert ok["orders_ok"] is True and ok["strong_order_shrinking"] is True

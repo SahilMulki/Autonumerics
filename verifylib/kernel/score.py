@@ -32,6 +32,7 @@ form requires two independent circularity breaks", and 9 should mean one.
 from __future__ import annotations
 
 from .metrics import failed, is_skip, passed
+from .sde.crn import STRONG_BAND
 
 #: Most to least, per project_manual.md. The conductor ranks on this order.
 PROVENANCE_ORDER = ("analytic", "analytic_unvalidated", "surrogate", "manufactured",
@@ -506,7 +507,18 @@ def _orders_fail_reason(evidence):
     """D1 item 2: the row fires on two different defects and they need different
     feedback. ``rubric_sde``'s wording *asserts* "a strong order near zero" without
     reading the number -- true for a solver that ignores the supplied increments,
-    false for one converging more slowly than its scheme claims."""
+    false for one converging more slowly than its scheme claims.
+
+    §10k adds the third: ``crn.guards`` gates on ``shrinking and strong >= floor -
+    STRONG_BAND``, a **conjunction**, so ``orders_ok: False`` does not imply a
+    shortfall at all. Every branch below said "does not clear", which was the
+    *opposite* of what happened on the two SciML plans that failed -- 0.983 against a
+    floor of 0.5, reported to the plan author as a convergence shortfall. Now that
+    the gate is one-sided an overshoot cannot reach here, but a ladder whose
+    differences never shrank still can, at any order, so the number is checked
+    against the bar before any claim is made about it. This is
+    ``_moments_fail_reason``'s defect in the row beside it.
+    """
     order, floor = evidence.get("observed_order"), evidence.get("order_floor")
     near_zero = isinstance(order, (int, float)) and abs(float(order)) < 0.25
     if near_zero:
@@ -517,8 +529,22 @@ def _orders_fail_reason(evidence):
                 "its moments match")
     measured = (f"{float(order):.3f}" if isinstance(order, (int, float)) else "unknown")
     bar = (f"{float(floor):g}" if isinstance(floor, (int, float)) else "its floor")
+    if (isinstance(order, (int, float)) and isinstance(floor, (int, float))
+            and float(order) >= float(floor) - STRONG_BAND):
+        # At or above the bar the gate applied, so the order is not what failed. The
+        # gate's other conjunct is the only thing left: `guards` requires the
+        # pathwise differences to shrink across the ladder before it will read a rate
+        # off them at all.
+        return (f"the moments match the closed form, but the CRN order study did not "
+                f"pass, and the observed strong order {measured} is not why: it is "
+                f"inside the {STRONG_BAND:g} band of its floor {bar}, not short of "
+                f"it. What failed is the gate's other condition -- the pathwise "
+                f"differences do not shrink across the CRN ladder, so there is no "
+                f"convergence for a rate fitted through them to describe. See the "
+                f"`orders_ok` detail block for the per-level differences")
     return (f"the moments match the closed form, but the observed strong order "
-            f"{measured} does not clear {bar}: accurate at this dt, and not "
+            f"{measured} does not clear {bar} -- it falls short by more than the "
+            f"{STRONG_BAND:g} band the gate allows: accurate at this dt, and not "
             f"converging at the rate the scheme claims. Euler-Maruyama and Milstein "
             f"have the same weak order, so the moment comparison cannot tell them "
             f"apart (manual §24)")

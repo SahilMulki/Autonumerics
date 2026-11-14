@@ -1,0 +1,35 @@
+{
+ "what": "plan-sciml-benchmark.md SS10m route (iii): `cli.py compare` on M05's two decisive plan pairs at three path counts. The graded count is 1000; the higher ones are driven through `cli._compare_sde` with the threshold overridden, because `--N=` is the PDE grid level and is silently ignored on the SDE path.",
+ "finding": "INCONCLUSIVE at the graded count and AGREE at both higher ones. More sampling confirms the plans agree in moment space rather than separating them -- which is correct, since all three do match the closed form there. M05's 622x is a pathwise difference and R15 keeps the harness's pathwise gate out of the kernel's reach, so a moment comparison cannot see it at any sample size.",
+ "problem": "sde_sciml_nltest",
+ "recorded": "2026-11-13",
+ "rows": [
+  {
+   "num_paths": 1000,
+   "milstein_vs_taylor": "INCONCLUSIVE",
+   "milstein_vs_taylor_rc": 3,
+   "milstein_vs_taylor_line": "INCONCLUSIVE: 2-milstein vs 3-ito-taylor-1p5 differ by 5.778e-03 in moment space on independent seeds and 7.617e-03 on the shared seed (worst tol 0.1) at num_paths=1000, dt=0.004, seeds 42 / 3444837047; families milstein / None -- the Monte-Carlo interval straddles the tolerance, so this is neither a break nor a cap",
+   "em_vs_taylor": "INCONCLUSIVE",
+   "em_vs_taylor_rc": 3,
+   "em_vs_taylor_line": "INCONCLUSIVE: 1-euler-maruyama vs 3-ito-taylor-1p5 differ by 1.328e-02 in moment space on independent seeds and 6.724e-03 on the shared seed (worst tol 0.1) at num_paths=1000, dt=0.004, seeds 42 / 3444837047; families euler-maruyama / None -- the Monte-Carlo interval straddles the tolerance, so this is neither a break nor a cap"
+  },
+  {
+   "num_paths": 20000,
+   "milstein_vs_taylor": "AGREE",
+   "milstein_vs_taylor_rc": 0,
+   "milstein_vs_taylor_line": "AGREE: 2-milstein vs 3-ito-taylor-1p5 differ by 2.985e-03 in moment space on independent seeds and 4.378e-03 on the shared seed (worst tol 0.05) at num_paths=20000, dt=0.004, seeds 42 / 3444837047; families milstein / None",
+   "em_vs_taylor": "AGREE",
+   "em_vs_taylor_rc": 0,
+   "em_vs_taylor_line": "AGREE: 1-euler-maruyama vs 3-ito-taylor-1p5 differ by 1.936e-03 in moment space on independent seeds and 7.569e-03 on the shared seed (worst tol 0.05) at num_paths=20000, dt=0.004, seeds 42 / 3444837047; families euler-maruyama / None"
+  },
+  {
+   "num_paths": 200000,
+   "milstein_vs_taylor": "AGREE",
+   "milstein_vs_taylor_rc": 0,
+   "milstein_vs_taylor_line": "AGREE: 2-milstein vs 3-ito-taylor-1p5 differ by 8.408e-03 in moment space on independent seeds and 7.671e-03 on the shared seed (worst tol 0.1) at num_paths=200000, dt=0.004, seeds 42 / 3444837047; families milstein / None",
+   "em_vs_taylor": "AGREE",
+   "em_vs_taylor_rc": 0,
+   "em_vs_taylor_line": "AGREE: 1-euler-maruyama vs 3-ito-taylor-1p5 differ by 8.273e-03 in moment space on independent seeds and 7.536e-03 on the shared seed (worst tol 0.1) at num_paths=200000, dt=0.004, seeds 42 / 3444837047; families euler-maruyama / None"
+  }
+ ]
+}

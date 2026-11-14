@@ -55,6 +55,31 @@ fixing, each isolated so its effect is attributable:
   position in a list is not. Also not shipped, and the reason is worth more than the
   variant: an **exact** sampler has no order to measure, so the closed-form plans
   that are the best plan in 7 of 9 holdout pools sort last.
+* `relorder:C` -- `regraded`, but the `order` **component** becomes pool-relative
+  wherever its usual reading carries no information. SS10l measured the hole: `order`
+  scores a *shortfall against a floor*, and on a pool where every plan clears its own
+  floor every plan scores 1.0 -- M05's three read 0.9650 / 0.9981 / 1.5851, in perfect
+  rank agreement with the harness, and the component mapped them to 1.000 / 0.998 /
+  1.000, tying the pool's best plan with its worst. Two guards keep this from becoming
+  "higher order is better", which SS19 is explicit is wrong ("an order far above the
+  theoretical one is noise, not a bonus"): the pool-relative reading fires **only**
+  where no plan is short of its own floor by more than the gate's own `STRONG_BAND`,
+  and **only** where the *top two* measured orders are more than `C` standard errors
+  apart. So the noise case is decided by the data rather than by a rule of thumb --
+  M01's top two read 0.98647 +/- 0.0096 and 0.98312 +/- 0.0150, a gap of 0.0033
+  against a 2-sigma bar of 0.0357, and this abstains there. It had better: the lower
+  of those two is that pool's **best** plan by the harness's own measurement.
+* `structadm` -- `regraded`, plus `cost_admissible`'s rule applied to **`structure`**.
+  That rule is already argued in `ranking.py` for `cost`: a component subordinate to
+  accuracy may contribute only where every plan in the pool *had* its accuracy
+  measured, because "a component promoted by the absence of the one it is subordinate
+  to is not breaking a tie, it is deciding". SS10l measured `structure` in exactly that
+  position on M05 -- `accuracy` unavailable on all three plans, `invariant_worst_headroom`
+  anti-correlated with quality, and deciding the pool by 7.4x over the one component
+  pointing the other way. This is a transplant of an existing rule, not a new one.
+* `routes:C`  -- `relorder:C` and `structadm` together. SS10l named them as two of the
+  three routes out of M05 and they are not independent: one restores a discriminating
+  component, the other removes a misleading one.
 * `whitelisted` -- `regraded`, then cut down to `run.RECORDED_METRICS`. This is how a
   change to the **recorder** is priced: it reads the full block and throws away
   exactly what the record throws away, so a whitelist change can be measured without
@@ -99,6 +124,7 @@ if str(ROOT) not in sys.path:
 
 from benchmark.run import RECORDED_METRICS  # noqa: E402
 from verifylib import ranking  # noqa: E402
+from verifylib.kernel.sde.crn import STRONG_BAND  # noqa: E402
 
 #: The nine sciml pools, across the three files step 10 wrote (§10a, 10d, 10e). The
 #: last wins: it supersedes the first file's `RUN_ERROR` row for the same slug.
@@ -271,8 +297,101 @@ def _restrict_to_record(pool_list):
     return pool_list
 
 
+#: Default standard-error multiplier for `relorder`'s resolution test. The kernel's own
+#: `ci_mult` is 2.0 on every spec in both suites, so this is that convention and not a
+#: new constant to tune.
+REL_ORDER_CI = 2.0
+
+
+def _rel_order(summary, summaries, ci=REL_ORDER_CI):
+    """Route (i) of SS10l: `ranking.order`, made pool-relative where it is inert.
+
+    Returns the shipped reading unchanged in every case but one. The exception is a
+    pool in which **no** plan is short of its own floor -- there `ranking.order` is
+    1.0 for everyone by construction, so it is carrying no information at all -- and
+    in which the spread of measured orders clears `ci` standard errors of its own two
+    endpoints. Only then is the order read against the **best rate anyone demonstrated
+    on this problem** instead of against the floor, reusing the same
+    `shortfall / max(target, 0.5)` shape the floor reading uses.
+
+    The two guards are the whole design. Without the first, this would overrule a real
+    shortfall with a pool comparison; without the second it would be the "higher order
+    is better" rule SS19 forbids, and **M01** is the case that shows why -- its top two
+    orders are 0.98647 and 0.98312, 0.0033 apart against a 2-sigma bar of 0.0357, and
+    the *lower* one is the pool's best plan. Firing there would have ranked a pair
+    separated by a tenth of its own error bar, in the wrong direction.
+    """
+    base = ranking.order(summary)
+    if base is None:
+        return None
+    bases = [ranking.order(s) for s in summaries]
+    pairs = [(ranking._num(s.get("observed_order")),
+              ranking._num(s.get("observed_order_se")),
+              ranking._num(s.get("order_floor"))) for s in summaries]
+    mine = ranking._num(summary.get("observed_order"))
+    if (any(b is None for b in bases) or mine is None
+            or any(v is None or e is None or f is None for v, e, f in pairs)):
+        return base
+
+    # Guard 1: nobody is short of their own floor. ~~`min(bases) == 1.0`~~ -- that was
+    # a bug, not a stricter rule: `base` saturates at 1.0 only for a plan at or above
+    # its floor *exactly*, so a 0.2% miss blocked the whole pool. M05's `2-milstein`
+    # reads 0.99805 against a floor of 1.0 and was excluded on 0.00195, as were M01,
+    # M03, M04 and M08 on misses of 1-5%. The kernel's own threshold for a shortfall
+    # that counts is `crn.STRONG_BAND`, which is what `crn.guards` passed every one of
+    # these plans by, so that is the number to import rather than invent.
+    if any(max(0.0, f - v) > STRONG_BAND for v, _, f in pairs):
+        return base
+
+    # Guard 2: the two plans this rule would reorder are distinguishable. Endpoints
+    # are the wrong pair to test -- on M01 the spread 0.4804..0.98647 is resolved many
+    # times over while the *top two* (0.98647 and 0.98312, standard errors 0.0096 and
+    # 0.0150) are 0.0034 apart and are not, so an endpoint test would have ranked a
+    # pair separated by a fifth of its own error bar. `ranking.accuracy` already makes
+    # this move for the error ("snapped up to its own uncertainty ... turns two moment
+    # errors inside the same Monte-Carlo noise into a genuine tie instead of one more
+    # tiebreaker to read the seed off"); this is the same move for the order.
+    top = sorted(pairs, key=lambda r: -r[0])
+    (o1, e1, _), (o2, e2, _) = top[0], top[1]
+    if o1 - o2 <= ci * math.sqrt(e1 ** 2 + e2 ** 2):
+        return base
+
+    hi = o1
+    return ranking._clip01(1.0 - max(0.0, hi - mine) / max(hi, 0.5))
+
+
+def _index(summary, tol, summaries, keys, variant, ci=REL_ORDER_CI):
+    """`ranking.sqi`'s weighted mean, with a variant's component substitution.
+
+    Kept here rather than in `ranking.py` for the reason this whole file exists: a
+    candidate rule is priced before it is shipped, so nothing the conductor reads
+    changes while it is being measured.
+    """
+    if not keys:
+        return None
+    if variant not in ("relorder", "routes"):
+        return ranking.sqi(summary, tol, summaries, keys=keys)[0]
+    parts = ranking.components(summary, tol, summaries)
+    parts["order"] = _rel_order(summary, summaries, ci)
+    measured = {k: v for k, v in parts.items() if v is not None and k in keys}
+    if not measured:
+        return None
+    total = sum(ranking.WEIGHTS[k] for k in measured)
+    return sum(ranking.WEIGHTS[k] * v for k, v in measured.items()) / total
+
+
 def _keys(variant, tol, summaries, breadth=0):
-    if variant in ("current", "truncated", "regraded", "noscore", "whitelisted"):
+    if variant in ("structadm", "routes"):
+        # Route (ii) of SS10l. `cost_admissible` is `ranking.py`'s own rule, imported
+        # rather than restated: `structure` may contribute only where **every** plan in
+        # the pool had its accuracy measured. On a pool where it did not, a weak
+        # structural diagnostic is not breaking a tie, it is deciding.
+        keys = ranking.comparable_keys(tol, summaries)
+        if not ranking.cost_admissible(tol, summaries):
+            keys = tuple(k for k in keys if k != "structure")
+        return keys
+    if variant in ("current", "truncated", "regraded", "noscore", "relorder",
+                   "whitelisted"):
         return ranking.comparable_keys(tol, summaries)
     # `abstain`, `floor:`, `thin:`, `ordertie:` and `discriminating` share this: no
     # fallback. Where the
@@ -302,12 +421,12 @@ def _keys(variant, tol, summaries, breadth=0):
     return tuple(keys)
 
 
-def key_of(plan, variant, summaries, floor, breadth=0):
+def key_of(plan, variant, summaries, floor, breadth=0, ci=REL_ORDER_CI):
     """`rank_key`, with the variant's key restriction and resolution floor."""
     summary = plan["summary"]
     tol = ranking._tol_of(summary, summary)
     keys = _keys(variant, tol, summaries, breadth)
-    index = (ranking.sqi(summary, tol, summaries, keys=keys)[0] if keys else None)
+    index = _index(summary, tol, summaries, keys, variant, ci)
     if index is not None and floor:
         # Quantising is how a floor becomes a *tie* rather than a nudge: two indices
         # in the same bucket compare equal and the keys below decide. Rounding half
@@ -334,18 +453,18 @@ def key_of(plan, variant, summaries, floor, breadth=0):
     return (0 if summary else 1, -score, provenance, quality, iters)
 
 
-def rank(pool, variant, floor, breadth=0):
+def rank(pool, variant, floor, breadth=0, ci=REL_ORDER_CI):
     summaries = [p["summary"] for p in pool["plans"] if p["summary"]]
     ordered = sorted(pool["plans"],
-                     key=lambda p: key_of(p, variant, summaries, floor, breadth))
+                     key=lambda p: key_of(p, variant, summaries, floor, breadth, ci))
     return ordered
 
 
-def study(pool_list, variant, floor, baseline=None, breadth=0):
+def study(pool_list, variant, floor, baseline=None, breadth=0, ci=REL_ORDER_CI):
     baseline = {} if baseline is None else baseline
     rows = []
     for pool in pool_list:
-        ordered = rank(pool, variant, floor, breadth)
+        ordered = rank(pool, variant, floor, breadth, ci)
         top, best = ordered[0], pool["best"]
         error = top["error"]
         regret = (error / best["error"]) if (error and best["error"]) else None
@@ -364,18 +483,18 @@ def study(pool_list, variant, floor, baseline=None, breadth=0):
             "vs_c0": ((error / baseline[pool["id"]])
                       if (error and baseline.get(pool["id"])) else None),
             "outside_margin": bool(outside),
-            "decided_by": decided(ordered, variant, floor, breadth),
+            "decided_by": decided(ordered, variant, floor, breadth, ci),
         })
     return rows
 
 
-def decided(ordered, variant, floor, breadth=0):
+def decided(ordered, variant, floor, breadth=0, ci=REL_ORDER_CI):
     """Which key separated the top two, by the same rule `ranking.decided_by` uses."""
     if len(ordered) < 2:
         return "only-plan"
     summaries = [p["summary"] for p in ordered if p["summary"]]
-    a = key_of(ordered[0], variant, summaries, floor, breadth)
-    b = key_of(ordered[1], variant, summaries, floor, breadth)
+    a = key_of(ordered[0], variant, summaries, floor, breadth, ci)
+    b = key_of(ordered[1], variant, summaries, floor, breadth, ci)
     names = (("provenance", "sqi", "score", "iter") if variant == "noscore"
              else (*ranking.RANK_KEYS, "observed_order") if variant == "ordertie"
              else ranking.RANK_KEYS)
@@ -428,7 +547,7 @@ def main(argv=None):
     ap.add_argument("--variant", default="current",
                     help="current | abstain | discriminating | floor:E | "
                          "thin:K | ordertie:K | noscore | truncated | regraded | "
-                         "whitelisted")
+                         "relorder:C | structadm | routes:C | whitelisted")
     ap.add_argument("--sweep", action="store_true",
                     help="sweep the floor over a decade and print the table")
     ap.add_argument("--source", choices=SOURCES,
@@ -451,9 +570,18 @@ def main(argv=None):
     if variant.startswith("ordertie:"):
         breadth = int(variant.split(":", 1)[1])
         variant = "ordertie"
+    ci = REL_ORDER_CI
+    for name in ("relorder", "routes"):
+        if variant.startswith(f"{name}:"):
+            ci = float(variant.split(":", 1)[1])
+            variant = name
 
     base = c0_errors()
-    src = args.source or ("evaluation" if args.variant == "regraded" else "metrics")
+    # SS10l's three routes are candidate *ranking* rules measured against the scorer
+    # that ships today, so they read `evaluation.json` like `regraded` does. Pricing
+    # them against the pre-SS10g/SS10k blocks would conflate two changes.
+    src = args.source or ("evaluation" if variant in (
+        "regraded", "relorder", "structadm", "routes") else "metrics")
     cut = _restrict_to_record if args.variant == "whitelisted" else (lambda x: x)
     if args.variant == "whitelisted":
         src = args.source or "evaluation"
@@ -469,9 +597,11 @@ def main(argv=None):
             print(f"\n=== {label}: no pools found (gitignored results?)")
             continue
         rows = study(pool_list, variant, floor,
-                     base if label.startswith("sciml") else None, breadth)
-        tag = args.variant if src == ("evaluation" if args.variant == "regraded"
-                                      else "metrics") else f"{args.variant}+{src}"
+                     base if label.startswith("sciml") else None, breadth, ci)
+        default_src = ("evaluation" if variant in (
+            "regraded", "relorder", "structadm", "routes") else "metrics")
+        tag = (args.variant if src == default_src
+               else f"{args.variant}+{src}")
         out[label] = {"rows": rows, "summary": show(f"{label} -- {tag}", rows)}
 
     if args.sweep:

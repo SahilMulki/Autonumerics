@@ -50,6 +50,18 @@ def ladder_spec(num_paths, dt0, T, levels=3, seed=42, m=None):
 #: cannot decide the question the band asks, whichever side it is on.
 STRONG_BAND = 0.4
 
+#: The two values :func:`guards` reports as ``strong_band`` and ``driver`` publishes
+#: as ``summary.order_band``. Both are **one-sided**: the gate charges a shortfall
+#: and never an overshoot. They differ in the floor the shortfall is measured from --
+#: the declared scheme's expected order, or the lowest order any of the spec's
+#: declarations would allow when the plan did not state its family.
+#:
+#: ~~"two-sided"~~ was the declared label until §10k. It is gone because the gate no
+#: longer has a second side to fail on, and leaving the word in place would have
+#: described the flag as if it were still the verdict.
+BAND_DECLARED = "one-sided below the declared floor (an overshoot is flagged, not failed)"
+BAND_UNDECLARED = "one-sided (scheme family undeclared in the plan)"
+
 #: A pathwise difference below this fraction of the terminal values is the
 #: arithmetic, not the scheme.
 #:
@@ -396,16 +408,20 @@ def guards(strong, weak, expected_strong, expected_weak, detail, *,
     ``weak_ok`` is **true when the estimate is unavailable**: an indeterminate weak
     order is not evidence of a defect.
 
-    When the plan does not declare its scheme family, **or the floor it would be
-    judged against came from the kernel default rather than the spec**, the band
-    widens and becomes one-sided. Two-sided is only meaningful against the
-    expectation for the scheme actually implemented, and §19 already establishes the
-    asymmetry -- "an order far *above* the theoretical one is noise, not a bonus" --
-    so an undeclared plan is failed only for measuring materially *below* the lowest
-    order any of the spec's
-    declarations would allow. Measured: all three Ginzburg-Landau plans land between
-    0.95 and 1.52 against a 0.5 default, and failing them for a missing declaration
-    would be a false positive on three correct solvers.
+    The strong gate is **one-sided on both branches** (§10k). ~~When the plan does
+    not declare its scheme family, or the floor it would be judged against came from
+    the kernel default rather than the spec, the band widens and becomes
+    one-sided.~~ What the declaration now decides is the *floor*, not the side: a
+    declared family is held to its own expected order, and an undeclared one only to
+    the lowest order any of the spec's declarations would allow. §19's asymmetry --
+    "an order far *above* the theoretical one is noise, not a bonus" -- applies
+    whether or not the plan declared anything, so an overshoot sets
+    ``strong_order_above_band`` and leaves ``orders_ok`` alone.
+
+    Measured: all three Ginzburg-Landau plans land between 0.95 and 1.52 against a
+    0.5 default, and failing them for a missing declaration would be a false positive
+    on three correct solvers; under the two-sided branch, declaring the family would
+    have failed them instead.
     """
     candidates = [float(c) for c in (candidates or [expected_strong])]
     shrinking = detail.get("s1", 1.0) < detail.get("s0", 0.0)
@@ -423,10 +439,35 @@ def guards(strong, weak, expected_strong, expected_weak, detail, *,
         # now abstain on a `None`, so the verdict is settled here instead.
         return _abstained(strong, weak, expected_strong, expected_weak,
                           candidates, declared, abstained)
-    if declared:
-        s_ok = shrinking and abs(strong - float(expected_strong)) < STRONG_BAND
-    else:
-        s_ok = shrinking and strong >= min(candidates) - STRONG_BAND
+    # §10k: **one side, unconditionally.** The declared branch read
+    # `abs(strong - expected) < STRONG_BAND`, so a plan measuring *faster* than its
+    # floor was failed -- and this module's own §19 rule, quoted three times in the
+    # docstrings above and below, is that "an order far above the theoretical one is
+    # noise, not a bonus". Noise is not a penalty either, which is the sentence
+    # `ranking.order` was already corrected on; the gate had not been.
+    #
+    # Every consequence the two-sided branch is recorded as having had across this
+    # repo is a *false failure on a correct solver*, and each was patched by widening
+    # the floor rather than by fixing the side: the Ginzburg-Landau log transform
+    # (order 1 against an inferred 0.5), `FAMILY_ORDER_KEY` and schema criterion 7's
+    # per-family floor (a correct Milstein at 1.0 against 0.5), and D2's
+    # `kernel_default` hatch. The one true positive the strong gate has -- the
+    # `sde_milstein_no_correction` canary -- is a *shortfall*, 0.504 against 1.0, so
+    # it is caught here unchanged.
+    #
+    # Measured on the nine SciML problems: two plans failed, both overshoots, both
+    # graded correct by every other check. `sde_sciml_linear_ito/3-heun-srk` at 0.983
+    # against a floor of 0.5 was capped at 8 while the two plans it beats by 2.1x
+    # scored 10, and `rank_key` reads `score` before quality, so the pool shipped the
+    # worse plan.
+    floor = float(expected_strong) if declared else min(candidates)
+    s_ok = shrinking and strong >= floor - STRONG_BAND
+    # Not discarded, just not fatal -- `weak_order_out_of_band`'s rule for the other
+    # order. A declared family measuring materially above its own expectation is a
+    # real disagreement between the plan's declaration and its behaviour; it is
+    # simply not the solver converging too slowly, which is the only thing
+    # `orders_ok` is allowed to mean. Undeclared, there is no expectation to be above.
+    above = bool(declared and strong > float(expected_strong) + STRONG_BAND)
     s_ok = "unresolved" if abstained else bool(s_ok)
     w_ok = weak is None or (0.5 * float(expected_weak) <= weak
                             <= float(expected_weak) + 0.75)
@@ -440,11 +481,17 @@ def guards(strong, weak, expected_strong, expected_weak, detail, *,
     # weak order is reported, and an out-of-band one is flagged rather than fatal.
     out = {"strong_ok": s_ok, "weak_ok": bool(w_ok),
            "weak_order_out_of_band": bool(weak is not None and not w_ok),
+           "strong_order_above_band": above,
+           # Which of the gate's two conjuncts held, so a reason string does not have
+           # to infer the cause from the number alone: `s_ok` is False either because
+           # the order fell short or because the pathwise differences never shrank,
+           # and those want opposite feedback.
+           "strong_order_shrinking": bool(shrinking),
+           "strong_order_gate_floor": float(floor),
            "strong_order": strong, "weak_order": weak,
            "expected_strong_order": float(expected_strong),
            "expected_strong_candidates": candidates,
-           "strong_band": "two-sided" if declared else "one-sided (scheme family "
-                                                       "undeclared in the plan)",
+           "strong_band": BAND_DECLARED if declared else BAND_UNDECLARED,
            "band_half_width": float(STRONG_BAND),
            "expected_weak_order": float(expected_weak),
            "orders_ok": s_ok}
@@ -465,8 +512,7 @@ def _abstained(strong, weak, expected_strong, expected_weak, candidates, declare
             "strong_order": strong, "weak_order": weak,
             "expected_strong_order": float(expected_strong),
             "expected_strong_candidates": [float(c) for c in candidates],
-            "strong_band": "two-sided" if declared else "one-sided (scheme family "
-                                                        "undeclared in the plan)",
+            "strong_band": BAND_DECLARED if declared else BAND_UNDECLARED,
             "band_half_width": float(STRONG_BAND),
             "expected_weak_order": float(expected_weak),
             "orders_ok": "unresolved", "abstained": reason}

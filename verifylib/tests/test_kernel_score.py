@@ -433,3 +433,38 @@ def test_the_three_fields_finding_one_was_about_are_read_on_both_paths():
     for field in ("dynkin_ok", "orders_ok", "invariants_ok"):
         assert field in sde, field
     assert "invariants_ok" in _rubric_keys(score_mod.rubric_pde_analytic)
+
+
+# --- §10k: the order row's reason may not misname the defect ------------------
+
+def test_the_order_failure_reason_does_not_render_a_non_shortfall_as_a_shortfall():
+    """The SciML defect, at the one place a plan author reads.
+
+    `crn.guards` gates on `shrinking and strong >= floor - STRONG_BAND`, a
+    conjunction, so `orders_ok: False` has never implied that the order fell short --
+    yet every branch of the reason said "does not clear". On
+    `sde_sciml_linear_ito/3-heun-srk` that rendered as *"the observed strong order
+    0.983 does not clear 0.5"*, which is false twice: 0.983 does clear 0.5, and the
+    advice it implies (converge faster) is the opposite of what was measured.
+
+    After §10k an overshoot cannot fail at all, so the case that reaches here is a
+    ladder whose differences never shrank -- at any order, including one well above
+    the floor.
+    """
+    from verifylib.kernel.score import _orders_fail_reason
+
+    # A real shortfall: the `sde_milstein_no_correction` canary's numbers.
+    short = _orders_fail_reason({"observed_order": 0.504, "order_floor": 1.0})
+    assert "does not clear" in short and "0.504" in short
+
+    # Not a shortfall. The number is inside the band, so the reason must not claim
+    # the order is what failed, and must name the conjunct that did.
+    for order, floor in ((1.0, 1.0), (0.983, 0.5), (0.7, 1.0)):
+        why = _orders_fail_reason({"observed_order": order, "order_floor": floor})
+        assert "does not clear" not in why, (order, floor, why)
+        assert "do not shrink" in why, (order, floor, why)
+        assert f"{order:.3f}" in why, "the measured number is still reported"
+
+    # The first branch is untouched: a solver ignoring the supplied increments.
+    ignored = _orders_fail_reason({"observed_order": 0.02, "order_floor": 0.5})
+    assert "does not consume the supplied Brownian increments" in ignored

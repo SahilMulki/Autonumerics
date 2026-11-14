@@ -168,6 +168,327 @@ def _m01_regraded():
     return out
 
 
+#: The two plans the two-sided strong-order band failed, with the band's own numbers as
+#: the pre-SS10k `SOLUTION.md` blocks recorded them. `cli.py evaluate` rewrites
+#: `evaluation.json` and never `SOLUTION.md`, so the *before* state stays readable after
+#: the fix -- the same reason SS10g's re-grade claims read the record rather than the
+#: workspace.
+OVERSHOT_PRE_10K = (("sde_sciml_linear_ito", "3-heun-srk"),
+                    ("sde_sciml_weak_noncommutative", "1-euler-maruyama"))
+
+
+def _overshoot_before():
+    """``[(plan, observed, floor, band, score)]`` from each plan's `SOLUTION.md` -- the
+    state the two-sided band left behind (SS10k)."""
+    from verifylib.review import parse_metrics
+    out = []
+    for slug, plan in OVERSHOT_PRE_10K:
+        sol = ROOT / "workspace" / slug / "plans" / plan / "SOLUTION.md"
+        b = parse_metrics(sol.read_text(encoding="utf-8")) or {}
+        out.append((plan, b.get("observed_order"), b.get("order_floor"),
+                    b.get("order_band"), b.get("score")))
+    return out
+
+
+def _overshoot_after():
+    """The same two plans as the kernel grades them **now** (SS10k)."""
+    out = []
+    for slug, plan in OVERSHOT_PRE_10K:
+        doc = json.loads((ROOT / "workspace" / slug / "plans" / plan
+                          / "evaluation.json").read_text())
+        out.append((plan, doc.get("score"), (doc.get("checks") or {}).get("orders_ok")))
+    return out
+
+
+def _gate_is_one_sided():
+    """``(overshoots_pass, overshoots_flagged, shortfall_verdict, undeclared_flag)``
+    straight from `crn.guards`, on the two measured numbers (SS10k)."""
+    from verifylib.kernel.sde import crn
+
+    detail = {"s0": 1.0, "s1": 0.5}
+    over = [crn.guards(o, 1.0, 0.5, 1.0, detail, declared=True, candidates=[0.5])
+            for o in (0.9831, 0.9514)]
+    short = crn.guards(0.504, 1.0, 1.0, 1.0, detail, declared=True, candidates=[1.0])
+    undecl = crn.guards(2.0, 1.0, 1.0, 1.0, detail, declared=False, candidates=[1.0])
+    return (all(g["orders_ok"] is True for g in over),
+            all(g["strong_order_above_band"] is True for g in over),
+            short["orders_ok"], undecl["strong_order_above_band"])
+
+
+def _worst_component_is_one_sided():
+    """Of two *passing* components the one with the **lower** order is reported, not the
+    one furthest from the expectation on either side (SS10k)."""
+    from verifylib.kernel.sde.driver import _worst_component
+
+    near = {"orders_ok": True, "strong_order": 0.95, "component": 0}
+    far = {"orders_ok": True, "strong_order": 1.4, "component": 1}
+    return (_worst_component([near, far], 1.0)["component"],
+            _worst_component([far, near], 1.0)["component"])
+
+
+def _m09_published_order():
+    """``(binding component, published observed_order)`` for M09's Euler-Maruyama, whose
+    two components measure 0.5104 and 0.9514 (SS10k)."""
+    doc = json.loads((ROOT / "workspace" / "sde_sciml_weak_noncommutative" / "plans"
+                      / "1-euler-maruyama" / "evaluation.json").read_text())
+    det = (doc.get("detail") or {}).get("orders_ok") or {}
+    return det.get("component"), round(doc["summary"].get("observed_order"), 4)
+
+
+def _m09_keys_exclude_order():
+    """M09's comparable components under the re-graded scores. `order` must be absent:
+    the Euler-Maruyama measures one and both exact samplers abstain, so SS10b's
+    whole-pool rule is what stops this fix promoting the pool's worst plan (SS10k)."""
+    from verifylib import ranking
+
+    pool = []
+    base = ROOT / "workspace" / "sde_sciml_weak_noncommutative" / "plans"
+    for plan in sorted(base.iterdir()):
+        ev = plan / "evaluation.json"
+        if ev.exists():
+            pool.append(json.loads(ev.read_text())["summary"])
+    return ranking.comparable_keys(0.0, pool)
+
+
+def _orders_reason(order, floor):
+    """The order row's reason string for one (order, floor) pair (SS10k)."""
+    from verifylib.kernel.score import _orders_fail_reason
+
+    return _orders_fail_reason({"observed_order": order, "order_floor": floor})
+
+
+#: M05's three plans. The §24 cost skip fired on exactly these -- see
+#: `_not_run_census` -- and `SOLUTION.md` is not rewritten by `cli.py evaluate`, so the
+#: pre-SS10l state stays readable there the same way SS10k's does.
+M05 = ("sde_sciml_nltest", ("1-euler-maruyama", "2-milstein", "3-ito-taylor-1p5"))
+
+#: What the harness independently measured for each M05 plan, as a fraction of its own
+#: gate (`harness_by_plan`, SS10d). The pool's best is the order-1.5 plan, 622x better
+#: than the one the ranker ships.
+M05_HARNESS = {"1-euler-maruyama": 0.3563349406586618,
+               "2-milstein": 0.3405645864862689,
+               "3-ito-taylor-1p5": 0.0005473266994761092}
+
+
+def _m05_blocks(source):
+    """``[(plan, summary dict)]`` for M05, from `SOLUTION.md` (pre-SS10l) or
+    `evaluation.json` (as the kernel grades it now)."""
+    from verifylib.review import parse_metrics
+
+    slug, plans = M05
+    out = []
+    for plan in plans:
+        base = ROOT / "workspace" / slug / "plans" / plan
+        if source == "solution":
+            out.append((plan, parse_metrics(
+                (base / "SOLUTION.md").read_text(encoding="utf-8")) or {}))
+        else:
+            doc = json.loads((base / "evaluation.json").read_text())
+            summary = dict(doc["summary"])
+            summary.setdefault("kind", doc.get("kind"))
+            summary["score"] = doc.get("score")
+            out.append((plan, summary))
+    return out
+
+
+def _m05_before():
+    """``[(plan, order_check, observed_order, dynkin_z, score)]`` as the skip left it,
+    plus the components the pool was actually ranked on (SS10l)."""
+    from verifylib import ranking
+
+    blocks = _m05_blocks("solution")
+    rows = [(plan, b.get("order_check"), b.get("observed_order"), b.get("dynkin_z"),
+             b.get("score")) for plan, b in blocks]
+    return rows, ranking.comparable_keys(0.0, [b for _, b in blocks])
+
+
+def _m05_after():
+    """The same five fields and the same component set, re-graded (SS10l). The score
+    must not move: Path A's `rubric_sde_analytic` puts `failed(resolved) -> 6` above
+    every row that reads `orders_ok` or `dynkin_ok`."""
+    from verifylib import ranking
+
+    blocks = _m05_blocks("evaluation")
+    rows = [(plan, b.get("order_check"), round(b["observed_order"], 4),
+             round(b["dynkin_z"], 4), b.get("score")) for plan, b in blocks]
+    return rows, ranking.comparable_keys(0.0, [b for _, b in blocks])
+
+
+def _not_run_census():
+    """``(plans reading `order_check: not_run`, total SDE plans)`` across every
+    `SOLUTION.md` on disk -- the pre-SS10l census, so what SS24's cost skip ever saved
+    is a number rather than an argument (SS10l)."""
+    from verifylib.review import parse_metrics
+
+    skipped, total = [], 0
+    for sol in sorted((ROOT / "workspace").glob("sde_*/plans/*/SOLUTION.md")):
+        block = parse_metrics(sol.read_text(encoding="utf-8")) or {}
+        if not block:
+            continue
+        total += 1
+        if block.get("order_check") == "not_run":
+            skipped.append(sol.parent.name)
+    return sorted(skipped), total
+
+
+def _m05_order_is_informative_and_discarded():
+    """``(raw ranking, harness ranking, component values)`` for M05 (SS10l).
+
+    The raw `observed_order` ranks the pool exactly as the harness does, all three
+    positions. `ranking.order` measures a *shortfall against a floor* and every plan
+    clears its own, so it maps them to 1.0 / 0.998 / 1.0 -- the best plan tied with
+    the worst.
+    """
+    from verifylib import ranking
+
+    blocks = dict(_m05_blocks("evaluation"))
+    by_order = sorted(blocks, key=lambda k: -blocks[k]["observed_order"])
+    by_err = sorted(blocks, key=lambda k: M05_HARNESS[k])
+    return (tuple(by_order), tuple(by_err),
+            tuple(round(ranking.order(blocks[k]), 4) for k in M05[1]))
+
+
+def _m05_structure_outweighs_order():
+    """``(index gap to the wrong plan, structure's weighted lead over order)`` (SS10l).
+
+    Both signed from the ranker's winner against the pool's best. `structure` is
+    `invariant_worst_headroom`, which is anti-correlated with quality on this pool, and
+    it outweighs the one component pointing the other way by a factor the ratio names.
+    """
+    from verifylib import ranking
+
+    blocks = dict(_m05_blocks("evaluation"))
+    keys = ranking.comparable_keys(0.0, list(blocks.values()))
+    win, best = blocks["2-milstein"], blocks["3-ito-taylor-1p5"]
+    total = sum(ranking.WEIGHTS[k] for k in keys)
+    gap = {k: ranking.WEIGHTS[k] * (getattr(ranking, k)(win) - getattr(ranking, k)(best))
+           / total for k in keys}
+    index = (ranking.sqi(win, 0.0, keys=keys)[0] - ranking.sqi(best, 0.0, keys=keys)[0])
+    return round(index, 4), round(gap["structure"] / -gap["order"], 1)
+
+
+def _route_corpus_split():
+    """``{suite: (pools, `order` comparable, accuracy resolved everywhere)}`` (SS10m).
+
+    This is why all three of SS10l's routes leave the holdout bit-identical, and it is
+    an instrumented fact rather than a hope: the two corpora are disjoint on exactly
+    the two fields the routes read. Route (i) changes the `order` component and `order`
+    is comparable on no holdout pool at all; route (ii) gates `structure` on accuracy
+    resolution and accuracy resolves on every holdout pool.
+    """
+    from benchmark import rank_study
+    from verifylib import ranking
+
+    out = {}
+    for tag, paths in (("sciml", rank_study.SCIML), ("holdout", rank_study.HOLDOUT)):
+        pools = n_order = n_acc = 0
+        for pool in rank_study.pools(paths, source="evaluation"):
+            sums = [q["summary"] for q in pool["plans"] if q["summary"]]
+            if len(sums) < 2:
+                continue
+            pools += 1
+            tol = ranking._tol_of(sums[0], sums[0])
+            n_order += "order" in ranking.comparable_keys(tol, sums)
+            n_acc += bool(ranking.cost_admissible(tol, sums))
+        out[tag] = (pools, n_order, n_acc)
+    return out
+
+
+def _relorder_guard_two_is_load_bearing():
+    """``((best, M01's pick) with the guard, the same with it off)`` (SS10m).
+
+    `relorder`'s resolution test, measured rather than argued. M01's top two orders are
+    0.98647 +/- 0.0096 and 0.98312 +/- 0.0150 -- 0.0033 apart against a 2-sigma bar of
+    0.0357 -- and the *lower* of them is that pool's best plan, so switching the guard
+    off (`C = 0`) ranks a pair separated by a tenth of its own error bar, in the wrong
+    direction, and undoes SS10k.
+    """
+    from benchmark import rank_study
+
+    base = rank_study.c0_errors()
+    pools = rank_study.pools(rank_study.SCIML, source="evaluation")
+    out = []
+    for ci in (2.0, 0.0):
+        rows = rank_study.study(pools, "relorder", 0.0, base, 0, ci)
+        summary = rank_study.summarise(rows)
+        m01 = next(r for r in rows if r["id"] == "M01")
+        out.append((summary["picks_best"], m01["top"], round(m01["regret"], 3)))
+    return tuple(out)
+
+
+def _relorder_ci_is_flat():
+    """``[(C, picks_best, geomean)]`` across the sweep SS10m reports (SS10m).
+
+    One free parameter, flat over a 65x range and degrading to the shipped behaviour at
+    both ends rather than to something new -- which is what distinguishes it from the
+    resolution floor SS10f fitted and withdrew.
+    """
+    from benchmark import rank_study
+
+    base = rank_study.c0_errors()
+    pools = rank_study.pools(rank_study.SCIML, source="evaluation")
+    out = []
+    for ci in (0.0, 0.2, 2.0, 13.0, 15.0):
+        s = rank_study.summarise(rank_study.study(pools, "relorder", 0.0, base, 0, ci))
+        out.append((ci, s["picks_best"], round(s["geomean"], 3)))
+    return out
+
+
+def _relorder_shortfall_guard_is_dead():
+    """``(largest shortfall over all 18 pools, the gate's band)`` (SS10m).
+
+    `relorder`'s first guard never fires: no plan on either corpus is short of its own
+    floor by more than `crn.STRONG_BAND`, so only the second guard is shown to do work.
+    Recorded in the same sense SS10h retired the `comparable_keys` fallback.
+    """
+    from benchmark import rank_study
+    from verifylib import ranking
+    from verifylib.kernel.sde.crn import STRONG_BAND
+
+    worst = 0.0
+    for paths in (rank_study.SCIML, rank_study.HOLDOUT):
+        for pool in rank_study.pools(paths, source="evaluation"):
+            for q in pool["plans"]:
+                s = q["summary"] or {}
+                v = ranking._num(s.get("observed_order"))
+                f = ranking._num(s.get("order_floor"))
+                if v is not None and f is not None:
+                    worst = max(worst, max(0.0, f - v))
+    return round(worst, 4), STRONG_BAND
+
+
+def _relorder_flips_one_winner():
+    """``[(pool, shipped top, relorder top)]`` for every pool whose winner moves (SS10m).
+
+    The honest size of route (i): byte-identical to `regraded` on eight of the nine
+    pools, so the geomean move is arithmetically M05's 622.233 -> 1.000 alone.
+    """
+    from benchmark import rank_study
+
+    base = rank_study.c0_errors()
+    pools = rank_study.pools(rank_study.SCIML, source="evaluation")
+    ship = {r["id"]: r["top"] for r in rank_study.study(pools, "regraded", 0.0, base)}
+    rel = rank_study.study(pools, "relorder", 0.0, base, 0, 2.0)
+    return [(r["id"], ship[r["id"]], r["top"]) for r in rel if r["top"] != ship[r["id"]]]
+
+
+def _m05_compare_agrees_at_every_path_count():
+    """``[(num_paths, verdict, verdict)]`` for M05's two decisive pairs (SS10m).
+
+    Route (iii). `cli.py compare` grades in **moment space**, and M05's 622x is
+    pathwise, so more sampling turns `INCONCLUSIVE` into `AGREE` rather than into a
+    separation. Twelve sandbox solves per row; this is the one claim here that is not
+    free, so it is read from the recorded measurement file rather than re-run.
+    """
+    path = (ROOT / "docs" / "sciml-benchmark-data" / "measurements"
+            / "m05_cross_plan_compare.json")
+    if not path.exists():
+        return None
+    doc = json.loads(path.read_text())
+    return [(row["num_paths"], row["milstein_vs_taylor"], row["em_vs_taylor"])
+            for row in doc["rows"]]
+
+
 def _decl_order_best():
     """``(sciml best-on, sciml n, holdout best-on, holdout n)`` for the plan that
     comes first in declaration order -- the key a resolution floor falls through
@@ -253,22 +574,31 @@ def _study(variant, floor=0.0, holdout=False, source=None):
     # Same variant -> (source, breadth) mapping `rank_study.main` uses. Without it a
     # `regraded` claim silently reads the `<metrics>` blocks and measures `current`.
     breadth = 0
+    ci = rank_study.REL_ORDER_CI
     name = variant
     if ":" in variant and not variant.startswith("floor:"):
         name, n = variant.split(":", 1)
-        breadth = int(n)
-        name = "abstain" if name == "thin" else name
+        # SS10m's two routes carry a standard-error multiplier where `thin`/`ordertie`
+        # carry a breadth, so the suffix means different things and the mapping has to
+        # branch on the name rather than on the colon.
+        if name in ("relorder", "routes"):
+            ci = float(n)
+        else:
+            breadth = int(n)
+            name = "abstain" if name == "thin" else name
     # `main()`'s mapping exactly, and no more: SS10f's variant table was measured
     # against the scorer that *shipped*, so `abstain`/`discriminating`/`floor`
     # default to `metrics`. SS10h's rows cross those variants with the re-graded
-    # scorer and pass `source="evaluation"` to say so.
-    src = source or ("evaluation" if variant in ("regraded", "whitelisted")
-                     else "metrics")
+    # scorer and pass `source="evaluation"` to say so. SS10m's routes are candidate
+    # ranking rules priced against the scorer that ships *today*, so they read
+    # `evaluation.json` like `regraded` does.
+    src = source or ("evaluation" if name in (
+        "regraded", "whitelisted", "relorder", "structadm", "routes") else "metrics")
     pool_list = rank_study.pools(
         paths, truncated=(variant == "truncated"), source=src)
     if variant == "whitelisted":
         pool_list = rank_study._restrict_to_record(pool_list)
-    rows = rank_study.study(pool_list, name, floor, base, breadth)
+    rows = rank_study.study(pool_list, name, floor, base, breadth, ci)
     return rank_study.summarise(rows), rows
 
 
@@ -955,16 +1285,20 @@ def main():
          ([f"{v:.4f}" for v in _lilliefors_agreement().values()]
           == ["1.0069", "1.0203", "1.0041"]),
          "**1.0069, 1.0203 and 1.0041**"),
-        ("M01 re-graded: the milstein goes 8 to 10 and the heun stays 8",
-         (_m01_regraded() == [("3-heun-srk", 8, True),
+        # ~~"the heun stays 8"~~ SS10k: the band that kept it at 8 is fixed, so all three
+        # of M01's plans grade 10. The SS10g table keeps the old cell struck through
+        # rather than replaced, because 8 is what rev 13 measured.
+        ("M01 re-graded: the milstein goes 8 to 10, and SS10k takes the heun to 10 too",
+         (_m01_regraded() == [("3-heun-srk", 10, True),
                               ("2-milstein", 10, True),
                               ("1-euler-maruyama", 10, True)]),
-         "| `2-milstein` | 0.006141 | **FAIL, 1.01\u00d7** | pass, **0.34\u00d7** | 8 | **10** |"),
+         "| 8 | ~~8~~ **10 in \u00a710k** |"),
+        # ~~geomean 2.466, vs_c0 0.931, M01 regret 2.132~~ superseded by SS10k. Those
+        # were rev 13's measurement and are not re-derivable, because `cli.py evaluate`
+        # rewrote the `evaluation.json` files this reads; the doc keeps them as the row
+        # SS10g measured, and the live assertion is SS10k's.
         ("and that takes the arm past the C0 one-shot",
-         (f"{_study('regraded')[0]['geomean']:.3f}" == "2.466"
-          and f"{_study('regraded')[0]['vs_c0']:.3f}" == "0.931"
-          and f"{next(r['regret'] for r in _study('regraded')[1] if r['id'] == 'M01'):.3f}"
-          == "2.132"
+         (f"{_study('regraded')[0]['vs_c0']:.3f}" == "0.855"
           and next(r["decided_by"] for r in _study("regraded")[1]
                    if r["id"] == "M01") == "sqi"),
          "| **`regraded` (this fix)** | 5/9 | 3 | **2.466** | **0.931\u00d7 \u2014 better** |"),
@@ -974,7 +1308,13 @@ def main():
          "0.52\u00d7 of the old, **0.786\u00d7** of the new"),
         # --- SS10h: the three ranker defects -------------------------------
         ("the comparable_keys fallback is dead code on all 18 recorded pools",
-         (_fallback_fires() == (0, ["M05"], ["M02", "M05"])),
+         # ~~(0, ["M05"], ["M02", "M05"])~~ -- SS10l gave M05's three plans the order
+         # study SS24 had skipped, so that pool now shares *three* components and all
+         # three of them vary. The fallback is still dead code, which is what the claim
+         # is for; what changed is the defect SS10h put in its place -- a shared set of
+         # **one** no longer occurs on any of the 18 pools, so `thin:K`'s only live
+         # instance is gone and M02's single *varying* component is what remains.
+         (_fallback_fires() == (0, [], ["M02"])),
          "The fallback at `ranking.py:559` is **dead code on every pool ever run**"),
         ("abstaining is bit-identical to shipping, so item 1 is a measured no-op",
          ([{k: v for k, v in r.items() if k != "source"}
@@ -982,25 +1322,38 @@ def main():
           == [{k: v for k, v in r.items() if k != "source"}
               for r in _study("regraded")[1]]),
          "bit-identical to `regraded` on\n18/18 pools"),
+        # ~~2.174x / 3.501x / 5.761~~ were rev 14's numbers. SS10k re-graded two plans
+        # these read through `evaluation.json`, so the magnitudes moved and the doc
+        # carries both tables. The *conclusion* is what the claim is for, and it holds:
+        # still harmful, still monotonic, against a baseline that is itself better.
         ("the thin gate is harmful, monotonically",
-         (f"{_study('thin:2', source='evaluation')[0]['vs_c0']:.3f}" == "2.174"
-          and f"{_study('thin:3', source='evaluation')[0]['vs_c0']:.3f}" == "3.501"
+         # ~~1.999x / 3.219x / 5.297~~ were rev 18's. SS10l re-graded M05's three
+         # plans, which these read through `evaluation.json`, and the movement is under
+         # 1% -- which is SS10l's negative result, since `thin` was the variant whose
+         # one live instance that pool was.
+         (f"{_study('thin:2', source='evaluation')[0]['vs_c0']:.3f}" == "1.989"
+          and f"{_study('thin:3', source='evaluation')[0]['vs_c0']:.3f}" == "3.203"
           and f"{_study('thin:2', source='evaluation')[0]['geomean']:.3f}"
-          == "5.761"),
-         "| `thin:2` | 5/9 | 5.761 | 2.174\u00d7 | 6/9 | 2.015 |"),
+          == "5.270"),
+         "| `thin:2` (\u00a710l) | 6/9 | 5.270 | **1.989\u00d7** | 6/9 | 2.015 |"),
         ("declaration order is the worst plan on sciml and the best on holdout",
          (_decl_order_stats() == {"sciml": (2.89, 0, 8),
                                   "holdout": (1.56, 5, 1)}),
          "| sciml | 2.89 / 3 | 0/9 | **8/9** | `1-euler-maruyama`, all nine |"),
+        # ~~6/9 and 0.846x~~ were rev 14's. SS10k fixes the order *gate*, and this
+        # variant is an order *tiebreak*, so it gains more: 7/9 and 0.778x. The half
+        # that keeps it unshipped is untouched and that is the point of the claim --
+        # the holdout pools are BENCHOP's and SS10k re-graded nothing there, so the
+        # collapse to 2/9 at the breadth where the gate fires is the same number.
         ("ordertie wins on sciml and breaks holdout where its gate first fires",
-         (_study("ordertie:2", source="evaluation")[0]["picks_best"] == 6
+         (_study("ordertie:2", source="evaluation")[0]["picks_best"] == 7
           and f"{_study('ordertie:2', source='evaluation')[0]['vs_c0']:.3f}"
-          == "0.846"
+          == "0.774"
           and _study("ordertie:3", holdout=True,
                      source="evaluation")[0]["picks_best"] == 2
           and f"{_study('ordertie:3', holdout=True, source='evaluation')[0]['geomean']:.3f}"
           == "4.247"),
-         "| `ordertie:3` | 6/9 | 2.242 | 0.846\u00d7 | **2/9** | **4.247** |"),
+         "| `ordertie:3` (\u00a710l) | 7/9 | 2.051 | 0.774\u00d7 | **2/9** | **4.247** |"),
         ("the record carried a wrong dynkin_bar, not an absent one",
          (_dynkin_bars() == [2.4284, 2.531, 2.8049]),
          "the nine\npools carry 2.4284, 2.5310 and 2.8049"),
@@ -1014,11 +1367,16 @@ def main():
         ("the whitelist now carries every field the ranker reads",
          (_whitelist_census() == ([], 31)),
          "taking the whitelist from 19 to 31"),
+        # ~~`whitelisted` picks 5~~ -- it picks whatever `regraded` picks, which is the
+        # whole claim, and SS10k took that to 6. The losslessness itself is unchanged
+        # and is what `_record_is_lossless` asserts pool by pool; `truncated` reads the
+        # record rather than the workspace, so its two numbers do not move.
         ("and the record is a lossless ranking input, both suites",
          (_record_is_lossless()
           and f"{_study('truncated')[0]['geomean']:.3f}" == "14.023"
           and f"{_study('truncated')[0]['vs_c0']:.3f}" == "5.291"
-          and _study("whitelisted")[0]["picks_best"] == 5),
+          and _study("whitelisted")[0]["picks_best"] == 6
+          and f"{_study('whitelisted')[0]['vs_c0']:.3f}" == "0.855"),
          "**bit-identical on all 18 pools across both suites**"),
         # --- SS10i: the UNDERCLAIM accounting -------------------------------
         ("the old conjunction read 5/9 against the baseline's 9/9",
@@ -1050,6 +1408,138 @@ def main():
         ("and the PDE output checks still gate",
          _pde_output_still_gates(),
          "**The PDE output checks are untouched and still gate.**"),
+        # --- SS10k: the strong-order gate -----------------------------------
+        ("two plans were capped for converging faster than their floor",
+         (_overshoot_before() == [("3-heun-srk", 0.9831, 0.5, "two-sided", 8.0),
+                                  ("1-euler-maruyama", 0.9514, 0.5, "two-sided", 8.0)]),
+         "| M01 `linear_ito` | `3-heun-srk` | 0.9831 | 0.5 | **+0.483** |"),
+        ("and both now grade 10 with the order check passing",
+         (_overshoot_after() == [("3-heun-srk", 10, True),
+                                 ("1-euler-maruyama", 10, True)]),
+         "The gate is now one-sided, the overshoot is reported instead of"),
+        ("the gate passes an overshoot, flags it, and still fails a shortfall",
+         (_gate_is_one_sided() == (True, True, False, False)),
+         "is a shortfall and survives\nuntouched"),
+        ("the one true positive the gate has is the canary's 0.504 against 1.0",
+         ("0.504" in _orders_reason(0.504, 1.0)
+          and "does not clear" in _orders_reason(0.504, 1.0)),
+         "reads **0.504 against 1.0**"),
+        ("and a non-shortfall is no longer rendered as one",
+         (all("does not clear" not in _orders_reason(o, f)
+              and "do not shrink" in _orders_reason(o, f)
+              for o, f in ((0.983, 0.5), (1.0, 1.0), (0.7, 1.0)))),
+         "*\"the observed strong order 0.983 does not clear 0.5\"*"),
+        ("the component picker is one-sided too, and publishes the lower order",
+         (_worst_component_is_one_sided() == (0, 0)
+          and _m09_published_order() == (0, 0.5104)),
+         "| `1-euler-maruyama` | 0.5104 (pass) | 0.9514 (**failed**) | **0.9514** | "
+         "**0.5104** |"),
+        ("the arm reaches 0.855x on 6 of 9 pools, with M01 at regret 1.000",
+         (f"{_study('regraded')[0]['geomean']:.3f}" == "2.267"
+          and f"{_study('regraded')[0]['vs_c0']:.3f}" == "0.855"
+          and _study("regraded")[0]["picks_best"] == 6
+          and f"{next(r['regret'] for r in _study('regraded')[1] if r['id'] == 'M01'):.3f}"
+          == "1.000"
+          and next(r["top"] for r in _study("regraded")[1]
+                   if r["id"] == "M01") == "3-heun-srk"),
+         "| **after (\u00a710k)** | **6/9** | **2/9** | **2.267** | **0.855\u00d7** |"),
+        ("and M09 holds only because SS10b excludes a component it alone measures",
+         (_m09_keys_exclude_order() == ("accuracy", "structure", "consistency")
+          and f"{next(r['regret'] for r in _study('regraded')[1] if r['id'] == 'M09'):.3f}"
+          == "1.033"),
+         "**`('accuracy', 'structure', 'consistency')`**"),
+        # --- SS10l: M05's skipped order study -------------------------------
+        ("the \u00a724 cost skip had fired on three plans in the whole corpus",
+         (_not_run_census() == (["1-euler-maruyama", "2-milstein", "3-ito-taylor-1p5"],
+                                68)),
+         "| SDE plans with a `<metrics>` block | **68** | **3** |"),
+        ("and it had left M05's pool ranked on one component, with no order and no z",
+         (_m05_before() == ([("1-euler-maruyama", "not_run", None, None, 6.0),
+                             ("2-milstein", "not_run", None, None, 6.0),
+                             ("3-ito-taylor-1p5", "not_run", None, None, 6.0)],
+                            ("structure",))),
+         "`comparable_keys`: ~~`('structure',)`~~"),
+        ("both studies now run, on all three plans, at the measured orders",
+         (_m05_after() == ([("1-euler-maruyama", "true", 0.965, 0.2054, 6),
+                            ("2-milstein", "true", 0.9981, 0.2038, 6),
+                            ("3-ito-taylor-1p5", "true", 1.5851, 0.2035, 6)],
+                           ("order", "structure", "consistency"))),
+         "**`('order', 'structure', 'consistency')`** \u2014 one"),
+        ("and no score moves, which is what Path A's rubric row order guarantees",
+         all(row[4] == 6 for row in _m05_after()[0]),
+         "Every score is unchanged, as predicted above."),
+        ("the raw measurement ranks the pool exactly as the harness does",
+         (_m05_order_is_informative_and_discarded()[0]
+          == _m05_order_is_informative_and_discarded()[1]
+          == ("3-ito-taylor-1p5", "2-milstein", "1-euler-maruyama")),
+         "**Identical, all three positions.**"),
+        ("and `ranking.order` discards it: the best plan ties the worst at 1.0",
+         (_m05_order_is_informative_and_discarded()[2] == (1.0, 0.9981, 1.0)),
+         "| `3-ito-taylor-1p5` | 1.5851 | 0.5 | **1.0000** |"),
+        ("so `structure` decides the pool by 7.4\u00d7, and the index gap is 0.0056",
+         (_m05_structure_outweighs_order() == (0.0056, 7.4)),
+         "| **index** | | | **+0.0056** |"),
+        ("the arm does not move: 6/9, 2.267, 0.855\u00d7, M05 still at 622.233",
+         (f"{_study('regraded')[0]['geomean']:.3f}" == "2.267"
+          and f"{_study('regraded')[0]['vs_c0']:.3f}" == "0.855"
+          and _study("regraded")[0]["picks_best"] == 6
+          and f"{next(r['regret'] for r in _study('regraded')[1] if r['id'] == 'M05'):.3f}"
+          == "622.233"
+          and next(r["decided_by"] for r in _study("regraded")[1]
+                   if r["id"] == "M05") == "sqi"),
+         "| **after (\u00a710l)** | 6/9 | 2/9 | 2.267 | 0.855\u00d7 | 622.233 | `sqi` |"),
+        ("and `thin` and `ordertie` are still powerless on M05 with the order present",
+         (all(f"{next(r['regret'] for r in _study(v, source='evaluation')[1] if r['id'] == 'M05'):.3f}"
+              == "622.233" for v in ("thin:2", "thin:3", "ordertie:2", "ordertie:3"))
+          and _study("ordertie:2", source="evaluation")[0]["picks_best"] == 7
+          and f"{_study('ordertie:2', source='evaluation')[0]['vs_c0']:.3f}" == "0.774"),
+         "| `ordertie:2` (\u00a710l) | 7/9 | 2.051 | **0.774\u00d7** | 6/9 | 2.015 |"),
+        # --- SS10m: the three routes out of M05 -----------------------------
+        ("the two corpora are disjoint on the two fields the routes read",
+         (_route_corpus_split() == {"sciml": (9, 8, 2), "holdout": (9, 0, 9)}),
+         "| sciml | 9 | **8** | **2** (M08, M09) |"),
+        ("route (i) reaches 7 of 9 at 0.419x and leaves the holdout bit-identical",
+         (_study("relorder:2")[0]["picks_best"] == 7
+          and f"{_study('relorder:2')[0]['geomean']:.3f}" == "1.109"
+          and f"{_study('relorder:2')[0]['vs_c0']:.3f}" == "0.419"
+          and _study("relorder:2", holdout=True)[0]["picks_best"] == 6
+          and f"{_study('relorder:2', holdout=True)[0]['geomean']:.3f}" == "2.015"),
+         "| **(i) `relorder:2`** | **7/9** | **1/9** | **1.109** | **0.419\u00d7** | 6/9 | 2.015 |"),
+        ("and its whole gain is one pool: it flips exactly one winner",
+         (_relorder_flips_one_winner()
+          == [("M05", "2-milstein", "3-ito-taylor-1p5")]),
+         "**flips exactly one\nwinner**"),
+        ("the resolution guard is load-bearing, and M01 is what proves it",
+         (_relorder_guard_two_is_load_bearing()
+          == ((7, "3-heun-srk", 1.0), (6, "2-milstein", 2.132))),
+         "| 0 \u2013 0.185 | 6/9 | 1.207 | 0.455\u00d7 | `2-milstein` \u2717 |"),
+        ("its one free parameter is flat across the sweep and degrades at both ends",
+         (_relorder_ci_is_flat() == [(0.0, 6, 1.207), (0.2, 7, 1.109),
+                                     (2.0, 7, 1.109), (13.0, 7, 1.109),
+                                     (15.0, 6, 2.267)]),
+         "| **0.2 \u2013 13.0** | **7/9** | **1.109** | **0.419\u00d7** | `3-heun-srk` \u2713 |"),
+        ("while the shortfall guard never fires on any of the 18 pools",
+         (_relorder_shortfall_guard_is_dead() == (0.2296, 0.4)),
+         "18 pools is **0.2296**"),
+        ("route (ii) is harmful: it fixes M05 alone and costs four other pools",
+         (_study("structadm")[0]["picks_best"] == 4
+          and f"{_study('structadm')[0]['vs_c0']:.3f}" == "2.378"
+          and f"{_study('structadm')[0]['geomean']:.3f}" == "6.303"
+          and f"{next(r['regret'] for r in _study('structadm')[1] if r['id'] == 'M05'):.3f}"
+          == "1.000"
+          and f"{next(r['regret'] for r in _study('structadm')[1] if r['id'] == 'M02'):.3f}"
+          == "4879.117"),
+         "| | 6/9 \u00b7 0.855\u00d7 | 4/9 \u00b7 **2.378\u00d7** | worse than Opus answering cold |"),
+        ("and composing the two routes is worse than route (i) alone",
+         (_study("routes:2")[0]["picks_best"] == 7
+          and f"{_study('routes:2')[0]['geomean']:.3f}" == "1.523"
+          and f"{_study('routes:2')[0]['vs_c0']:.3f}" == "0.575"),
+         "| (i)+(ii) `routes:2` | 7/9 | 1/9 | 1.523 | 0.575\u00d7 | 6/9 | 2.015 |"),
+        ("route (iii) agrees at every path count instead of separating the pool",
+         (_m05_compare_agrees_at_every_path_count()
+          == [(1000, "INCONCLUSIVE", "INCONCLUSIVE"),
+              (20000, "AGREE", "AGREE"), (200000, "AGREE", "AGREE")]),
+         "| 200 000 | **AGREE** | **AGREE** |"),
         ("step 10 is complete at nine of nine",
          (sum(1 for r in by.values() if r["verdict"] == "VERIFIED_PASS") == 5
           and sum(1 for r in by.values() if r["verdict"] == "UNDERCLAIM") == 4

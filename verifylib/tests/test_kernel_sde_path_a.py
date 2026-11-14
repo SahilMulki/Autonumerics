@@ -21,6 +21,7 @@ import shutil
 import pytest
 
 from verifylib.kernel import run
+from verifylib.kernel.sde import crn
 
 from .test_kernel_canaries import CANARY, _spec
 
@@ -66,13 +67,102 @@ def test_the_honest_solver_still_certifies_with_dynkin_on_path_a(tmp_path):
 
 def test_dynkin_runs_on_a_certifying_path_a_plan_and_not_on_a_failing_one(tmp_path):
     """1b's cost rule. ~7x a graded solve, so it is gated on `would_certify` -- but
-    the gate is `would_certify`, not `path == "B"`, which is what §24 had."""
+    the gate is `would_certify`, not `path == "B"`, which is what §24 had.
+
+    **What the second half actually pins (§10l).** At 60 paths `moments_ok` comes
+    back `"unavailable"`, not `False` and not `True` -- the moment comparison could
+    not be made at all -- so this is the *moments-unavailable* branch and not the
+    unresolved one. The unresolved branch is a separate case and now runs both
+    studies; the test below it is the one that pins that.
+
+    The asymmetry this leaves is recorded in §10l rather than fixed:
+    `run_crn_ladder` carries `not metrics.passed(moments_ok)` and `run_dynkin` does
+    not, so a Path-A plan whose moments **failed** gets the ladder and not the
+    generator check -- which is the plan where Dynkin would say *why* ("the wrong
+    equation integrated correctly, a sign or a coefficient, not too few paths").
+    Shipping it there is a verdict change and not a free one: `failed(dynkin_ok)`
+    is the top row of both SDE rubrics, so it would move scores and needs its own
+    measurement. No pool on disk is in that state.
+    """
     certifying = _run(tmp_path, "sde_honest.py")
     assert certifying["config"]["run_dynkin"]["value"] is True
     failing = _run(tmp_path, "sde_honest.py", **{"evaluation_thresholds.num_paths": 60})
     assert failing["checks"]["resolved"] is False
+    assert failing["checks"]["moments_ok"] == "unavailable", "the branch under test"
     assert failing["config"]["run_dynkin"]["value"] is False
     assert failing["checks"]["dynkin_ok"] == "not_run"
+
+
+def test_an_unresolved_path_a_plan_runs_the_studies_that_were_skipped_for_cost(tmp_path):
+    """§10l. The §24 cost skip gated both studies on `would_certify`, which is false
+    for three different reasons, and one of them is not about the solver at all: an
+    unresolved accuracy comparison. `rubric_sde_analytic`'s own reason for the 6
+    says so -- "the error bars are too wide to decide. Raise num_paths -- this is
+    not a solver bug".
+
+    2500 paths on this spec is M05 `sde_sciml_nltest`'s shape exactly: the moments
+    pass (0.0151 against a 0.05 tolerance) and the Monte-Carlo half-width does not
+    resolve (`ci_width_rel` 0.0539 against a 0.05 bar, where M05 read 0.0905). On
+    the live run that cost M05 both `ranking.order` and `ranking.consistency` on
+    every plan in the pool, leaving `comparable_keys` at `('structure',)` alone --
+    and §10b's whole-pool rule means one plan's skip removes a component for all of
+    them.
+
+    **The score must not move**, and that is the point rather than a caveat: Path A
+    is `rubric_sde_analytic`, whose `failed(resolved) -> 6` row sits above every row
+    that reads `orders_ok` or `dynkin_ok`, so this buys ranking inputs and cannot
+    change a verdict in either direction.
+    """
+    m = _run(tmp_path, "sde_honest.py", **{"evaluation_thresholds.num_paths": 2500})
+    assert m["checks"]["moments_ok"] is True
+    assert m["checks"]["resolved"] is False, "the branch under test"
+    assert not (m.get("d2") or {}).get("gate_failed")
+
+    # ~~both `not_run`~~ -- the measurement the pool was decided without.
+    assert m["config"]["run_crn_ladder"]["value"] is True
+    assert m["config"]["run_dynkin"]["value"] is True
+    assert m["summary"]["order_check"] == "true"
+    assert isinstance(m["summary"]["observed_order"], float)
+    assert isinstance(m["summary"]["dynkin_z"], float)
+
+    # And the verdict is untouched: still the MC-inconclusive 6.
+    assert m["score"] == 6, m["certification"]
+    assert "inconclusive" in m["certification"]["reason"]
+
+
+def test_a_failed_constraint_gate_is_the_only_skip_left_and_the_reason_says_so(tmp_path):
+    """§10l's other half: what §24's cost rule still covers on Path A, and the reason
+    strings that describe it.
+
+    Both skips carried a reason that could not be true where it was emitted -- the
+    same class as `_moments_fail_reason` (§10a) and `_orders_fail_reason` (§10k).
+    The ladder's said "the moments match an exact reference **and the scheme's
+    strong order is below 1**, so the order study cannot distinguish anything the
+    moment comparison has not already settled": the middle clause names the
+    `expected_strong >= 1.0` conjunct that 1c had already removed, and it was read
+    by M05's `2-milstein` at a floor of exactly 1.0; the last clause asserts the
+    moment comparison settled something when it was `resolved: false`. Dynkin's said
+    the check "cannot change the outcome", which is true of the score and false of
+    the outcome -- `dynkin_z` is `ranking.consistency`'s only input.
+
+    A gated constraint the honest OU solver breaks (it is mean-reverting around
+    mu > 0 and a path may still go negative) is the one state that still skips, and
+    there the cap is a finding of its own.
+    """
+    spec = {"evaluation_thresholds.num_paths": 2500,
+            "verification.constraints": [
+                {"name": "positive", "expr": "X > 0", "gate": True}]}
+    m = _run(tmp_path, "sde_honest.py", **spec)
+    assert (m.get("d2") or {}).get("gate_failed") == ["positive"]
+    assert m["config"]["run_crn_ladder"]["value"] is False
+    assert m["config"]["run_dynkin"]["value"] is False
+    assert m["score"] <= 4, m["certification"]
+
+    for key in ("orders_ok", "dynkin_ok"):
+        reason = (m["detail"].get(key) or {})["reason"]
+        assert "constraint gate failed" in reason, reason
+        assert "already settled" not in reason, reason
+        assert "below 1" not in reason, reason
 
 
 # --- Finding 1 / 1c: the order study gates on Path A --------------------------
@@ -94,7 +184,12 @@ def test_a_milstein_plan_with_no_correction_is_capped_by_the_order_study(tmp_pat
     m = _run(tmp_path, "sde_milstein_no_correction.py", spec="sde_spec_gbm.json",
              frontmatter="scheme_family: milstein")
     assert m["config"]["expected_strong_order"]["value"] == 1.0
-    assert m["summary"]["order_band"] == "two-sided"
+    # ~~`== "two-sided"`~~ (§10k). The gate is one-sided on both branches now, and
+    # this canary is why that costs nothing: its miss is entirely on the low side,
+    # 0.504 against 1.0, so the only true positive the strong gate has is caught by
+    # the half of the band that survived.
+    assert m["summary"]["order_band"] == crn.BAND_DECLARED
+    assert not m["summary"].get("strong_order_above_band")
     assert m["checks"]["moments_ok"] is True, "the moments pass -- that is the point"
     assert m["checks"]["orders_ok"] is False
     assert m["summary"]["observed_order"] == pytest.approx(0.5, abs=0.2)
