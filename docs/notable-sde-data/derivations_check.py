@@ -29,7 +29,7 @@ rng = np.random.default_rng(7)
 def em(drift, diff, x0, T, n, P, clip=None, rng=rng, d=1):
     h = T/n
     X = np.full(P, float(x0))
-    for k in range(n):
+    for _ in range(n):
         dw = rng.standard_normal(P)*np.sqrt(h)
         X = X + drift(X)*h + diff(X)*dw
         if clip is not None:
@@ -49,16 +49,22 @@ se = U.var()*np.sqrt(2/P)
 print("N01 Var[U] sim %.4f +-%.4f | exact 17/6 = %.4f | mean %.4f" % (U.var(), se, 17/6, U.mean()))
 
 # --- N02 ---------------------------------------------------------------
-a = sig = 1.0; T = 1.0; n = 4000; h = T/n; P = 60000
-X = np.zeros((P,2)); X[:,0] = 1.0; Y = X.copy()
-for k in range(n):
+a = sig = 1.0
+T = 1.0
+n = 4000
+h = T/n
+P = 60000
+X = np.zeros((P, 2))
+X[:, 0] = 1.0
+Y = X.copy()
+for _ in range(n):
     dw = rng.standard_normal(P)*np.sqrt(h)
-    x1, x2 = X[:,0].copy(), X[:,1].copy()
-    X[:,0] = x1 - a*x2*h - sig*x2*dw
-    X[:,1] = x2 + a*x1*h + sig*x1*dw
-    y1, y2 = Y[:,0].copy(), Y[:,1].copy()
-    Y[:,0] = y1 + (-a*y2 - 0.5*sig**2*y1)*h - sig*y2*dw
-    Y[:,1] = y2 + ( a*y1 - 0.5*sig**2*y2)*h + sig*y1*dw
+    x1, x2 = X[:, 0].copy(), X[:, 1].copy()
+    X[:, 0] = x1 - a*x2*h - sig*x2*dw
+    X[:, 1] = x2 + a*x1*h + sig*x1*dw
+    y1, y2 = Y[:, 0].copy(), Y[:, 1].copy()
+    Y[:, 0] = y1 + (-a*y2 - 0.5*sig**2*y1)*h - sig*y2*dw
+    Y[:, 1] = y2 + (a*y1 - 0.5*sig**2*y2)*h + sig*y1*dw
 print("N02 E|X|^2: Ito-misread %.4f (exact e=%.4f) | Stratonovich %.4f (exact 1) | ratio %.3f"
       % ((X**2).sum(1).mean(), np.e, (Y**2).sum(1).mean(), (X**2).sum(1).mean()/(Y**2).sum(1).mean()))
 print("N02 E[X1] Strat sim %.4f | formula cos(aT)e^{-s^2T/2} = %.4f"
@@ -78,20 +84,23 @@ Xw = em(lambda x: A_*(1-x) - B_*x,
 print("N04 m1: ODE %.5f sim %.5f | m2: ODE %.5f sim %.5f" % (m1, Xw.mean(), m2, (Xw**2).mean()))
 
 # --- N08 ---------------------------------------------------------------
-a_, b_, sg, v0, T8 = 1.0, 2.0, 0.6, 0.3, 1.0
+a_, b_, sg, v0, T8 = 1.0, 2.0, 0.6, 0.3, 1.0  # noqa: E741
 V = em(lambda v: v*(a_ - b_*v), lambda v: sg*v**1.5, v0, T8, 20000, 40000, clip=(1e-12, np.inf))
 kap, th_ = a_, (b_+sg**2)/a_
 print("N08 E[1/V]: sim %.4f | CIR exact %.4f" % ((1/V).mean(), (1/v0)*np.exp(-kap*T8) + th_*(1-np.exp(-kap*T8))))
 
 # --- N09 ---------------------------------------------------------------
 for n in (25,):
-    for label, idx in (("left  i=0..n-1", np.arange(0,n)), ("right i=1..n", np.arange(1,n+1)),
+    for label, idx in (("left  i=0..n-1", np.arange(0, n)), ("right i=1..n", np.arange(1, n+1)),
                        ("trapezoid", None)):
         if idx is None:
-            w = np.ones(n+1)/n; w[0] = w[-1] = 0.5/n
+            w = np.ones(n+1)/n
+            w[0] = w[-1] = 0.5/n
             t = np.arange(n+1)*(1.0/n)
-            C = np.minimum.outer(t,t)
+            C = np.minimum.outer(t, t)
             var = w @ C @ w
         else:
-            t = idx*(1.0/n); C = np.minimum.outer(t,t); var = C.sum()/n**2
+            t = idx*(1.0/n)
+            C = np.minimum.outer(t, t)
+            var = C.sum()/n**2
         print("N09 n=%d %-14s var %.6f vs 1/3 -> %+.2f%%" % (n, label, var, 100*(var/(1/3)-1)))

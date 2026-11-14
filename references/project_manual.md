@@ -269,6 +269,8 @@ estimated_rel_error_T: 8.4e-01     # chaotic only -- the same statistic at the r
 graded_N: 256                      # the ladder level `problem.md` grades on...
 estimated_rel_error_graded: 2.9e-03  # ...and the pair-difference estimate there
 observed_order: 1.98
+observed_order_se: 9.6e-03         # the estimate's own standard error; a pool comparison
+                                   # will not rank two rates it cannot resolve apart
 order_floor: 1.50
 order_band: two-sided | one-sided (<reason>)   # which side of the floor counts, from `crn.guards`
 design_order: 2            # the scheme's own declared rate, from SOLUTION.md frontmatter

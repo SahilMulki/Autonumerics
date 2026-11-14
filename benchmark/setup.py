@@ -518,7 +518,7 @@ def select(only):
     return chosen
 
 
-SUITES = ("main", "no-closed-form", "benchop", "sciml")
+SUITES = ("main", "no-closed-form", "benchop", "sciml", "notable")
 
 #: The two arms of the SciML comparison, and why they can never be averaged [H10].
 #:

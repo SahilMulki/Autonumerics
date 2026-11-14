@@ -448,3 +448,162 @@ def test_structadm_applies_cost_admissible_to_structure_and_is_measured_harmful(
     assert "structure" not in keys, keys
     assert "structure" in ranking.comparable_keys(1e-2, pool_bad), (
         "which is the difference from what ships")
+
+
+def test_both_is_inert_because_its_two_halves_demand_opposite_things_of_m02():
+    """`both:C:K` -- SS10o. `relorder:C` and `ordertie:K` composed, and measured inert.
+
+    The pair looked additive: on the nine sciml pools `relorder:2` repairs M05 and
+    misses M02, `ordertie:2` repairs M02 and leaves M05 at 622x, neither is a superset
+    of the other, and nothing in them conflicts syntactically. Composed they score
+    **bit-identically to `relorder:2` alone** (7/9, geomean 1.109, 0.419x) -- the
+    `ordertie` half contributes nothing.
+
+    The reason is the finding, and it is not a tuning failure. `ordertie` repairs M02
+    by *abstaining*: the shipped `order` reads 1.0 for all three plans there, so only
+    `structure` separates the pool, `thin:K`'s breadth test fails at K = 2, the index
+    stands down and the fall-through to the higher `observed_order` picks the right
+    plan. `relorder` makes `order` vary. That satisfies the very breadth test whose
+    failure was doing the work, the index is re-admitted, and it mis-ranks the pool.
+    One half needs that component silent and the other makes it speak; no `C` or `K`
+    reconciles them, because they disagree about whether M02 is decidable at all.
+
+    Measured in the **pre-SS10o era**, which is the only era in which the statement
+    means anything: the rule this comparison argued for has since shipped, so
+    `ranking.order` reads the pool by default and `thin:K`'s breadth test no longer
+    fails here. `floor_order_only` restores the component the measurement was made
+    against. Without it this test reads as a refutation of its own conclusion.
+    """
+    def plan(order, se, headroom):
+        return {"kind": "sde", "observed_order": order, "observed_order_se": se,
+                "order_floor": 1.0, "design_order": 1.0, "order_check": "true",
+                "invariant_worst_headroom": headroom}
+
+    from verifylib import ranking
+    # M02's three, to seven figures; headrooms ordered as the pool's were.
+    m02 = [plan(1.000709, 3.4977e-08, 0.90),
+           plan(2.0003835, 7.2051e-08, 0.30),
+           plan(1.9999994, 9.7584e-08, 0.35)]
+
+    with rank_study.floor_order_only():
+        assert [ranking.order(s, m02) for s in m02] == [1.0, 1.0, 1.0], (
+            "the pre-SS10o component carries no information on this pool")
+        assert rank_study._keys("ordertie", 1e-2, m02, 2) == (), (
+            "so `thin:2`'s breadth test fails and `ordertie` abstains -- which is how "
+            "it reaches the fall-through that gets M02 right")
+
+        # `relorder` fires here and points the right way: the top two are ~3200
+        # standard errors apart, so guard 2 passes.
+        rel = [rank_study._rel_order(s, m02) for s in m02]
+        assert rel[1] == 1.0 and rel[2] < 1.0 and rel[0] < rel[2], rel
+
+        # And that is exactly what disarms the other half.
+        keys = rank_study._keys("both", 1e-2, m02, 2, rank_study.REL_ORDER_CI)
+        assert keys != (), keys
+        assert "order" in keys and "structure" in keys, keys
+
+    # Outside that era the pool is decided correctly and on `order`, which is the
+    # whole point of what shipped -- pinned here so the two readings cannot be
+    # confused for each other.
+    assert ranking.order(m02[1], m02) == 1.0 and ranking.order(m02[2], m02) == 0.0
+
+
+def test_zorder_scales_the_shortfall_by_its_significance_not_its_magnitude():
+    """`zorder:C:Z` -- SS10o, and the one reading that repairs M02 and M05 together.
+
+    `relorder` divides the shortfall from the pool's top order by `max(hi, 0.5)`, an
+    **absolute** scale. On M02 that is what loses the pool: the top two are 2.0003835
+    and 1.9999994, about 3200 combined standard errors apart and 2.46x apart by the
+    harness, and the component maps them to 1.0 and 0.999808. `structure` at weight
+    0.20 then outvotes `order` at weight 0.25 by far more than the 0.000192 of signal
+    it was handed, and the index misses by 0.00062. `relorder` repairs M05 only
+    because M05's orders happen to differ in the first decimal -- 0.9650 / 0.9981 /
+    1.5851. So the component was never reading the order study; it was reading the
+    order study's units.
+
+    Dividing by `sqrt(se_top^2 + se_i^2)` makes it scale-free, and both of
+    `relorder`'s guards are kept: this calls it first and respects every abstention,
+    so SS19's "an order far above the theoretical one is noise, not a bonus" is still
+    enforced before any of it fires. Measured on the nine sciml pools: 8/9, regret
+    geomean 1.004, 0/9 outside the harness margin, 0.379x against the one-shot --
+    better than every variant priced in SS10h, SS10m or SS10o. The one remaining miss
+    is M09 at 1.033, which is *inside* its own harness margin.
+    """
+    def plan(order, se, floor, headroom):
+        return {"kind": "sde", "observed_order": order, "observed_order_se": se,
+                "order_floor": floor, "design_order": floor, "order_check": "true",
+                "invariant_worst_headroom": headroom}
+
+    m02 = [plan(1.000709, 3.4977e-08, 1.0, 0.90),
+           plan(2.0003835, 7.2051e-08, 1.0, 0.30),
+           plan(1.9999994, 9.7584e-08, 1.0, 0.35)]
+
+    rel = [rank_study._rel_order(s, m02) for s in m02]
+    z = [rank_study._z_order(s, m02) for s in m02]
+    assert round(rel[2], 6) == 0.999808, (
+        "the magnitude reading shrinks a resolved separation to 1.9e-4")
+    assert z[1] == 1.0 and z[2] == 0.0, z
+    assert z[2] < rel[2], "the significance reading does not"
+
+    # M05, where `relorder` already worked: the pair-relative reading keeps it.
+    m05 = [plan(0.9650, 0.0313, 0.5, 0.2), plan(0.9981, 0.00034, 1.0, 0.2),
+           plan(1.5851, 0.0438, 0.5, 0.2)]
+    zm05 = [rank_study._z_order(s, m05) for s in m05]
+    assert zm05[2] == 1.0 and zm05[0] < 1.0 and zm05[1] < 1.0, zm05
+
+    # Every `relorder` abstention is respected unchanged -- M01's unresolved top two.
+    m01 = [plan(0.48040, 0.01523, 0.5, 0.2), plan(0.98647, 0.00960, 1.0, 0.2),
+           plan(0.98312, 0.01504, 0.5, 0.2)]
+    assert ([rank_study._z_order(s, m01) for s in m01]
+            == [rank_study._rel_order(s, m01) for s in m01]), (
+        "guard 2 abstains and the significance scale never gets to speak")
+
+
+def test_zorder_is_winner_take_all_at_the_clip_that_works():
+    """What `zorder` *is*, as opposed to how it is parameterised. SS10o.
+
+    This test exists because the first version of SS10o got it wrong and the audit
+    caught it. The draft claimed `observed_order_se` is 1e-07 to 1e-08 corpus-wide, so
+    that "every separation is thousands of sigma" and `Z` is cosmetic. The real range
+    over the nine sciml pools is **3e-08 to 4e-02**; the 1e-07s are M02's alone, four
+    orders below the corpus median, on the single pool where they work in `zorder`'s
+    favour. The five pools it fires on separate by **3.6 to 3166 sigma**.
+
+    Two things survive that correction and are pinned here.
+
+    `Z` does not change the component's *ranking* at all -- `_z_order` is monotone in
+    the shortfall for every clip -- so the knob only sets how hard `order` trades
+    against `structure`. Its flatness over `[1, 300]` is robustness, not inertness.
+
+    But at the clip that works the component is still an **indicator**: 0/1 on 5 of 5
+    firing pools at `Z = 3`. So the rule is "where both guards pass, the pool's top
+    measured order takes the whole `order` weight and the rest take none" -- materially
+    stronger than `relorder`, and pinned so it cannot be shipped as the gentler thing
+    its description suggests. M06 is the weakest firing case at 3.6 sigma, which is the
+    separation the plan says needs a floor the corpus cannot supply.
+    """
+    def plan(order, se, floor):
+        return {"kind": "sde", "observed_order": order, "observed_order_se": se,
+                "order_floor": floor, "design_order": floor, "order_check": "true"}
+
+    # M06's three, to the recorded figures: the weakest pool `zorder` fires on, all
+    # three plans within 0.25 of order 1.0, and a top-two gap of only ~3.6 sigma.
+    m06 = [plan(0.7527756, 9.7e-03, 0.5), plan(1.0025352, 2.3e-04, 1.0),
+           plan(1.0068032, 1.2e-03, 1.0)]
+    vals = [rank_study._z_order(s, m06) for s in m06]
+    assert vals == [0.0, 0.0, 1.0], ("decided outright on 3.6 sigma", vals)
+
+    # `Z` never *reverses* the component -- it is weakly monotone in the shortfall at
+    # every clip, so a smaller clip only collapses distinctions into ties (at 0.0) and
+    # a larger one only separates them again. That is what the sweep's flatness
+    # measures, and it is the reason `Z` cannot buy a different answer, only a softer
+    # margin for `structure` to beat.
+    for clip in (1.0, 3.0, 30.0, 300.0, 1e5):
+        v = [rank_study._z_order(s, m06, rank_study.REL_ORDER_CI, clip) for s in m06]
+        assert v[2] == 1.0, (clip, v)
+        assert v[2] >= v[1] >= v[0], (clip, v)
+
+    # And it is graded rather than saturated only at a clip far outside the range any
+    # resolution test would use -- which is why `Z` buys no gentler rule that works.
+    soft = [rank_study._z_order(s, m06, rank_study.REL_ORDER_CI, 1e5) for s in m06]
+    assert soft[0] > 0.0 and soft[1] > 0.0, soft

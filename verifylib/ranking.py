@@ -41,6 +41,7 @@ import math
 from .kernel.invariants import MAX_HEADROOM
 from .kernel.metrics import is_skip
 from .kernel.score import provenance_rank
+from .kernel.sde.crn import STRONG_BAND
 
 #: Decades below the tolerance at which a **PDE**'s accuracy saturates. 1e-2 -> 1e-8
 #: is where solvers on these grids actually bottom out; past it the ladder is measuring
@@ -309,8 +310,17 @@ def uncertainty(summary):
     return se * (_num(summary.get("ci_mult")) or 2.0)
 
 
-def order(summary):
+def order(summary, pool=()):
     """Order fidelity against the scheme's **design** rate, one-sided.
+
+    With a ``pool``, and only on the SDE branch, the rate is read against the best
+    rate anyone demonstrated *on this problem* wherever the floor has stopped
+    discriminating -- see :func:`_order_against_pool` for the two guards and the
+    separation floor that gate that. Without one the reading is the absolute,
+    floor-relative one and nothing below changes; :func:`sqi_cert` passes no pool, so
+    **a certification never depends on a sibling plan's order study.** That is not a
+    convenience of the signature, it is the rule: an index a certification reads may
+    not move because another plan was added to the pool.
 
     **Only a shortfall counts.** This was two-sided, on the argument that overshoot is
     not a bonus: a 2nd-order scheme measuring 4.0 has a ladder outside its asymptotic
@@ -381,7 +391,20 @@ def order(summary):
         # measured from. `max(target, 0.5)` keeps the scale from collapsing on a
         # floor of zero.
         target = _num(summary.get("order_floor")) or design
-        return _clip01(1.0 - _shortfall(observed, target) / max(target, 0.5))
+        absolute = _clip01(1.0 - _shortfall(observed, target) / max(target, 0.5))
+        return _order_against_pool(summary, pool, absolute)
+    if _is_sde(summary) or any(_is_sde(s) for s in pool if isinstance(s, dict)):
+        # An SDE plan that declared **no** `scheme_family` and no `kind`, in a pool
+        # where some sibling did. It reaches neither branch above, so before 10o it
+        # could not reach the pool-relative reading either -- and that is not a corner
+        # case: on `sde_sciml_additive` **two of three plans** are in exactly this
+        # position, including the pool's best, so shipping the rule without this line
+        # left it inert on one of the two pools it was shipped for. The `absolute`
+        # value is computed by the generic branch below and is unchanged; only the
+        # pool comparison is reached, and only because a *pool* is one problem. This
+        # is the §10d vocabulary gap in a fourth place (10o).
+        return _order_against_pool(
+            summary, pool, _clip01(1.0 - _shortfall(observed, design) / design))
     if summary.get("scheme_family") == "spectral":
         # Not measurable, and not for want of numbers. A spectral method's error is
         # not C*h^p, so an order fitted off the ladder is a local slope with no
@@ -404,6 +427,129 @@ def order(summary):
 def _shortfall(observed, target):
     """How far ``observed`` falls short of ``target``, never how far it exceeds it."""
     return max(0.0, target - observed)
+
+
+def _is_sde(summary):
+    """Whether this summary is an SDE plan's, by declaration only.
+
+    The two tests :func:`order` already used, named once so the pool test and the
+    plan test cannot drift apart. Declared, never inferred: a plan's slug is not
+    evidence, which is the rule the whole module keeps.
+    """
+    return bool(summary.get("kind") == "sde"
+                or summary.get("scheme_family") in _SDE_FAMILIES)
+
+
+#: Combined standard errors of separation that the pool's two best measured orders
+#: must show before :func:`_order_against_pool` will read one against the other, and
+#: the unit the resulting shortfall is scaled in. One constant does both jobs: it is
+#: the resolution the order study is credited with, so the bar for *acting* on a
+#: separation and the scale a separation is *measured* in are the same number by
+#: construction.
+#:
+#: **5.0, and what the corpus can and cannot say about that** (plan-sciml-benchmark.md
+#: 10o). The nine sciml pools separate their top two orders by 0.2, 0.3, 0.6, 1.9,
+#: 3.6, 13.4, 15.6, 31.5 and 3166 sigma. The arm scores identically -- 8 of 9 pools,
+#: regret geomean 1.004, 0.379x against the C0 one-shot -- for **every value in
+#: ``[2, 13]``**, and falls to 7 of 9 at 14, where it stops firing on
+#: ``sde_sciml_nltest``: the 13.4-sigma, 622x pool this whole line of work exists to
+#: fix. So the corpus pins the ceiling and says nothing at all about the floor.
+#:
+#: 5.0 is therefore a **choice inside a measured window**, and the argument for it is
+#: not the score. At 2.0 the rule also fires on ``sde_sciml_stiffquad_mild``, whose
+#: top two are 3.6 sigma apart with all three plans within 0.25 of order 1.0 -- the
+#: thinnest evidence anywhere in the corpus, and a pool the ranker already gets right
+#: *without* this rule. Declining it costs nothing measurable and is the difference
+#: between a rule that acts on resolved separations and one that acts on any
+#: separation at all. 5.0 is the conventional "clearly resolved" figure, 2.7x below
+#: the pool that binds the ceiling and 1.4x above the pool it declines.
+#:
+#: It is deliberately **not** the corpus's own optimum, which would be the one thing
+#: 10f, 10h, 10m and 10o each say not to ship: a constant fitted to nine pools, on a
+#: holdout that cannot test it.
+MIN_ORDER_SEPARATION = 5.0
+
+
+def _order_against_pool(summary, pool, absolute):
+    """``absolute``, or the pool-relative reading where the floor carries no signal.
+
+    :func:`order` measures a shortfall against ``order_floor``, and on an SDE pool
+    where every plan clears its own floor that returns 1.0 for all of them. Measured
+    on ``sde_sciml_nltest`` (plan-sciml-benchmark.md 10l): three plans read strong
+    orders **0.9650 / 0.9981 / 1.5851**, ranking the pool exactly as the harness does
+    in all three positions, and the component mapped them to 1.000 / 0.998 / 1.000 --
+    tying the pool's best plan with its worst, while ``structure`` outweighed the one
+    component pointing the right way by 7.4x. The pool shipped a plan **622x** worse
+    than one it already held.
+
+    So where the floor has stopped discriminating, read the rate against the best rate
+    anyone demonstrated on the problem instead. Three things gate that, and each was
+    measured before it was written:
+
+    1. **No plan short of its floor by more than the gate's own band.** A real
+       shortfall is a finding about that plan and is not overruled by what the pool
+       managed. This never fires on any of the 18 recorded pools (largest shortfall
+       0.2296 against a band of 0.4) and is kept because the alternative is a rule
+       that silently stops being about floors at all.
+    2. **The top two separated by more than** :data:`MIN_ORDER_SEPARATION`
+       **combined standard errors.** Without this the rule is "higher order is
+       better", which §19 is explicit is wrong -- *an order far above the theoretical
+       one is noise, not a bonus*. One pool proves it load-bearing:
+       ``sde_sciml_linear_ito``'s top two read 0.98647 +/- 0.0096 and 0.98312 +/-
+       0.0150, 0.0033 apart, and the **lower** of them is that pool's best plan by
+       the harness's own measurement; with the guard disabled the pool flips and
+       undoes 10k.
+    3. **The shortfall scaled in those same standard errors**, not in the orders'
+       own magnitude. 10o found this the hard way: scaled by ``max(hi, 0.5)``, the
+       rule repairs ``sde_sciml_nltest`` only because its orders happen to differ in
+       the first decimal, and loses ``sde_sciml_additive``, whose top two are
+       2.0003835 and 1.9999994 -- about 3200 standard errors and 2.46x of harness
+       error apart, mapped to 1.0 and 0.999808, which ``structure`` then outvotes by
+       far more than the signal. A reading in units of the orders themselves is not
+       reading the order study.
+
+    What this is **not**: a claim that the pool's top rate is the right one. It is a
+    claim that a separation the ladder resolves is worth ranking on, and that an
+    unresolved one is not. Where either guard stands down the absolute reading is
+    returned unchanged, which is 4 of the 9 sciml pools and all 9 of the BENCHOP
+    holdout's -- every pool there holds an exact sampler with no order to measure, so
+    this function is structurally unreachable on that corpus and 10o is explicit that
+    it therefore carries no evidence either way from it.
+    """
+    summaries = [s for s in pool if isinstance(s, dict)]
+    if len(summaries) < 2:
+        return absolute
+    rows = []
+    for other in summaries:
+        # `order(other)` with no pool: the absolute reading, and None where the check
+        # was waived or abstained. A pool in which any plan has no order at all is one
+        # where there is no "best rate demonstrated here" to read against.
+        if order(other) is None:
+            return absolute
+        value = _num(other.get("observed_order"))
+        err = _num(other.get("observed_order_se"))
+        floor = _num(other.get("order_floor"))
+        if value is None or err is None or floor is None:
+            return absolute
+        rows.append((value, err, floor))
+    mine = _num(summary.get("observed_order"))
+    my_err = _num(summary.get("observed_order_se"))
+    if mine is None or my_err is None:
+        return absolute
+    if any(_shortfall(value, floor) > STRONG_BAND for value, _, floor in rows):
+        return absolute                                   # guard 1
+    top = sorted(rows, key=lambda row: -row[0])
+    (best, best_err, _), (second, second_err, _) = top[0], top[1]
+    gap_err = math.sqrt(best_err ** 2 + second_err ** 2)
+    if gap_err <= 0.0 or (best - second) <= MIN_ORDER_SEPARATION * gap_err:
+        return absolute                                   # guard 2
+    pair_err = math.sqrt(best_err ** 2 + my_err ** 2)
+    if pair_err <= 0.0:
+        # A zero-width ladder cannot express a significance, and dividing by it would
+        # make every plan but the top one score zero on no evidence at all.
+        return absolute
+    sigmas = _shortfall(mine, best) / pair_err
+    return _clip01(1.0 - sigmas / MIN_ORDER_SEPARATION)
 
 
 _SDE_FAMILIES = frozenset({"euler-maruyama", "milstein", "tamed-euler-maruyama",
@@ -560,7 +706,7 @@ def comparable_keys(tol, pool, keys=CERT_COMPONENTS):
 
 
 def components(summary, tol, pool=()):
-    return {"accuracy": accuracy(summary, tol), "order": order(summary),
+    return {"accuracy": accuracy(summary, tol), "order": order(summary, pool),
             "structure": structure(summary), "consistency": consistency(summary),
             "cost": cost(summary, pool) if cost_admissible(tol, pool) else None}
 

@@ -425,3 +425,131 @@ def test_an_abstained_sde_order_is_not_ranked_on():
                  "design_order": 1.0, "order_check": "unresolved"}
     assert RK.order(abstained) is None
     assert RK.order({**abstained, "order_check": "true"}) is not None
+
+
+# --- the pool-relative order reading (plan-sciml-benchmark.md 10l, 10m, 10o) ---
+
+
+def _sde_plan(order_, se, floor=1.0, headroom=0.3):
+    return {"kind": "sde", "observed_order": order_, "observed_order_se": se,
+            "order_floor": floor, "design_order": floor, "order_check": "true",
+            "invariant_worst_headroom": headroom}
+
+
+def test_a_pool_where_every_plan_clears_its_floor_is_read_against_the_pool():
+    """`sde_sciml_nltest`, the 622x pool, as the component sees it (10l).
+
+    `order` measures a shortfall against `order_floor`, so where every plan clears
+    its own floor it returns 1.0 for all of them and the pool's best plan ties its
+    worst -- even though the raw rates rank the pool exactly as the harness does in
+    all three positions. With the pool, the rates are read against the best one
+    anyone demonstrated on the problem instead.
+    """
+    pool = [_sde_plan(0.9650, 0.0313, 0.5), _sde_plan(0.9981, 0.00034, 1.0),
+            _sde_plan(1.5851, 0.0438, 0.5)]
+
+    assert [RK.order(s) for s in pool] == [1.0, 0.9981, 1.0], (
+        "without a pool, nothing changes -- and this is the defect")
+
+    with_pool = [RK.order(s, pool) for s in pool]
+    assert with_pool[2] == 1.0, "the best rate demonstrated here anchors the scale"
+    assert with_pool[0] < 1.0 and with_pool[1] < 1.0, with_pool
+
+
+def test_a_certification_never_reads_a_sibling_plans_order_study():
+    """The rule the signature enforces: `sqi_cert` passes no pool.
+
+    An index a certification depends on must not move because another plan was added
+    to the pool. That is why the pool argument is opt-in rather than threaded
+    everywhere, and it is pinned here because the failure would be silent -- a
+    certified score that changes when a sibling is re-run.
+    """
+    pool = [_sde_plan(0.9650, 0.0313, 0.5), _sde_plan(1.5851, 0.0438, 0.5)]
+    alone = RK.sqi_cert(pool[0], 1e-2)
+    assert RK.order(pool[0], pool) < RK.order(pool[0]), (
+        "the pool reading is strictly lower here, so a leak would be visible")
+    assert RK.sqi_cert(pool[0], 1e-2) == alone
+
+
+def test_the_pool_reading_stands_down_on_a_real_shortfall():
+    """Guard 1. A plan genuinely short of its floor is a finding about that plan, and
+    is not overruled by what the rest of the pool managed. The band is the gate's own
+    `crn.STRONG_BAND`, not exact equality: every shortfall recorded across the 18
+    pools is inside it, and testing `min(...) == 1.0` instead excluded a pool on a
+    0.00195 miss (10l).
+    """
+    pool = [_sde_plan(0.9650, 0.0313, 0.5), _sde_plan(1.5851, 0.0438, 0.5),
+            _sde_plan(0.40, 0.01, 1.0)]
+    assert [RK.order(s, pool) for s in pool] == [RK.order(s) for s in pool]
+
+
+def test_the_pool_reading_needs_the_top_two_resolved_by_the_separation_floor():
+    """Guard 2 and `MIN_ORDER_SEPARATION`, which is the one number here chosen rather
+    than measured, and the reason is in its own docstring.
+
+    `sde_sciml_linear_ito`'s top two read 0.98647 +/- 0.0096 and 0.98312 +/- 0.0150 --
+    0.0033 apart against a combined standard error of 0.0178 -- and the **lower** of
+    them is that pool's best plan by the harness's own measurement. Firing there
+    would undo 10k. `sde_sciml_stiffquad_mild`'s 3.6 sigma is the other side of the
+    line: resolved, but not by enough to overrule `structure`, and the shipped ranker
+    already gets that pool right without this rule.
+    """
+    unresolved = [_sde_plan(0.48040, 0.01523, 0.5), _sde_plan(0.98647, 0.00960, 1.0),
+                  _sde_plan(0.98312, 0.01504, 0.5)]
+    assert [RK.order(s, unresolved) for s in unresolved] == [
+        RK.order(s) for s in unresolved], "0.2 sigma apart"
+
+    # M06's shape: 3.6 sigma, which this floor declines and a 2-sigma one would take.
+    thin = [_sde_plan(0.7527756, 9.7e-03, 0.5), _sde_plan(1.0025352, 2.3e-04, 1.0),
+            _sde_plan(1.0068032, 1.2e-03, 1.0)]
+    assert [RK.order(s, thin) for s in thin] == [RK.order(s) for s in thin], (
+        "3.6 sigma is inside the separation floor")
+
+    # And M02's: ~3200 sigma, which it takes.
+    wide = [_sde_plan(1.000709, 3.4977e-08), _sde_plan(2.0003835, 7.2051e-08),
+            _sde_plan(1.9999994, 9.7584e-08)]
+    assert [RK.order(s, wide) for s in wide] == [0.0, 1.0, 0.0], (
+        "a separation of thousands of sigma is not a tie, whatever its magnitude")
+
+
+def test_the_shortfall_is_scaled_in_standard_errors_not_in_the_orders_magnitude():
+    """The correction 10o made to 10m's reading, and the whole reason this scale.
+
+    `sde_sciml_additive`'s top two are 2.0003835 and 1.9999994: about 3200 combined
+    standard errors apart and 2.46x apart by the harness. Scaled by the orders' own
+    magnitude the component maps them to 1.0 and 0.999808, and `structure` at weight
+    0.20 outvotes `order` at weight 0.25 by far more than the 0.000192 of signal it
+    was handed -- the index misses by 0.00062. Scaled in standard errors it does not.
+    """
+    wide = [_sde_plan(1.000709, 3.4977e-08), _sde_plan(2.0003835, 7.2051e-08),
+            _sde_plan(1.9999994, 9.7584e-08)]
+    magnitude = 1.0 - max(0.0, 2.0003835 - 1.9999994) / 2.0003835
+    assert round(magnitude, 6) == 0.999808, "what the magnitude scale would give"
+    assert RK.order(wide[2], wide) == 0.0, "and what the significance scale gives"
+
+    index = RK.sqi(wide[2], 1e-2, wide,
+                   keys=RK.comparable_keys(1e-2, wide))[0]
+    best = RK.sqi(wide[1], 1e-2, wide, keys=RK.comparable_keys(1e-2, wide))[0]
+    assert best > index, "so the pool's best plan now has the higher index"
+
+
+def test_an_sde_plan_that_declared_no_family_still_reaches_the_pool_reading():
+    """The bug that shipped the rule inert on half the pools it was for (10o).
+
+    `order`'s SDE branch tests the **plan's** `kind`/`scheme_family`, and on
+    `sde_sciml_additive` two of three plans declare neither -- including the pool's
+    best. Hooked inside that branch, the pool reading was unreachable for exactly the
+    plans it had to compare. A pool is one problem, so the SDE test is the pool's.
+    """
+    undeclared = {"observed_order": 1.9999994, "observed_order_se": 9.7584e-08,
+                  "order_floor": 1.0, "design_order": 1.0, "order_check": "true",
+                  "invariant_worst_headroom": 0.3}
+    pool = [_sde_plan(1.000709, 3.4977e-08),
+            {**undeclared, "observed_order": 2.0003835,
+             "observed_order_se": 7.2051e-08},
+            undeclared]
+    assert RK.order(undeclared) == 1.0, "on its own it reaches the generic branch"
+    assert RK.order(undeclared, pool) == 0.0, (
+        "in an SDE pool it reaches the comparison")
+    assert not RK._is_sde(undeclared) and RK._is_sde(pool[0]), (
+        "and it is the sibling's declaration that carries it, never a slug")

@@ -1,7 +1,51 @@
 # Notable SDE Problems — a Recognition Suite
 
-**Status:** **researched and drafted 2026-11-12 — nothing implemented.** This is a plan only: no
-problem entry, no harness change, no run. Every number below is either derived here and marked
+**Status:** **drafted 2026-11-12; rev 1 2026-11-13; rev 2–3 2026-11-14 — H-N2 and H-N3
+implemented, step 2 done for three of its four remaining entries.** No problem entry and no run yet.
+
+**Rev 3 `[2026-11-14]` runs step 2** (§2b): the truth derivations for N05, N06 and N07, plus H-N2
+(suite registration). Four of its six findings overturn the plan. **N06's premise was wrong** — the
+"explicit solution" its route rested on is for a *telegraph-noise ODE*, proved with ordinary
+calculus, and the Brownian model does not reduce; but the logit chart makes the noise **additive**,
+which is a better truth route than the one assumed, and is also the technique the entry punishes a
+solver for missing. **N06 is nearly vacuous at `T = 1`** — the mean moves 3.59% from `I0` against a
+5% gate, so returning the initial condition passes. **N05's mean is exactly vacuous** (0.00e+00
+sensitivity to all four jump and volatility parameters) and **its proposed control is not a
+control** (0.28× the gate on the mean; 19× on the price, where it belongs). And **N07's
+`(γ, ω)` is `(1, 4)`, not the `(2, 5)` the plan proposed**, because only 3 of 30 pairs clear all
+three constraints at once and the plan's pair is near-stationary. N03 remains blocked on step 1's
+parameters. Every truth route is validated against something independent — the generalised
+Kolmogorov solver reproduces the shipped double-well truth to **2.8e-15**.
+
+**Rev 2 `[2026-11-14]` ships H-N3** — §4a has the measured record. The SDE routes now run structure
+diagnostics and a declared gate fails the run, which is the item rev 1 left as the only
+record-corrupting one open. The gate separates a correct scheme from a one-decision-wrong one by
+**34.5×**, the widest in the repo (BENCHOP's narrowest is 6.8×, SciML's 4.4×), and the statistic it
+gates was **chosen by measurement**: the per-path amplitude drift, which is the stronger
+mathematical statement, turns out to be the weaker instrument at 4.7×, because it charges a correct
+but non-conservative scheme for its own `O(dt)` variance. Three pre-existing defects came out of
+building it, and the middle one matters beyond this suite: **a solver returning the wrong number of
+components passes the moment route** — an `(n, 3)` sample on a `state_dimension: 2` problem scores
+`ok`/`passed: True` on all 24 SDE problems on record. It is recorded with its test and not fixed
+here. 1343 tests pass; the fold is inert on all 75 entries and every manifest entry hashes
+identically.
+
+**Rev 1 `[2026-11-13]` revises the plan against the SciML rev 11–20 work, and withdraws one of its
+own recommendations.** Three changes, in order of weight. **§2a is new**: SciML ended on one
+unshipped candidate — the pool-relative order reading, measured at 7 of 9 pools and 0.419× against
+the one-shot — which it declined to ship because settling it *"needs a corpus whose pools are
+discretisation schemes rather than exact samplers"*, `order` being comparable on 0 of 9 BENCHOP
+pools. This suite can be that corpus, but four of its ten entries have an exact sampler as the best
+answer and would reproduce the blindness, so the ten are now split and the **order-bearing five run
+first**. **H-N6 is withdrawn**: rev 1 of this plan told the owner to apply `score_cap` before the
+first run; SciML rev 16 then retired that defect as a **false positive** — the `num_paths` it
+objected to is the harness's own call parameter, which a solver cannot choose, and applying the cap
+would have taken seven of nine entries from a harness-verified 10/10 to a 3. The real fault was the
+attribution, fixed by a third severity (`findings.SPEC`) that reports without capping. **And one of
+this suite's design risks was removed before it was run into**: the strong-order gate was two-sided,
+capping plans for converging *faster* than their floor, which is the exact shape of N01's and N07's
+correct schemes (§10, prediction 3). After rev 1 the only item in §4 still of the
+record-corrupting kind is **H-N3**, re-verified open today. Every number below is either derived here and marked
 `[derived]`, read from the shipped code and marked with its file and line, or named as a
 measurement a step has to make and marked `[to measure]`. Nothing is quoted from recall without
 saying so.
@@ -158,6 +202,184 @@ Each subsection below gives the equation, the parameters, the truth, the one-dec
 that calibration must fail (§5), and the vacuity check (§1 rule 6). Parameters marked `[to fix]`
 are chosen in step 2 from the cited source rather than invented here, because a parameter set a
 referee can look up is worth more than one that suits the gate.
+
+### 2a. The split that makes this suite answer SciML's open question `[rev1 2026-11-13, N]`
+
+This section was added after `plan-sciml-benchmark.md` reached rev 20, and it changes how the suite
+should be run rather than what is in it.
+
+SciML's step-10 work ends on one unshipped candidate. Its §10m prices three fixes for the ranking
+defect that cost M05 a 622× regret; two are withdrawn as measured-harmful, and the third — the
+**pool-relative order reading**, which judges a plan's strong order against the best rate anyone
+demonstrated on that problem rather than against a floor every plan clears — takes the arm to
+**7 of 9 pools and 0.419×** against the one-shot. It is **recorded as the strongest candidate the
+project has measured and deliberately not shipped**, for a reason that is structural and stated as a
+measurement:
+
+> `order` is in the comparable set of **8 of 9** sciml pools and **0 of 9** holdout ones (every
+> holdout pool holds an exact sampler with no order to measure) … settling it needs a corpus whose
+> pools are discretisation schemes rather than exact samplers.
+
+**This suite can be that corpus, but only if it is built to be.** Four of the ten entries have an
+exact sampler as their best answer — which is precisely the property that makes BENCHOP structurally
+incapable of settling the question. If those four dominate, the notable suite inherits BENCHOP's
+blindness and the rule stays unpriceable.
+
+So the ten split in two, and the split costs nothing but a label:
+
+| | Entries | Why `order` is comparable, or not |
+|---|---|---|
+| **Order-bearing** — every plausible plan is a discretisation | **N01, N03, N04, N06, N07**, and N10 | No exact transition law is reachable. N01 *is* a strong-order problem by construction; N03, N04 and N06 have no samplable law at all; N07's splitting schemes differ precisely in order of invariant-measure bias |
+| **Exact-sampler** — the best answer carries no order | **N02, N05, N08, N09** | N02 is a rotation in `W(T)`; N05 is lognormal × a Poisson product; N08 steps the CIR variable exactly; N09 samples `ln A` as a Gaussian. All four are `sde_manual.md` rule 0 situations |
+
+Three consequences, in order of how much they change the plan:
+
+1. **Run the order-bearing five (six with N10) first, in `scheme-matched`.** They are the measurement
+   SciML could not make, and they are worth more than the suite's recognition value on their own. A
+   corpus of five pools where `order` is comparable is not large, but it is five more than BENCHOP
+   offers and it is *not* the nine the candidate rule was fitted on — which is exactly the holdout
+   property §10h and §10m hold their fixes to.
+2. **The exact-sampler four are the control group, not the headline.** That matches §7's reading of
+   them: they measure recognition. They also form a second, smaller holdout with BENCHOP's structural
+   property, so the pool-relative rule must leave them bit-identical for the same reason it leaves
+   BENCHOP alone — a prediction with a sharp right answer, added to §10 as prediction 8.
+3. **The suite's framing in the paper gains a second leg.** Not only "ten recognisable problems",
+   but "the corpus on which the ranking rule the project could not settle was settled, in either
+   direction". A negative result there is publishable too, and cheaper than it looks: the pools come
+   from runs §8 is doing anyway.
+
+### 2b. Step 2 as implemented — the derivations `[rev3 2026-11-14, X]`
+
+**Done for N05, N06 and N07; N03 is blocked on step 1.** Five truths were already
+measured in rev 1 (`derivations_check.py`: N01, N02, N04, N08, N09). Rev 3 adds
+[`n07_langevin.py`](notable-sde-data/n07_langevin.py),
+[`n05_merton.py`](notable-sde-data/n05_merton.py) and
+[`n03_n06_kolmogorov.py`](notable-sde-data/n03_n06_kolmogorov.py). **H-N2 is also
+shipped** — `setup.py:521` now reads `SUITES = ("main", "no-closed-form", "benchop",
+"sciml", "notable")`, `--suite notable --list` answers, and `--suite main` still
+selects 49.
+
+Six findings, and four of them overturn the plan rather than confirming it.
+
+**Finding 1 — N06's premise was wrong, and the replacement is better.** `[C]` The plan
+said *"The equation is reducible — a stochastic logistic, solvable in closed form"*.
+Read at source, the explicit solution that line rests on
+([the 2012 JMAA paper](https://strathprints.strath.ac.uk/40698/1/SIS_MS_final.pdf),
+Theorem 2.1, eq. 2.5) is for **equation (2.3)**, `dI/dt = I[α_{r(t)} − β_{r(t)} I]` — a
+*deterministic ODE with piecewise-constant random coefficients*, whose proof
+substitutes `y = 1/I` and applies the **ordinary** variation-of-constants formula.
+There is no Itô calculus in it and it does not apply to the Brownian model. And the
+Brownian model does not reduce that way: with `y = 1/I` and Itô,
+
+    dy = [(σ²N² − α) y + (β − 2σ²N) + σ²/y] dt − σ(N y − 1) dW
+
+the noise is linear in `y` but the `σ²/y` term is not affine, so it does not
+linearise; the logit chart fails the same way in `I`. The live literature on
+positivity-preserving schemes for this exact model is consistent with there being no
+closed form.
+
+**The plan's pre-registered fallback is not needed, because a better route exists.**
+The logit chart `Z = ln(I/(N−I))` does not linearise the equation but makes its noise
+**additive** — constant `σN` — so the Kolmogorov solve runs in a constant-diffusion
+operator on the real line instead of one that degenerates at both ends of `(0,N)`.
+**The chart is also the technique the entry punishes a solver for not finding**
+(`Lamperti` appears 0 times in `sde_manual.md`, §3), so the truth route and the lesson
+coincide. N06 keeps its 2011 SIAM citation and its mechanism; only its route changes,
+from "MC of the explicit solution" to "Kolmogorov in the Lamperti chart".
+
+**Finding 2 — N06 is nearly vacuous at `T = 1`, which is rule 6 earning its keep.**
+At the scale taken from the 2012 paper's Example 6.1 (`N = 100`, `β = 0.004`,
+`μ = 0.05`, `γ = 0.15`, so `α = 0.2` and the deterministic equilibrium is 50), with
+`I0 = 60`, `σ = 0.0025`:
+
+    E[I_T] = 57.8453     I0 = 60     equilibrium = 50
+
+The mean moves **3.59% from `I0`, which is 0.72× the 5% mean gate** — so a solver that
+returns the initial condition unchanged *passes the mean gate*. The variance (28.09)
+is not vacuous. **`T` must be raised** (the equilibrium is 16.7% from `I0`, so the
+mean has somewhere to go) or the variance must be the deciding gate. Flagged for step
+5 rather than fixed here, because the horizon interacts with the step budget
+(`dt = 0.04/T`).
+
+**Finding 3 — N06's truth is a `reference`, not an `exact`.** The three solves
+(`N = 160, 192, 256` over `z ∈ [−6,6]` and `[−8,8]`) spread by **5.9e-07 relative**,
+not the 1e-10 the double-well reaches, because the `(μ+γ)/(N−I)` term in the chart
+drift stiffens as `I → N`. That is still 160× inside the independent MC cross-check
+and three orders inside any gate, but it must be **declared as a measured
+`reference_error`** — `verify.py` refuses a reference without one, and claiming
+`exact` here would be the kind of unearned precision §6 exists to catch. Two
+independent fine-step Monte Carlos, one in each chart, agree with it to 9.4e-05 and
+1.2e-04 relative.
+
+**Finding 4 — N05's mean is *exactly* vacuous, and its proposed control is not a
+control.** `[C]` Both halves of what §2 (N05) proposed are wrong. The mean: `E[X_T] =
+S0·e^{μT}` for every `λ`, `m`, `δ` and `σ`, and perturbing each by 10% moves it by
+**0.00e+00** while moving the variance by 0.5–8.3%. The control: dropping the
+compensator moves the mean by **1.385%, i.e. 0.28× the 5% gate — it passes**. Measured
+on the gates that actually decide:
+
+| control | mean | price | price error |
+|---|---|---|---|
+| compensator dropped | 1.385% (0.28× gate, **passes**) | 3.557893 | **18.98%** |
+| jump channel omitted entirely | 0.000% | 3.635070 | **17.22%** |
+
+against a 1% functional gate, **19.0× and 17.2×**. So N05 is graded on the price and
+the second moment, the mean is recorded, and the controls are priced on the price. (At
+`λ = 1`, `T = 1` the mean control would work — 73.3%, 14.7× the gate — but that is not
+the published parameter set, and the published one is worth more than a convenient
+control.)
+
+**Finding 5 — N05's price is confirmed by two method families and a sampler**, which
+is the discipline `benchop.py` applies to a published number. At the
+d'Halluin–Forsyth–Vetzal set (`S0 = K = 100`, `r = 0.05`, `σ = 0.15`, `T = 0.25`,
+`λ = 0.1`, `m = −0.90`, `δ = 0.45`; `[to confirm against the source in step 6]`):
+
+| route | value |
+|---|---|
+| Merton's Poisson-weighted Black–Scholes series | 4.3912456892 |
+| direct quadrature of the lognormal mixture (no BS formula) | 4.3912456892 — **1.6e-14** apart |
+| Monte Carlo of the exact solution, 4M paths | 4.393054 ± 0.002755 — **0.66 σ** |
+
+**Finding 6 — N07's `(γ, ω)` is `(1.0, 4.0)`, not the `(2.0, 5.0)` the plan proposed,
+and the sweep is a three-way constraint rather than a one-way one.** `[C]` Three
+things must hold at once and they pull against each other: Euler–Maruyama must be
+**linearly stable** (`ρ(I + A·dt) < 1`, i.e. `γ > ω²dt`) or its error is a divergence
+and the control is loud, which §5 rules out; EM's variance error must **exceed** the
+gate; and `Var(q,T)` must sit **far from the stationary value** or the entry is
+answerable by returning the Gibbs variance. **Only 3 of 30 pairs satisfy all three.**
+
+| | γ=1, ω=4 (**chosen**) | γ=2, ω=5 (the plan's) | γ=1, ω=8 (widest separation) |
+|---|---|---|---|
+| `ρ(EM)` | 0.9928 — stable | 0.9798 — stable | 1.0307 — **unstable** |
+| from stationary | **42.0%** = 4.2× gate | 13.6% = 1.4× gate | 3.65× gate |
+| EM error | 0.2816 = **2.8× gate** | 0.4995 = 5.0× gate | 2.47 = 24.7× gate |
+| BAOAB error | 0.00079 = gate/127 | 0.0003 | 0.0006 |
+| verdict | **admissible** | **near-stationary** | EM diverging |
+
+The plan's pair is rejected for vacuity: at `(2,5)` the terminal variance sits 1.4
+gate-widths from the Gibbs value, so returning the stationary law would pass. And the
+eye-catching separations — up to 3852× — are **all** in the regime where EM is
+linearly unstable, so they measure a blow-up rather than a bias. Separation at the
+chosen pair is 356×, with EM failing by 2.8× and BAOAB clearing by 127×.
+
+**The truth routes themselves are validated, not asserted.** N07's exact moments agree
+between Gauss–Legendre quadrature of the stochastic convolution and `solve_ivp` on the
+covariance ODE to **1.3e-15**, are flat between 200 and 400 quadrature nodes to
+4.6e-16, and reproduce the closed-form Gibbs covariance as `t → 200` to **1.5e-12**.
+And the generalised Kolmogorov solver — `problems._kolmogorov_1d` extended from a
+polynomial drift and constant `σ` to callable `b(x)`, `s(x)` — **reproduces the
+shipped `sde_double_well_langevin` truth to 2.8e-15 (mean) and 1.4e-14 (variance)**,
+which is the point: the generalisation is checked against an answer
+`validate_ground_truth.py` already cross-checks three other ways.
+
+**N03 is the one entry step 2 could not finish.** Its machinery runs — the Kolmogorov
+solve is resolution- and domain-independent to 8 figures on a provisional parameter
+set — but the **published parameters are still owed by step 1**, and a provisional set
+must not reach `problems.py`. One conditioning finding is recorded for whoever
+finishes it: the `α₋₁x⁻¹` drift makes the operator singular as `x → 0`, so the left
+end of the interval cannot simply be pushed to zero the way the double-well's can.
+
+---
 
 ### N01 — Clark–Cameron
 
@@ -365,16 +587,19 @@ step 6 cross-checks by a second method family — a Fourier/COS inversion, the d
 `benchop.py` already applies to the 24 published values.
 
 **One-decision-wrong control.** Correct: a jump-adapted or fixed-grid scheme with the compensator in
-the drift. Wrong by one decision: the same scheme with `lambda·kappa` dropped, which multiplies the
-mean by `e^{lambda kappa T}`. Parameters are chosen in step 2 so that factor is several times the 5%
-mean gate — a control whose size is a free parameter is one the plan should set deliberately rather
-than discover.
+the drift. Wrong by one decision: the same scheme with `lambda·kappa` dropped. ~~Parameters are
+chosen in step 2 so that factor is several times the 5% mean gate.~~ **Measured in step 2 and
+corrected (§2b finding 4): at the published parameter set the control moves the mean by 1.385%,
+which is 0.28× the gate — it passes.** On the price it is 18.98%, and omitting the jump channel
+altogether is 17.22%, against a 1% functional gate. The control is priced on the price, which is
+also the gate the entry is decided on.
 
-**Vacuity.** `E[X(T)] = X0 e^{mu T}` is independent of `lambda`, `m`, `delta` and `sigma`: the mean
-alone is answerable without simulating a single jump. The *variance* and the call price are not. So
-the mean is recorded and the gate that decides this entry is the second moment and the functional.
-Naming this here is the point of rule 6: an entry graded on its mean would have looked fine and
-measured nothing.
+**Vacuity — predicted here, then measured.** `E[X(T)] = X0 e^{mu T}` is independent of `lambda`,
+`m`, `delta` and `sigma`: the mean alone is answerable without simulating a single jump. Step 2
+confirms it exactly — perturbing each of the four by 10% moves the mean by **0.00e+00** and the
+variance by 0.5–8.3% (§2b finding 4). So the mean is recorded and the gates that decide this entry
+are the second moment and the functional. Naming this here is the point of rule 6: an entry graded
+on its mean would have looked fine and measured nothing.
 
 ### N06 — Stochastic SIS epidemic
 
@@ -387,17 +612,18 @@ Parameters `[to fix]` from Gray, Greenhalgh, Hu, Mao & Pan (2011), *SIAM J. Appl
 staple of the mathematical-biology literature, and the authors prove extinction/persistence
 thresholds and derive the mean and variance of the stationary distribution **[W]**.
 
-**Truth: a discretization-free Monte-Carlo of the explicit solution.** The equation is reducible —
-a stochastic logistic, solvable in closed form as a ratio whose numerator is a geometric Brownian
-exponential and whose denominator is a time integral of it. Step 2 writes that solution out from the
-paper and the plan does **not** assert its form from recall here. If the integral in the denominator
-has no exactly samplable law — it will not — then the route is the `ginzburg_landau` one: Monte
-Carlo of the exact solution with the time integral resolved far finer than any graded step, with the
-standard error measured and the tolerance widened by `REFERENCE_TOL_FACTOR = 3.0`
-(`benchmark/README.md`, "reference"), and anchored against the paper's stationary mean and variance
-at long horizon as an independent check. **If step 2 finds the explicit solution does not reduce
-this cleanly, N06 is replaced by the stochastic Verhulst/logistic equation of Kloeden–Platen §4.4,
-whose explicit solution is textbook** — the same mechanism with a weaker citation.
+**Truth `[rev3 2026-11-14, C]`: a Kolmogorov solve in the Lamperti chart.**
+~~A discretization-free Monte-Carlo of the explicit solution. The equation is reducible — a
+stochastic logistic, solvable in closed form.~~ **Measured in step 2: it is not** (§2b finding 1).
+The explicit solution this route rested on belongs to a *deterministic ODE with telegraph noise*,
+and the Brownian model does not reduce — `y = 1/I` leaves a `σ²/y` term in the drift. **The
+pre-registered fallback to the stochastic Verhulst equation is not needed**, because the logit chart
+`Z = ln(I/(N−I))` makes the noise **additive**, which gives a better-conditioned Kolmogorov solve
+than the plan assumed: in `I` the diffusion vanishes at both ends of `(0,N)` and the operator
+degenerates there. N06 keeps its citation and its mechanism; only the route changes. The truth is a
+**`reference` with a measured error of 5.9e-07 relative**, not an `exact` — the `(μ+γ)/(N−I)` term
+stiffens as `I → N` — cross-checked by two independent fine-step Monte Carlos, one in each chart, to
+9.4e-05 and 1.2e-04.
 
 **The decision it punishes.** The diffusion `sigma·I(N-I)` is superlinear in `I`, so plain
 Euler–Maruyama is not merely inaccurate: Hutzenthaler–Jentzen–Kloeden divergence applies and the
@@ -405,16 +631,26 @@ moments blow up. The domain `(0,N)` has two attainable-looking ends. Correct: a 
 (the process is reducible, so one exists), taming, or an implicit step. Wrong by one decision: the
 untamed explicit step.
 
+**Vacuity `[rev3 2026-11-14, N]`.** At `T = 1` and the scale of the 2012 paper's Example 6.1, the
+mean moves only **3.59% from `I0`, which is 0.72× the 5% mean gate** — a solver returning the
+initial condition unchanged passes it (§2b finding 2). `T` must be raised, or the variance must be
+the deciding gate. Settled in step 5, because the horizon trades against the step budget
+(`dt = 0.04/T`).
+
 **Overlap, stated.** `sde_quintic_drift_noise` and `sde_ginzburg_landau_s4/s6` already punish
 untamed Euler on a superlinear coefficient. N06 adds the citation and the bounded domain; it does
-not add a mechanism. If the suite has to lose an entry to cost, this is the one to lose.
+not add a mechanism. If the suite has to lose an entry to cost, this is the one to lose — though
+step 2 has now made it the only entry whose truth route *is* the technique it tests.
 
 ### N07 — Underdamped Langevin at moderate friction (BAOAB)
 
     dq = p dt
     dp = ( -omega² q - gamma p ) dt + sqrt(2 gamma / beta) dW,      (q,p)(0) = (1, 0)
 
-Proposed `omega = 5`, `gamma = 2`, `beta = 1`, `T = 1` `[to fix by calibration]`.
+~~Proposed `omega = 5`, `gamma = 2`, `beta = 1`, `T = 1`.~~ **Set by the step-2 sweep
+(§2b finding 6): `gamma = 1`, `omega = 4`, `beta = 1`, `T = 1`.** The proposed pair is rejected for
+vacuity — at `(2, 5)` the terminal variance sits 1.4 gate-widths from the stationary value, so
+returning the Gibbs law would pass.
 
 **Why it is notable.** Underdamped Langevin dynamics is the workhorse of molecular sampling, and
 BAOAB is a household name in that field: Leimkuhler and Matthews (2012/2013) compared Langevin
@@ -435,13 +671,15 @@ smaller at the same step. Correct: BAOAB (or OBABO, or an exact Ornstein–Uhlen
 the `p` leg). Wrong by one decision: the same splitting with the `O` step replaced by an explicit
 Euler drag update.
 
-**The design risk, stated plainly.** The verifier re-runs at `min(dt, 0.04/T)` —
-`verify.py:271–278` — so at `T = 1` the graded step is at most `0.04`, and whether EM's bias at
-`dt = 0.04` exceeds the 10% variance gate is a *measurement*, not a certainty. Two parameters are
-free (`gamma`, `omega`) and step 5 sets them from the calibration sweep, under the repo's rule that
-a gate is never moved after seeing where a scheme landed. **If no `(gamma, omega)` separates a
-correct splitting from EM inside the step budget, N07 ships graded on the stationary measure at
-long `T` instead, and the vacuity problem that creates is handled as in N03.**
+**The design risk, stated plainly — and it was real, in a direction the plan did not predict.**
+The verifier re-runs at `min(dt, 0.04/T)` (`verify.py:271–278`), so the graded step is at most
+`0.04` and whether EM's bias exceeds the 10% variance gate is a measurement. It does, easily — but
+**the binding constraint turned out to be vacuity and EM's linear stability, not the separation**
+(§2b finding 6). Only **3 of 30** `(gamma, omega)` pairs clear all three at once: EM stable
+(`ρ(I + A·dt) < 1`, i.e. `gamma > omega²·dt`), EM's error above the gate, and `Var(q,T)` far from
+the Gibbs value. The eye-catching separations — up to 3852× — are all in the regime where EM is
+*diverging* rather than biased, which §5 rules out as a loud control. At the chosen pair the
+separation is 356×, EM failing by 2.8× and BAOAB clearing by 127×.
 
 **Overlap, stated.** `sde_stochastic_oscillator` (2-D, noise in the velocity) and `sde_ou_stiff`
 each cover part of this. What is new is the friction term and the invariant-measure framing, which
@@ -606,7 +844,7 @@ reference and a 4× finer left-point reference agree to within the declared erro
 (`setup.py:488–497`), the four-suite paragraph in `report.py:817–826`. **Acceptance:**
 `run.py --suite notable --list` prints ten problems and `--suite main` still prints 49.
 
-### H-N3 — a structural invariant gate on an SDE problem · **required by N02**
+### H-N3 — a structural invariant gate on an SDE problem · **required by N02** · **SHIPPED 2026-11-14, see §4a**
 
 `diagnostics` with `gate=True` exists (`benchmark/README.md`, "A problem may also declare"), but
 every current user is a PDE. N02 needs `|X(T)| == |X(0)|` to within a tolerance as a gate on an SDE
@@ -626,6 +864,18 @@ authored — if an SDE invariant cannot be made to fail, N02 loses its structura
 its moment gate, which is still a 172% separation (§2, N02) but no longer a second, independent
 check.
 
+**Premise re-verified 2026-11-13** `[rev1, N]`, after the rev 11–20 SciML work closed everything
+else in §4: `invariant_worst_headroom` is written by `kernel/driver.py:339` and
+`kernel/sde/driver.py:296`, read by `ranking.py:431` as the `structure` component and by `cli.py:765`
+for display, and **by nothing that fails a plan** — `grep -rn 'invariant_worst_headroom\|invariant_max_drift'`
+over `verifylib/` returns ranking, recording and display sites only. So M08's behaviour is intact and
+H-N3 is now **the only item in §4 of the second kind** (a defect that corrupts the record rather than
+defining the measurement). It is also newly interesting rather than merely necessary: rev 20 measured
+`structure` to be *simultaneously* what ruins M05's ranking and what carries M02, M03, M06 and M07,
+which withdrew one candidate fix as harmful. N02 would add the first entry whose `structure`
+component is an exactly known invariant rather than a diagnostic of convenience — i.e. the first
+pool where that component's value can be checked against a right answer.
+
 ### H-N4 — the vacuity guard on the moment and functional routes · **required by rule 6**
 
 `validate_ground_truth.py:434–443` refuses a vacuous *pathwise* entry. N05's mean is independent of
@@ -642,35 +892,117 @@ is a finding and it goes in the plan, not a patch to the check.)*
 N05 needs no harness change (§2, N05). A jump channel on the pathwise route would need one and is
 listed in §11 as not done.
 
-### H-N6 — two prerequisites inherited from the SciML runs · **blocking, not new**
+### H-N6 — the SciML prerequisites · **resolved 2026-11-13, and not the way this plan asked for**
+`[rev1 2026-11-13, C]`
 
-`plan-sciml-benchmark.md` §7a defects 9 and 10 were still open at this plan's drafting, and this
-suite inherits both:
+**Withdrawn.** Rev 1 of this plan said: *"fix defects 9 and 10 before step 8"*, reasoning that a
+suite with no measured baseline has nothing for the fix to invalidate, so fixing is free now and
+expensive later. The reasoning about *timing* was right and the premise under it was wrong, and
+`plan-sciml-benchmark.md` rev 16–17 `[2026-11-13]` is the measurement that shows it.
 
-- **`score_cap` is set and recorded but never applied.** Measured: `verify.py:2489` sets
-  `result["score_cap"] = 3` on a ledger violation, `run.py:525` copies it into the record, and
-  `grep -rn score_cap benchmark/ verifylib/` returns those two sites and no third. Nothing reads it.
-- **The formulator-written `num_paths`.** `run.py:660` prefers the harness run's `num_paths` over
-  the problem's, which is the path by which a plan's own count reached a graded number.
+**Defect 9 is retired as a false positive.** The `num_paths = 1000` the cap objected to is the
+**harness's own call parameter**: `problems.py`, the brief's own `solve_sde(num_paths=1000, …)` line
+and the executed run agree on all nine entries, and `runner.run_solver` builds `spec["call"]` and
+then copies `run_meta` out of it — so a solver cannot influence the field it was being capped on.
+The cap tracks the *formulator's* `evaluation_thresholds.num_paths` instead, at **cap ⟺ declared ≠
+executed, 9 of 9**, with M05 and M09 — the only two whose formulator declared correctly — the only
+two uncapped. **All seven capped entries were graded 10/10 by the harness independently.** So
+applying the cap, which is exactly what this plan asked for, would have taken seven of nine entries
+from a harness-verified 10 to a 3 on a number they never chose.
 
-Neither is this plan's to fix, and both change what a verdict on this suite would mean. **Step 0 is
-to confirm their status and, if still open, record that the suite's scores are uncapped** — rather
-than discovering it afterwards, which is what happened on seven of eight SciML entries.
+**Defect 10 was the real one, and the fix is an attribution rather than a cap.** Rev 17 adds
+`findings.SPEC`, a third severity for a finding that is certain and is about *someone other than the
+solver* — the gate/warn split had no room for it, both halves being claims about the solver
+differing only in reliability. All four SDE run-parameter findings now raise that way and land in
+`ledger_spec_defects` with no cap (`run.py:732`'s whitelist, with the reasoning in the comment).
+Re-audited: **7/9 capped → 0/9, with the same 7/9 still reporting the defect.** PDE output findings
+still gate.
 
-**But the reason SciML deferred them inverts here.** `plan-sciml-benchmark.md` §7a defect 9 states
-it plainly: *"Recorded, not fixed: the fix changes scores on a suite whose baseline is already
-measured, so it belongs with the step-11 rework rather than between two probe runs."* That argument
-is sound, and it is an argument about a suite that already has a measured C0 baseline. **This suite
-has none.** Nothing exists for a fix to invalidate, so the cost of fixing before step 8 is zero and
-the cost of fixing after step 9 is this suite's baseline and every graded record in it. The
-recommendation is therefore the opposite of SciML's: **fix defects 9 and 10 before step 8** — and
-note that this suite then becomes the one the fix is first measured on, which is a reason to do it
-here rather than an obstacle.
+**What this suite inherits is therefore a fixed harness, and one lesson.** The lesson is the one
+worth keeping: *a defect report is itself a measurement, and this plan quoted one without checking
+whose fault it named.* Three greps established that nothing read `score_cap`; no grep establishes
+that it *should* be read. Step 0 is reduced to confirming the fix is in and recording it.
 
-The distinction that decides every item in this section, and §11's: **does the defect change what is
-being measured, or does it corrupt the record of the measurement?** The manual's coverage gaps are
-the first kind, and §11 leaves them alone on purpose. These two are the second kind, and a
-measurement whose record is known to be wrong is not worth taking.
+**The distinction that decides every item in this section, and §11's, still stands**: does the
+defect change what is being measured, or does it corrupt the record of the measurement? The manual's
+coverage gaps are the first kind and §11 leaves them alone. What has changed is that the second
+category is now empty but for H-N3.
+
+### 4a. H-N3 as implemented `[rev2 2026-11-14, X]`
+
+**Shipped.** The SDE routes now run structure diagnostics and a declared `gate` fails the run.
+`benchmark/verify.py` gains `_run_sde_diagnostics`, `_fold_sde_diagnostics`, `_sde_terminal_paths`
+and `_orient_paths`; `benchmark/problems.py` gains the two Kubo diagnostics;
+`benchmark/tests/test_sde_diagnostics.py` is 19 tests. **No verdict code changed** —
+`report.compute_verdict` and `compute_oneshot_verdict` already return `CONSTRAINT_VIOLATION` ahead
+of every pass branch (`report.py:317`, `:254`), so folding the same record shape the PDE side
+produces was enough to make the gate bite on both the pipeline and the one-shot verdict.
+
+**The gate is calibrated both ways and the statistic was chosen by measurement, not by taste.**
+`docs/notable-sde-data/kubo_invariant_calibration.py`, at exactly N02's configuration and the step
+the verifier re-runs at (`min(dt, 0.04/T) = 0.04`, 25 steps, 50 000 paths, seed 42):
+
+| scheme | `\|E\|X\|²/\|X₀\|²−1\|` **(gated)** | RMS per-path drift | `E\|X(T)\|²` |
+|---|---|---|---|
+| exact rotation `[correct]` | 0.000e+00 | 4.791e-17 | 1.0000 |
+| implicit midpoint `[correct]` | 0.000e+00 | 4.124e-16 | 1.0000 |
+| Stratonovich Heun `[correct]` | 3.302e-02 | 1.952e-02 | 1.0330 |
+| Itô–Euler + conversion `[correct]` | 5.133e-02 | 1.451e-01 | 1.0513 |
+| **Itô–Euler, misread** `[WRONG]` | **1.771e+00** | 6.873e-01 | 2.7706 |
+| | **34.5× separation** | 4.7× separation | |
+
+**The gate is 0.30**, the geometric mean of the worst correct scheme and the wrong one: the worst
+correct scheme clears by 5.8× and the misread fails by 5.9×. The separation is **34.5×**, against
+BENCHOP's narrowest 6.8× and SciML's 4.4×, and it was fixed from this table and not moved after.
+
+**Finding 1 — the per-path statistic, which is the stronger statement, is the weaker instrument.**
+The obvious gate is the per-path amplitude drift, since the exact flow conserves `|X|` *pathwise*.
+Measured, it separates correct from wrong by **4.7×** where the mean-square statistic separates
+them by **34.5×**, because a correct but non-conservative scheme (Heun, Euler) has a genuine `O(dt)`
+amplitude *wobble*: large in RMS, small in the mean. Gating the per-path number charges a correct
+scheme for its own variance. So the mean square is the gate and the per-path RMS ships beside it
+un-gated — it is the one that would see a scheme whose amplitude wanders symmetrically, which the
+gated statistic cannot. One `gate: True` and one `gate: False`, the Taylor-Green pattern.
+
+**Finding 2 — a solver returning the wrong number of components passes the moment route.** `[N]`
+Measured: an `(n, 3)` sample on a `state_dimension: 2` problem is scored `status: ok`,
+`passed: True`. The route reads the first `d` columns and never asks whether there are more
+(`_run_and_read_sde`'s label loop). This is **pre-existing and applies to all 24 SDE problems on
+record**, not only this suite, and it is the second kind of defect by §4's own test — a malformed
+output recorded as a pass. It is **recorded and not fixed here**, because the fix is a contract
+check in `_run_and_read_sde` rather than anything H-N3 owns, and slipping it into a diagnostics
+change is how a one-line behaviour change becomes invisible. H-N3's gate catches it only where a
+diagnostic is declared, which is nowhere yet. **Recommended as its own one-line change, with the
+test already written** (`test_a_gate_that_cannot_be_evaluated_has_not_been_cleared` pins both
+halves: the gate refuses it, and without the gate the same output is a clean pass).
+
+**Finding 3 — `verify_sde_stability`'s documented fallback is unreachable.** `[N]` Its "No terminal
+states exposed: use the reported moments' finiteness as the blow-up signal" branch cannot run,
+because `_run_and_read_sde` raises `KeyError('terminal_paths')` before the route sees the output
+(measured directly). Pre-existing, recorded, not fixed — it is a dead branch rather than a wrong
+answer, and it changes nothing about what is graded today.
+
+**Finding 4 — the path-orientation rule had three copies.** The contract accepts `(n, d)` or
+`(d, n)`, so every reader of `terminal_paths` has to apply the same transpose rule, and the moments
+route, the pathwise route and the new fold each had their own. Extracted to `_orient_paths`, for
+the reason `RECORDED_HARNESS` was extracted: a rule with three copies is a rule that drifts. The
+one behaviour worth pinning is that a square sample is left alone, since nothing can disambiguate
+it (`test_orient_paths_leaves_a_square_sample_alone`).
+
+**The kernel-side half is deliberately still open.** The M08 finding this item quoted is about
+`verifylib`'s `invariant_worst_headroom`, which feeds `ranking.structure` and fails nothing. That is
+the *self* grader, and this change is the independent one; the two are kept ignorant of each other
+on purpose (`benchmark/README.md`, "Two graders, one solver"). Making the kernel's invariant fail a
+plan would move scores on three suites whose baselines are already measured — the situation SciML
+rev 16 is a cautionary tale about — so it needs its own before-and-after. Recorded as an open item
+rather than done. **What this suite can now do that it could not is make the kernel's number
+checkable**: N02 would be the first pool whose `structure` component is an exactly known invariant
+rather than a diagnostic of convenience, so the kernel's value has a right answer to be compared to.
+
+**Regression surface: nil, and verified rather than assumed.** No SDE problem on record declares
+`diagnostics` (measured; pinned by `test_no_sde_problem_on_record_declares_diagnostics`), so the
+fold is inert on all 75 entries, and every one of the 75 manifest entries hashes identically before
+and after. `ruff` clean on all three changed files.
 
 ---
 
@@ -686,15 +1018,22 @@ landed.**
 | ID | Correct scheme | Wrong by exactly one decision | Expected separation |
 |---|---|---|---|
 | N01 | Milstein + sampled Lévy area | the same, Lévy area set to zero (= EM) | `[to measure]` — the entry is dropped if it is under 3× |
-| N02 | Stratonovich (midpoint / conversion term) | the same coefficients read as Itô | `2.72×` on `E[\|X\|²]` **[derived]**, to confirm |
+| N02 | Stratonovich (midpoint / conversion term) | the same coefficients read as Itô | **34.5×** on the invariant gate, measured — §4a |
 | N03 | backward EM / positivity-preserving explicit | *quiet* variant: explicit EM with `max(X, eps)` | `[to measure]` |
 | N04 | split-step / Lamperti + implicit drift | the same with `clip(X, 0, 1)` | `[to measure]` |
-| N05 | jump-adapted or fixed-grid with compensator | the same with `lambda·kappa` dropped | set by parameter choice to `≥ 3×` the 5% mean gate |
-| N06 | tamed / Lamperti | untamed explicit EM | `[to measure]`; the control may diverge, so a quiet variant is needed too |
-| N07 | BAOAB | the same splitting, `O` step by explicit Euler drag | `[to measure]`; `gamma`, `omega` set *by* this sweep |
+| N05 | jump-adapted or fixed-grid with compensator | the same with `lambda·kappa` dropped; also, jumps omitted entirely | **19.0× and 17.2×** of a 1% functional gate, measured — and **0.28× on the mean, which passes** (§2b) |
+| N06 | Lamperti chart + implicit/tamed drift | untamed explicit EM | `[to measure]`; the control may diverge, so a quiet variant is needed too. Truth route settled in §2b; horizon still open (near-vacuous mean) |
+| N07 | BAOAB | Euler–Maruyama (and the `O` step by explicit Euler drag) | **356×** at `gamma=1, omega=4`: EM 2.8× the gate, BAOAB gate/127 — measured, §2b |
 | N08 | CIR step on `U = 1/V` (or tamed) | explicit EM on `V` | `[to measure]`; likely loud |
 | N09 | trapezoid (or the exact Gaussian law of `ln A`) | the same with the left-point sum | `-5.92%` on `Var[A]` at `n = 25` against the trapezoid's `-0.04%` — `150×`, measured |
 | N10 | — | — | Phase 2 |
+
+**Step 2 has already filled four of these rows and moved two parameter sets** (§2b). It also added
+a fourth lesson to the three below, from N07: **a control can be loud for a reason the gate cannot
+see.** Euler–Maruyama's variance error on an oscillator exceeds any gate once `ρ(I + A·dt) > 1`, but
+then it is diverging rather than biased, and the separation measures the blow-up. The admissibility
+test is therefore a *property of the scheme* (`gamma > omega²·dt`) and not of the error, and it has
+to be computed, not eyeballed — 11 of 30 pairs failed it while separating beautifully.
 
 Three lessons from the two previous calibrations are adopted rather than rediscovered:
 
@@ -771,18 +1110,20 @@ different artifact paths, different unit keys.
 
 | # | Step | Depends on | Output |
 |---|---|---|---|
-| **0** | **Fix** SciML defects 9 and 10 (H-N6) — `score_cap` applied, the formulator-side `num_paths` closed — or record a decision not to and that this suite's scores are uncapped | — | the two fixes, or one dated paragraph in §4 saying why not |
+| **0** | ~~Fix SciML defects 9 and 10~~ **Done 2026-11-13, differently — H-N6 withdrawn.** Confirm `ledger_spec_defects` reaches the record and that `score_cap` is uncapped for spec defects by design | — | one dated paragraph in §4 **— written** |
 | **1** | Read the ten sources; fix every `[to fix]` parameter from the cited paper, not from taste | — | §2 updated with sourced parameters, and a `[W]`-labelled note per entry where the source disagrees with this draft |
-| **2** | Derive each truth and write it as a standalone, seeded, numpy-only script under `docs/notable-sde-data/` — five are already there (`derivations_check.py`) | 1 | ten scripts + a measurements file; the `N06` go/no-go on the explicit solution; the `N05` Merton-series derivation |
-| **3** | H-N2 (suite registration) and arm separation; verify the 66 existing entries hash identically | — | `--suite notable --list` works, `manifest.json` unchanged for the 66 |
-| **4** | H-N1 (pathwise reference), H-N3 (SDE invariant gate), H-N4 (vacuity guard), with the acceptance tests in §4 | 3 | the three items shipped; any existing entry the new guards refuse is a **finding** |
+| **2** | Derive each truth as a standalone, seeded, numpy-only script under `docs/notable-sde-data/` | 1 | **Done for 8 of 9 — §2b.** `derivations_check.py` (N01/N02/N04/N08/N09), `n07_langevin.py`, `n05_merton.py`, `n03_n06_kolmogorov.py`. The N06 go/no-go is answered (premise wrong, better route found) and the Merton series is derived and triple-checked. **N03 blocked on step 1** |
+| **3** | ~~H-N2 (suite registration)~~ **done 2026-11-14** and arm separation; verify the existing entries hash identically | — | `--suite notable --list` answers and `--suite main` still selects 49; all 75 manifest entries hash identically. **Arm separation still to verify** |
+| **4** | H-N1 (pathwise reference), ~~H-N3 (SDE invariant gate)~~ **H-N3 done 2026-11-14 — §4a**, H-N4 (vacuity guard), with the acceptance tests in §4 | 3 | the three items shipped; any existing entry the new guards refuse is a **finding** |
 | **5** | Calibrate every gate both ways at `min(dt, 0.04/T)`, with standard errors; set `gamma`, `omega` for N07 and the jump parameters for N05 **from** this sweep | 2, 4 | the §5 table filled with measured numbers; any entry under 3× separation is dropped and said to be dropped |
 | **6** | Author the nine Phase-1 entries in `problems.py`; add the independent validation routes of §6 and the vacuity table | 5 | nine entries, `validate_ground_truth.py` green, no gate set after seeing a scheme |
 | **7** | Smoke-test end to end on one entry (N02 — cheapest, sharpest control) in both arms | 6 | one graded record; defects found here are recorded as defects, as §7a's ten were |
 | **8** | C0 baseline (and C1 if the budget allows) on all nine, both arms, with `--results-json benchmark/results/baselines/oneshot_notable.json` | 6 | the baseline denominators this suite's rates are quoted against |
-| **9** | Pipeline runs: all nine, `scheme-matched`, then `unrestricted` | 7, 8 | per-problem verdicts, the kernel/harness cross-check, `wrong_plan_won`, and the integrate-vs-recognise split |
-| **10** | Write the result up: the §3 gap table against the outcome, and §10's predictions scored | 9 | the paper's table and the plan's own revision |
-| **11** | **Optional** — N10 (Duffing–van der Pol) and its two-family reference | 9 | the tenth entry, or a recorded decision not to |
+| **9a** | Pipeline runs, **the order-bearing five first** (N01, N03, N04, N06, N07), `scheme-matched` | 7, 8 | five pools in which `order` is comparable — the corpus §2a is for — plus their verdicts |
+| **9b** | Pipeline runs, the exact-sampler four (N02, N05, N08, N09), both arms | 9a | the recognition column, and the second structural holdout |
+| **9c** | Re-rank both groups offline against the C0 baseline with `rank_study.py`, and price the pool-relative order rule on them | 9a, 9b | prediction 8 scored; the rule shipped, or withdrawn with a number |
+| **10** | Write the result up: the §3 gap table against the outcome, and §10's predictions scored | 9c | the paper's table and the plan's own revision |
+| **11** | **Optional** — N10 (Duffing–van der Pol) and its two-family reference | 9c | the tenth entry, or a recorded decision not to |
 
 Step ordering has one non-obvious constraint, learned from `plan-sciml` step 6: **calibration before
 authoring**, because three of nine SciML entries were vacuous until calibration found them, and an
@@ -823,9 +1164,25 @@ Written before any run, so the plan can be wrong in public. The convention is `p
    that *names* the Lévy area and declines it, citing the manual. **Confidence: high.** If this is
    right it is the suite's most useful single result, and the fix is a manual change, not a pipeline
    change.
+
+   **Sharpened `[rev1 2026-11-13]`:** `plan-sciml-benchmark.md` §10f measured that the pipeline's
+   deficit against Opus cold was **selection, not generation** — as shipped 1.412× worse, while the
+   best plan *in its own pools* was 2.65× better, one pool holding a plan 625× better than the
+   baseline. So the prediction splits, and the suite should report which half binds: either the pool
+   never contains a Lévy-area plan (generation, i.e. the manual) or it contains one and the ranker
+   ships something else (selection, i.e. §2a). The second is now the more likely of the two on the
+   project's own evidence, and it is the one the manual fix would *not* address.
 3. **N07 is the coin flip.** Either a plan proposes a splitting scheme unprompted — which would be
    the strongest result in the suite — or every plan proposes EM and the entry measures the step
    budget. **Confidence: none, deliberately.**
+
+   One risk here was removed while this plan sat unimplemented: SciML rev 18 found `crn.guards`
+   judging the strong order against a **two-sided** band, so a plan was capped for converging
+   *faster* than its floor — M01's best plan scored 8 at order 0.9831 against a 0.5 floor while the
+   two it beat by 2.1× scored 10. N01's correct scheme (order 1.0 against Euler–Maruyama's 0.5) and
+   N07's splitting are both exactly that shape, so **both would have been false-failed by the gate
+   as it stood when this plan was drafted.** Fixed; the gate's one true positive — a Milstein with
+   its correction dropped, at 0.504 against 1.0 — is a shortfall and survives.
 4. **`wrong_plan_won` will be true on at least two entries, and at least one will be decided below
    `score`** — the SciML pattern, where on three of three probed problems no score separated
    anything and the winner was chosen by a quality index or by declaration order
@@ -841,6 +1198,11 @@ Written before any run, so the plan can be wrong in public. The convention is `p
    the rule it enforces is not, and `plan-sciml` §2a.1 found three vacuous entries in nine.
    **Confidence: moderate.** If it fires, the finding belongs in this plan and the fix belongs in a
    revision of whichever plan authored the entry.
+8. **The pool-relative order rule (§2a) leaves the exact-sampler four bit-identical and moves at
+   least one of the order-bearing five.** The first half is structural, for the same reason the rule
+   leaves BENCHOP alone, and a violation would mean the rule does something nobody has
+   characterised. **Confidence: high on the first half, none on the second** — which is the point of
+   running it on a corpus it was not fitted to. `[rev1 2026-11-13]`
 
 ---
 
@@ -883,12 +1245,28 @@ Stated here so the write-up in step 10 cannot drift.
   outside the pipeline, and each gate calibrated to clear a correct scheme and fail a scheme that
   differs from it by exactly one decision.
 - The pipeline's verdict on each, against the same C0/C1/C2 baselines, on the suite's own
-  denominator, with the integrate-vs-recognise split shown.
+  denominator, with the integrate-vs-recognise split shown. **Quote the rate over
+  `_VERIFIED_VERDICTS`, not `_PASS_VERDICTS`** `[rev1 2026-11-13]`: SciML rev 15 found the old set
+  was a conjunction — the harness passed *and* the pipeline claimed 10 — while the baseline it is
+  compared against has no self-score at all, so `UNDERCLAIM` counted as a failure on one side and
+  was a verdict the other side could not receive. On that arm it read 5/9 against the one-shot's 9/9
+  where the harness independently passed **9 of 9 on both**. An `UNDERCLAIM` is the pipeline being
+  too modest about a success the harness confirmed, which is the one error direction this benchmark
+  exists to reward.
 - `wrong_plan_won` and the kernel-vs-harness cross-check, which is the thing this benchmark exists to
   produce and which a conventional benchmark table does not contain.
 
 **May not claim:**
 
+- Any **cost or work-axis** comparison on N01 or N07 without the caveat `[rev1 2026-11-13]`.
+  `plan_meta.SDE_FAMILIES` is `euler-maruyama, milstein, tamed-euler-maruyama, tamed-milstein,
+  implicit, exact-transition, quadratic-exponential, other` — verified 2026-11-13 — with no key for
+  a stochastic Runge–Kutta, a splitting scheme, a Stratonovich midpoint, a jump-adapted step or a
+  boundary projection. A multi-stage scheme therefore declares `other` and its work axis **falls
+  back to one stage**, understating its own cost. That bias *flatters* N01's Lévy-area Milstein and
+  N07's BAOAB, which is the direction a reviewer will not forgive, so either the vocabulary is
+  extended first or the cost figures carry the caveat as a lower bound — which is how
+  `report.py` already labels it on the SciML suite.
 - That passing these ten shows the pipeline handles *hard* SDEs. §0a: this suite is selected for
   recognition. The hardness claim rests on the tier-3 set and the discriminator subset, and the two
   results should appear in the paper as two tables, not one.

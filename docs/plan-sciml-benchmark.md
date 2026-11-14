@@ -1,7 +1,7 @@
 # SciMLBenchmarks (SDE) — External Benchmark Adoption Plan
 
 **Status:** **researched 2026-11-09; rev 1 the same day; rev 2–5 2026-11-10; rev 6–7 2026-11-11;
-rev 8–10 2026-11-12; rev 11–20 2026-11-13 — steps 1–10 of §7 done on the scheme-matched arm. The suite exists, is
+rev 8–10 2026-11-12; rev 11–20 2026-11-13; rev 21–23 2026-11-14 — steps 1–10 of §7 done on the scheme-matched arm. The suite exists, is
 calibrated, is smoke-tested end to end, has its comparator numbers, has its C0 baseline in both
 arms, and has **all nine of its entries through the pipeline** — 5 `VERIFIED_PASS`, 4
 `UNDERCLAIM`, **zero overclaims**, 139.3 min of wall time. Rev 12 then answers what the suite was
@@ -110,8 +110,86 @@ fallback. And the gain is **n = 1** — the variant is byte-identical to what sh
 nine pools, and the geomean move is arithmetically just M05's 622.233 → 1.000. So it is
 **recorded as the strongest candidate measured here and still not shipped**, for §10h's reason:
 what would settle it is a corpus in which `order` is comparable at all, and BENCHOP's
-exact-sampler pools are *structurally* incapable of being that corpus. What remains is the
-unrestricted arm and the optional Phase 2 (step 11).** Rev 6–7 `[2026-11-11]` diagnose the M01 probe and
+exact-sampler pools are *structurally* incapable of being that corpus. **Rev 21 re-runs three
+entries live** (10n) and the selection fixes hold where it counts: `wrong_plan_won` is
+**false on 3 of 3** where run 1 read true on two of them, **M05's 622× is gone in a live
+run**, and on those three entries the shipped error goes **1.967× → 0.161×** of the C0
+one-shot with regret geomean **22.49 → 1.000**. Three of this plan's own readings are
+corrected by it: M09 is Path A in run 1 and **Path B** in run 2, so its scores are across two
+rubrics; **§10k is not implicated** in M09's pool truncation, since the plan that certified
+did so on the Path-B surrogate branch at an observed order inside the old two-sided band; and
+**`--fresh` is not a re-measurement** — it re-derives `problem_spec.json`, and all three specs
+came back with different tolerances, path counts and ladder bases, which leaves the harness
+errors comparable (truth is re-derived from `problems.py`) and the pipeline's own scores not.
+That last point produces the rev's sharpest finding: M01 fell **10 → 6** and
+`VERIFIED_PASS → UNDERCLAIM` purely because the formulator declared the **truthful**
+`num_paths` of 1000 instead of the fabricated 50000, so the kernel could no longer resolve its
+own accuracy statistic — which **inverts §10j**: the invented threshold was not only a false
+ledger violation, it was load-bearing for the pipeline's own 10s. M05's correct pick is real
+but held by **0.00024** of index, because this pool's `invariant_worst_headroom` happened to
+come back flat, which strengthens §10m's route (i) rather than replacing it. And the
+pool-composition risk did materialise: M09 planned **4 plans and implemented 3**, the missing
+one being the pool's only exact-leg method, whose run-1 analogue was that pool's **best** plan
+— so an apparent 2.9× regression in generation is more likely a hole in measurement. **The
+record said none of this**, and two truncations in `verify.parse_state` are why: `certified`
+was dropped, so `pipeline.certified` was `None` on **13 of 13** records and both of its
+readers silently fell back to a score test; and `state` was dropped, so a plan the winner
+early-exit skipped was indistinguishable from a pool that never had it. Both fixed, with the
+skipped plans now recorded under `harness_by_plan.not_implemented` beside
+`plans_implemented`/`plans_planned`. The capability guard §10m proposed is **measured inert
+and not shipped**: the skipped plan declares no capability at all, its exact-leg claim living
+only in free-text `strategy:`, which is the §10d vocabulary gap in a third place.
+**Rev 22 prices the pair the live losses would need** (10o), before spending a run on the
+remaining six, and gets two results. `relorder:2` **and** `ordertie:2` composed is
+**bit-identical to `relorder:2` alone**, and not because a knob is mistuned: `ordertie`
+repairs M02 by *abstaining* — the shipped `order` reads 1.000 on all three plans, so
+`thin:K`'s breadth test fails and the fall-through to the higher `observed_order` decides it
+— while `relorder` makes `order` vary, which **satisfies the very breadth test whose failure
+was doing the work**, re-admits the index, and lets it mis-rank the pool. The two halves do
+not disagree about a threshold; they disagree about whether M02 is decidable, so no `C` or
+`K` reconciles them. Trying to compose them then exposes a defect in §10m's survivor:
+`relorder` **fires on M02, points the right way, and loses**, because `_rel_order` divides the
+shortfall by `max(hi, 0.5)` and M02's top two — 2.0003835 and 1.9999994, about **3200
+combined standard errors** apart and 2.46× apart by the harness — map to 1.0 and 0.999808,
+which `structure` outvotes by far more than the signal. It repairs M05 only because M05's
+orders differ in the *first decimal*; it was reading the order study's **units**, not the
+order study. Dividing by `sqrt(se_top² + se_i²)` instead (`zorder:C:Z`, both of
+`relorder`'s guards kept) repairs M02 **and** keeps M05: **8 of 9 pools, regret geomean
+1.004, 0 of 9 outside the harness margin, 0.379×** against the one-shot — the best ranker
+measured anywhere in this plan, with the one miss (M09, 1.033) *inside* its own margin, and
+flat over 26× of `C` and 300× of `Z`. It is **recorded, not shipped**, and the audit
+**retracted the first reason given for that**: the draft claimed `observed_order_se` is
+1e-07 to 1e-08 corpus-wide and built the case on it, where the real range is **3e-08 to
+4e-02** and the 1e-07s are **M02's alone**. On the corrected per-pool reading `Z`'s flatness
+is robustness rather than inertness — `_z_order` is *weakly* monotone in the shortfall at
+every `Z`, so no clip reverses the component and the knob only sets how hard `order` trades
+against `structure` — but at the `Z` that
+works the component is still exactly **0/1 on 5 of 5** firing pools, so the rule is
+**winner-take-all on order** and would ship under a description that understates it. The
+case against shipping it now rests where the data puts it: the five firing pools separate
+by **3.6σ to 3166σ**, M06 is declared decided on 3.6σ with all three plans within 0.25 of
+order 1.0, and nine pools cannot distinguish "resolved" from "resolved enough to overrule
+`structure`". What it needs is a **minimum separation worth acting on**, which the holdout
+is structurally unable to supply. Also corrected: §10m credited `relorder` with M01; the **re-grade
+alone** carries M01 and M06, and `relorder`'s whole marginal contribution over `regraded` is
+M05. **Rev 23 ships it** with that floor: `ranking.order` takes an optional `pool`,
+`MIN_ORDER_SEPARATION = 5.0` gates it, and the arm reaches **8 of 9 pools, 0 of 9 outside the
+harness margin, regret geomean 1.004 and 0.379×** — holdout unchanged at 6 of 9, as §10m
+predicted. One constant replaces `zorder`'s two, since the bar for *acting* on a separation and
+the scale it is *measured* in are the same quantity; the pool is **opt-in**, so `sqi_cert` gets
+the absolute reading and a certification never moves because a sibling was added; and the floor
+is recorded as a choice inside a measured window rather than as a fitted value — the corpus
+pins only the **ceiling** (8/9 for every value in **[2, 13]**, 7/9 at 14 where the rule stops
+firing on M05's 622× pool) and 5.0 declines M06's 3.6σ, which costs nothing measurable. **The
+ship nearly went out inert**: hooked inside `order`'s SDE branch it measured 7/9, because that
+branch tests the *plan's* `kind`/`scheme_family` and **two of three M02 plans declare neither**,
+the pool's best included — the §10d vocabulary gap in a fourth place. A pool is one problem, so
+the test is now the pool's. And shipping broke **twelve** audit claims at once, all of them
+statements about the pre-ship ranker that this change was argued from, so
+`rank_study.floor_order_only()` restores that era exactly by holding the floor at infinity;
+the audit defaults to it, the four new claims opt out explicitly, and it is back to
+**165/165**. What remains is the other six entries of this arm, the unrestricted arm and the
+optional Phase 2 (step 11).** Rev 6–7 `[2026-11-11]` diagnose the M01 probe and
 run the other two. **`wrong_plan_won: true` on all three problems, by three different
 mechanisms** (§10a): on M01 the scores separated and did so backwards, decided by a terminal-law
 KS statistic that a *pathwise-exact* solver also fails on the run's own increments; on M06 and M09
@@ -1639,7 +1717,7 @@ three most interesting problems, which strengthens that reading rather than weak
 
 ---
 
-### 7a. Step 8 as implemented — the smoke test, and eleven defects `[rev5 2026-11-10; defects 8-10 rev7 2026-11-11; defect 11 rev20 2026-11-13, N]`
+### 7a. Step 8 as implemented — the smoke test, and twelve defects `[rev5 2026-11-10; defects 8-10 rev7 2026-11-11; defect 11 rev20 2026-11-13; defect 12 rev21 2026-11-14, N]`
 
 The step exists because the same step found four defects on BENCHOP `[R]`. It found four
 here, a fifth while fixing the second, a sixth when step 9 was launched and a seventh when
@@ -1929,6 +2007,17 @@ it was passed to looked like three different measurements and were one. Recorded
 than fixed, because the fix is a vocabulary decision — either reject `--N=` on an SDE pair
 or give the SDE path its own `--num-paths=` — and §10m's conclusion does not depend on
 which: the comparison **agrees** at every count that was actually reached.
+
+**Defect 12: `certified:` is instructed and was not written.** `commands/conductor.md` step 5
+says *"Write the new score, `certified`, `provenance` and `est_err` to STATE.md"*, and
+`certified` is the loop's own exit condition. On the 2026-11-14 re-run of
+`sde_sciml_weak_noncommutative` the conductor wrote it on **none** of the four plans; run 1's
+STATE.md carries it on three of four. Until §10n it could not be noticed from the record,
+because `verify.parse_state` did not read the field either, so an omitted `certified` and a
+parser that never looked produced the same output on all 13 records. The parser is fixed, so
+the omission is now visible as an absent `pipeline.certified`. The conductor-side half is
+recorded rather than fixed: it is an instruction-following gap, and the instrument for it is a
+pipeline run.
 
 ---
 
@@ -4405,6 +4494,423 @@ re-derives the finding rather than the hope.
 | (i) pool-relative order | **candidate**, 7/9 and 0.419×, holdout-inert, gain is one pool, unshipped |
 | (ii) `structure` admissibility | **withdrawn**, measured harmful: 4/9 and 2.378× |
 | (iii) cross-plan break | **retired**: agrees at every path count; the separation is pathwise |
+
+#### 10n. The three entries re-run: selection is fixed, and three of my own readings were wrong `[rev21 2026-11-14]`
+
+§10m left route (i) priced but unshipped and the arm's post-fix numbers as *projections*
+— offline re-ranks of pools the defective kernel had produced. The risk that could not be
+measured offline was pool composition: `certified: true` is the conductor's loop-exit
+(`commands/conductor.md`: *"the moment any plan comes back `certified: true` … Stop the loop
+immediately"*), three plans flipped `certified` under §10g/§10k, and a plan the exit reaches
+before the solver does never gets a metrics block at all. So M01, M05 and M09 were re-run
+live (`--fresh`, 50.4 min, one usage-limit resume).
+
+##### What the live run says
+
+| | winner | best by harness | regret | | run 1 regret |
+| --- | --- | --- | --- | --- | --- |
+| M01 | `2-milstein` | `2-milstein` | **1.000** | | 17.706 |
+| M05 | `3-strong-taylor-1p5` | `3-strong-taylor-1p5` | **1.000** | | **622.233** |
+| M09 | `4-rao-blackwellised-x2` | `4-rao-blackwellised-x2` | **1.000** | | 1.033 |
+
+**`wrong_plan_won: false` on 3 of 3**, where run 1 read `true` on M01 and M05. M05's **622×
+is gone in a live run**. On the three entries, shipped error against the C0 one-shot goes
+**1.967× → 0.161×**, and regret geomean **22.49 → 1.000**.
+
+##### Three corrections to this plan's own reading, all found by the re-run
+
+1. **M09 is Path A in run 1 and `path: B` in run 2.** The re-derived spec claims no analytic
+   moments, so the entry changed evidence route entirely. Any run-1-to-run-2 comparison of
+   its *scores* is across two rubrics.
+2. **§10k is not implicated in M09's truncation**, which §10m's successor note had assumed.
+   Run 2's `1-euler-maruyama-antithetic` certified at 10 for *"a surrogate reference passed
+   its trust guard and the moments match it"* — the Path-B surrogate branch — at an observed
+   order of **0.6139 against a floor of 0.5**, which is inside the old two-sided band. The
+   old gate would have passed it too. The truncation is ordinary early-exit behaviour, not a
+   consequence of a fix.
+3. **`--fresh` is not a re-measurement.** It deletes `problem_spec.json`, so the formulator
+   re-derives the problem. All three specs came back materially different — M01
+   `variance_rel_err_max` 0.2 → 0.1 and `num_paths` 50000 → 1000; M09 `num_paths`
+   100000 → 25000, `ci_mult` 2.43 → 2.0, `dt0` 0.0025 → 0.02; `theoretical_order` flipped on
+   all three, in both directions. The **harness errors stay comparable** (the harness
+   re-derives truth from `problems.py` at its own fixed level, §10j — M05's three came back
+   identical to 13 significant figures), but the pipeline's own scores and verdicts do not.
+
+##### M01's self-score fell 10 → 6, and it inverts §10j
+
+| | formulator's `num_paths` | `ci_width_rel` | bar | `resolved` | score | verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| run 1 | 50 000 | 0.064 | 0.1 | ✓ | **10** | `VERIFIED_PASS` |
+| run 2 | 1 000 | 0.354 | 0.05 | ✗ | **6** | `UNDERCLAIM` |
+
+The kernel evaluates at `evaluation_thresholds.num_paths` (`source: spec`). §10j established
+that figure is **fabricated** — absent from every brief, and not the count the harness grades
+at. What the re-run adds is that it was also **load-bearing for the pipeline's own 10s**:
+with 50 000 declared the kernel resolved its accuracy statistic and certified; with the
+truthful 1 000 it cannot resolve, scores 6 and underclaims. So the 5-pass / 4-underclaim mix
+of step 10 is partly a function of a number §10j showed was invented, and a formulator that
+tells the truth makes the pipeline look worse. Recorded, not acted on: the fix is a
+threshold-provenance decision, not a kernel change.
+
+##### M05's win is real and is held by 0.00024 of index
+
+`comparable_keys` is `('order', 'structure', 'consistency')` exactly as §10l measured, and
+`order` still reads **1.0 / 0.998 / 1.0** — the order-1.5 plan's measured 1.5851 is still
+discarded. What changed is that the new plans' `invariant_worst_headroom` came back nearly
+flat (structure 0.33287 / 0.33327 / 0.33317, a spread of 0.0004 against 0.0182 in run 1), so
+the anti-correlated component stopped dominating. The index decides it at
+**0.74228 / 0.74203 / 0.74141** — a margin of 0.00024.
+
+So the correct pick rests on run-to-run variation in a weak structural diagnostic, not on
+§10l alone. That **strengthens** §10m's route (i): a pool-relative order reading would hand
+the order-1.5 plan a decisive lead instead of a quarter of a thousandth.
+
+##### The pool-composition risk did materialise, and the record was hiding it
+
+M09's pool is **4 plans, 3 implemented**. `2-exact-x1-leg-control-variate` has no
+`solver.py` and STATE.md records `state: unfinished_winner_exited` — the conductor's own
+label for a plan the winner early-exit reached first. And it is the pool's only exact-leg
+method:
+
+> *"Integrate the autonomous X1 leg exactly in closed form … X1 is a geometric Brownian
+> motion, so it carries zero discretization error at any dt"*, plus control variates on the
+> exactly-known `X1(T)` and `X1(T)^2`.
+
+Its analogue in run 1, `2-exact-lognormal-exponential`, was **that pool's best plan** at a
+harness error of **0.05708** — against the **0.16585** run 2 shipped. So M09's apparent
+2.9× regression in *generation* is more likely a hole in *measurement*: the pool held the
+technique and never implemented it. Not provable — there is no code to grade, so 0.05708 is
+the analogue's number and not this plan's.
+
+**What the record said about all this: nothing.** Two truncations in
+`verify.parse_state`, the recorder's narrowest point, both of the §10e class — the
+information is in STATE.md and the parser drops it:
+
+| field | who reads it | what it cost |
+| --- | --- | --- |
+| `certified` | `run.summarize_pipeline` → `pipeline.certified` → `report._pipeline_claimed_pass` | the key was `None` on **13 of 13** records ever written, so both readers silently fell back to the old score test — and `certified` is the exit condition |
+| `state` | nothing, until now | a plan the exit skipped was invisible: `grade_every_plan` drops any directory with no `solver.py` without a word, so a 4-plan pool that produced 3 solvers read exactly like a 3-plan pool |
+
+**Fixed.** `parse_state` carries both; `grade_every_plan` records the skipped plans under
+`harness_by_plan.not_implemented` with each one's state, iteration and one-line description,
+plus `plans_implemented` / `plans_planned` beside them — because `best_plan_by_harness` and
+every regret computed from it are over the implemented plans only, and that bound belongs
+next to the number. Re-grading M09's recorded run through the fixed path reports **3 / 4**
+and names the plan. Four tests, `test_orchestration.py` section **E10**.
+
+##### The guard this was supposed to be, and why it is not shipped
+
+The fix named at the end of §10m was: hold the exit while an unevaluated plan declares a
+capability no evaluated plan has, reusing Phase 1's pool-gate vocabulary rather than
+`scheme_family`. **Measured against the case it was written for, it is inert.** Plan 2's
+frontmatter is:
+
+```yaml
+scheme_family: euler-maruyama
+strategy: Integrate the autonomous X1 leg exactly in closed form …
+```
+
+It declares **no capability at all** — the exact-leg claim exists only in free-text
+`strategy:`. Plan 4, by contrast, declares `exact_sampling_components: 1`. So a guard keyed
+on the declared vocabulary would not have held the exit, and shipping it would have been a
+rule with no instance, which is what §10h, §10l and §10m each retired a candidate for.
+
+This is the **§10d vocabulary gap in a third place**: M05's order-1.5 plan withholds
+`scheme_family` because no key fits; M01's `3-heun-srk` declares `"other"` and gets the
+spec's floor on the strength of it; and here an exact-leg plan is indistinguishable from a
+plain Euler-Maruyama because the field that would say otherwise is optional. The working fix
+is therefore two-part, and the first part is load-bearing:
+
+1. **`agents/plan-creator-sde.md`**: require `exact_sampling_components` whenever *any*
+   component is integrated exactly or in closed form, including when the plan's family is
+   not `exact-transition`. Plan 2 is the measured case — family `euler-maruyama`, exact X1
+   leg, field absent.
+2. **`commands/conductor.md`**: the exit may not fire while an unevaluated plan declares a
+   capability no evaluated plan declares.
+
+Neither is shipped here. Part 2 alone is inert; part 1 changes nothing about the exit; and
+both are **prompt** changes, which this repo cannot price offline the way `rank_study.py`
+prices a ranker — the only instrument is a pipeline run. Recorded with the measurement that
+motivates it, which is the discipline §10f set.
+
+##### Also recorded
+
+* **§7a defect 12: the conductor omitted `certified:` from STATE.md on all four plans** of
+  M09's re-run, although `commands/conductor.md` step 5 instructs *"Write the new score,
+  `certified`, `provenance` and `est_err` to STATE.md"*. Run 1's STATE.md carries it on
+  three of four plans. So `pipeline.certified` is now correctly **absent** rather than
+  false on that record — the parser fix makes the omission visible instead of
+  indistinguishable from a parser that never looked.
+* **M09's run-2 `a22` is mis-transcribed**: 1.3564264373211072 against the brief's
+  `-(-785/512 + sqrt(2)/8)` = 1.356426429703363, a relative error of 5.6e-9 (run 1 had it
+  exact). It propagates to ~1.7e-8 in the state over `T = 3` — eight orders of magnitude too
+  small to explain anything measured here, and recorded only because a parameter the spec
+  states exactly should not drift at all.
+
+
+#### 10o. The pair that does not compose, and the one reading that does `[rev22 2026-11-14]`
+
+**Status:** measured. `both:C:K` is **inert and the reason is structural**, not a tuning failure.
+`zorder:C:Z` is the best ranker measured anywhere in this plan — **8/9, regret geomean 1.004,
+0/9 outside the harness margin, 0.379× against the one-shot** — and is **recorded, not shipped**,
+because what it actually does is stronger than how it reads.
+
+The question was asked the right way round: before spending a pipeline run on the remaining six
+entries, price the fix that the four live losses to Opus would need. §10m left `relorder:2` at 7/9
+missing M02, and §10h left `ordertie:2` repairing M02 while regressing M05 to 622×. Neither is a
+superset of the other and nothing in them conflicts, so the pair looked additive.
+
+**First correction to §10m's attribution.** `relorder` was credited with M01. It is not: the
+**re-grade alone** carries M01 and M06, and `relorder`'s entire marginal contribution over
+`regraded` is M05.
+
+| pool | `current` | `regraded` | `relorder:2` | `ordertie:2`+eval | `both:2:2` | `routes:2` | `structadm` | `zorder:2:3` |
+|---|---|---|---|---|---|---|---|---|
+| M01 | 17.706 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| M02 | 2.464 | 2.464 | 2.464 | **1.000** | 2.464 | **1.000** | 4879.1 | **1.000** |
+| M03 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | **42.687** | 42.687 | 1.000 |
+| M04 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| M05 | 622.23 | 622.23 | **1.000** | 622.23 | **1.000** | **1.000** | 1.000 | **1.000** |
+| M06 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 5.121 | 1.000 |
+| M07 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 14.245 | 1.000 |
+| M08 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| M09 | 1.033 | 1.033 | 1.033 | 1.033 | 1.033 | 1.033 | 1.033 | 1.033 |
+| **picks best** | 5/9 | 6/9 | 7/9 | 7/9 | 7/9 | 7/9 | 4/9 | **8/9** |
+| **outside margin** | 3/9 | 2/9 | 1/9 | 1/9 | 1/9 | 1/9 | 4/9 | **0/9** |
+| **regret geomean** | 3.120 | 2.267 | 1.109 | 2.051 | 1.109 | 1.523 | 6.303 | **1.004** |
+| **vs C0** | 1.177 | 0.855 | 0.419 | 0.774 | 0.419 | 0.575 | 2.378 | **0.379** |
+
+All eight read `evaluation.json` except `current`, so the only uncontrolled column is the first;
+`ordertie:2` is shown `+eval` for that reason. **Holdout: all of `regraded`, `relorder:2`,
+`ordertie:2`, `both:2:2` and `zorder:2:3` are bit-identical on its nine pools** — 6/9, geomean
+2.015. §10m already recorded why and it still holds: `order` is comparable in **0 of 9** holdout
+pools, so the corpus that was built to catch a suite-fitted ranking rule is structurally blind to
+every rule in this section. That is the governing caveat on everything below.
+
+##### (i) Why `both` is inert: the two halves disagree about whether M02 is decidable
+
+`ordertie` repairs M02 **by abstaining**. The shipped `order` reads 1.000 for all three plans
+there — all clear their floor of 1.0 — so `structure` is the only component that separates the
+pool, `thin:K`'s breadth test fails at K = 2, the index stands down, and the fall-through to the
+higher `observed_order` picks the right plan. `decided_by` says so in the row: `observed_order`.
+
+`relorder` makes `order` vary. That **satisfies the very breadth test whose failure was doing the
+work**, the index is re-admitted, and it mis-ranks the pool. Measured on M02's three plans:
+
+| plan | `observed_order` | `ranking.order` | `_rel_order` | index under `both` | harness |
+|---|---|---|---|---|---|
+| `1-euler-maruyama` | 1.000709 ± 3.50e-08 | 1.000 | 0.500259 | 0.377377 | worst |
+| `2-stochastic-heun` | 2.0003835 ± 7.21e-08 | 1.000 | **1.0** | 0.886375 | **best** |
+| `3-drift-implicit-trapezoidal` | 1.9999994 ± 9.76e-08 | 1.000 | 0.999808 | **0.886995** | 2.46× worse |
+
+No `C` or `K` reconciles this, because the two halves do not disagree about a threshold — they
+disagree about whether the pool is decidable at all. One needs that component silent and the other
+makes it speak. Recorded as the measurement that kills the pair, since "compose the two things
+that each fixed something" is the obvious next move and it is wrong here for a reason worth
+keeping.
+
+##### (ii) What M02 exposes about `relorder`: it reads the order study's *units*
+
+The row above is the real finding. `relorder` fires on M02, points the **right** way, and loses.
+Its top two are separated by about **3200 combined standard errors** and by 2.46× of harness
+error — and the component maps them to 1.0 and 0.999808, because `_rel_order` divides the
+shortfall from the pool top by `max(hi, 0.5)`, an **absolute** scale. `structure` at weight 0.20
+then outvotes `order` at weight 0.25 by vastly more than the 0.000192 of signal it was handed, and
+the index misses by 0.00062.
+
+So `relorder` repairs M05 **only because M05's orders happen to differ in the first decimal**
+(0.9650 / 0.9981 / 1.5851). It was never reading the order study; it was reading the order study's
+units. That is a defect in the route §10m shipped as the survivor, found by trying to compose it.
+
+##### (iii) `zorder:C:Z` — scale-free, and better than anything else measured here
+
+`_z_order` calls `_rel_order` first and **respects every one of its abstentions**, so both guards
+are unchanged and §19's *"an order far above the theoretical one is noise, not a bonus"* is still
+enforced before any of this fires. The only thing under test is the divisor: `sqrt(se_top² + se_i²)`
+in place of `max(hi, 0.5)`, clipped at `Z` of them.
+
+It repairs M02 and keeps M05, and the single remaining miss is M09 at **1.033 — inside its own
+harness margin**, i.e. a pool where the harness cannot say the pick was wrong. Both knobs are flat:
+
+| | range swept | behaviour |
+|---|---|---|
+| `C` (guard 2's σ multiplier) | 0.5 … 13 (26×) | 8/9, 1.004, 0.379× at every value |
+| `C = 0` | guard disabled | 7/9, 1.092, 0.412× — **guard 2 is load-bearing**, as in §10m |
+| `Z` (significance clip) | 1 … 300 (300×) | 8/9, 1.004, 0.379× at every value |
+| `Z` ≥ ~1000 | — | collapses toward the no-op; M05 returns to 622× while M02 stays repaired |
+
+##### Why it is recorded and not shipped
+
+**First, a claim this section had to retract.** The draft of it read *"`observed_order_se` on these
+pools is 1e-07 to 1e-08"* and built the whole argument on that. The audit rejected it: across the
+nine sciml pools the standard errors run **3e-08 to 4e-02**, and the 1e-07s are **M02's alone**
+— four orders below the corpus median, on the one pool where they happen to work in `zorder`'s
+favour. The honest table is per-pool:
+
+| pool | fires? | top-two separation | `observed_order_se` | component at `Z = 3` |
+|---|---|---|---|---|
+| M01 | no (guard 2) | 0.2σ | 9.6e-03 … 1.5e-02 | abstains |
+| M02 | **yes** | **3166σ** | 3.5e-08 … 9.8e-08 | 0 / 1 / 0 |
+| M03 | no (guard 2) | 1.9σ | 1.1e-02 … 1.3e-02 | abstains |
+| M04 | no (guard 2) | 0.3σ | 1.0e-02 … 1.1e-02 | abstains |
+| M05 | **yes** | 13.4σ | 3.4e-04 … 4.4e-02 | 0 / 0 / 1 |
+| M06 | **yes** | **3.6σ** | 2.3e-04 … 9.7e-03 | 0 / 0 / 1 |
+| M07 | **yes** | 15.6σ | 1.0e-05 … 1.6e-03 | 0 / 0 / 1 |
+| M08 | **yes** | 31.5σ | 9.9e-03 … 1.2e-02 | 0 / 1 / 0 |
+| M09 | no (guard 2) | 0.6σ | 1.1e-02 … 1.9e-02 | abstains |
+
+That changes two readings and leaves the conclusion standing on different ground.
+
+**`Z`'s flatness is robustness, not inertness — and it is also structural.** `_z_order` is
+*weakly* monotone in the shortfall at every `Z`, so no clip ever **reverses** the order component:
+a smaller one collapses distinctions into ties at 0.0 and a larger one separates them again. `Z`
+therefore only sets *how hard `order` trades against `structure`*, never which way it points. Flat over `[1, 300]` means that trade is not delicately balanced, which is a real
+result. But it also means `Z` buys no genuinely gentler rule that still works: by the time the
+component is graded rather than saturated (`Z` ≳ 1000), M05 is lost again.
+
+**At the `Z` that works, the rule is winner-take-all.** At `Z = 3` the component is exactly 0/1 on
+**5 of 5** firing pools. So the honest statement is not "scale the shortfall by its significance"
+but **"where both guards pass, the pool's top measured order takes the whole `order` weight and the
+rest take none"**. Three consequences, all of which argue for holding it:
+
+1. It is **materially stronger than `relorder`** and would be shipped under a description that
+   understates it. Pinned in `test_zorders_component_is_an_indicator_and_its_clip_is_inert`
+   precisely so that cannot happen quietly.
+2. It now **decides M06, M07 and M08 on order alone**, where `relorder` left the index to decide
+   them and they were already right. **M06 is the weakest firing case and the one to watch: a
+   3.6σ separation, barely past the clip itself, declared decisive.** All three plans there sit
+   within 0.25 of order 1.0. Guard 1 only tests shortfall *below* a floor; nothing in either guard
+   asks whether a pool of plans that are all **at** their theoretical order should be ordered by
+   the third decimal of the fit at all.
+3. The prior it rests on — *the pool's top measured order is the harness's best plan* — holds
+   **5 of 5** where it fires and is **untestable on the holdout**, which has no comparable `order`.
+   Five for five on the corpus it was derived from is the shape of a suite-fitted rule, whatever
+   its mechanism.
+
+So the blocker is not a bad divisor everywhere, as the retracted claim had it. It is that the rule
+needs a **minimum separation worth acting on** rather than a clip that every firing pool clears,
+and the corpus cannot say what that minimum is: M06 at 3.6σ and M02 at 3166σ are both right here,
+and nothing in nine pools distinguishes "resolved" from "resolved enough to overrule `structure`".
+§10m's guard 2 leans on the same quantity at `C = 2`, so this is a pre-existing dependency this
+section makes visible rather than one it introduces — and the per-pool column above is the first
+time the plan has looked at what that guard is actually comparing.
+
+##### Recorded, not started
+
+* **A credible `observed_order_se`.** The order study's uncertainty should reflect the ladder's
+  resolution, not a regression residual. Until it does, any rule that divides by it — `relorder`'s
+  guard 2 as shipped-candidate, and all of `zorder` — is resting on a number four to five orders
+  of magnitude too small. This is the one item here that would make `zorder` shippable on its
+  stated terms rather than on its measured ones.
+* **`order`'s weight against `structure`'s.** M02 is lost by 0.00062 of index with the two
+  components pointing opposite ways, and §10m measured `invariant_worst_headroom`
+  anti-correlated with quality on M05. `WEIGHTS` has not been touched anywhere in this plan and is
+  not touched here; it is named because two independent pools now fail on the same 0.20-against-0.25
+  comparison.
+
+
+##### Step 2: shipped, with the floor the holding argument asked for `[rev23 2026-11-14]`
+
+**Status:** **shipped** into `verifylib/ranking.py` — `order` takes an optional `pool`,
+`MIN_ORDER_SEPARATION = 5.0` gates it, and `components` threads the pool through. The arm:
+**8 of 9 pools, 0 of 9 outside the harness margin, regret geomean
+1.004 and 0.379×** against the C0 one-shot, from 6 of 9 / 2.267 / 0.855×. Holdout **unchanged
+at 6 of 9 and 2.015**, which is the prediction §10m made and the reason that corpus is silent
+here rather than supportive.
+
+The decision taken was the one the previous subsection argued for: not the 8/9 that acts
+identically on 3.6σ and 3166σ, but the same rule with an explicit separation floor. What
+shipped differs from `zorder:C:Z` as priced in three ways, each of which is a simplification:
+
+1. **One constant, not two.** `zorder` carried a guard multiplier `C` and a clip `Z`. They are
+   the same quantity — the resolution the order study is credited with — so the bar for
+   *acting* on a separation and the scale a separation is *measured* in are now one number by
+   construction. There is no longer a knob that can be set so the rule fires on evidence it
+   then declines to grade.
+2. **The floor is a choice inside a measured window, and the record says which.** The corpus
+   pins the **ceiling** and nothing else: the arm is 8/9 for every value in **[2, 13]** and
+   falls to 7/9 at 14, where the rule stops firing on M05 — the 13.4σ, 622× pool this whole
+   line of work exists to fix. It says nothing about the floor. 5.0 declines M06's 3.6σ, which
+   costs nothing measurable (the ranker gets that pool right without the rule) and is the
+   difference between acting on *resolved* separations and acting on any separation at all.
+   2.7× below the pool that binds the ceiling, 1.4× above the pool it declines, at the
+   conventional "clearly resolved" figure, and deliberately not at the corpus's own optimum.
+3. **The pool is opt-in, so a certification never reads a sibling plan's order study.**
+   `sqi_cert` passes no pool and therefore gets the absolute reading; `rank_key` passes one. On
+   M05's worst plan the two indices are 0.657 and 0.203, so the separation is real and a leak
+   would be visible rather than silent. This is not a convenience of the signature — an index
+   a certification depends on must not move because another plan was added to the pool.
+
+##### The bug the ship nearly carried
+
+Hooked where it belonged on first reading — inside `order`'s SDE branch — the rule measured
+**7/9, not 8/9**, and M02 was untouched. That branch tests the **plan's** own `kind` and
+`scheme_family`, and on M02 **two of three plans declare neither**, the pool's best included:
+
+| plan | `kind` | `scheme_family` | branch reached |
+|---|---|---|---|
+| `1-euler-maruyama` | — | `euler-maruyama` | SDE |
+| `2-stochastic-heun` | — | — | generic |
+| `3-drift-implicit-trapezoidal` | — | — | generic |
+
+So the pool-relative reading was unreachable for exactly the two plans it had to compare, and
+the rule would have shipped **inert on one of the two pools it was shipped for** — scoring the
+same 7/9 as the thing it replaced, with nothing failing. The fix is that a **pool is one
+problem**: the SDE test is the pool's, satisfied when *any* plan in it declares, and it is
+still a declaration and never a slug. This is the §10d vocabulary gap in a **fourth** place,
+after M05's withheld order-1.5 family, the exact-leg plan indistinguishable from Euler, and
+M09's free-text `strategy:` claim.
+
+##### The second bug the ship nearly carried, caught by a test built for it
+
+`ranking.order` reads `observed_order_se`, and `metrics.BLOCK_KEYS` did not carry it. The
+`<metrics>` block is what the **live** conductor's ranker is handed, so the field was produced
+by `sde/driver.py:451` and then filtered out on the way into `SOLUTION.md` — which means the
+rule would have measured 8/9 offline against `evaluation.json` and been **completely inert in
+the pipeline**, where it matters. Nothing would have failed; the arm would simply have gone on
+scoring 6/9 while every table said 8/9.
+
+This is §10h's defect verbatim — *the record's whitelist is a ranking input* — in its fourth
+instance, after `order` and `structure` lost entirely, `accuracy` fabricated, and
+`dynkin_bar` substituted wrong. What is different this time is that §10h left a guard behind,
+and it worked: `test_ranking_inputs_are_all_on_the_metrics_block` compares what `ranking.py`
+reads against what the block carries, and it failed on the **first** suite run after the rule
+shipped, naming the field. `run.RECORDED_METRICS` already carried it (added with §10m's
+pricing), so the record was fine and only the block was not — which is why nothing offline
+noticed.
+
+Fixed in both places the test asks for: `BLOCK_KEYS` and `references/project_manual.md`'s block
+specification, which `test_the_manual_and_block_keys_name_the_same_fields_in_the_same_order`
+then required to agree in **order** as well as in content.
+
+**The general lesson is worth more than the fix.** A ranking rule priced offline against
+`evaluation.json` and shipped to a reader of the `<metrics>` block is measuring one dict and
+deployed against another. Every candidate in §10f–§10o was priced that way, so this check is
+not optional for any of them — it is the only thing standing between a measured improvement and
+a rule that cannot see its own inputs.
+
+##### Keeping the evidence checkable after shipping the thing it argued for
+
+Shipping moved the base, so **twelve** of `audit_plan_claims.py`'s claims stopped verifying at
+once — every table in §10g, §10h, §10l, §10m and §10o is a statement about the ranker *before*
+this change, and those are the measurements the change was argued from. Striking them would
+have left the plan asserting numbers nothing could re-derive, which is the failure this audit
+exists to prevent.
+
+So `rank_study.floor_order_only()` restores the pre-§10o reading by holding
+`MIN_ORDER_SEPARATION` at infinity — no pool can clear it, so every reading falls back to the
+absolute one, **exactly** and not approximately. `_study` now defaults to that era, the
+affected helpers carry an `@_pre10o` decorator, and the four new claims about the shipped
+ranker pass `pre10o=False` and say so in their labels. `--pre10o` exposes the same switch on
+the command line. Verified: `--variant regraded --pre10o` reproduces 6/9, 2.267, 0.855× and
+the holdout's 6/9, 2.015, and the audit is back to **165/165**.
+
+One measured correction to the previous subsection while shipping: it reported the usable
+window as `[4, 13]`, read off the `zorder:C:Z` sweep where the guard and the clip were separate
+knobs. With the single constant it is **[2, 13]** — at 2.0 the rule fires on M06 and the arm is
+still 8/9. That makes declining M06 a *principled* choice rather than an outcome-driven one,
+which is a better position than the one the draft claimed, and the floor's argument is restated
+above on that footing.
 
 ---
 

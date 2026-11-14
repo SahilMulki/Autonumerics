@@ -15,6 +15,8 @@ Run:  uv run python docs/sciml-benchmark-data/audit_plan_claims.py
 Exits non-zero if any claim no longer matches.
 """
 
+import contextlib
+import functools
 import json
 import pathlib
 import statistics
@@ -40,6 +42,29 @@ if str(ROOT) not in sys.path:  # this file lives two levels down from the repo r
     sys.path.insert(0, str(ROOT))
 
 
+def _pre10o(fn):
+    """Run ``fn`` against the ranker as it read **before** §10o shipped.
+
+    Every table in §10f through §10o was measured against that ranker -- they are the
+    evidence the ship was argued from -- so each of those claims has to be checked in
+    that era or the improvement would have made its own justification unverifiable.
+    `rank_study.floor_order_only` does it by holding
+    `ranking.MIN_ORDER_SEPARATION` at infinity, which is the pre-ship component
+    exactly and not an approximation of it.
+
+    Claims about the ranker **as it ships now** pass ``pre10o=False`` to
+    :func:`_study`, and say so in their label.
+    """
+    @functools.wraps(fn)
+    def wrapped(*args, **kwargs):
+        from benchmark import rank_study
+
+        with rank_study.floor_order_only():
+            return fn(*args, **kwargs)
+    return wrapped
+
+
+@_pre10o
 def _load(path):
     if not path.exists():
         print(f"missing (gitignored result file?): {path.relative_to(ROOT)}")
@@ -155,6 +180,7 @@ def _lilliefors_agreement():
             for n in (5_000, 20_000, 50_000)}
 
 
+@_pre10o
 def _m01_regraded():
     """M01's three plans as the kernel scores them **now**, best-plan-first by the
     harness's measured error (§10g's re-grade table)."""
@@ -235,6 +261,7 @@ def _m09_published_order():
     return det.get("component"), round(doc["summary"].get("observed_order"), 4)
 
 
+@_pre10o
 def _m09_keys_exclude_order():
     """M09's comparable components under the re-graded scores. `order` must be absent:
     the Euler-Maruyama measures one and both exact samplers abstain, so SS10b's
@@ -394,6 +421,7 @@ def _route_corpus_split():
     return out
 
 
+@_pre10o
 def _relorder_guard_two_is_load_bearing():
     """``((best, M01's pick) with the guard, the same with it off)`` (SS10m).
 
@@ -416,6 +444,7 @@ def _relorder_guard_two_is_load_bearing():
     return tuple(out)
 
 
+@_pre10o
 def _relorder_ci_is_flat():
     """``[(C, picks_best, geomean)]`` across the sweep SS10m reports (SS10m).
 
@@ -457,6 +486,7 @@ def _relorder_shortfall_guard_is_dead():
     return round(worst, 4), STRONG_BAND
 
 
+@_pre10o
 def _relorder_flips_one_winner():
     """``[(pool, shipped top, relorder top)]`` for every pool whose winner moves (SS10m).
 
@@ -487,6 +517,165 @@ def _m05_compare_agrees_at_every_path_count():
     doc = json.loads(path.read_text())
     return [(row["num_paths"], row["milstein_vs_taylor"], row["em_vs_taylor"])
             for row in doc["rows"]]
+
+
+#: The 2026-11-14 re-run of three entries (SS10n), and the workspaces it produced. Both
+#: are kept beside the step-10 files because `--fresh` overwrites `workspace/`, so the
+#: run that is being compared against would otherwise be unreadable after the next one.
+RUN2 = "benchmark/results/pipeline/sciml_probe2/sciml_probe2.json"
+RUN2_WS = "benchmark/results/pipeline/workspace-probe2"
+RUN1_WS = "benchmark/results/pipeline/workspace-pre-probe"
+RUN2_IDS = ("M01", "M05", "M09")
+
+
+def _run2_rows():
+    """``{id: (winner, best_by_harness, regret, wrong_plan_won)}`` for the re-run (SS10n)."""
+    path = ROOT / RUN2
+    if not path.exists():
+        return None
+    out = {}
+    for r in json.loads(path.read_text())["results"]:
+        hb = r.get("harness_by_plan") or {}
+        we, be = hb.get("winner_harness_err"), hb.get("best_harness_err")
+        out[r["id"]] = (hb.get("winner"), hb.get("best_plan_by_harness"),
+                        round(we / be, 3) if (we and be) else None,
+                        hb.get("wrong_plan_won"))
+    return out
+
+
+def _run2_vs_run1():
+    """``(run1 shipped/C0, run2 shipped/C0, run1 regret, run2 regret)`` geomeans over the
+    three re-run entries (SS10n). The harness errors are comparable across the two runs
+    even though the specs were re-derived, because the harness re-derives truth from
+    `problems.py` at its own fixed level (SS10j) -- M05's three come back identical to 13
+    significant figures, which is the check on that."""
+    import statistics
+
+    from benchmark import rank_study
+
+    c0 = rank_study.c0_errors()
+    runs = {}
+    for tag, paths in (("run1", rank_study.SCIML), ("run2", [RUN2])):
+        by = {}
+        for f in paths:
+            q = ROOT / f
+            if q.exists():
+                for r in json.loads(q.read_text())["results"]:
+                    by[r["id"]] = r.get("harness_by_plan") or {}
+        runs[tag] = by
+    out = []
+    for tag in ("run1", "run2"):
+        by = runs[tag]
+        if not all(k in by for k in RUN2_IDS):
+            return None
+        out.append(statistics.geometric_mean(
+            [by[k]["winner_harness_err"] / c0[k] for k in RUN2_IDS]))
+    for tag in ("run1", "run2"):
+        by = runs[tag]
+        out.append(statistics.geometric_mean(
+            [by[k]["winner_harness_err"] / by[k]["best_harness_err"] for k in RUN2_IDS]))
+    return tuple(round(v, 3) for v in out)
+
+
+def _m01_num_paths_inversion():
+    """``[(run, declared num_paths, ci_width_rel, bar, resolved, score)]`` for M01's
+    first plan (SS10n).
+
+    The kernel evaluates at the formulator's `evaluation_thresholds.num_paths`, which
+    SS10j established is fabricated. With 50000 declared the accuracy statistic resolves
+    and the plan certifies at 10; with the truthful 1000 it does not and the plan scores
+    6. So the invented threshold was load-bearing for the pipeline's own 10s.
+    """
+    out = []
+    for tag, base in (("run1", RUN1_WS), ("run2", RUN2_WS)):
+        evs = sorted((ROOT / base / "sde_sciml_linear_ito" / "plans").glob(
+            "1-*/evaluation.json"))
+        if not evs:
+            return None
+        d = json.loads(evs[0].read_text())
+        per = ((d.get("detail") or {}).get("resolved") or {}).get("per_component") or [{}]
+        out.append((tag, (d["config"]["num_paths"] or {}).get("value"),
+                    round(per[0].get("ci_width_rel"), 3), per[0].get("bar"),
+                    d["summary"].get("resolved"), d["score"]))
+    return out
+
+
+@_pre10o
+def _m05_live_margin():
+    """``(ordered plan names, order components, index margin)`` for the re-run of M05
+    (SS10n). `order` still ties the pool's best plan with its worst; what decides it is
+    that `structure` came back flat this time, by 0.00025 of index."""
+    from verifylib import ranking
+
+    base = ROOT / RUN2_WS / "sde_sciml_nltest" / "plans"
+    sums, names = [], []
+    for ev in sorted(base.glob("*/evaluation.json")):
+        d = json.loads(ev.read_text())
+        s = dict(d["summary"])
+        s.setdefault("kind", d.get("kind"))
+        sums.append(s)
+        names.append(ev.parent.name)
+    if len(sums) != 3:
+        return None
+    keys = ranking.comparable_keys(0.0, sums)
+    idx = [ranking.sqi(s, 0.0, keys=keys)[0] for s in sums]
+    return (tuple(names), tuple(round(ranking.order(s), 4) for s in sums),
+            round(max(idx) - sorted(idx)[-2], 5))
+
+
+def _m09_truncated_pool():
+    """``(planned, implemented, skipped plan, its state, declares a capability?)`` for
+    the re-run of M09 (SS10n). The last field is why SS10m's capability guard is inert:
+    the skipped plan declares none."""
+    import re
+
+    base = ROOT / RUN2_WS / "sde_sciml_weak_noncommutative" / "plans"
+    planned = sorted(d.name for d in base.iterdir() if d.is_dir())
+    impl = [n for n in planned if (base / n / "solver.py").exists()]
+    skipped = [n for n in planned if n not in impl]
+    if len(skipped) != 1:
+        return None
+    import benchmark.verify as V
+    st = V.parse_state(str(ROOT / RUN2_WS / "sde_sciml_weak_noncommutative"))
+    fm = re.match(r"---\n(.*?)\n---",
+                  (base / skipped[0] / "SOLUTION.md").read_text(encoding="utf-8"),
+                  re.S)
+    declares = bool(re.search(r"^exact_sampling_components:", fm.group(1), re.M))
+    return (len(planned), len(impl), skipped[0],
+            (st["plans"].get(skipped[0]) or {}).get("state"), declares)
+
+
+def _parse_state_carries_the_exit_condition():
+    """``(run1 pipeline.certified, run2 pipeline.certified present?)`` (SS10n).
+
+    `certified` is the conductor's exit condition and was dropped by `parse_state`, so
+    `pipeline.certified` was None on every record. Fixed; run 1's STATE.md carries the
+    field and now reaches the record, and run 2's conductor omitted it entirely (SS7a
+    defect 12) so it is correctly still absent rather than invented as false.
+    """
+    import benchmark.run as RUN
+
+    a = RUN.summarize_pipeline(
+        str(ROOT / RUN1_WS / "sde_sciml_weak_noncommutative"))
+    b = RUN.summarize_pipeline(
+        str(ROOT / RUN2_WS / "sde_sciml_weak_noncommutative"))
+    return a.get("certified"), ("certified" in b)
+
+
+def _records_without_the_certification():
+    """How many recorded runs carry `pipeline.certified` (SS10n). Zero of them did,
+    because the parser never produced the key."""
+    from benchmark import rank_study
+
+    n = c = 0
+    for f in list(rank_study.SCIML) + [RUN2]:
+        q = ROOT / f
+        if not q.exists():
+            continue
+        for r in json.loads(q.read_text())["results"]:
+            n += 1
+            c += "certified" in (r.get("pipeline") or {})
+    return n, c
 
 
 def _decl_order_best():
@@ -544,6 +733,7 @@ def _m01_scores():
     return [p["summary"].get("score") for p in ordered]
 
 
+@_pre10o
 def _m01_indices():
     """M01's three quality indices, best plan first -- the counterfactual behind
     10f's claim that the index ranks M01 right and ``score`` overrides it."""
@@ -561,11 +751,20 @@ def _cost(doc):
     return sum(float((r.get("run") or {}).get("cost_usd") or 0) for r in doc["results"])
 
 
-def _study(variant, floor=0.0, holdout=False, source=None):
+def _study(variant, floor=0.0, holdout=False, source=None, pre10o=True):
     """One row of §10f's variant table, re-derived by running the study (§10f).
 
     Imported rather than shelled out to, so a signature change here is a failure
     rather than a silently different number.
+
+    ``pre10o`` **defaults to True**: it measures against the ranker as it read
+    before §10o shipped the
+    pool-relative `order` component. Every claim in §10g, §10h, §10l, §10m and
+    §10o is about *that* ranker -- they are the measurements the ship was argued
+    from -- so twelve of them would have gone unverifiable the moment it landed. The
+    flag holds `ranking.MIN_ORDER_SEPARATION` at infinity, which no pool can clear,
+    so the component falls back to the absolute reading exactly rather than
+    approximately.
     """
     from benchmark import rank_study
 
@@ -575,13 +774,20 @@ def _study(variant, floor=0.0, holdout=False, source=None):
     # `regraded` claim silently reads the `<metrics>` blocks and measures `current`.
     breadth = 0
     ci = rank_study.REL_ORDER_CI
+    z = rank_study.Z_ORDER_CLIP
     name = variant
     if ":" in variant and not variant.startswith("floor:"):
         name, n = variant.split(":", 1)
         # SS10m's two routes carry a standard-error multiplier where `thin`/`ordertie`
         # carry a breadth, so the suffix means different things and the mapping has to
-        # branch on the name rather than on the colon.
-        if name in ("relorder", "routes"):
+        # branch on the name rather than on the colon. SS10o's two carry *both*.
+        if name == "both":
+            ci, breadth = float(n.split(":")[0]), int(n.split(":")[1])
+        elif name == "zorder":
+            bits = n.split(":")
+            ci = float(bits[0])
+            z = float(bits[1]) if len(bits) > 1 else z
+        elif name in ("relorder", "routes"):
             ci = float(n)
         else:
             breadth = int(n)
@@ -593,15 +799,270 @@ def _study(variant, floor=0.0, holdout=False, source=None):
     # ranking rules priced against the scorer that ships *today*, so they read
     # `evaluation.json` like `regraded` does.
     src = source or ("evaluation" if name in (
-        "regraded", "whitelisted", "relorder", "structadm", "routes") else "metrics")
+        "regraded", "whitelisted", "relorder", "structadm", "routes", "both",
+        "zorder") else "metrics")
     pool_list = rank_study.pools(
         paths, truncated=(variant == "truncated"), source=src)
     if variant == "whitelisted":
         pool_list = rank_study._restrict_to_record(pool_list)
-    rows = rank_study.study(pool_list, name, floor, base, breadth, ci)
+    with (rank_study.floor_order_only() if pre10o else contextlib.nullcontext()):
+        rows = rank_study.study(pool_list, name, floor, base, breadth, ci, z)
     return rank_study.summarise(rows), rows
 
 
+def _m02_order_is_uninformative_but_resolved():
+    """M02's three plans: `(shipped order, _rel_order, z-order, sigma gap of the top
+    two)` (\u00a710o).
+
+    The pool \u00a710o turns on. The shipped component reads 1.000 for all three because
+    every plan clears its floor; the top two are separated by thousands of standard
+    errors and by 2.46x of harness error; and `_rel_order` maps that separation to
+    0.000192 of component, which `structure` then outvotes. Measured off the recorded
+    pool rather than restated, so a re-grade that changes the order study fails this.
+    """
+    import math
+
+    from benchmark import rank_study
+    from verifylib import ranking
+
+    pool = next(q for q in rank_study.pools(rank_study.SCIML, source="evaluation")
+                if q["id"] == "M02")
+    sums = [q["summary"] for q in pool["plans"] if q["summary"]]
+    shipped = tuple(round(ranking.order(s), 6) for s in sums)
+    rel = tuple(round(rank_study._rel_order(s, sums), 6) for s in sums)
+    zed = tuple(rank_study._z_order(s, sums) for s in sums)
+    rows = sorted(((ranking._num(s.get("observed_order")),
+                    ranking._num(s.get("observed_order_se"))) for s in sums),
+                  key=lambda r: -r[0])
+    sigmas = (rows[0][0] - rows[1][0]) / math.sqrt(rows[0][1] ** 2 + rows[1][1] ** 2)
+    return shipped, rel, zed, int(round(sigmas, -2))
+
+
+@_pre10o
+def _ordertie_abstains_where_relorder_speaks():
+    """`(ordertie's keys on M02, both's keys on M02)` (\u00a710o).
+
+    Why the pair cannot compose, as a measurement rather than an argument:
+    `ordertie:2` reaches M02's correct pick by abstaining -- its key set is **empty**
+    -- and `relorder`'s substitution is exactly what refills it.
+    """
+    from benchmark import rank_study
+    from verifylib import ranking
+
+    pool = next(q for q in rank_study.pools(rank_study.SCIML, source="evaluation")
+                if q["id"] == "M02")
+    sums = [q["summary"] for q in pool["plans"] if q["summary"]]
+    tol = ranking._tol_of(sums[0], sums[0])
+    return (rank_study._keys("ordertie", tol, sums, 2),
+            rank_study._keys("both", tol, sums, 2, rank_study.REL_ORDER_CI))
+
+
+@_pre10o
+def _zorder_is_flat_then_collapses():
+    """`(values of Z holding 8/9, the Z at which M05 is lost)` (\u00a710o).
+
+    The knob's inertness, which is the reason `zorder` is recorded rather than
+    shipped: it is an indicator over a 300x range of its own parameter, and the only
+    thing a larger clip buys is losing the pool `relorder` already had.
+    """
+    flat = [z for z in (1.0, 1.5, 2.0, 3.0, 5.0, 8.0, 12.0, 30.0, 100.0, 300.0)
+            if _study(f"zorder:2:{z}")[0]["picks_best"] == 8]
+    lost = next(z for z in (300.0, 1000.0, 3000.0)
+                if next(r["regret"] for r in _study(f"zorder:2:{z}")[1]
+                        if r["id"] == "M05") > 2.0)
+    return len(flat), lost
+
+
+@_pre10o
+def _zorder_component_saturates():
+    """How many of the nine sciml pools `zorder` *fires* on, and on how many of those
+    its component is a 0/1 indicator (\u00a710o).
+
+    If the second number is smaller than the first there is a graded regime and the
+    plan's claim that `Z` is cosmetic is wrong.
+    """
+    from benchmark import rank_study
+
+    fires = binary = 0
+    for pool in rank_study.pools(rank_study.SCIML, source="evaluation"):
+        sums = [q["summary"] for q in pool["plans"] if q["summary"]]
+        if len(sums) < 2:
+            continue
+        rel = [rank_study._rel_order(s, sums) for s in sums]
+        zed = [rank_study._z_order(s, sums) for s in sums]
+        if rel == zed or any(v is None for v in zed):
+            continue            # abstained on one of `_rel_order`'s guards
+        fires += 1
+        binary += all(v in (0.0, 1.0) for v in zed)
+    return fires, binary
+
+
+@_pre10o
+def _regrade_not_relorder_carries_m01():
+    """`(M01 and M06's regret under `regraded`, under `relorder:2`)` (\u00a710o).
+
+    \u00a710m's attribution, corrected: the re-grade carries both pools on its own and
+    `relorder`'s whole marginal contribution over it is M05.
+    """
+    def pair(variant):
+        rows = {r["id"]: round(r["regret"], 3) for r in _study(variant)[1]}
+        return rows["M01"], rows["M06"], rows["M05"]
+    return pair("regraded"), pair("relorder:2")
+
+
+@_pre10o
+def _zorder_firing_separations():
+    """The top-two separation, in combined standard errors, on each pool `zorder`
+    fires on (\u00a710o).
+
+    The spread here is the reason \u00a710o holds the variant: 3.6 sigma on M06 and 3166 on
+    M02 are both acted on identically, and nine pools cannot say where between them the
+    line should be.
+    """
+    import math
+
+    from benchmark import rank_study
+    from verifylib import ranking
+
+    out = []
+    for pool in rank_study.pools(rank_study.SCIML, source="evaluation"):
+        sums = [q["summary"] for q in pool["plans"] if q["summary"]]
+        if len(sums) < 2:
+            continue
+        rel = [rank_study._rel_order(s, sums) for s in sums]
+        zed = [rank_study._z_order(s, sums) for s in sums]
+        if rel == zed or any(v is None for v in zed):
+            continue
+        rows = sorted(((ranking._num(s.get("observed_order")),
+                        ranking._num(s.get("observed_order_se"))) for s in sums),
+                      key=lambda r: -r[0])
+        out.append(round((rows[0][0] - rows[1][0])
+                         / math.sqrt(rows[0][1] ** 2 + rows[1][1] ** 2), 1))
+    return out
+
+
+def _se_is_orders_of_magnitude_too_small():
+    """`(smallest, largest observed_order_se over the sciml pools)` (\u00a710o).
+
+    The quantity every rule in \u00a710m and \u00a710o divides by. \u00a710o's **retracted** claim
+    was that this range is 1e-07 to 1e-08; it is not, and this is the number that
+    retracted it. The 1e-07s belong to M02 alone.
+    """
+    from benchmark import rank_study
+    from verifylib import ranking
+
+    ses = [ranking._num(q["summary"].get("observed_order_se"))
+           for pool in rank_study.pools(rank_study.SCIML, source="evaluation")
+           for q in pool["plans"]
+           if q["summary"] and ranking._num(q["summary"].get("observed_order_se"))]
+    return f"{min(ses):.0e}", f"{max(ses):.0e}"
+
+
+def _shipped_arm():
+    """``(picks_best, outside_margin, geomean, vs_c0)`` for the ranker **as it ships**
+    (\u00a710o step 2), on sciml and on the holdout.
+
+    The one set of numbers in this file measured in the current era rather than the
+    pre-\u00a710o one. If this and :func:`_study`'s default ever agree, the ship was
+    reverted and a dozen claims above are silently measuring the wrong thing.
+    """
+    out = []
+    for holdout in (False, True):
+        s, _ = _study("regraded", holdout=holdout, pre10o=False)
+        out.append((s["picks_best"], s["outside_margin"],
+                    round(s["geomean"], 3),
+                    None if s["vs_c0"] is None else round(s["vs_c0"], 3)))
+    return tuple(out)
+
+
+def _separation_window():
+    """The values of `MIN_ORDER_SEPARATION` holding the shipped arm at 8/9, the first
+    one outside the window, and the value actually shipped (\u00a710o step 2).
+
+    The floor is the one number in the rule chosen rather than measured, so what the
+    corpus *can* say is where the choice stops mattering -- and that the window is
+    bounded on both sides by a pool rather than trailing off.
+    """
+    from benchmark import rank_study
+    from verifylib import ranking
+
+    saved = ranking.MIN_ORDER_SEPARATION
+    held, outside = [], []
+    try:
+        for value in (2.0, 3.0, 4.0, 5.0, 8.0, 10.0, 13.0, 14.0, 20.0):
+            ranking.MIN_ORDER_SEPARATION = value
+            rows = rank_study.study(
+                rank_study.pools(rank_study.SCIML, source="evaluation"),
+                "regraded", 0.0, rank_study.c0_errors())
+            (held if rank_study.summarise(rows)["picks_best"] == 8
+             else outside).append(value)
+    finally:
+        ranking.MIN_ORDER_SEPARATION = saved
+    return min(held), max(held), min(outside), saved
+
+
+def _certification_ignores_the_pool():
+    """``(sqi_cert alone, sqi_cert given a pool, order alone, order in that pool)`` on
+    \u00a710l's 622x pool (\u00a710o step 2).
+
+    The rule that the pool argument's being opt-in enforces. The first two values
+    **differ**, and that is the point: the pooled index moved and the certification's
+    did not, so the opt-in is doing work rather than being decorative. The last two
+    differ too, which is what makes a leak visible here instead of silent -- were
+    `sqi_cert` ever to start passing a pool, the first value would jump to the second.
+    """
+    from benchmark import rank_study
+    from verifylib import ranking
+
+    pool = next(q for q in rank_study.pools(rank_study.SCIML, source="evaluation")
+                if q["id"] == "M05")
+    sums = [q["summary"] for q in pool["plans"] if q["summary"]]
+    worst = min(sums, key=lambda s: ranking._num(s.get("observed_order")) or 0.0)
+    tol = ranking._tol_of(worst, worst)
+    return (ranking.sqi_cert(worst, tol),
+            ranking.sqi(worst, tol, sums, keys=ranking.CERT_COMPONENTS)[0],
+            ranking.order(worst), ranking.order(worst, sums))
+
+
+def _undeclared_plans_in_the_m02_pool():
+    """``(plans, how many declare neither `kind` nor an SDE family, whether the pool's
+    best measured rate belongs to one of them)`` (\u00a710o step 2).
+
+    The bug the ship nearly carried: hooked inside `order`'s SDE branch, the pool
+    reading was unreachable for a plan declaring no family -- and on this pool that is
+    most of it, the best plan included.
+    """
+    from benchmark import rank_study
+    from verifylib import ranking
+
+    pool = next(q for q in rank_study.pools(rank_study.SCIML, source="evaluation")
+                if q["id"] == "M02")
+    plans = [q for q in pool["plans"] if q["summary"]]
+    undeclared = [q for q in plans if not ranking._is_sde(q["summary"])]
+    best = max(plans, key=lambda q: ranking._num(
+        q["summary"].get("observed_order")) or 0.0)
+    return len(plans), len(undeclared), best in undeclared
+
+
+def _ranking_reads_are_carried():
+    """``(order_se on the metrics block, on the record's whitelist, produced by the
+    kernel)`` (§10o step 2).
+
+    The block is what the **live** ranker reads, so a field missing from it makes the
+    rule that reads it inert in the pipeline while still measuring correctly offline
+    against `evaluation.json`. The record's whitelist already carried this one, which
+    is exactly why nothing offline noticed.
+    """
+    from benchmark import run
+    from verifylib.kernel.metrics import BLOCK_KEYS
+
+    driver = (ROOT / "verifylib" / "kernel" / "sde" / "driver.py").read_text()
+    return ("observed_order_se" in BLOCK_KEYS,
+            "observed_order_se" in run.RECORDED_METRICS,
+            'm["summary"]["observed_order_se"]' in driver)
+
+
+@_pre10o
 def _fallback_fires():
     """`(fallback fires, shared set of one, only one component varies)` over all 18
     recorded pools (§10h).
@@ -1540,6 +2001,101 @@ def main():
           == [(1000, "INCONCLUSIVE", "INCONCLUSIVE"),
               (20000, "AGREE", "AGREE"), (200000, "AGREE", "AGREE")]),
          "| 200 000 | **AGREE** | **AGREE** |"),
+        # --- SS10n: three entries re-run live -------------------------------
+        ("the re-run picks the pool's best plan on all three entries",
+         (_run2_rows() == {
+             "M01": ("2-milstein", "2-milstein", 1.0, False),
+             "M05": ("3-strong-taylor-1p5", "3-strong-taylor-1p5", 1.0, False),
+             "M09": ("4-rao-blackwellised-x2", "4-rao-blackwellised-x2", 1.0, False)}),
+         "| M05 | `3-strong-taylor-1p5` | `3-strong-taylor-1p5` | **1.000** | | **622.233** |"),
+        ("and on those three it goes from 1.967x to 0.161x of the one-shot",
+         (_run2_vs_run1() == (1.967, 0.161, 22.493, 1.0)),
+         "**1.967\u00d7 \u2192 0.161\u00d7**"),
+        ("M01's 10 came from the fabricated path count and its 6 from the true one",
+         (_m01_num_paths_inversion()
+          == [("run1", 50000, 0.064, 0.1, True, 10),
+              ("run2", 1000, 0.354, 0.05, False, 6)]),
+         "| run 2 | 1 000 | 0.354 | 0.05 | \u2717 | **6** | `UNDERCLAIM` |"),
+        ("M05's live pick is decided by 0.00024 of index, with order still tied",
+         (_m05_live_margin() == (("1-euler-maruyama", "2-milstein",
+                                  "3-strong-taylor-1p5"),
+                                 (1.0, 0.9981, 1.0), 0.00024)),
+         "a margin of 0.00024"),
+        ("M09 planned four plans, implemented three, and the hole declares nothing",
+         (_m09_truncated_pool() == (4, 3, "2-exact-x1-leg-control-variate",
+                                    "unfinished_winner_exited", False)),
+         "M09's pool is **4 plans, 3 implemented**"),
+        ("the exit condition was absent from every record and now reaches it",
+         (_records_without_the_certification() == (13, 0)
+          and _parse_state_carries_the_exit_condition() == (True, False)),
+         "the key was `None` on **13 of 13** records ever written"),
+        # --- SS10o: the pair that does not compose ---------------------------
+        ("composing routes (i) and `ordertie` is bit-identical to route (i) alone",
+         (_study("both:2:2")[0]["picks_best"] == 7
+          and f"{_study('both:2:2')[0]['geomean']:.3f}" == "1.109"
+          and f"{_study('both:2:2')[0]['vs_c0']:.3f}" == "0.419"
+          and [round(r["regret"], 3) for r in _study("both:2:2")[1]]
+          == [round(r["regret"], 3) for r in _study("relorder:2")[1]]),
+         "**bit-identical to `relorder:2` alone**"),
+        ("and it is inert because `ordertie` reached M02 by abstaining",
+         (_ordertie_abstains_where_relorder_speaks()[0] == ()
+          and set(_ordertie_abstains_where_relorder_speaks()[1])
+          == {"order", "structure"}),
+         "**satisfies the very breadth test whose failure was doing the\nwork**"),
+        ("M02's order study is resolved to thousands of sigma and reads as a tie",
+         (_m02_order_is_uninformative_but_resolved()[0] == (1.0, 1.0, 1.0)
+          and _m02_order_is_uninformative_but_resolved()[1][2] == 0.999808
+          and _m02_order_is_uninformative_but_resolved()[3] == 3200),
+         "about **3200\ncombined standard errors** apart"),
+        ("the significance-scaled reading repairs M02 and keeps M05",
+         (_study("zorder:2:3")[0]["picks_best"] == 8
+          and _study("zorder:2:3")[0]["outside_margin"] == 0
+          and f"{_study('zorder:2:3')[0]['geomean']:.3f}" == "1.004"
+          and f"{_study('zorder:2:3')[0]['vs_c0']:.3f}" == "0.379"),
+         "| **regret geomean** | 3.120 | 2.267 | 1.109 | 2.051 | 1.109 | 1.523 | 6.303 | **1.004** |"),
+        ("its guard is load-bearing and its clip is not",
+         (_study("zorder:0:3")[0]["picks_best"] == 7
+          and _zorder_is_flat_then_collapses() == (10, 1000.0)),
+         "| `Z` (significance clip) | 1 \u2026 300 (300\u00d7) | 8/9, 1.004, 0.379\u00d7 at every value |"),
+        ("the component is an indicator on all five pools it fires on",
+         _zorder_component_saturates() == (5, 5),
+         "exactly 0/1 on\n**5 of 5** firing pools"),
+        ("and the retracted claim about the standard errors is retracted",
+         (_se_is_orders_of_magnitude_too_small() == ("3e-08", "4e-02")
+          and _m02_order_is_uninformative_but_resolved()[3] == 3200),
+         "the real range is **3e-08 to\n4e-02**"),
+        ("and M06, the weakest firing pool, is decided on 3.6 sigma",
+         _zorder_firing_separations() == [3166.2, 13.4, 3.6, 15.6, 31.5],
+         "| M06 | **yes** | **3.6\u03c3** |"),
+        ("the holdout cannot distinguish any of the candidates",
+         ([round(r["regret"], 3) for r in _study("zorder:2:3", holdout=True)[1]]
+          == [round(r["regret"], 3) for r in _study("regraded", holdout=True)[1]]
+          == [round(r["regret"], 3) for r in _study("both:2:2", holdout=True)[1]]),
+         "are bit-identical on its nine pools"),
+        ("the re-grade, not route (i), is what carries M01 and M06",
+         (_regrade_not_relorder_carries_m01()
+          == ((1.0, 1.0, 622.233), (1.0, 1.0, 1.0))),
+         "the\n**re-grade alone** carries M01 and M06"),
+        # --- SS10o step 2: shipped into `verifylib/ranking.py` --------------
+        ("shipped, the arm picks the best plan on 8 of 9 and stays 0.379x",
+         (_shipped_arm() == ((8, 0, 1.004, 0.379), (6, 3, 2.015, None))
+          and _study("regraded")[0]["picks_best"] == 6),
+         "**8 of 9 pools, 0 of 9 outside the harness margin, regret geomean\n1.004 and 0.379\u00d7**"),
+        ("and the separation floor's window is bounded by a pool on each side",
+         _separation_window() == (2.0, 13.0, 14.0, 5.0),
+         "the arm is 8/9 for every value in **[2, 13]**"),
+        ("a certification still reads no sibling's order study",
+         (_certification_ignores_the_pool()[0]
+          != _certification_ignores_the_pool()[1]
+          and _certification_ignores_the_pool()[3]
+          < _certification_ignores_the_pool()[2]),
+         "a certification never reads a sibling plan's order study"),
+        ("and the pool test had to be the pool's, not the plan's",
+         _undeclared_plans_in_the_m02_pool() == (3, 2, True),
+         "**two of three plans declare neither**, the pool's best included"),
+        ("and the field the shipped rule reads is carried on the block it reads",
+         _ranking_reads_are_carried() == (True, True, True),
+         "**completely inert in\nthe pipeline**"),
         ("step 10 is complete at nine of nine",
          (sum(1 for r in by.values() if r["verdict"] == "VERIFIED_PASS") == 5
           and sum(1 for r in by.values() if r["verdict"] == "UNDERCLAIM") == 4

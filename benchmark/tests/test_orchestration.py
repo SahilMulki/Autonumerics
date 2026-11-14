@@ -702,3 +702,146 @@ def test_an_exhausted_fallback_key_is_recorded_as_exhausted(tmp_path):
     assert out["best_plan"] == "1-euler-maruyama-antithetic"
     assert out["best_plan_source"] == "fallback"
     assert out["best_plan_tied"] is True
+
+
+# --- E10: the recorder's narrowest point -----------------------------------------
+# Found by re-running three sciml entries under the fixed kernel, 2026-11-14.
+# `parse_state` captured {iter, score, one_sentence} and dropped the two fields that
+# say what the conductor *did*: `certified`, which is what its winner early-exit
+# turns on, and `state`, which is how a plan it never implemented becomes visible.
+
+_PLANS_E10 = """---
+phase: done
+problem_type: sde
+path: B
+plans:
+  1-euler-maruyama-antithetic:
+    one-sentence: Vector Euler-Maruyama with antithetic pairing.
+    iter: 1
+    score: 10
+    certified: true
+    state: winner_pool
+  2-exact-x1-leg-control-variate:
+    one-sentence: X1 stepped by its exact pathwise exponential, X2 by Euler.
+    iter: 0
+    score: 0
+    certified: nonsense
+    state: unfinished_winner_exited
+  3-milstein-levy-area:
+    one-sentence: Full multi-dimensional Milstein with Levy-area treatment.
+    iter: 1
+    score: 8
+    certified: false
+    state: stopped
+---
+"""
+
+
+def test_the_state_parser_carries_certified_and_the_plan_state(tmp_path):
+    """Both were dropped, and each cost something different.
+
+    `certified` is the conductor's own exit condition -- `commands/conductor.md`:
+    "`certified` -- not `score == 10` -- is the exit condition" -- and
+    `summarize_pipeline` reads `plans[best_plan]["certified"]` to emit
+    `pipeline.certified`, which `report._pipeline_claimed_pass` then reads. Because
+    this parser never produced the key it was None on **every record ever written**
+    (13 of 13 checked on 2026-11-14), so both readers fell back to the old score
+    test and nothing said so.
+
+    An unrecognised value stays **None**, not False: `summarize_pipeline` emits the
+    key only `if isinstance(certified, bool)`, so a value this parser cannot read
+    has to stay absent rather than become a pass claim the conductor never made.
+    """
+    import benchmark.verify as V
+    state = V.parse_state(_state(tmp_path, _PLANS_E10))
+    plans = state["plans"]
+    assert plans["1-euler-maruyama-antithetic"]["certified"] is True
+    assert plans["3-milstein-levy-area"]["certified"] is False
+    assert plans["2-exact-x1-leg-control-variate"]["certified"] is None, (
+        "an unparseable value must not become a claim")
+    assert plans["2-exact-x1-leg-control-variate"]["state"] == (
+        "unfinished_winner_exited")
+    assert plans["1-euler-maruyama-antithetic"]["state"] == "winner_pool"
+    assert plans["3-milstein-levy-area"]["state"] == "stopped"
+
+
+def test_the_record_now_carries_the_certification_the_exit_turned_on(tmp_path):
+    """`pipeline.certified` was absent from all 13 records on disk."""
+    out = RUN.summarize_pipeline(
+        _state(tmp_path, _PLANS_E10, best_plan="1-euler-maruyama-antithetic"))
+    assert out["certified"] is True
+
+    # And it stays absent where the conductor did not write the field, rather than
+    # being invented as False. The 2026-11-14 re-run is the live case: its STATE.md
+    # carries no `certified:` line on any plan, although conductor.md instructs it.
+    bare = _PLANS_E10.replace("    certified: true\n", "").replace(
+        "    certified: false\n", "").replace("    certified: nonsense\n", "")
+    out2 = RUN.summarize_pipeline(
+        _state(tmp_path, bare, best_plan="1-euler-maruyama-antithetic"))
+    assert "certified" not in out2, out2.get("certified")
+
+
+def test_a_plan_the_conductor_never_implemented_is_recorded_as_a_hole(tmp_path,
+                                                                     monkeypatch):
+    """`harness_by_plan` is the block every comparison reads, and a plan with no
+    `solver.py` was skipped there silently -- so a pool of four that produced three
+    solvers was indistinguishable from a pool of three.
+
+    Measured on the 2026-11-14 re-run of `sde_sciml_weak_noncommutative`: 4 plans,
+    3 implemented, and the unimplemented one was the pool's only exact-X1-leg
+    method, the technique whose analogue in the previous run was that pool's **best**
+    plan (harness error 0.057 against the 0.166 this run shipped). From the record
+    alone the pool read three wide and simply worse. `best_plan_by_harness` and
+    every regret computed from it are over the *implemented* plans only, and that
+    bound has to be visible beside them.
+    """
+    prob = problem("sde_sciml_weak_noncommutative")
+    ws = tmp_path / "ws"
+    (ws / "plans" / "1-euler-maruyama-antithetic").mkdir(parents=True)
+    (ws / "plans" / "2-exact-x1-leg-control-variate").mkdir(parents=True)
+    (ws / "plans" / "1-euler-maruyama-antithetic" / "solver.py").write_text("x = 1\n")
+    # plan 2 has no solver.py at all: the solver agent never ran on it.
+
+    monkeypatch.setattr(RUN.V, "best_plan_dir",
+                        lambda *a, **k: str(ws / "plans"
+                                            / "1-euler-maruyama-antithetic"))
+    monkeypatch.setattr(RUN.V, "verify_problem", lambda *a, **k: {
+        "status": "ok", "passed": True, "verified_score": 10})
+    monkeypatch.setattr(RUN, "solution_metrics", lambda d: {})
+
+    rec = {"has_ground_truth": True, "ground_truth_kind": "pathwise",
+           "pipeline": {"best_plan": "1-euler-maruyama-antithetic", "plans": {
+        "1-euler-maruyama-antithetic": {"state": "winner", "iter": 1, "score": 10},
+        "2-exact-x1-leg-control-variate": {
+            "state": "unfinished_winner_exited", "iter": 0, "score": 0,
+            "one_sentence": "X1 stepped by its exact pathwise exponential."}}}}
+
+    out = RUN.grade_every_plan(prob, str(ws), rec, None, None)
+    assert set(out["plans"]) == {"1-euler-maruyama-antithetic"}, "only the implemented one"
+    assert set(out["not_implemented"]) == {"2-exact-x1-leg-control-variate"}
+    skipped = out["not_implemented"]["2-exact-x1-leg-control-variate"]
+    assert skipped["state"] == "unfinished_winner_exited", skipped
+    assert skipped["iter"] == 0
+    assert "exact pathwise exponential" in skipped["one_sentence"]
+    # The width the conductor planned, beside the width that was measured.
+    assert (out["plans_implemented"], out["plans_planned"]) == (1, 2)
+
+
+def test_a_fully_implemented_pool_records_no_hole(tmp_path, monkeypatch):
+    """The control: the keys appear only where something is actually missing, so
+    their presence is the signal."""
+    prob = problem("sde_sciml_weak_noncommutative")
+    ws = tmp_path / "ws"
+    (ws / "plans" / "1-euler-maruyama-antithetic").mkdir(parents=True)
+    (ws / "plans" / "1-euler-maruyama-antithetic" / "solver.py").write_text("x = 1\n")
+    monkeypatch.setattr(RUN.V, "best_plan_dir",
+                        lambda *a, **k: str(ws / "plans"
+                                            / "1-euler-maruyama-antithetic"))
+    monkeypatch.setattr(RUN.V, "verify_problem", lambda *a, **k: {
+        "status": "ok", "passed": True, "verified_score": 10})
+    monkeypatch.setattr(RUN, "solution_metrics", lambda d: {})
+    rec = {"has_ground_truth": True, "ground_truth_kind": "pathwise",
+           "pipeline": {"best_plan": "1-euler-maruyama-antithetic", "plans": {}}}
+    out = RUN.grade_every_plan(prob, str(ws), rec, None, None)
+    assert "not_implemented" not in out
+    assert "plans_implemented" not in out and "plans_planned" not in out

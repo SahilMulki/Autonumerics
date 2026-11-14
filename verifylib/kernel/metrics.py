@@ -183,7 +183,18 @@ BLOCK_KEYS = (
     # pair-difference estimate at that level -- the top-level GCI measures the order,
     # this measures the grid the problem is graded on (findings F4).
     "graded_N", "estimated_rel_error_graded",
-    "observed_order", "order_floor",
+    "observed_order",
+    # The order estimate's own standard error. `ranking.order` reads it to decide
+    # whether a pool's two best measured rates are *resolved* before it will rank one
+    # against the other (plan-sciml-benchmark.md 10o), and a rate separation it cannot
+    # price is one it declines to act on. It was produced by `sde/driver.py` and
+    # dropped here, which is the §10h defect exactly: the ranker reads the block, so a
+    # field the block does not carry makes the rule that reads it **inert in the live
+    # pipeline** while still measuring correctly offline against `evaluation.json`.
+    # Caught by `test_ranking_inputs_are_all_on_the_metrics_block`, which exists for
+    # this and found it on the first run after the rule shipped.
+    "observed_order_se",
+    "order_floor",
     # Which side of `order_floor` the *pass* decision counted, as `crn.guards` decided
     # it: "two-sided", or "one-sided (...)" with the reason. Reporting only. It was
     # read by `ranking.order` and absent from this list, so the one-sided branch could

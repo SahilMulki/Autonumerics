@@ -94,7 +94,30 @@ def parse_state(workspace_dir):
     """Parse workspace/{slug}/STATE.md frontmatter.
 
     Returns {phase, problem_type, best_plan, blocked_reason,
-    plans: {id: {iter, score, one_sentence}}} or {} if STATE.md is absent.
+    plans: {id: {iter, score, one_sentence, state, certified}}} or {} if STATE.md
+    is absent.
+
+    ``state`` and ``certified`` were added 2026-11-14, and both were being dropped
+    here although STATE.md carries them -- the recorder's narrowest point, the same
+    class of truncation as the per-plan ``observed_order`` of
+    plan-sciml-benchmark.md SS10e.
+
+    * ``certified`` is what the conductor's winner early-exit actually turns on
+      (``commands/conductor.md``: "`certified` -- not `score == 10` -- is the exit
+      condition"). ``run.summarize_pipeline`` reads
+      ``plans[best_plan]["certified"]`` and ``report._pipeline_claimed_pass`` reads
+      the ``pipeline.certified`` it emits -- and because this parser never produced
+      the key, it was ``None`` on every record ever written (13 of 13 checked), so
+      both fell back to the old score test silently.
+    * ``state`` is how a **truncated pool** becomes visible. A plan the winner
+      early-exit reached before the solver did is left
+      ``state: unfinished_winner_exited`` with no ``solver.py``, so it is graded by
+      nothing and ranked by nothing. Measured on the 2026-11-14 re-run of
+      `sde_sciml_weak_noncommutative`: 4 plans, 3 implemented, and the unimplemented
+      one was the pool's exact-X1-leg method -- whose analogue in the previous run
+      was that pool's **best** plan. Read from the record alone the pool looked
+      3-wide and simply worse, which is the wrong conclusion and the one this field
+      exists to prevent.
     """
     path = os.path.join(workspace_dir, "STATE.md")
     if not os.path.exists(path):
@@ -127,7 +150,9 @@ def parse_state(workspace_dir):
                 in_plans = True
         elif in_plans and indent == 2 and line.endswith(":"):
             cur_plan = line[:-1].strip()
-            state["plans"][cur_plan] = {"iter": None, "score": None, "one_sentence": None}
+            state["plans"][cur_plan] = {"iter": None, "score": None,
+                                        "one_sentence": None, "state": None,
+                                        "certified": None}
         elif in_plans and cur_plan and indent >= 4:
             if line.startswith("iter:"):
                 state["plans"][cur_plan]["iter"] = _to_int(line.split(":", 1)[1])
@@ -135,6 +160,10 @@ def parse_state(workspace_dir):
                 state["plans"][cur_plan]["score"] = _to_int(line.split(":", 1)[1])
             elif line.startswith("one-sentence:"):
                 state["plans"][cur_plan]["one_sentence"] = line.split(":", 1)[1].strip()
+            elif line.startswith("state:"):
+                state["plans"][cur_plan]["state"] = line.split(":", 1)[1].strip()
+            elif line.startswith("certified:"):
+                state["plans"][cur_plan]["certified"] = _to_bool(line.split(":", 1)[1])
     return state
 
 
@@ -143,6 +172,17 @@ def _to_int(s):
         return int(s.strip())
     except (ValueError, AttributeError):
         return None
+
+
+def _to_bool(s):
+    """``true``/``false`` as written in STATE.md, and None for anything else.
+
+    None rather than False on an unrecognised value: `summarize_pipeline` emits the
+    key only `if isinstance(certified, bool)`, so an unparseable value has to stay
+    absent rather than become a claim the conductor did not make.
+    """
+    v = (s or "").strip().lower()
+    return True if v == "true" else False if v == "false" else None
 
 
 def best_plan_dir(workspace_dir, state=None):
@@ -564,12 +604,52 @@ def _run_and_read_sde(problem, plan_dir, injected=None, crn=None):
     if paths.ndim != 2:
         return None, run_meta, result, {"status": "error",
                                         "error": f"terminal_paths ndim={paths.ndim}, expected 2"}
-    if paths.shape[0] != n and paths.shape[1] == n:
-        paths = paths.T  # normalize to (num_paths, d)
+    paths = _orient_paths(paths, n)
     labels = ["X", "Y", "Z"][:d]
     comps = [(lab, float(paths[:, i].mean()), float(paths[:, i].var(ddof=1)),
               *_empirical_ses(paths[:, i])) for i, lab in enumerate(labels)]
     return comps, run_meta, result, None
+
+
+def _orient_paths(paths, n):
+    """Normalize a multi-component terminal sample to ``(num_paths, d)``.
+
+    The contract allows either orientation and a solver that returns ``(d, n)`` is
+    not wrong, so every reader of ``terminal_paths`` has to apply this rule. It had
+    three copies -- the moments route, the pathwise route and (from H-N3) the
+    diagnostics fold -- and a rule with three copies is a rule that drifts, which is
+    the reason ``RECORDED_HARNESS`` was extracted for the same kind of fact.
+
+    ``n`` is the count of the run that was *executed*, not the problem's own: a
+    work-precision level varies it deliberately, and a square array is left alone
+    because nothing can disambiguate it.
+    """
+    if paths.ndim == 2 and paths.shape[0] != n and paths.shape[1] == n:
+        return paths.T
+    return paths
+
+
+def _sde_terminal_paths(result, n, d):
+    """The solver's terminal states as ``(n,)`` (scalar state) or ``(n, d)``, or
+    ``None`` when the output does not carry a readable sample.
+
+    Unlike ``_run_and_read_sde``, this never raises and never returns an error dict:
+    its caller is a diagnostic fold, which must not be able to turn a readable run
+    into a crash. A missing or malformed sample is reported by the fold as a
+    diagnostic that could not be evaluated -- not silently skipped (H-N3).
+    """
+    if not isinstance(result, dict) or result.get("terminal_paths") is None:
+        return None
+    try:
+        paths = np.asarray(result["terminal_paths"], dtype=float)
+    except (TypeError, ValueError):
+        return None
+    if d == 1:
+        return paths.ravel()
+    if paths.ndim != 2:
+        return None
+    paths = _orient_paths(paths, n)
+    return paths if paths.shape[1] == d else None
 
 
 def _empirical_ses(col):
@@ -886,13 +966,101 @@ def _sde_moment_truth(problem):
     return fn(problem["T"]) if callable(fn) else None
 
 
+# --- structure diagnostics on the SDE side [H-N3, plan-notable-sde.md] ------
+#
+# The PDE side has had hard structural gates since the systems extension: a
+# diagnostic declared `gate=True` that fails turns the verdict into
+# CONSTRAINT_VIOLATION whatever the accuracy says, which is the finding problems
+# like the Taylor-Green vortex exist to produce. The SDE side had the same `fn`
+# authored nowhere and ran no diagnostics at all, so an SDE problem could not state
+# a structural fact that a scheme is obliged to respect.
+#
+# Two things this is NOT, both of them recorded because each was the tempting
+# shortcut:
+#
+#   1. It is not the kernel's invariant check. `verifylib`'s D2 study writes
+#      `invariant_worst_headroom`, which `ranking.py` reads as the `structure`
+#      component and nothing reads to fail a plan -- measured on SciML's M08, where
+#      the declared invariant was violated by all three plans and the problem still
+#      graded 10/`passed: true` (plan-sciml-benchmark.md §10d). That is the *self*
+#      grader; this is the independent one, and the two are deliberately kept
+#      ignorant of each other (benchmark/README.md, "Two graders, one solver"). The
+#      kernel-side question is left open on purpose: changing a ranking component
+#      moves scores on three suites whose baselines are already measured.
+#   2. It is not the solver's self-report. The callable is authored in problems.py
+#      and evaluated on the terminal sample here, exactly as on the PDE side. A
+#      solver that reports "invariant conserved" is making a claim.
+
+
+def _run_sde_diagnostics(problem, paths, result):
+    """Evaluate an SDE problem's structure diagnostics on its terminal sample.
+
+    The callable signature differs from the PDE one and the asymmetry is deliberate.
+    A PDE diagnostic is handed ``(num, exact, axes, mask)`` because it asks about a
+    *field* on a grid; an SDE has no grid, no mask and no exact field to subtract --
+    the sample is the object. So an SDE diagnostic is
+    ``fn(paths, result, problem) -> (value, passed)``:
+
+    * ``paths``  -- terminal states, ``(n,)`` for a scalar state or ``(n, d)``,
+                    already oriented, or ``None`` if the output carried none;
+    * ``result`` -- the raw solver output, for a diagnostic reading a functional;
+    * ``problem`` -- the entry, for the initial condition and the parameters.
+
+    The *record* is identical to the PDE one -- ``{name, value, passed, gate}`` --
+    which is what lets ``_fold_diagnostics`` and the report's formatter be reused
+    verbatim instead of re-implemented for a second problem type.
+
+    ``paths=None`` fails every declared diagnostic rather than skipping it: a gate
+    that could not be evaluated has not been cleared, and skipping would let a
+    solver dodge a structural gate by returning no sample.
+    """
+    out = []
+    for d in problem.get("diagnostics", ()):
+        rec = {"name": d["name"], "gate": bool(d.get("gate", False))}
+        if paths is None:
+            out.append({**rec, "value": float("nan"), "passed": False,
+                        "error": "terminal_paths missing or unreadable"})
+            continue
+        try:
+            value, passed = d["fn"](paths, result, problem)
+            rec.update(value=float(value), passed=bool(passed))
+        except Exception as exc:  # noqa: BLE001 -- a broken diagnostic must not crash scoring
+            rec.update(value=float("nan"), passed=False,
+                       error=f"{type(exc).__name__}: {exc}")
+        out.append(rec)
+    return out
+
+
+def _fold_sde_diagnostics(out, problem, result, run_meta):
+    """Fold the problem's structure diagnostics into an SDE score dict.
+
+    Reuses ``_fold_diagnostics``, so a failed hard gate produces exactly what it
+    produces on the PDE side: ``constraint_violation``, ``violated_constraints`` and
+    ``passed: False``. No verdict code changes -- ``report.compute_verdict`` already
+    returns ``CONSTRAINT_VIOLATION`` ahead of every pass branch, on the pipeline
+    verdict (report.py:317) and the one-shot verdict (report.py:254) alike.
+
+    **``verified_score`` is deliberately not bounded**, which is the PDE precedent
+    rather than a new choice: the score stays the accuracy the run earned and the
+    verdict carries the structural failure, so a record shows both. A reader who
+    wants the conjunction reads the verdict, which is the field the report tabulates.
+    """
+    if not problem.get("diagnostics"):
+        return out
+    n = int((run_meta or {}).get("num_paths") or problem.get("num_paths") or 0)
+    paths = _sde_terminal_paths(result, n, int(problem["state_dimension"]))
+    diags = _run_sde_diagnostics(problem, paths, result)
+    return _fold_diagnostics(out, {"diagnostics": diags})
+
+
 def verify_sde(problem, plan_dir, injected=None):
     """Exact-moment SDE verification."""
     comps, run_meta, result, err = _run_and_read_sde(problem, plan_dir, injected=injected)
     if err is not None:
         return err
-    return _score_sde_moments(problem, comps, _sde_moment_truth(problem), run_meta,
-                              reference=False, result=result)
+    out = _score_sde_moments(problem, comps, _sde_moment_truth(problem), run_meta,
+                             reference=False, result=result)
+    return _fold_sde_diagnostics(out, problem, result, run_meta)
 
 
 def verify_sde_reference(problem, plan_dir, injected=None):
@@ -902,8 +1070,9 @@ def verify_sde_reference(problem, plan_dir, injected=None):
     if err is not None:
         return err
     # {key: (value, standard_error)}
-    return _score_sde_moments(problem, comps, _sde_moment_truth(problem), run_meta,
-                              reference=True, result=result)
+    out = _score_sde_moments(problem, comps, _sde_moment_truth(problem), run_meta,
+                             reference=True, result=result)
+    return _fold_sde_diagnostics(out, problem, result, run_meta)
 
 
 
@@ -1008,8 +1177,8 @@ def verify_sde_pathwise(problem, plan_dir, injected=None):
     num = np.asarray(result.get("terminal_paths"), dtype=float)
     d = int(problem["state_dimension"])
     n = int(level["num_paths"])
-    if d > 1 and num.ndim == 2 and num.shape[0] != n and num.shape[1] == n:
-        num = num.T
+    if d > 1:
+        num = _orient_paths(num, n)
     rel = _rel_l2_over_paths(num, exact)
     if rel is None:
         return {"status": "error",
@@ -1037,7 +1206,8 @@ def verify_sde_pathwise(problem, plan_dir, injected=None):
     out["pathwise_level"] = {"num_paths": n, "dt": float(level["dt"]),
                              "Nt_fine": int(level["Nt_fine"]),
                              "aggregate": int(level["aggregate"])}
-    return _score_sde_functionals(problem, result, out)
+    out = _score_sde_functionals(problem, result, out)
+    return _fold_sde_diagnostics(out, problem, result, run_meta)
 
 
 def verify_sde_stability(problem, plan_dir, injected=None):
@@ -1079,7 +1249,7 @@ def verify_sde_stability(problem, plan_dir, injected=None):
         in_domain = all_finite if max_abs is None else bool(all_finite and max_abs < bound)
 
     passed = bool(all_finite and in_domain)
-    return {
+    out = {
         "status": "ok",
         "gt_kind": "stability",
         "check": check["type"],
@@ -1091,6 +1261,7 @@ def verify_sde_stability(problem, plan_dir, injected=None):
         "domain_bound": bound if check["type"] == "domain" else None,
         "run": run_meta,
     }
+    return _fold_sde_diagnostics(out, problem, result, run_meta)
 
 
 # --- PDE verification -------------------------------------------------------

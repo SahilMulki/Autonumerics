@@ -509,9 +509,25 @@ def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, 
     winner = (rec.get("pipeline") or {}).get("best_plan")
     winner_dir = V.best_plan_dir(workspace_dir)
     out = {"plans": {}, "winner": winner}
+    # A plan the conductor never implemented, with the state it stopped in. Added
+    # 2026-11-14: these were skipped silently, and `harness_by_plan` is the block
+    # every comparison reads, so a pool of four that produced three solvers was
+    # indistinguishable here from a pool of three. Measured on the re-run of
+    # `sde_sciml_weak_noncommutative`: `2-exact-x1-leg-control-variate` was left
+    # `unfinished_winner_exited` -- the winner early-exit reached it before the
+    # solver did -- and it was the pool's only exact-leg method, the technique whose
+    # analogue in the previous run was that pool's *best* plan at 0.057 against the
+    # 0.166 this one shipped. Read from the record alone, the pool looked three wide
+    # and simply worse. That is the wrong conclusion, and the one this records
+    # against: an unimplemented plan is a hole in the measurement, not a weak pool.
+    state_plans = ((rec.get("pipeline") or {}).get("plans") or {})
     for name in sorted(os.listdir(plans_root)):
         plan_dir = os.path.join(plans_root, name)
         if not os.path.exists(os.path.join(plan_dir, "solver.py")):
+            st = state_plans.get(name) or {}
+            out.setdefault("not_implemented", {})[name] = {
+                "state": st.get("state"), "iter": st.get("iter"),
+                "one_sentence": st.get("one_sentence")}
             continue
         is_winner = winner_dir is not None and os.path.samefile(plan_dir, winner_dir)
         harness = (winner_verify if is_winner and winner_verify is not None
@@ -584,6 +600,12 @@ def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, 
                 out["winner_untied"] = True
     else:
         out["wrong_plan_won"] = None
+    # The pool's measured width against the width the conductor planned. `regret`
+    # and `best_plan_by_harness` are over the *implemented* plans only, so any
+    # reading of "the best plan in the pool" is bounded by this number.
+    if out.get("not_implemented"):
+        out["plans_implemented"] = len(out["plans"])
+        out["plans_planned"] = len(out["plans"]) + len(out["not_implemented"])
     return out
 
 

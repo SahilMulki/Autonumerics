@@ -1133,6 +1133,62 @@ def _diag_single_signed(field="u", tol=1e-3, rel_floor=0.01):
     return fn
 
 
+# --- SDE structure diagnostics [H-N3, plan-notable-sde.md] -------------------
+# The SDE analogue of the block above, and the signature differs because the data
+# does: an SDE diagnostic is ``fn(paths, result, problem) -> (value, passed)`` with
+# ``paths`` the terminal sample, ``(n,)`` for a scalar state or ``(n, d)``. There is
+# no grid, no mask and no exact field to subtract -- the sample is the object. See
+# ``verify._run_sde_diagnostics`` for the contract and for what this is not.
+
+
+def _sde_diag_conserved_norm(r0, tol):
+    """**Gated**: ``| E|X(T)|^2 / |X(0)|^2 - 1 |`` -- a conserved amplitude.
+
+    For a flow that is a rotation (the Kubo oscillator) ``|X(t)| = |X(0)|`` on every
+    path at every time, exactly, so ``E|X|^2`` is conserved too and any departure is
+    the scheme's.
+
+    Why the *mean* square and not the per-path drift, which is the stronger
+    statement: measured, the per-path RMS charges a correct scheme for its own
+    variance. A correct but non-conservative scheme has a genuine O(dt) amplitude
+    wobble -- large in RMS, small in the mean -- so the per-path statistic separates
+    a right scheme from a wrong one by only **4.7x** where this one separates them by
+    **34.5x** (docs/notable-sde-data/kubo_invariant_calibration.py). The per-path
+    number is reported beside it by ``_sde_diag_amplitude_spread``, un-gated, because
+    it is the one that would see a scheme whose amplitude wanders symmetrically.
+
+    ``r0`` is ``|X(0)|``, passed explicitly rather than read off the problem: no
+    entry carries the initial condition as a field, and a diagnostic that guessed it
+    from the description would be the kind of duplicated fact this file keeps out.
+    """
+    def fn(paths, result, problem):
+        a = np.asarray(paths, dtype=float)
+        r2 = np.abs(a) ** 2 if a.ndim == 1 else (a ** 2).sum(axis=1)
+        if not np.all(np.isfinite(r2)):
+            return float("inf"), False
+        drift = abs(float(np.mean(r2)) / float(r0) ** 2 - 1.0)
+        return drift, bool(drift <= tol)
+    return fn
+
+
+def _sde_diag_amplitude_spread(r0, tol=None):
+    """Reported, never gated: RMS over paths of ``| |X(T)|/|X(0)| - 1 |``.
+
+    RMS rather than the max because the max over ``n`` paths of an O(dt) random
+    drift grows with ``n``, which would make the number depend on the path count
+    instead of on the scheme. ``tol=None`` means "always passes": the value is the
+    point.
+    """
+    def fn(paths, result, problem):
+        a = np.asarray(paths, dtype=float)
+        r = np.abs(a) if a.ndim == 1 else np.linalg.norm(a, axis=1)
+        if not np.all(np.isfinite(r)):
+            return float("inf"), tol is None
+        spread = float(np.sqrt(np.mean((r / float(r0) - 1.0) ** 2)))
+        return spread, True if tol is None else bool(spread <= tol)
+    return fn
+
+
 # =============================================================================
 # Harness-owned reference fields (problems with no closed form)
 # =============================================================================

@@ -80,6 +80,31 @@ fixing, each isolated so its effect is attributable:
 * `routes:C`  -- `relorder:C` and `structadm` together. SS10l named them as two of the
   three routes out of M05 and they are not independent: one restores a discriminating
   component, the other removes a misleading one.
+* `both:C:K` -- `relorder:C` and `ordertie:K` together. These two repair **disjoint**
+  pools and they do it through independent mechanisms, which is the whole reason to
+  price the pair: `relorder` substitutes the `order` *component* inside the index and
+  so moves pools that a weighted mean decides, while `ordertie` restricts the index's
+  breadth and changes what a pool falls through *to*. On the nine sciml pools
+  `relorder:2` repairs M01 and M05 and misses M02; `ordertie:2` repairs M02 and
+  regresses M05 to 651x. Neither is a superset of the other and nothing about them
+  conflicts, so the pair is the first candidate that could be right on all three.
+  Note the breadth test reads the **substituted** order (see `_keys`), without which
+  the combination would abstain on exactly the pools the substitution decides.
+* `zorder:C:Z` -- `relorder:C`, but the pool-relative reading is scaled by the
+  shortfall's **significance** rather than its magnitude. SS10o measured why this is
+  the distinction that matters. `relorder` divides the shortfall from the pool top by
+  `max(hi, 0.5)`, an absolute scale, and that is what loses M02: its top two read
+  2.0003835 +/- 7.2e-08 and 1.9999994 +/- 9.8e-08, so they are separated by about
+  3200 standard errors and the lower one is 2.46x worse by the harness -- yet the
+  component maps them 1.0 vs 0.999808, and `structure` (weight 0.20) then outvotes
+  `order` (weight 0.25) by more than the signal it was given. The same component
+  repairs M05 only because M05's orders happen to differ in the *first decimal*. So
+  `relorder` is not reading the order study, it is reading the order study's units.
+  This divides by `sqrt(se_top^2 + se_i^2)` and clips at `Z` of them, which makes the
+  component scale-free: a separation the ladder resolves is scored as resolved
+  whatever its magnitude. Both of `relorder`'s guards are kept unchanged, so SS19's
+  "an order far above the theoretical one is noise, not a bonus" is still enforced
+  before any of this fires.
 * `whitelisted` -- `regraded`, then cut down to `run.RECORDED_METRICS`. This is how a
   change to the **recorder** is priced: it reads the full block and throws away
   exactly what the record throws away, so a whitelist change can be measured without
@@ -111,6 +136,7 @@ Run:  uv run python benchmark/rank_study.py
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import pathlib
@@ -297,6 +323,31 @@ def _restrict_to_record(pool_list):
     return pool_list
 
 
+@contextlib.contextmanager
+def floor_order_only():
+    """The ranker as it read **before** SS10o shipped the pool-relative order.
+
+    `ranking.order` now reads an SDE rate against the best rate the pool demonstrated
+    wherever the floor has stopped discriminating, gated on
+    `ranking.MIN_ORDER_SEPARATION` combined standard errors. Setting that floor to
+    infinity means no pool can ever clear it, so every reading falls back to the
+    absolute, floor-relative one -- which *is* the pre-SS10o component, exactly, and
+    not an approximation of it.
+
+    This exists so the measurements SS10g, SS10h, SS10l, SS10m and SS10o were argued
+    from stay re-derivable after the thing they argued for was shipped. Twelve of
+    `audit_plan_claims.py`'s claims are about the ranker those sections measured, and
+    a shipped improvement that quietly made its own evidence uncheckable would be the
+    worst outcome available here.
+    """
+    saved = ranking.MIN_ORDER_SEPARATION
+    ranking.MIN_ORDER_SEPARATION = math.inf
+    try:
+        yield
+    finally:
+        ranking.MIN_ORDER_SEPARATION = saved
+
+
 #: Default standard-error multiplier for `relorder`'s resolution test. The kernel's own
 #: `ci_mult` is 2.0 on every spec in both suites, so this is that convention and not a
 #: new constant to tune.
@@ -360,7 +411,41 @@ def _rel_order(summary, summaries, ci=REL_ORDER_CI):
     return ranking._clip01(1.0 - max(0.0, hi - mine) / max(hi, 0.5))
 
 
-def _index(summary, tol, summaries, keys, variant, ci=REL_ORDER_CI):
+#: Default clip for `zorder`: how many standard errors below the pool's top measured
+#: order a plan has to be before its `order` component is scored at zero. Three is the
+#: conventional "clearly resolved" bar and the sweep in SS10o prices it over [1, 12].
+Z_ORDER_CLIP = 3.0
+
+
+def _z_order(summary, summaries, ci=REL_ORDER_CI, z=Z_ORDER_CLIP):
+    """`_rel_order`, with the shortfall measured in standard errors.
+
+    Shares `_rel_order`'s two guards exactly -- it calls it first and abstains wherever
+    it abstained -- so the only thing under test here is the *scale* the shortfall is
+    divided by. `_rel_order` divides by `max(hi, 0.5)`, which makes the component a
+    function of how large the orders happen to be; this divides by the combined
+    standard error of the pair being compared, which makes it a function of whether the
+    ladder could tell them apart. On M02 those two readings differ by four orders of
+    magnitude for the identical pool.
+    """
+    rel = _rel_order(summary, summaries, ci)
+    base = ranking.order(summary)
+    if rel is None or rel == base:
+        return rel          # abstained on one of `_rel_order`'s guards; respect it
+    mine = ranking._num(summary.get("observed_order"))
+    my_se = ranking._num(summary.get("observed_order_se"))
+    rows = [(ranking._num(s.get("observed_order")),
+             ranking._num(s.get("observed_order_se"))) for s in summaries]
+    if mine is None or my_se is None or any(v is None or e is None for v, e in rows):
+        return rel
+    hi, hi_se = max(rows, key=lambda r: r[0])
+    denom = math.sqrt(hi_se ** 2 + my_se ** 2)
+    if denom <= 0.0:
+        return rel          # a zero-width ladder cannot express a significance
+    return ranking._clip01(1.0 - (max(0.0, hi - mine) / denom) / max(z, 1e-9))
+
+
+def _index(summary, tol, summaries, keys, variant, ci=REL_ORDER_CI, z=Z_ORDER_CLIP):
     """`ranking.sqi`'s weighted mean, with a variant's component substitution.
 
     Kept here rather than in `ranking.py` for the reason this whole file exists: a
@@ -369,10 +454,11 @@ def _index(summary, tol, summaries, keys, variant, ci=REL_ORDER_CI):
     """
     if not keys:
         return None
-    if variant not in ("relorder", "routes"):
+    if variant not in ("relorder", "routes", "both", "zorder"):
         return ranking.sqi(summary, tol, summaries, keys=keys)[0]
     parts = ranking.components(summary, tol, summaries)
-    parts["order"] = _rel_order(summary, summaries, ci)
+    parts["order"] = (_z_order(summary, summaries, ci, z) if variant == "zorder"
+                      else _rel_order(summary, summaries, ci))
     measured = {k: v for k, v in parts.items() if v is not None and k in keys}
     if not measured:
         return None
@@ -380,7 +466,7 @@ def _index(summary, tol, summaries, keys, variant, ci=REL_ORDER_CI):
     return sum(ranking.WEIGHTS[k] * v for k, v in measured.items()) / total
 
 
-def _keys(variant, tol, summaries, breadth=0):
+def _keys(variant, tol, summaries, breadth=0, ci=REL_ORDER_CI):
     if variant in ("structadm", "routes"):
         # Route (ii) of SS10l. `cost_admissible` is `ranking.py`'s own rule, imported
         # rather than restated: `structure` may contribute only where **every** plan in
@@ -391,7 +477,7 @@ def _keys(variant, tol, summaries, breadth=0):
             keys = tuple(k for k in keys if k != "structure")
         return keys
     if variant in ("current", "truncated", "regraded", "noscore", "relorder",
-                   "whitelisted"):
+                   "zorder", "whitelisted"):
         return ranking.comparable_keys(tol, summaries)
     # `abstain`, `floor:`, `thin:`, `ordertie:` and `discriminating` share this: no
     # fallback. Where the
@@ -399,6 +485,16 @@ def _keys(variant, tol, summaries, breadth=0):
     if len(summaries) < 2:
         return ranking.CERT_COMPONENTS
     parts = [ranking.components(s, tol, summaries) for s in summaries]
+    if variant == "both":
+        # The combined route's breadth test has to read the *substituted* `order`,
+        # not the shipped one. `relorder` exists because the shipped component maps a
+        # pool that it ranks correctly onto near-identical values (M05: 1.000 / 0.998
+        # / 1.000), and `thin:K`/`ordertie:K` abstain precisely when fewer than K
+        # components *separate* the pool. Measuring breadth on the old component
+        # would therefore abstain on exactly the pools the substitution was built to
+        # decide -- the two halves would cancel instead of composing.
+        for s, part in zip(summaries, parts, strict=True):
+            part["order"] = _rel_order(s, summaries, ci)
     keys = [k for k in ranking.CERT_COMPONENTS
             if all(p.get(k) is not None for p in parts)]
     if variant == "discriminating":
@@ -421,12 +517,13 @@ def _keys(variant, tol, summaries, breadth=0):
     return tuple(keys)
 
 
-def key_of(plan, variant, summaries, floor, breadth=0, ci=REL_ORDER_CI):
+def key_of(plan, variant, summaries, floor, breadth=0, ci=REL_ORDER_CI,
+           z=Z_ORDER_CLIP):
     """`rank_key`, with the variant's key restriction and resolution floor."""
     summary = plan["summary"]
     tol = ranking._tol_of(summary, summary)
-    keys = _keys(variant, tol, summaries, breadth)
-    index = _index(summary, tol, summaries, keys, variant, ci)
+    keys = _keys(variant, tol, summaries, breadth, ci)
+    index = _index(summary, tol, summaries, keys, variant, ci, z)
     if index is not None and floor:
         # Quantising is how a floor becomes a *tie* rather than a nudge: two indices
         # in the same bucket compare equal and the keys below decide. Rounding half
@@ -439,7 +536,7 @@ def key_of(plan, variant, summaries, floor, breadth=0, ci=REL_ORDER_CI):
     iters = ranking._num(plan["entry"].get("iter")) or 0.0
     if variant == "noscore":
         return (0 if summary else 1, provenance, quality, -score, iters)
-    if variant == "ordertie":
+    if variant in ("ordertie", "both"):
         # SS10h. Every abstention route -- `abstain`, `floor:E`, `thin:K` -- falls
         # through to **declaration order**, and that is measured to be the thing
         # that hurts: the first-declared plan is the pool's worst on 8 of 9 sciml
@@ -453,18 +550,20 @@ def key_of(plan, variant, summaries, floor, breadth=0, ci=REL_ORDER_CI):
     return (0 if summary else 1, -score, provenance, quality, iters)
 
 
-def rank(pool, variant, floor, breadth=0, ci=REL_ORDER_CI):
+def rank(pool, variant, floor, breadth=0, ci=REL_ORDER_CI, z=Z_ORDER_CLIP):
     summaries = [p["summary"] for p in pool["plans"] if p["summary"]]
     ordered = sorted(pool["plans"],
-                     key=lambda p: key_of(p, variant, summaries, floor, breadth, ci))
+                     key=lambda p: key_of(p, variant, summaries, floor,
+                                          breadth, ci, z))
     return ordered
 
 
-def study(pool_list, variant, floor, baseline=None, breadth=0, ci=REL_ORDER_CI):
+def study(pool_list, variant, floor, baseline=None, breadth=0,
+          ci=REL_ORDER_CI, z=Z_ORDER_CLIP):
     baseline = {} if baseline is None else baseline
     rows = []
     for pool in pool_list:
-        ordered = rank(pool, variant, floor, breadth, ci)
+        ordered = rank(pool, variant, floor, breadth, ci, z)
         top, best = ordered[0], pool["best"]
         error = top["error"]
         regret = (error / best["error"]) if (error and best["error"]) else None
@@ -483,20 +582,22 @@ def study(pool_list, variant, floor, baseline=None, breadth=0, ci=REL_ORDER_CI):
             "vs_c0": ((error / baseline[pool["id"]])
                       if (error and baseline.get(pool["id"])) else None),
             "outside_margin": bool(outside),
-            "decided_by": decided(ordered, variant, floor, breadth, ci),
+            "decided_by": decided(ordered, variant, floor, breadth, ci, z),
         })
     return rows
 
 
-def decided(ordered, variant, floor, breadth=0, ci=REL_ORDER_CI):
+def decided(ordered, variant, floor, breadth=0, ci=REL_ORDER_CI,
+            z=Z_ORDER_CLIP):
     """Which key separated the top two, by the same rule `ranking.decided_by` uses."""
     if len(ordered) < 2:
         return "only-plan"
     summaries = [p["summary"] for p in ordered if p["summary"]]
-    a = key_of(ordered[0], variant, summaries, floor, breadth, ci)
-    b = key_of(ordered[1], variant, summaries, floor, breadth, ci)
+    a = key_of(ordered[0], variant, summaries, floor, breadth, ci, z)
+    b = key_of(ordered[1], variant, summaries, floor, breadth, ci, z)
     names = (("provenance", "sqi", "score", "iter") if variant == "noscore"
-             else (*ranking.RANK_KEYS, "observed_order") if variant == "ordertie"
+             else (*ranking.RANK_KEYS, "observed_order")
+             if variant in ("ordertie", "both")
              else ranking.RANK_KEYS)
     for name, left, right in zip(names, a[1:], b[1:], strict=True):
         if left != right:
@@ -547,7 +648,8 @@ def main(argv=None):
     ap.add_argument("--variant", default="current",
                     help="current | abstain | discriminating | floor:E | "
                          "thin:K | ordertie:K | noscore | truncated | regraded | "
-                         "relorder:C | structadm | routes:C | whitelisted")
+                         "relorder:C | structadm | routes:C | both:C:K | zorder:C:Z | "
+                         "whitelisted")
     ap.add_argument("--sweep", action="store_true",
                     help="sweep the floor over a decade and print the table")
     ap.add_argument("--source", choices=SOURCES,
@@ -557,6 +659,11 @@ def main(argv=None):
                          "(SS10h). Default: the variant's own source.")
     ap.add_argument("--holdout", action="store_true",
                     help="also score the held-out BENCHOP / no-closed-form pools")
+    ap.add_argument("--pre10o", action="store_true",
+                    help="measure against the ranker as it read before SS10o "
+                         "shipped the pool-relative order component, by holding "
+                         "`ranking.MIN_ORDER_SEPARATION` at infinity. This is how "
+                         "the tables in SS10g-SS10o stay re-derivable.")
     ap.add_argument("--json", metavar="PATH", help="write the rows to a JSON file")
     args = ap.parse_args(argv)
 
@@ -571,6 +678,20 @@ def main(argv=None):
         breadth = int(variant.split(":", 1)[1])
         variant = "ordertie"
     ci = REL_ORDER_CI
+    if variant.startswith("both:"):
+        # `both:C:K` -- C is `relorder`'s standard-error multiplier, K is
+        # `ordertie`'s breadth. Both halves are parameterised and the pair is only
+        # meaningful with each one's own knob, so the variant carries two.
+        bits = variant.split(":")
+        ci = float(bits[1])
+        breadth = int(bits[2]) if len(bits) > 2 else 2
+        variant = "both"
+    z = Z_ORDER_CLIP
+    if variant.startswith("zorder:"):
+        bits = variant.split(":")
+        ci = float(bits[1])
+        z = float(bits[2]) if len(bits) > 2 else Z_ORDER_CLIP
+        variant = "zorder"
     for name in ("relorder", "routes"):
         if variant.startswith(f"{name}:"):
             ci = float(variant.split(":", 1)[1])
@@ -581,7 +702,8 @@ def main(argv=None):
     # that ships today, so they read `evaluation.json` like `regraded` does. Pricing
     # them against the pre-SS10g/SS10k blocks would conflate two changes.
     src = args.source or ("evaluation" if variant in (
-        "regraded", "relorder", "structadm", "routes") else "metrics")
+        "regraded", "relorder", "structadm", "routes", "both",
+        "zorder") else "metrics")
     cut = _restrict_to_record if args.variant == "whitelisted" else (lambda x: x)
     if args.variant == "whitelisted":
         src = args.source or "evaluation"
@@ -592,14 +714,22 @@ def main(argv=None):
             HOLDOUT, truncated=(args.variant == "truncated"), source=src))))
 
     out = {}
+    # A fresh context per corpus: `floor_order_only` is a generator context manager
+    # and so is single-entry, and reusing one across the two corpora raised rather
+    # than silently measuring the wrong era -- which is the failure mode worth having.
+    def era():
+        return floor_order_only() if args.pre10o else contextlib.nullcontext()
     for label, pool_list in sets:
         if not pool_list:
             print(f"\n=== {label}: no pools found (gitignored results?)")
             continue
-        rows = study(pool_list, variant, floor,
-                     base if label.startswith("sciml") else None, breadth, ci)
+        with era():
+            rows = study(pool_list, variant, floor,
+                         base if label.startswith("sciml") else None,
+                         breadth, ci, z)
         default_src = ("evaluation" if variant in (
-            "regraded", "relorder", "structadm", "routes") else "metrics")
+            "regraded", "relorder", "structadm", "routes", "both",
+            "zorder") else "metrics")
         tag = (args.variant if src == default_src
                else f"{args.variant}+{src}")
         out[label] = {"rows": rows, "summary": show(f"{label} -- {tag}", rows)}
