@@ -42,6 +42,22 @@ if str(ROOT) not in sys.path:  # this file lives two levels down from the repo r
     sys.path.insert(0, str(ROOT))
 
 
+#: The workspace trees these censuses read, in place of live `workspace/`.
+#:
+#: Both snapshots are under `benchmark/results/`, which `pipeline-settings.json`
+#: denies reading, so they are fenced from a live run as `run.archived_workspaces`
+#: fences the repo-root ones.
+#:
+#: Why not `workspace/`: it is gitignored, every `--fresh` run rewrites part of it,
+#: and **any** suite's run adds to it. Both censuses below were written against it and
+#: both broke on 2026-11-16 when the notable-SDE suite was run -- the SDE plan count
+#: went 68 -> 89 and the capability-gate census gained a pool -- although nothing
+#: about the SciML arm had changed. A number pinned to a mutable directory is a
+#: number that reports other people's work.
+SNAPSHOTS = ("benchmark/results/pipeline/workspace-pre-probe",
+             "benchmark/results/pipeline/workspace-probe2")
+
+
 def _pre10o(fn):
     """Run ``fn`` against the ranker as it read **before** §10o shipped.
 
@@ -342,13 +358,23 @@ def _m05_after():
 
 
 def _not_run_census():
-    """``(plans reading `order_check: not_run`, total SDE plans)`` across every
-    `SOLUTION.md` on disk -- the pre-SS10l census, so what SS24's cost skip ever saved
-    is a number rather than an argument (SS10l)."""
+    """``(plans reading `order_check: not_run`, total SDE plans)`` over the SciML
+    snapshots -- the pre-SS10l census, so what SS24's cost skip ever saved is a number
+    rather than an argument (SS10l).
+
+    Read from :data:`SNAPSHOTS` rather than from live `workspace/`. The **numerator**
+    is the claim -- three plans, all of M05's -- and it is stable; the denominator was
+    not, because it counted every SDE pool any suite had left on disk. On
+    2026-11-16 the notable-SDE suite took it from 68 to 89 without anything about this
+    arm changing, and the conclusion is only strengthened by that: the skip still fired
+    on exactly those three.
+    """
     from verifylib.review import parse_metrics
 
     skipped, total = [], 0
-    for sol in sorted((ROOT / "workspace").glob("sde_*/plans/*/SOLUTION.md")):
+    sols = [s for root in SNAPSHOTS
+            for s in (ROOT / root).glob("sde_*/plans/*/SOLUTION.md")]
+    for sol in sorted(sols):
         block = parse_metrics(sol.read_text(encoding="utf-8")) or {}
         if not block:
             continue
@@ -1081,8 +1107,7 @@ def _capability_gate_incidence():
 
     from verifylib.kernel import plan_meta
 
-    roots = ["workspace", "benchmark/results/pipeline/workspace-pre-probe",
-             "benchmark/results/pipeline/workspace-probe2"]
+    roots = list(SNAPSHOTS)
     total = with_solution = in_sde = declaring = fires = 0
     loose = loose_fires = 0
     for root in roots:
@@ -1163,6 +1188,47 @@ def _records_without_the_order_error_bar():
                        is None]
             out.append((rec["id"], len(carried), len(missing)))
     return sorted(out)
+
+
+def _clark_cameron_fires_the_gate():
+    """``(phase, winner, the skipped plan, its state, what it declares, whether no
+    evaluated plan declares it)`` for `sde_clark_cameron` (\u00a710o step 3, corrected).
+
+    The one instance of \u00a710n's exit gate anywhere on disk, and it is in the **notable**
+    SDE suite rather than this one. Recorded because rev 24 claimed the gate had no
+    instance at all, and that sentence has to be withdrawn: this pool finished, a
+    winner certified, and its only exact-S method was left `await_solver` while
+    nothing evaluated declared the capability it declares.
+
+    Read from live `workspace/`, deliberately \u2014 unlike the two censuses this helper
+    is *about* a pool another suite produced, so pointing it at this arm's snapshots
+    would be pointing it away from its own subject. It is therefore the one claim here
+    that a later notable-suite run can invalidate, which is the honest status of a
+    finding made in someone else's workspace.
+    """
+    import re
+
+    from verifylib.kernel import plan_meta
+
+    pool = ROOT / "workspace" / "sde_clark_cameron"
+    text = (pool / "STATE.md").read_text()
+    phase = re.search(r"^phase:\s*(\S+)", text, re.M)
+    winner = re.search(r"^best_plan:\s*(\S+)", text, re.M)
+    states, cur = {}, None
+    for line in text.splitlines():
+        found = re.match(r"^  ([A-Za-z0-9][\w.-]*):\s*$", line)
+        if found:
+            cur = found.group(1)
+        elif cur and line.strip().startswith("state:"):
+            states[cur] = line.split(":", 1)[1].strip()
+    skipped = "4-exact-s-levy-area-midpoint"
+    caps = plan_meta.read(str(pool / "plans" / skipped))["exact_sampling_components"]
+    others = [plan_meta.read(str(pool / "plans" / n))["exact_sampling_components"]
+              for n in states if n != skipped]
+    return (phase.group(1) if phase else None,
+            winner.group(1) if winner else None,
+            skipped, states.get(skipped), caps,
+            bool(caps) and not any(others))
 
 
 @_pre10o
@@ -2013,10 +2079,10 @@ def main():
           == "1.033"),
          "**`('accuracy', 'structure', 'consistency')`**"),
         # --- SS10l: M05's skipped order study -------------------------------
-        ("the \u00a724 cost skip had fired on three plans in the whole corpus",
+        ("the \u00a724 cost skip had fired on three plans in the SciML corpus",
          (_not_run_census() == (["1-euler-maruyama", "2-milstein", "3-ito-taylor-1p5"],
-                                68)),
-         "| SDE plans with a `<metrics>` block | **68** | **3** |"),
+                                36)),
+         "| SDE plans with a `<metrics>` block | **36** | **3** |"),
         ("and it had left M05's pool ranked on one component, with no order and no z",
          (_m05_before() == ([("1-euler-maruyama", "not_run", None, None, 6.0),
                              ("2-milstein", "not_run", None, None, 6.0),
@@ -2200,9 +2266,14 @@ def main():
          _ranking_reads_are_carried() == (True, True, True),
          "**completely inert in\nthe pipeline**"),
         # --- SS10o step 3: the gate retired, the blindness recorded ---------
-        ("the capability exit gate has no instance in 19 opportunities",
-         _capability_gate_incidence() == (15, 14, 3, 0, 0, 19, 0),
-         "| **pools where the gate would fire** | **0** |"),
+        ("the capability exit gate has no instance in this arm's two opportunities",
+         _capability_gate_incidence() == (2, 2, 2, 0, 0, 2, 0),
+         "| **SciML pools where the gate would fire** | **0** |"),
+        ("but one instance exists outside this arm, which withdraws the blanket claim",
+         _clark_cameron_fires_the_gate() == ("done", "2-levy-area-milstein",
+                                            "4-exact-s-levy-area-midpoint",
+                                            "await_solver", (0,), True),
+         "the gate would have held the exit there, exactly as designed"),
         ("and the plan the exit fired on holds the skipped plan's capability",
          (_m09_winner_has_the_skipped_plans_capability()
           == ("4-rao-blackwellised-x2", (1,), True, ())),

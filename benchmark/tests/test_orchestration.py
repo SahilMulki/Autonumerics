@@ -925,3 +925,69 @@ def test_a_complete_pool_records_no_gap_and_a_pool_with_no_order_study_is_not_on
         "2-qe-conditional": {"score": 10, "order_check": "unavailable"},
     }, slot="holdout-shaped")
     assert "ranking_inputs_incomplete" not in no_study
+
+
+# --- E12: what each problem cost -------------------------------------------------
+
+
+def test_the_session_cost_is_the_running_total_not_the_sum_of_the_records(tmp_path,
+                                                                         monkeypatch):
+    """Each `cost-state` record carries the session total **so far**, so the cost is
+    the max over them and summing inflates it by roughly the turn count. Measured on
+    a 9-record transcript: summing gives 2573 against the true 355.
+
+    Subagent turns are `isSidechain` records in the same file and are already inside
+    the running total, which is why this reads per session rather than per message --
+    the solver and evaluator passes are where this pipeline spends nearly everything.
+    """
+    sid = "11111111-2222-4333-8444-555555555555"
+    proj = tmp_path / "projects" / "-Users-someone-Autonumerics"
+    proj.mkdir(parents=True)
+    (proj / f"{sid}.jsonl").write_text("\n".join([
+        json.dumps({"type": "assistant", "message": {"usage": {}}}),
+        json.dumps({"type": "cost-state", "totalCostUSD": 12.5,
+                    "modelUsage": {"claude-opus-5": {"costUSD": 12.5}}}),
+        json.dumps({"type": "cost-state", "totalCostUSD": 41.0,
+                    "modelUsage": {"claude-opus-5": {"costUSD": 41.0}}}),
+        # A killed run leaves a partial last line; it must not void the whole read.
+        '{"type": "cost-state", "totalCostUSD": 9',
+    ]) + "\n")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+
+    cost = RUN.session_cost(sid)
+    assert cost["usd"] == 41.0, "the running total, not 12.5 + 41.0"
+    assert cost["model_usage"] == {"claude-opus-5": {"costUSD": 41.0}}
+    assert cost["session_id"] == sid
+    assert cost["transcript"].endswith(f"{sid}.jsonl")
+
+
+def test_a_cost_that_could_not_be_read_is_none_and_never_zero(tmp_path, monkeypatch):
+    """A zero would read as "this problem was free". A measurement failure must not
+    be indistinguishable from a cheap run -- the same argument §10j made for not
+    folding a ledger defect into a score cap."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    gone = RUN.session_cost("99999999-8888-4777-8666-555555555555")
+    assert gone["usd"] is None and gone["transcript"] is None
+
+    # A transcript with turns but no cost record: still None, not 0.0.
+    sid = "77777777-6666-4555-8444-333333333333"
+    proj = tmp_path / "projects" / "p"
+    proj.mkdir(parents=True)
+    (proj / f"{sid}.jsonl").write_text(
+        json.dumps({"type": "assistant", "message": {"usage": {}}}) + "\n")
+    assert RUN.session_cost(sid)["usd"] is None
+
+
+def test_the_conductor_is_invoked_with_the_session_id_the_cost_is_read_from():
+    """The attribution, as a command line. `run.py` runs the conductor with
+    `cwd=REPO_ROOT`, so its transcripts share a project directory with any
+    interactive session open in this repo; attributing by a `[started_at, ended_at]`
+    window would bill that session's tokens to whichever problem was running.
+    Pinning the id makes it exact instead of probable."""
+    sid = "abcdefab-cdef-4abc-8def-abcdefabcdef"
+    cmd = RUN.conductor_command("sde_sciml_additive", True, None, None,
+                                session_id=sid)
+    assert "--session-id" in cmd and cmd[cmd.index("--session-id") + 1] == sid
+    # And it stays optional, so nothing that builds the command without one breaks.
+    assert "--session-id" not in RUN.conductor_command(
+        "sde_sciml_additive", True, None, None)

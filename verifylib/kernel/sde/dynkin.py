@@ -241,6 +241,33 @@ def initial_moments(spec, phis):
              "x0": [float(v) for v in np.ravel(value)]})
 
 
+def _initial_scalar(value, params):
+    """One initial component as a float: a number, or a parameter **named** by it.
+
+    ``initial_condition.value: ["S_0", "U_0"]`` is how the formulator's instructions
+    write a symbolic initial state, and ``float("S_0")`` raised -- a crash inside the
+    kernel, reported against the plan. Measured on N01 (2026-11-15 and -16): it
+    crashed every plan on the first run (the conductor re-dispatched the formulator
+    to write numbers) and stopped the re-evaluation of the second. A name is looked
+    up in ``parameters``; anything else -- an expression, an unknown name -- is None,
+    which the caller reports as an undeclared initial state rather than a crash.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        name = value.strip()
+        try:
+            return float(name)
+        except ValueError:
+            pass
+        bound = (params or {}).get(name)
+        if isinstance(bound, (int, float)) and not isinstance(bound, bool):
+            return float(bound)
+    return None
+
+
 def _initial_state(spec, declared, params):
     """The deterministic initial state, as a scalar or one value per component.
 
@@ -251,10 +278,9 @@ def _initial_state(spec, declared, params):
     if isinstance(declared, dict) and declared.get("value") is not None:
         value = declared["value"]
         if isinstance(value, list) and value:
-            return [float(v) for v in value]
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return float(value)
-        return None
+            resolved = [_initial_scalar(v, params) for v in value]
+            return None if any(v is None for v in resolved) else resolved
+        return _initial_scalar(value, params)
     dimension = spec.get("state_dimension")
     if isinstance(dimension, int) and not isinstance(dimension, bool) and dimension > 1:
         per = [params.get(f"{c}_0") for c in ("X", "Y", "Z")[:dimension]]

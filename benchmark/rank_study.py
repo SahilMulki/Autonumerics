@@ -186,6 +186,41 @@ def c0_errors():
     return out
 
 
+#: Which workspace tree holds each results file's plan directories.
+#:
+#: `workspace/` is gitignored and **every pipeline run with `--fresh` rewrites it**,
+#: so a results file and the live workspace stop corresponding the moment the next run
+#: starts. :data:`HOLDOUT` already carries the scar: its pools "can only be read from
+#: the record's truncated summary" because their directories were overwritten, which
+#: silently downgraded that whole corpus from `metrics` to `summary`.
+#:
+#: The sciml records are therefore read from the **snapshots** taken before each
+#: re-run rather than from `workspace/`. Without this, the next nine-problem run turns
+#: 38 of 39 recorded plans into a hash mismatch -- `_same_run` rejects them, which is
+#: the loud half -- and the one plan whose record carries no `solver_sha256`
+#: (`M07 / 1-euler-maruyama`) would be read from *another run's* evaluation output
+#: with nothing to object. A results file not named here falls back to `workspace/`,
+#: which is right for the run that wrote it most recently.
+WORKSPACES = {
+    "benchmark/results/pipeline/sciml_probe.json":
+        "benchmark/results/pipeline/workspace-pre-probe",
+    "benchmark/results/pipeline/sciml_rest/sciml_probe_rest.json":
+        "benchmark/results/pipeline/workspace-pre-probe",
+    "benchmark/results/pipeline/sciml_m09/sciml_probe_m09.json":
+        "benchmark/results/pipeline/workspace-pre-probe",
+    "benchmark/results/pipeline/sciml_probe2/sciml_probe2.json":
+        "benchmark/results/pipeline/workspace-probe2",
+}
+
+#: Where a results file's plans live when :data:`WORKSPACES` does not say.
+DEFAULT_WORKSPACE = "workspace"
+
+
+def workspace_for(rel):
+    """The workspace tree holding `rel`'s plan directories (:data:`WORKSPACES`)."""
+    return WORKSPACES.get(rel, DEFAULT_WORKSPACE)
+
+
 #: Held out. These pools are older than the sciml ones and their `workspace/`
 #: directories have been overwritten since, so most of them can only be read from
 #: the record's truncated summary -- the report says which, per pool, because a
@@ -256,7 +291,7 @@ def pools(paths, *, truncated=False, source="metrics"):
         plans, sources = [], set()
         for name, entry in by_plan.items():
             summary, source_used = entry.get("kernel") or {}, "summary"
-            plan_dir = ROOT / "workspace" / record["slug"] / "plans" / name
+            plan_dir = (ROOT / workspace_for(rel) / record["slug"] / "plans" / name)
             if want == "metrics":
                 solution = plan_dir / "SOLUTION.md"
                 if solution.exists():

@@ -1283,7 +1283,7 @@ different artifact paths, different unit keys.
 | **6** | ~~Author the nine entries~~ **Done 2026-11-14 — §2c.** Nine entries, 48 validator checks, 28 tests in `test_notable_suite.py`; no gate moved after a scheme landed | 5 | `validate_ground_truth.py` green; 683 tests |
 | **7** | ~~Smoke-test end to end on one entry (N02) in both arms~~ **Done 2026-11-15 — §8b.** One graded record per arm: `scheme-matched` `UNDERCLAIM` (242 s, resumed after the usage limit), `unrestricted` `VERIFIED_PASS` (595 s). The harness grades of the six plans are identical across arms; the verdicts differ because the two formulators chose different kernel path counts. No harness defect; one kernel gap and one spec-defect flag recorded | 6 | one graded record per arm; defects found here are recorded as defects, as §7a's ten were |
 | **8** | ~~C0 baseline on all nine, both arms, three reps per problem~~ **Done 2026-11-14 — §8a.** Opus, naked, `--c0-max-turns 4` as SciML's, 27 units per arm. `scheme-matched` 27/27 `PASS`; `unrestricted` 26/27 — the one `FAIL` is a sign error the gate caught (§8a). Every record carries `wall_s`, `cost_usd`, `input_tokens`, `output_tokens` under `run`; files `baselines/oneshot_notable_{scheme_matched,unrestricted}.json` | 6 | the baseline denominators this suite's rates are quoted against |
-| **9a** | Pipeline runs, **the order-bearing five first** (N01, N03, N04, N06, N07), `scheme-matched`. **Started 2026-11-15: N01 `FAIL` with the right scheme in its pool — three kernel defects, all fixed (§8c); restart from N01** | 7, 8 | five pools in which `order` is comparable — the corpus §2a is for — plus their verdicts |
+| **9a** | Pipeline runs, **the order-bearing five first** (N01, N03, N04, N06, N07), `scheme-matched`. **Started 2026-11-15. N01 failed three times — kernel defects in §8c and §8d, all fixed; N03 `VERIFIED_PASS`. Restart from N01** | 7, 8 | five pools in which `order` is comparable — the corpus §2a is for — plus their verdicts |
 | **9b** | Pipeline runs, the exact-sampler four (N02, N05, N08, N09), both arms | 9a | the recognition column, and the second structural holdout |
 | **9c** | Re-rank both groups offline against the C0 baseline with `rank_study.py`, and price the pool-relative order rule on them | 9a, 9b | prediction 8 scored; the rule shipped, or withdrawn with a number |
 | **10** | Write the result up: the §3 gap table against the outcome, and §10's predictions scored | 9c | the paper's table and the plan's own revision |
@@ -1437,6 +1437,51 @@ R8/R9 — and `test_review` flags the N02 Cayley review for quoting component 0'
 the check reads as drift. Both are left visible for the owner: a pathwise kernel route, or `UNREAD`
 entries, is a decision, not a fix. **The N01 record above stays as measured.**
 9a restarts from N01 with `--fresh`.
+
+### 8d. N01, second and third attempts: the right scheme measured, then not ranked `[rev4 2026-11-16, N]`
+
+**Second attempt** (`pipeline/notable_9a_scheme_matched.json`, 2026-11-15 22:27): `RUN_ERROR`. The
+pipeline finished and its winner, the Lévy-area Milstein, passes the harness at 0.85%; but the
+conductor rewrote its STATE.md with a script that used the letter `X` as a split placeholder, and
+the ambiguity line it was splitting quotes `X_num - X_exact`. The plans block was deleted, the
+runner found zero plans and correctly refused to count the unit. A one-off model scripting error;
+no code change.
+
+**Third attempt** (`pipeline/notable_9a_n01_rerun.json`, 2026-11-16 00:18, workspace archived as
+`pipeline/workspace-n01-rerun-tie`): **`FAIL`**. The §8c fixes held — the formulator declared
+`sub_increments_per_step: 256`, evaluated at 8 000 paths with `graded_num_paths: 1000`, and the
+kernel measured U's strong order at **0.49** for Euler and **1.01** for the Milstein. The ranker
+then tied the pool (`decided_by: tie`) and shipped plan 1, the Euler control, again; the harness
+fails it at 2.61 of the gate and would pass the Milstein at 0.42. Four defects, all fixed the same
+day:
+
+1. **An exactly integrated component vetoed the measured one.** S is exact under every scheme, its
+   ladder sat at roundoff and abstained, and `_worst_component` ranks an abstention above any
+   verdict, so `orders_ok` was "unresolved" and `ranking.order` dropped the order for both plans.
+   Now a roundoff abstention (`crn.at_roundoff`) is excused when another component was measured;
+   a noisy or wide abstention still binds, a component *declared* exactly sampled still binds (it never consumed `dW`), and an all-roundoff plan still abstains.
+2. **One shared draw failed every plan.** U's exact mean is 0; both plans returned 0.043 at
+   2.3 σ — the same draw, since the graded call now shares the kernel's increments. The
+   absolute-mode mean test has no tolerance band (its band is `max(2 se, 0.01)`), so it is a bare
+   2 σ test that false-fails ~4.6% per zero-mean component. It is now held at the family-wise
+   multiplier over every statistical test the score requires (`dynkin.family_wise_multiplier`; 2.61
+   for N01's five). The formulator's `martingale` invariant on U — the same test again, which
+   dropped both plans to 5 once the moment check stopped failing — joins the same family unless the
+   spec sets its own `ci_mult`.
+3. **The symbolic initial condition crashed Dynkin.** `initial_condition.value: ["S_0", "U_0"]` was
+   passed to `float()`; names are now resolved against `parameters`, and an unresolvable entry is
+   reported as an undeclared initial state rather than a crash. (The first attempt had hit the same
+   crash and worked around it by re-dispatching the formulator.)
+4. **The tie default is plan order, and both runs numbered the control first.** Both plan-creators
+   are now told to number plans best-first, with any control last. The ranker itself is unchanged.
+
+Also corrected: Dynkin's skip reason said "a declared constraint gate failed" when the moments had.
+
+**Re-evaluated offline on the archived plans** with the fixed kernel: both certify at 10 (correct —
+Euler is a valid scheme *in distribution*), `orders_ok` true on both with S excused, Dynkin runs,
+and the ranker ships **2-milstein-levy-area, `decided_by: sqi`** (order 1.0 against 0.0, index 0.497
+against 0.042). Tests: `verifylib/tests/test_pool_tie_fixes.py`; full suite 1 417 passed, the same two workspace-driven failures as §8c. The two records above stay as
+measured; 9a restarts from N01.
 
 ## 9. Cost
 

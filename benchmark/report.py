@@ -460,6 +460,17 @@ def _fmt_secs(s):
         return f"{s:.0f}s"
     return f"{s / 60:.1f}m"
 
+def _fmt_usd(value):
+    """A dollar figure, or an em dash where there is none.
+
+    `None` is "not measured", not "free": `run.session_cost` returns it where the
+    session transcript was missing or carried no cost record, and a `$0.00` in that
+    cell would read as a problem that cost nothing to solve.
+    """
+    if not isinstance(value, (int, float)):
+        return "\u2014"
+    return f"${value:,.2f}" if value >= 0.01 else f"${value:.4f}"
+
 
 # --- report sections --------------------------------------------------------
 
@@ -596,9 +607,10 @@ def generate_report(results, config=None):
             key_metric(r) if _has_independent_check(r) else "no GT",
             VERDICT_LABEL[r["_verdict"]],
             _fmt_secs(r.get("run", {}).get("wall_seconds")),
+            _fmt_usd(((r.get("run") or {}).get("cost") or {}).get("usd")),
         ])
     ap(_table(["ID", "Slug", "Type", "Tier", "Pipe", "Best plan", "Iters",
-               "Independent metric", "Verdict", "Time"], rows))
+               "Independent metric", "Verdict", "Time", "Cost"], rows))
     ap("")
 
     # ---- tier-by-tier detail ---------------------------------------------
@@ -639,6 +651,18 @@ def generate_report(results, config=None):
     if times:
         ap(f"- Mean wall time per completed run: {_fmt_secs(sum(times)/len(times))}; "
            f"max {_fmt_secs(max(times))}.")
+    # Cost beside time, and the count beside the total: the C0 baseline has priced
+    # every attempt since it was built, so this was the one side of an equal-budget
+    # comparison with no price on it. `None` means the transcript could not be read
+    # and is *excluded* rather than counted as zero -- a partial total that says so
+    # is worth more than a complete-looking one that is wrong.
+    costs = [c for c in (((r.get("run") or {}).get("cost") or {}).get("usd")
+                         for r in completed) if isinstance(c, (int, float))]
+    if costs:
+        priced = f"{len(costs)} of {len(completed)}"
+        ap(f"- Pipeline cost, {priced} completed runs priced: "
+           f"**{_fmt_usd(sum(costs))}** total, {_fmt_usd(sum(costs)/len(costs))} "
+           f"mean, {_fmt_usd(max(costs))} max.")
     ap("")
 
     # ---- work-precision ---------------------------------------------------

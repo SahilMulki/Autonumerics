@@ -105,6 +105,13 @@ choose how many plans to propose.
 
 ### Step 3: Write SOLUTION.md for each plan
 
+**Number the plans best-first.** `{id}` is the order you expect the plans to rank in: `1` is
+the candidate you would ship, and a control or baseline you expect to fail the problem's gate goes
+**last**. The ranker breaks a pool it cannot separate by plan order (`decided_by: tie`), so the
+numbering is the default winner. Measured on N01 (2026-11-15 and -16): both pipeline runs numbered
+the Euler control `1` — the plan its own plan-creator wrote as "expected to miss the 2% pathwise
+gate" — and both times an unseparated pool shipped it against a Lévy-area Milstein that passed.
+
 Create the directory `workspace/{problem_slug}/plans/{id}-{plan_slug}/` and write `SOLUTION.md`:
 
 ```

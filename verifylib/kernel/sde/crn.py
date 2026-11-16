@@ -320,6 +320,23 @@ def undeclared_exact_sampling(family, strong, exact_sampling):
             f"fix the solver")
 
 
+def at_roundoff(detail):
+    """True where both pathwise differences of a component sit at its roundoff floor.
+
+    The one abstention that is evidence of something rather than its absence: every
+    level returned the same terminal values to arithmetic precision, so the scheme
+    integrates this component exactly (``dS = mu dt + dW2`` under any scheme that
+    consumes ``dW``). :func:`abstention` reports it as its first measured reason; this
+    is the same test, exposed so a caller can tell it apart from an estimate that was
+    too noisy or too wide to read.
+    """
+    floor = float((detail or {}).get("roundoff_floor") or 0.0)
+    if floor <= 0.0:
+        return False
+    smallest = min(float(detail.get("s0", 0.0)), float(detail.get("s1", 0.0)))
+    return smallest <= floor
+
+
 def abstention(strong, detail, *, floor_mult=2.0, band=STRONG_BAND,
                ci_mult=ORDER_CI_MULT, exact_sampling=False):
     """Why the strong order carries no verdict, or ``None`` when it does.

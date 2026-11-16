@@ -259,9 +259,11 @@ def evaluate_sde(spec, plan_dir, agent):
             m["summary"]["max_abs_terminal"] = stability[1]["max_abs"]
     cross = _cross_moments(spec, X, T, ci_mult)
     shape = _distribution(verification, X, stats, T, spec.get("parameters"), ci_mult)
+    martingales = _undeclared_ci_martingales(verification)
     moments_ok, moment_detail = _compare(reference, stats, mean_tol, var_tol, near_zero,
                                          ci_mult, cross=cross, shape=shape,
-                                         components=ref_detail.get("components"))
+                                         components=ref_detail.get("components"),
+                                         extra_tests=len(martingales))
     metrics.record(m, "moments_ok", moments_ok, **moment_detail)
     if cross is not None:
         metrics.record(m, "cross_moment_ok", cross[0], **cross[1])
@@ -302,6 +304,15 @@ def evaluate_sde(spec, plan_dir, agent):
     ctx = SdeContext(X, params=spec.get("parameters"), num_paths=num_paths,
                      x0=(spec.get("parameters") or {}).get("X_0"),
                      path_integrals=result.get("path_integrals"), T=T)
+    # The martingale invariants are held at the same family-wise multiplier as the
+    # absolute-mode moment test (`compare_moment`), unless the spec set one itself.
+    # Measured on N01 (2026-11-16): the formulator declared `E[U_T] = 0` as a
+    # non-gate martingale -- the moment check's own zero-mean test a second time --
+    # and once the moment check stopped false-failing at 2.3 sigma, this one did,
+    # dropping both plans from 8 to 5 for "a structural property ... is not" right.
+    verification = _with_family_ci(
+        verification, moment_detail.get("family_wise", {}).get("multiplier"),
+        martingales)
     d2 = run_declared(verification, ctx)
     m["d2"] = d2
     if d2.get("not_reported"):
@@ -584,10 +595,15 @@ def evaluate_sde(spec, plan_dir, agent):
         # rubrics, so a skip here also declines to look for the one finding that
         # outranks everything else. `inconclusive_only` now runs it, and what
         # remains is a failed gate, where the cap is already a finding of its own.
+        # Two findings reach this branch, and the reason names the one that did:
+        # it used to say "a declared constraint gate failed" on N01, whose
+        # constraints all passed and whose moments had failed.
+        cause = ("a declared constraint gate failed" if d2["gate_failed"]
+                 else "the moments failed against the exact reference")
         outcome, detail = "not_run", {
-            "reason": "a declared constraint gate failed, so the score is capped on "
-                      "that finding and the generator check cannot lift it (manual "
-                      "§24's cost rule); it runs on every other plan, both paths"}
+            "reason": f"{cause}, so the score is capped on that finding and the "
+                      f"generator check cannot lift it (manual §24's cost rule); it "
+                      f"runs on every other plan, both paths"}
     metrics.record(m, "dynkin_ok", outcome, **detail)
     # How far the extrapolated generator residual sits from zero, in its own standard
     # errors. `dynkin_ok` is that distance against the family-wise bar; the distance
@@ -1045,7 +1061,7 @@ def _paired(stats, reference, name, components=None):
 
 
 def _compare(reference, stats, mean_tol, var_tol, near_zero, ci_mult, cross=None,
-             shape=None, components=None):
+             shape=None, components=None, extra_tests=0):
     """Every declared moment of every component, against its own confidence
     interval. The worst outcome wins -- ``required_components`` narrows the set the
     spec cares about, but a moment that is declared is a moment that is checked.
@@ -1081,6 +1097,15 @@ def _compare(reference, stats, mean_tol, var_tol, near_zero, ci_mult, cross=None
                               **({"terminal_law": shape[1]} if shape else {})}
         return "unavailable", {"reason": "no reference to compare against"}
     detail, outcomes, worst = {}, [], None
+    # The family the absolute-mode test belongs to: every moment comparison this plan
+    # is graded on, since all of them have to pass. See `compare_moment`.
+    # `extra_tests` is the declared martingale invariants, which are the same kind of
+    # pure significance test on a mean and are judged in the same family.
+    n_tests = sum(len(list(_paired(stats, reference, name, components)))
+                  for name in ("mean", "variance") if reference.get(name))
+    abs_ci = dynkin.family_wise_multiplier(ci_mult, max(n_tests + int(extra_tests), 1))
+    detail["family_wise"] = {"tests": int(n_tests + int(extra_tests)),
+                             "ci_mult": float(ci_mult), "multiplier": float(abs_ci)}
     for name, tol in (("mean", mean_tol), ("variance", var_tol)):
         values = reference.get(name)
         if not values:
@@ -1089,7 +1114,8 @@ def _compare(reference, stats, mean_tol, var_tol, near_zero, ci_mult, cross=None
         for i, st, ref in _paired(stats, reference, name, components):
             outcome, sub = C.compare_moment(
                 st[name], st[f"se_{name}"], ref, tol,
-                near_zero=near_zero if name == "mean" else None, ci_mult=ci_mult)
+                near_zero=near_zero if name == "mean" else None, ci_mult=ci_mult,
+                abs_ci_mult=abs_ci)
             per.append({"component": i, "outcome": outcome, **sub})
             kind_outcomes.append(outcome)
             if isinstance(sub.get("rel_error"), float):
@@ -1356,8 +1382,37 @@ def _orders(plan_dir, solve, num_paths, dt0, T, levels, seed, expected_strong,
         per.append({**checks, "component": component, "strong_detail": strong_detail,
                     "weak_detail": weak_detail,
                     "richardson": crn.richardson_moment(runs, weak, component)})
-    binding = _worst_component(per, expected_strong)
+    # **A component integrated exactly does not veto the ones that were measured.**
+    # Its ladder differences sit at roundoff, so `crn.abstention` abstains on it --
+    # correctly, there is no rate to read -- and `_worst_component` ranks an
+    # abstention above any measured verdict, so the whole plan's `orders_ok` became
+    # "unresolved" and the ranker dropped the order (`ranking.order` skips any
+    # abstained check). Measured on N01 (2026-11-16): S = 1 + mu t + W2 is exact under
+    # every scheme, U carried the whole question, and its 0.49 against 1.01 never
+    # reached the ranker, which tied the pool and crowned the Euler control.
+    #
+    # Only the roundoff abstention is excused, and only when another component was
+    # measured. An abstention for noise or a wide interval still binds -- that
+    # component's order is unknown, not known to be fine -- and a plan whose every
+    # component sits at roundoff still abstains as a whole, which is the degenerate
+    # case the harness's ladder flags.
+    # A component *declared* exactly sampled is not excused: it draws its own
+    # randomness, so its abstention means the study has no evidence about it -- the
+    # case `test_an_abstaining_component_does_not_publish_its_noise_as_the_order`
+    # pins -- not that it consumed `dW` and came out exact.
+    exact = [e for e in per if e.get("abstained") and e["component"] not in exact_sampling
+             and crn.at_roundoff(e["strong_detail"])]
+    others = [e for e in per if e not in exact]
+    if exact and others and not any(e.get("abstained") for e in others):
+        binding = _worst_component(others, expected_strong)
+    else:
+        binding = _worst_component(per, expected_strong)
     detail = {**binding, "dts": [p["dt"] for p in payloads]}
+    if exact and binding not in exact:
+        detail["exact_components"] = [e["component"] for e in exact]
+        detail["exact_components_note"] = (
+            "integrated exactly (ladder differences at roundoff); the order verdict "
+            "binds to the measured components")
     if sub_detail is not None:
         detail["sub_increments"] = sub_detail
     if binding.get("abstained"):
@@ -1805,6 +1860,32 @@ def _reported_moments(result, stats):
 #: The reason a spec can give for ``milstein_eligible: false`` that makes a Milstein
 #: plan a *claim defect* rather than a harmless no-op.
 MILSTEIN_LEVY_REASON = "levy_area"
+
+
+def _undeclared_ci_martingales(verification):
+    """Indices of the declared ``martingale`` invariants that set no ``ci_mult``."""
+    out = []
+    for i, entry in enumerate((verification or {}).get("invariants") or []):
+        if (isinstance(entry, dict) and entry.get("name") == "martingale"
+                and entry.get("ci_mult") is None):
+            out.append(i)
+    return out
+
+
+def _with_family_ci(verification, multiplier, indices):
+    """A copy of ``verification`` with ``multiplier`` as those invariants' ``ci_mult``.
+
+    A copy, so the spec dict the caller holds is not mutated and a ``ci_mult`` the
+    spec declared is never overwritten -- only the ones it left to the default.
+    """
+    if not indices or multiplier is None:
+        return verification
+    out = dict(verification)
+    invariants = list(out.get("invariants") or [])
+    for i in indices:
+        invariants[i] = {**invariants[i], "ci_mult": float(multiplier)}
+    out["invariants"] = invariants
+    return out
 
 
 def _sub_increments_per_step(spec):

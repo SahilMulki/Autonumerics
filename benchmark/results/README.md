@@ -90,6 +90,8 @@ Completed C2 sweeps, kept aside from the live `results.json`.
 | `notable_n02_smoke.json` | the notable-suite smoke test ([`docs/plan-notable-sde.md`](../../docs/plan-notable-sde.md) step 7, read in §8b): N02 in the **scheme-matched** arm, 2026-11-15, 242 s (resumed from `STATE.md` after the usage limit), `UNDERCLAIM` — kernel MC-inconclusive at the brief's 2 000 paths, harness strong error 1.6% |
 | `notable_n02_smoke_unrestricted.json` | the same in the **unrestricted** arm, 595 s, `VERIFIED_PASS` — formulator evaluated at 20 000 paths, all three plans certified; `ledger_spec_defects` flags the path-count mismatch |
 | `notable_9a_n01_before_kernel_fix.json` | step 9a's first unit ([`docs/plan-notable-sde.md`](../../docs/plan-notable-sde.md) §8c): N01, 2026-11-15, 543 s, **`FAIL`** with three passing plans in the pool — the kernel did not yet pass `dW_sub`, so the ranker's tie default crowned the Euler control. Kept as measured; superseded by the re-run after the fixes |
+| `notable_9a_scheme_matched.json` | step 9a, 2026-11-15: N01 `RUN_ERROR` (the conductor deleted its own plans block from STATE.md; the winner passes the harness at 0.85%) and N03 `VERIFIED_PASS`, 314 s — [`docs/plan-notable-sde.md`](../../docs/plan-notable-sde.md) §8d |
+| `notable_9a_n01_rerun.json` | N01's third attempt, 2026-11-16, 473 s, `FAIL`: the kernel measured the right order and the ranker tied the pool and shipped the Euler control (§8d). Workspace kept as `workspace-n01-rerun-tie/` |
 
 ### baselines/
 

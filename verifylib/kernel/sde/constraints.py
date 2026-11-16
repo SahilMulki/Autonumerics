@@ -114,7 +114,8 @@ def resolution(stats, v_ref, var_tol, ci_mult=2.0):
             "bar": 0.5 * float(var_tol), "ci_mult": float(ci_mult)}
 
 
-def compare_moment(empirical, se, reference, tol, *, near_zero=None, ci_mult=2.0):
+def compare_moment(empirical, se, reference, tol, *, near_zero=None, ci_mult=2.0,
+                   abs_ci_mult=None):
     """``(outcome, detail)`` -- ``True`` / ``False`` / ``"unresolved"``."""
     reference = float(reference)
     rel = abs(float(empirical) - reference) / (abs(reference) + 1e-14)
@@ -133,10 +134,23 @@ def compare_moment(empirical, se, reference, tol, *, near_zero=None, ci_mult=2.0
         # always left near-zero means out of its worst error (`verify.py`), and so
         # does this now; the absolute difference is reported in its place.
         detail.pop("rel_error")
+        #
+        # **At the family-wise multiplier.** This branch has no tolerance band: its
+        # band is `max(k * se, near_zero)`, and `near_zero` (0.01) is far below the
+        # standard error at any realistic path count, so it is a bare k-sigma test
+        # that fails a correct solver ~4.6% of the time at k = 2 -- per zero-mean
+        # component, and, since the graded call now shares the kernel's increments
+        # across a pool, for every plan in the pool at once. Measured on N01
+        # (2026-11-16): U's exact mean is 0, both plans returned 0.043 at 2.3 sigma,
+        # both failed `moments_ok`, both were capped at 8 and the pool tied. The
+        # relative branch below has a tolerance to clear and keeps `ci_mult`; only
+        # this pure significance test is held at the family-wise level, which is
+        # what `dynkin.family_wise_multiplier` already does for the same reason.
         diff = abs(float(empirical) - reference)
-        ok = diff < max(ci_mult * float(se), float(near_zero))
+        k = float(abs_ci_mult if abs_ci_mult is not None else ci_mult)
+        ok = diff < max(k * float(se), float(near_zero))
         return bool(ok), {**detail, "abs_error": diff, "near_zero": float(near_zero),
-                          "mode": "absolute"}
+                          "mode": "absolute", "ci_mult_used": k}
     if ci_mult * float(se) / (abs(reference) + 1e-14) > float(tol):
         return "unresolved", {**detail, "reason": "the confidence interval is wider than "
                                                   "the tolerance band"}

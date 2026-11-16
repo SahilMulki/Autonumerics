@@ -40,6 +40,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
@@ -132,10 +133,15 @@ def isolated_settings(slug, log_dir):
     return path
 
 
-def conductor_command(slug, skip_permissions, permission_mode, model, settings=None):
+def conductor_command(slug, skip_permissions, permission_mode, model, settings=None,
+                      session_id=None):
     cmd = ["claude", "--plugin-dir", REPO_ROOT,
            "--settings", settings or PIPELINE_SETTINGS, "-p",
            f"/conductor workspace/{slug}/problem.md"]
+    if session_id:
+        # Pins the transcript this invocation writes, which is what makes its cost
+        # attributable -- see `session_cost`.
+        cmd += ["--session-id", session_id]
     if skip_permissions:
         cmd.append("--dangerously-skip-permissions")
     elif permission_mode:
@@ -174,12 +180,79 @@ def conductor_command(slug, skip_permissions, permission_mode, model, settings=N
 CONDUCTOR_ENV = {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "1800000"}  # 30 min
 
 
+def session_transcript(session_id):
+    """The path Claude Code wrote this session's transcript to, or None.
+
+    Located by glob rather than by re-deriving the project-directory encoding from
+    `cwd`: that encoding is the CLI's business and has changed before, while a session
+    id is a uuid we chose. `CLAUDE_CONFIG_DIR` is honoured because a run under a
+    relocated config dir would otherwise silently report no cost at all.
+    """
+    import glob
+
+    root = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    found = glob.glob(os.path.join(root, "projects", "*", f"{session_id}.jsonl"))
+    return found[0] if found else None
+
+
+def session_cost(session_id):
+    """`{"usd", "model_usage", "session_id", "transcript"}` for one conductor run.
+
+    **The cost is cumulative, not additive.** Each `cost-state` record in the
+    transcript carries the session total *so far*, so the session's cost is the
+    **max** over those records and summing them inflates it by roughly the number of
+    turns -- on a 9-record sample, 2573 against the true 355.
+
+    **Attributed by session id, never by time window.** `run.py` invokes the
+    conductor with `cwd=REPO_ROOT`, so its transcripts land in the same project
+    directory as any interactive Claude Code session the operator has open in this
+    repo; a window of `[started_at, ended_at]` would bill that session's tokens to
+    whichever problem happened to be running. `--session-id` makes the attribution
+    exact instead of probable.
+
+    Subagent turns are `isSidechain` records in the **same** file, so the solver and
+    evaluator passes -- which is where this pipeline spends nearly all of its money --
+    are already included. That is the reason this is read per session rather than
+    summed per message.
+
+    Returns `usd: None`, not 0.0, where the transcript is missing or carries no cost
+    record. A zero would read as "this problem was free", and the one thing a cost
+    column must not do is make a measurement failure look like a cheap run.
+    """
+    path = session_transcript(session_id)
+    out = {"session_id": session_id, "transcript": path, "usd": None,
+           "model_usage": None}
+    if not path:
+        return out
+    best, usage = None, None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    doc = json.loads(line)
+                except ValueError:
+                    continue        # a partial last line on a killed run
+                if doc.get("type") != "cost-state":
+                    continue
+                total = doc.get("totalCostUSD")
+                if isinstance(total, (int, float)) and (best is None or total > best):
+                    best, usage = float(total), doc.get("modelUsage") or usage
+    except OSError:
+        return out
+    if best is not None:
+        out["usd"] = round(best, 6)
+        out["model_usage"] = usage
+    return out
+
+
 def run_conductor(slug, timeout, skip_permissions, permission_mode, model):
     """Invoke the conductor headlessly; capture the transcript. Returns a run dict."""
     os.makedirs(LOGS_DIR, exist_ok=True)
     log_path = os.path.join(LOGS_DIR, f"{slug}.log")
+    session_id = str(uuid.uuid4())
     cmd = conductor_command(slug, skip_permissions, permission_mode, model,
-                            settings=isolated_settings(slug, LOGS_DIR))
+                            settings=isolated_settings(slug, LOGS_DIR),
+                            session_id=session_id)
 
     # Elapsed is measured on the monotonic clock, which is what subprocess's own
     # timeout uses. On macOS it does not advance while the system is asleep, so a
@@ -213,6 +286,11 @@ def run_conductor(slug, timeout, skip_permissions, permission_mode, model):
         "timed_out": timed_out,
         "wall_seconds": round(wall, 1),
         "wall_clock_seconds": round(ended_at - started_at, 1),
+        # What this problem cost, beside how long it took. The C0 baseline has
+        # recorded `cost_usd` per attempt since it was built (`oneshot.py`), so the
+        # C2 column was the one side of an equal-budget comparison with no price on
+        # it -- and §9's cost discussion had to reason from wall time alone.
+        "cost": session_cost(session_id),
         "started_at": _dt.datetime.fromtimestamp(started_at).isoformat(timespec="seconds"),
         "ended_at": _dt.datetime.fromtimestamp(ended_at).isoformat(timespec="seconds"),
         "log": os.path.relpath(log_path, REPO_ROOT),
