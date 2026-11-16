@@ -57,7 +57,7 @@ def test_the_manifest_counts_four_suites_apart(tmp_path):
     with open(path) as fh:
         manifest = json.load(fh)
     assert manifest["n_by_suite"] == {"main": 49, "no-closed-form": 7,
-                                      "benchop": 10, "sciml": 9}
+                                      "benchop": 10, "sciml": 9, "notable": 9}
     assert sum(manifest["n_by_suite"].values()) == manifest["n_total"]
 
 
@@ -304,7 +304,7 @@ def test_the_report_names_the_four_suites_that_exist():
     `sciml` report would have had no way to know what denominator it was quoted
     against or that the two arms are never merged."""
     text = R.generate_report([], config={})
-    for suite in ("main", "no-closed-form", "benchop", "sciml"):
+    for suite in ("main", "no-closed-form", "benchop", "sciml", "notable"):
         assert f"`{suite}`" in text
     assert "scheme-matched" in text and "unrestricted" in text
     assert "ANALYTIC_TRANSCRIPTION" in text
@@ -390,8 +390,10 @@ _DEGENERATE = {"status": "ok", "passed": True, "verified_score": 10,
 
 
 def _brief(problem, arm, tmp_path):
-    S.write_problem_md(problem, str(tmp_path), arm=arm)
-    return (tmp_path / problem["slug"] / "problem.md").read_text()
+    # The arm reaches the workspace path since plan-notable-sde.md step 3b, so the brief
+    # is read back from wherever the staging wrote it.
+    path = S.write_problem_md(problem, str(tmp_path), arm=arm)
+    return open(path).read()
 
 
 @pytest.mark.parametrize("prob", PATHWISE, ids=[p["id"] for p in PATHWISE])
@@ -420,7 +422,13 @@ def test_the_arm_cannot_reach_a_problem_outside_the_pathwise_route(tmp_path):
     """Including M09, which is in this suite but not on that route, and the 66 entries
     of the other three suites -- the arm distinction is meaningless there and a brief
     that moved would make every frozen baseline incomparable."""
-    others = [p for p in P.PROBLEMS if p.get("ground_truth_kind") != "pathwise"]
+    # ~~every non-pathwise problem~~ -- the `notable` suite stages an arm paragraph on
+    # its moment routes too (plan-notable-sde.md step 3b), deliberately: on those routes
+    # the ladder cannot see an exact law, so the brief is the only place the arm exists.
+    # The claim that survives is the one that protects frozen baselines: the 67
+    # non-pathwise entries that predate it are byte-identical across arms.
+    others = [p for p in P.PROBLEMS if p.get("ground_truth_kind") != "pathwise"
+              and p.get("suite") != "notable"]
     assert len(others) == 67
     for prob in others:
         assert _brief(prob, "unrestricted", tmp_path / "u") == \

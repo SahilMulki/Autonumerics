@@ -294,9 +294,15 @@ def test_h2_records_the_absence_of_the_check_inline(tmp_path):
 # --- H3: the noise dimension ----------------------------------------------------
 
 def test_h3_noise_dimension_defaults_to_the_state_dimension():
+    # ~~every SDE problem~~ -- N02 and N07 (plan-notable-sde.md) are the first entries
+    # with fewer noise channels than states, and declare it.
     for p in P.sde_problems():
+        if p.get("suite") == "notable":
+            continue
         assert V.sde_noise_dimension(p) == p["state_dimension"], p["slug"]
     assert V.sde_noise_dimension(TWO_CHANNEL) == 2
+    assert V.sde_noise_dimension(P.by_slug("sde_kubo_oscillator")) == 1
+    assert V.sde_noise_dimension(P.by_slug("sde_langevin_baoab")) == 1
 
 
 def test_h3_the_brief_states_the_increment_shape():
@@ -449,7 +455,7 @@ def test_no_problem_outside_the_new_suite_is_changed_by_any_of_this():
     problem does not read as a regression in this route.
     """
     for prob in P.PROBLEMS:
-        if prob.get("suite") == "sciml":
+        if prob.get("suite") in ("sciml", "notable"):
             continue
         md = S.contract_footer(prob)
         entry = S.manifest_entry(prob)
@@ -472,11 +478,14 @@ def test_the_pathwise_route_is_opt_in():
     """
     on_route = [p["slug"] for p in P.PROBLEMS
                 if p.get("ground_truth_kind") == "pathwise"]
-    assert on_route == [p["slug"] for p in P.sciml_problems()
+    # ...plus N01 and N02 of the `notable` suite (plan-notable-sde.md step 6), which
+    # opted in on the same terms; N01 is the first entry graded against a pathwise
+    # *reference* rather than a formula (H-N1).
+    assert on_route == [p["slug"] for p in P.sciml_problems() + P.notable_problems()
                         if p.get("ground_truth_kind") == "pathwise"]
-    assert len(on_route) == 8
+    assert len(on_route) == 10
     for prob in P.sde_problems():
-        if prob.get("suite") == "sciml":
+        if prob.get("suite") in ("sciml", "notable"):
             continue
         assert V.sde_noise_dimension(prob) == prob["state_dimension"], prob["slug"]
         assert prob.get("noise_dimension") is None, prob["slug"]

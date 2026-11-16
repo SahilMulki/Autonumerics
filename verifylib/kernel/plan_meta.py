@@ -157,7 +157,7 @@ def read(plan_dir):
     except OSError:
         return {"scheme_family": None, "spatial_order": None, "scheme": None,
                 "scheme_family_source": "unknown", "declared": False,
-                "boundary_treatment": None,
+                "boundary_treatment": None, "levy_area_treatment": None,
                 "exact_sampling_components": ()}
     front = parse_frontmatter(head)
     family = (front.get("scheme_family") or "").strip().lower() or None
@@ -185,6 +185,13 @@ def read(plan_dir):
             # `.absorbing_boundary` were declared in live specs and read by nothing.
             "boundary_treatment": (front.get("boundary_treatment") or "").strip()
                                   or None,
+            # How a multi-noise Milstein plan obtains its Levy area. `_milstein_claim`
+            # has read `m_plan.get("levy_area_treatment")` since it was written, and
+            # this function never returned the key, so the plan-level declaration was
+            # dead and only the spec-level one could answer the cap. Declared, never
+            # inferred, for the reason `boundary_treatment` gives.
+            "levy_area_treatment": (front.get("levy_area_treatment") or "").strip()
+                                   or None,
             "scheme_family_source": ("declared" if family else
                                      "inferred" if inferred else "unknown"),
             "declared": bool(family is not None or order is not None)}

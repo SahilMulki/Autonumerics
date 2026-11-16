@@ -231,6 +231,17 @@ def _crn_increments(payload):
     return dW
 
 
+def _crn_increments_sub(payload):
+    """``(dW, dW_sub)`` -- the child's copy of ``verify.crn_increments_sub`` (H-N1):
+    the fine grid reshaped to ``(paths, Nt, aggregate, [m])`` and its sum over the
+    sub-step axis, which is bit-identical to ``_crn_increments(payload)``."""
+    fine = _crn_increments(dict(payload, aggregate=1))
+    paths, nf = fine.shape[0], fine.shape[1]
+    agg = max(int(payload["aggregate"]), 1)
+    sub = fine.reshape(paths, nf // agg, agg, *fine.shape[2:])
+    return sub.sum(axis=2), sub
+
+
 def _extract_sde(res):
     """Pull the contract fields out of an SDE solver's return dict.
 
@@ -440,7 +451,10 @@ def _child_main(spec_path):
             # payload, which is what lets the harness evaluate its own truth on the
             # very path the solver was handed.
             if spec.get("crn"):
-                call["dW"] = _crn_increments(spec["crn"])
+                if spec["crn"].get("substeps"):
+                    call["dW"], call["dW_sub"] = _crn_increments_sub(spec["crn"])
+                else:
+                    call["dW"] = _crn_increments(spec["crn"])
             # Distinguish a wrong signature from an internal error.
             try:
                 inspect.signature(fn).bind(**call)

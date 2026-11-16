@@ -1190,6 +1190,374 @@ def _sde_diag_amplitude_spread(r0, tol=None):
 
 
 # =============================================================================
+# Notable-SDE suite (plan-notable-sde.md): truths, references and structural gates
+# =============================================================================
+#
+# Every parameter below is traced to a source in the plan's §2 and every truth is
+# cross-checked by an independent route in validate_ground_truth.py. Nothing here
+# reads a solver's output except the three ``_sde_diag_*`` gates, which read the
+# terminal sample exactly as the Kubo invariant gate above does.
+
+
+def _kolmogorov_general(b, s, x0, T, lo, hi, N=256, funcs=None):
+    """``E[f(X_T) | X_0 = x0]`` for ``dX = b(X) dt + s(X) dW`` on ``[lo, hi]``.
+
+    ``_kolmogorov_1d`` generalised in exactly two places -- ``b`` and ``s`` are
+    callables and the interval need not be symmetric -- and otherwise the same
+    construction: backward equation, Chebyshev collocation, homogeneous Neumann ends
+    eliminated, dense ``expm``, barycentric interpolation to ``x0``. The ends must sit
+    where the process effectively cannot reach within ``T``; each caller measures that
+    (validate_ground_truth.py moves ``lo``, ``hi`` and ``N`` and records the spread),
+    and where the spread is not negligible the entry is declared a ``reference`` with
+    that spread as its error rather than an ``exact``. Validated against the shipped
+    ``double_well_moments`` to 2.8e-15 (docs/notable-sde-data/n03_n06_kolmogorov.py).
+    """
+    D, xi = _cheb(N)
+    x = 0.5 * (hi + lo) + 0.5 * (hi - lo) * xi
+    scale = 2.0 / (hi - lo)
+    D1 = D * scale
+    A = np.diag(b(x)) @ D1 + np.diag(0.5 * s(x) ** 2) @ (D1 @ D1)
+    B = D1[[0, N], :]
+    M = -np.linalg.solve(B[:, [0, N]], B[:, 1:N])
+    A_int = A[1:N, 1:N] + A[1:N, [0, N]] @ M
+    E = expm(T * A_int)
+    w = (-1.0) ** np.arange(N + 1)
+    w[0] *= 0.5
+    w[-1] *= 0.5
+    funcs = funcs or [lambda z: z, lambda z: z ** 2]
+    out = []
+    for f in funcs:
+        u = np.empty(N + 1)
+        u[1:N] = E @ f(x[1:N])
+        u[[0, N]] = M @ u[1:N]
+        d = (x0 - 0.5 * (hi + lo)) * scale - xi
+        if np.any(np.abs(d) < 1e-14):
+            out.append(float(u[np.argmin(np.abs(d))]))
+        else:
+            out.append(float(np.sum(w * u / d) / np.sum(w / d)))
+    return out
+
+
+_NOTABLE_CACHE = {}
+
+
+def _notable_cached(key, fn):
+    """A PDE solve is called for every manifest write, grade and validation; the
+    result is a pure function of its arguments, so it is computed once."""
+    if key not in _NOTABLE_CACHE:
+        _NOTABLE_CACHE[key] = fn()
+    return _NOTABLE_CACHE[key]
+
+
+# --- N01 Clark-Cameron -------------------------------------------------------
+
+def clark_cameron_reference(dW_fine, T, s0, mu):
+    """Terminal ``(S, U)`` of ``dS = mu dt + dW2, dU = S dW1`` on the fine Brownian
+    grid, by the trapezoidal sum ``sum 1/2 (S_i + S_{i+1}) dW1_i``.
+
+    This is a *reference*, not an exact solution, and its error is the point of the
+    entry: ``U(T)`` depends on the Levy areas of ``(W1, W2)``, which no function of
+    the increments carries, so the trapezoid -- the conditional expectation of
+    ``int S dW1`` given the increments -- is off by the summed Levy areas, an
+    ``O(sqrt(h))`` quantity (Clark & Cameron 1980). Measured at ``h = 1/102400``:
+    ``9.5e-4`` relative on ``U`` against a graded error of 1-9%, and converging at
+    order 1/2 under refinement, not order 1 as the plan's first draft derived
+    (docs/notable-sde-data/n01_clark_cameron.py). ``pathwise_reference_error`` on
+    the entry is that measurement at the entry's own fine grid.
+    """
+    dW = np.asarray(dW_fine, dtype=float)
+    n, nf = dW.shape[0], dW.shape[1]
+    t = np.arange(1, nf + 1) * (float(T) / nf)
+    S = s0 + mu * t[None, :] + np.cumsum(dW[:, :, 1], axis=1)
+    S_prev = np.concatenate([np.full((n, 1), float(s0)), S[:, :-1]], axis=1)
+    U = np.sum(0.5 * (S_prev + S) * dW[:, :, 0], axis=1)
+    return np.stack([S[:, -1], U], axis=1)
+
+
+# --- N02 Kubo oscillator ------------------------------------------------------
+
+def kubo_pathwise(t, W, a, sigma, x1, x2):
+    """Exact Stratonovich solution: the rotation of ``X(0)`` by ``a t + sigma W(t)``.
+    A function of ``W(t)`` alone, so it fits the shipped pathwise contract."""
+    W = np.asarray(W, dtype=float)
+    if W.ndim > 1:
+        W = W[..., 0]
+    th = a * float(t) + sigma * W
+    return np.stack([x1 * np.cos(th) - x2 * np.sin(th),
+                     x1 * np.sin(th) + x2 * np.cos(th)], axis=-1)
+
+
+# --- N03 Ait-Sahalia ----------------------------------------------------------
+
+def aitsahalia_moments(T, a_m1, a_0, a_1, a_2, rho, sigma, theta, X0,
+                       lo=0.1, hi=12.0, N=1024, err=(2e-6, 5e-6)):
+    """Reference terminal moments ``(value, abs_error)`` of the Ait-Sahalia rate
+    model ``dX = (a_m1/X - a_0 + a_1 X - a_2 X^rho) dt + sigma X^theta dW``.
+
+    Kolmogorov route. The left end is harmless at ``lo = 0.1``: the stationary density
+    behaves like ``exp(-2 a_m1 / (3 x^3))`` there and is ``1e-232`` of its peak at 0.1.
+    The *right* end is the one that matters -- with ``rho = 2`` the stationary tail
+    is a power law ``x^-(a_2 + 3)``, so the second moment converges slowly in ``hi``:
+    measured ``hi = 6 -> 8 -> 10 -> 12`` moves the variance by 4.6e-6, 8e-7, 3.3e-7.
+    Declared a ``reference`` with those spreads as its error rather than an ``exact``.
+    """
+    def b(x):
+        return a_m1 / x - a_0 + a_1 * x - a_2 * x ** rho
+
+    def s(x):
+        return sigma * x ** theta
+
+    key = ("aitsahalia", float(T), a_m1, a_0, a_1, a_2, rho, sigma, theta, X0, lo, hi, N)
+    m1, m2 = _notable_cached(key, lambda: _kolmogorov_general(b, s, X0, float(T), lo, hi, N))
+    return {"mean": (m1, float(err[0])), "variance": (m2 - m1 ** 2, float(err[1]))}
+
+
+def aitsahalia_stationary(a_m1, a_0, a_1, a_2, rho, sigma, theta, lo=0.05, hi=20.0,
+                          n=400001):
+    """Stationary mean and variance by quadrature of ``exp(2 int b/s^2) / s^2``, for
+    the vacuity table (rule 6). ``rho = 2`` makes the ``a_2`` term a logarithm."""
+    x = np.linspace(lo, hi, n)
+    tail = -a_2 * np.log(x) if abs(rho - 2.0) < 1e-12 else -a_2 * x ** (rho - 2) / (rho - 2)
+    two_theta = 2.0 * theta
+    # 2 * int b / s^2 with s^2 = sigma^2 x^(2 theta), written for theta = 3/2.
+    if abs(two_theta - 3.0) > 1e-12:
+        raise ValueError("stationary quadrature is written for theta = 3/2")
+    logw = (2.0 / sigma ** 2) * (-a_m1 / (3 * x ** 3) + a_0 / (2 * x ** 2) - a_1 / x + tail) \
+        - np.log(sigma ** 2 * x ** 3)
+    w = np.exp(logw - logw.max())
+    Z = np.trapezoid(w, x)
+    m = np.trapezoid(x * w, x) / Z
+    return {"mean": float(m), "variance": float(np.trapezoid(x ** 2 * w, x) / Z - m ** 2)}
+
+
+# --- N04 Wright-Fisher / Jacobi ----------------------------------------------
+
+def wright_fisher_moments(T, a, b, sigma, X0):
+    """Exact: the generator maps polynomials to polynomials, so the first two moments
+    close in a lower-triangular 2x2 linear ODE (plus the constant), solved by matrix
+    exponential: ``m1' = a - (a+b) m1``, ``m2' = (2a + sigma^2) m1 - (2(a+b) + sigma^2) m2``."""
+    M = np.array([[0.0, 0.0, 0.0],
+                  [a, -(a + b), 0.0],
+                  [0.0, 2 * a + sigma ** 2, -(2 * (a + b) + sigma ** 2)]])
+    y = expm(M * float(T)) @ np.array([1.0, X0, X0 ** 2])
+    return {"mean": float(y[1]), "variance": float(y[2] - y[1] ** 2)}
+
+
+def wright_fisher_stationary(a, b, sigma):
+    """The Beta(2a/sigma^2, 2b/sigma^2) law."""
+    al, be = 2 * a / sigma ** 2, 2 * b / sigma ** 2
+    return {"mean": al / (al + be), "variance": al * be / ((al + be) ** 2 * (al + be + 1))}
+
+
+# --- N05 Merton jump diffusion ----------------------------------------------
+
+def merton_moments(T, S0, mu, sigma, lam, m, delta):
+    """Exact terminal moments of ``dX = (mu - lam kappa) X dt + sigma X dW + X dJ``:
+    the compensator makes ``E[X_T] = S0 e^{mu T}`` for every jump parameter -- which is
+    why this entry is *not* decided on its mean (plan §2b finding 4)."""
+    kappa = np.exp(m + 0.5 * delta ** 2) - 1.0
+    mean = S0 * np.exp(mu * T)
+    m2 = S0 ** 2 * np.exp(2 * (mu - lam * kappa) * T + sigma ** 2 * T) \
+        * np.exp(lam * T * (np.exp(2 * m + 2 * delta ** 2) - 1.0))
+    return {"mean": float(mean), "variance": float(m2 - mean ** 2)}
+
+
+def _bs_call(S, K, T, r, vol):
+    d1 = (np.log(S / K) + (r + 0.5 * vol ** 2) * T) / (vol * np.sqrt(T))
+    d2 = d1 - vol * np.sqrt(T)
+    return S * ndtr(d1) - K * np.exp(-r * T) * ndtr(d2)
+
+
+def merton_call_price(S0, K, r, sigma, T, lam, m, delta, n_terms=80):
+    """Merton's (1976) Poisson-weighted Black-Scholes series: conditional on ``n``
+    jumps the terminal law is lognormal with variance ``sigma^2 + n delta^2/T`` and a
+    drift shifted by the jumps' own mean. Cross-checked by direct quadrature of the
+    lognormal mixture to 1.6e-14 and by 4M exact-solution paths to 0.66 sigma
+    (docs/notable-sde-data/n05_merton.py); the published value at this parameter set
+    is 4.391246 (d'Halluin, Forsyth & Vetzal, Table 3)."""
+    kappa = np.exp(m + 0.5 * delta ** 2) - 1.0
+    lt = lam * T
+    total = 0.0
+    logw = -lt
+    for n in range(n_terms):
+        if n > 0:
+            logw += np.log(lt) - np.log(n)
+        vol_n = np.sqrt(sigma ** 2 + n * delta ** 2 / T)
+        r_n = r - lam * kappa + n * (m + 0.5 * delta ** 2) / T
+        total += np.exp(logw) * _bs_call(S0 * np.exp((r_n - r) * T), K, T, r, vol_n)
+    return float(total)
+
+
+# --- N06 stochastic SIS -------------------------------------------------------
+
+def sis_logit_moments(T, N_pop, beta, mu, gamma, sigma, I0,
+                      zlo=-12.0, zhi=9.0, N=256, err=(1e-5, 1e-4)):
+    """Reference terminal moments ``(value, abs_error)`` of the SDE SIS model
+    ``dI = I[(beta N - mu - gamma) - beta I] dt + sigma I (N - I) dW`` by a
+    Kolmogorov solve in the logit chart ``Z = ln(I/(N-I))``, where the noise is the
+    constant ``sigma N`` (plan §2b finding 1: the model has no closed form, and this
+    chart is better conditioned than the original coordinates, whose diffusion
+    vanishes at both ends of ``(0, N)``). The observables are pulled back through the
+    chart. Declared a ``reference``: the ``(mu+gamma)/(N-I)`` drift term stiffens as
+    ``I -> N`` and the solve spreads by ~2e-7 relative over resolution and domain."""
+    def inv(z):
+        return N_pop / (1.0 + np.exp(-z))
+
+    def b(z):
+        i = inv(z)
+        return N_pop * (beta - (mu + gamma) / (N_pop - i) + 0.5 * sigma ** 2 * (2.0 * i - N_pop))
+
+    def s(z):
+        return np.full_like(z, sigma * N_pop)
+
+    z0 = float(np.log(I0 / (N_pop - I0)))
+    key = ("sis", float(T), N_pop, beta, mu, gamma, sigma, I0, zlo, zhi, N)
+    m1, m2 = _notable_cached(
+        key, lambda: _kolmogorov_general(b, s, z0, float(T), zlo, zhi, N,
+                                         funcs=[inv, lambda z: inv(z) ** 2]))
+    return {"mean": (m1, float(err[0])), "variance": (m2 - m1 ** 2, float(err[1]))}
+
+
+def sis_stationary(N_pop, beta, mu, gamma, sigma):
+    """Gray, Greenhalgh, Hu, Mao & Pan (2011) Theorem 6.3, eqs (6.4)-(6.5): the mean
+    and variance of the stationary law when ``R0^S > 1``. Reproduces the paper's own
+    ``sigma = 0.02`` figures 6.493506 and 22.76944."""
+    r0s = beta * N_pop / (mu + gamma) - sigma ** 2 * N_pop ** 2 / (2 * (mu + gamma))
+    m = 2 * beta * (r0s - 1) * (mu + gamma) / (2 * beta * (beta - sigma ** 2 * N_pop)
+                                               + sigma ** 2 * (beta * N_pop - mu - gamma))
+    return {"mean": float(m), "variance": float(m * (beta * N_pop - mu - gamma) / beta - m ** 2)}
+
+
+# --- N07 underdamped Langevin -------------------------------------------------
+
+def langevin_moments(T, gamma, omega, beta, q0, p0):
+    """Exact: ``dq = p dt, dp = (-omega^2 q - gamma p) dt + sqrt(2 gamma/beta) dW`` is
+    linear with additive noise, so the mean is ``e^{AT} x0`` and the covariance is the
+    Lyapunov integral ``int_0^T e^{As} Q e^{A^T s} ds``, evaluated by Van Loan's
+    block exponential. Cross-checked against Gauss-Legendre quadrature of the
+    stochastic convolution and ``solve_ivp`` on the covariance ODE to 1.3e-15
+    (docs/notable-sde-data/n07_langevin.py)."""
+    A = np.array([[0.0, 1.0], [-omega ** 2, -gamma]])
+    Q = np.array([[0.0, 0.0], [0.0, 2.0 * gamma / beta]])
+    mean = expm(A * float(T)) @ np.array([q0, p0])
+    H = np.zeros((4, 4))
+    H[:2, :2] = -A
+    H[:2, 2:] = Q
+    H[2:, 2:] = A.T
+    E = expm(H * float(T))
+    cov = E[2:, 2:].T @ E[:2, 2:]
+    return {"mean_X": float(mean[0]), "variance_X": float(cov[0, 0]),
+            "mean_Y": float(mean[1]), "variance_Y": float(cov[1, 1])}
+
+
+def langevin_stationary(gamma, omega, beta):
+    """The Gibbs law: ``Var q = 1/(beta omega^2)``, ``Var p = 1/beta``, zero means."""
+    return {"mean_X": 0.0, "variance_X": 1.0 / (beta * omega ** 2),
+            "mean_Y": 0.0, "variance_Y": 1.0 / beta}
+
+
+# --- N08 the 3/2 model --------------------------------------------------------
+
+def three_halves_inverse_moments(T, kappa, theta, eps, V0):
+    """Moments of ``U = 1/V`` for ``dV = kappa V (theta - V) dt + eps V^{3/2} dW``:
+    Ito gives ``dU = ((kappa + eps^2) - kappa theta U) dt - eps sqrt(U) dW``, a CIR
+    process with rate ``kappa theta``, level ``(kappa + eps^2)/(kappa theta)`` and
+    volatility ``eps``. Its Feller ratio ``2(kappa + eps^2)/eps^2`` exceeds 2 for every
+    parameter set, so ``U`` never reaches 0 and ``V`` never explodes."""
+    k_u = kappa * theta
+    th_u = (kappa + eps ** 2) / k_u
+    return cir_moments(T, 1.0 / V0, k_u, th_u, eps)
+
+
+def three_halves_inverse_stationary(kappa, theta, eps):
+    k_u = kappa * theta
+    th_u = (kappa + eps ** 2) / k_u
+    return {"mean": th_u, "variance": th_u * eps ** 2 / (2 * k_u)}
+
+
+# --- N09 geometric-average Asian -------------------------------------------
+
+def geometric_asian_truth(S0, K, r, sigma, T):
+    """Kemna & Vorst (1990): ``ln A`` is Gaussian with mean ``ln S0 + (r - sigma^2/2) T/2``
+    and variance ``sigma^2 T/3``, so the price is a Black-Scholes formula at the adjusted
+    drift and volatility ``sigma/sqrt(3)``. Returns the price and the first two moments
+    of ``A``."""
+    m = np.log(S0) + (r - 0.5 * sigma ** 2) * T / 2.0
+    v = sigma ** 2 * T / 3.0
+    EA = np.exp(m + 0.5 * v)
+    sd = np.sqrt(v)
+    d1 = (m - np.log(K) + v) / sd
+    d2 = d1 - sd
+    price = np.exp(-r * T) * (EA * ndtr(d1) - K * ndtr(d2))
+    return {"price": float(price), "mean": float(EA), "variance": float((np.exp(v) - 1.0) * EA ** 2)}
+
+
+# --- structural gates shared by the suite ---------------------------------
+
+def _sde_diag_positive():
+    """**Gated**: every terminal state is finite and strictly positive. The value is
+    the fraction of paths that are not -- zero for a scheme that respects the domain
+    (N03, N08), and the thing an explicit step on a ``1/x`` or ``x^{3/2}`` coefficient
+    gets wrong first."""
+    def fn(paths, result, problem):
+        a = np.asarray(paths, dtype=float).ravel()
+        bad = ~(np.isfinite(a) & (a > 0.0))
+        frac = float(bad.mean()) if a.size else 1.0
+        return frac, bool(frac == 0.0)
+    return fn
+
+
+def _sde_diag_within(lo, hi):
+    """**Gated**: every terminal state is finite and inside ``[lo, hi]``. The value is
+    the fraction outside. For N04 the interval is ``[0, 1]`` and for N06 ``[0, N]``;
+    a clipped scheme passes this gate and fails on its moments, which is the division
+    of labour the two gates are meant to have."""
+    def fn(paths, result, problem):
+        a = np.asarray(paths, dtype=float).ravel()
+        bad = ~(np.isfinite(a) & (a >= lo) & (a <= hi))
+        frac = float(bad.mean()) if a.size else 1.0
+        return frac, bool(frac == 0.0)
+    return fn
+
+
+# --- the suite's parameter sets, named once so the entries and the validator share them
+
+#: N03 -- Example 5.3 of arXiv:2401.02596 (Table 1, "borrowed from [10, SET II]"),
+#: the critical case rho = 2, theta = 3/2 of the original Ait-Sahalia model.
+AITSAHALIA_PARAMS = dict(a_m1=2.0, a_0=3.0, a_1=4.0, a_2=7.0, rho=2.0,
+                         sigma=float(np.sqrt(2.0)), theta=1.5, X0=1.0)
+#: N04 -- theta_1 = theta_2 = 1/2 (a = b = 1/4, sigma = 1), the neutral set Jenkins &
+#: Spano (2017) compare against Euler-Maruyama; x0 = 0.05 is this suite's choice,
+#: off-centre so the mean is not the initial condition (rule 6).
+WRIGHT_FISHER_PARAMS = dict(a=0.25, b=0.25, sigma=1.0, X0=0.05)
+#: N05 -- d'Halluin, Forsyth & Vetzal, Table 1 (approximately Andersen & Andreasen's
+#: S&P 500 fit of April 1999).
+MERTON_PARAMS = dict(S0=100.0, K=100.0, r=0.05, sigma=0.15, T=0.25, lam=0.1, m=-0.90,
+                     delta=0.45)
+#: N06 -- Gray, Greenhalgh, Hu, Mao & Pan (2011), Example 5.2: the persistent case.
+SIS_PARAMS = dict(N_pop=100.0, beta=0.5, mu=20.0, gamma=25.0, sigma=0.03, I0=90.0)
+#: N07 -- set by the step-2 sweep (plan §2b finding 6).
+LANGEVIN_PARAMS = dict(gamma=1.0, omega=4.0, beta=1.0, q0=1.0, p0=0.0)
+#: N08 -- Drimus (2012)'s fit of the 3/2 model to S&P 500 implied volatilities
+#: (31 July 2009), as tabulated by Kouarfate, Kouritzin & MacKay (2020), PS2:
+#: kappa = 22.84, theta = 0.218, eps = 8.56. V0 = 0.15 is this suite's choice; at the
+#: published V0 = 0.06 the mean of 1/V sits 1.2 gate-widths from its initial value.
+THREE_HALVES_PARAMS = dict(kappa=22.84, theta=0.218, eps=8.56, V0=0.15)
+#: N09 -- the standard textbook set.
+GEO_ASIAN_PARAMS = dict(S0=100.0, K=100.0, r=0.05, sigma=0.2, T=1.0)
+
+#: The SDE moment gates, mirrored from verify.py (which imports this module, so it
+#: cannot be imported here); test_notable_suite.py asserts the two stay equal.
+V_SDE_MEAN_TOL = 0.05
+V_SDE_VAR_TOL = 0.10
+
+_MERTON_TRUTH_PRICE = merton_call_price(**{k: MERTON_PARAMS[k] for k in
+                                           ("S0", "K", "r", "sigma", "T", "lam", "m", "delta")})
+_THREE_HALVES_U = three_halves_inverse_moments(0.1, **THREE_HALVES_PARAMS)
+_GEO_ASIAN = geometric_asian_truth(**GEO_ASIAN_PARAMS)
+
+
+# =============================================================================
 # Harness-owned reference fields (problems with no closed form)
 # =============================================================================
 #
@@ -4679,6 +5047,469 @@ In `terminal_paths`, X1 is the first column and X2 the second (the contract belo
 calls those columns X and Y).
 """,
     },
+    # =========================================================================
+    # NOTABLE -- ten recognisable SDE problems (plan-notable-sde.md, step 6)
+    # =========================================================================
+    #
+    # Selected for recognition, not difficulty (plan §0a): each is a named problem a
+    # reader of the SDE literature will know, cited from the primary source, and each
+    # punishes exactly one numerical decision. Its own suite, like `benchop` and
+    # `sciml`, so its rates have their own denominator. Every parameter traces to a
+    # source in §2 or is declared as this suite's own choice; every gate was
+    # calibrated both ways before the entry was written (§5), at the step the
+    # verifier grades at; every truth is cross-checked by an independent route in
+    # validate_ground_truth.py (§6); and every moment gate passed the vacuity table
+    # (rule 6, H-N4) -- the step-2 derivations found four of the plan's drafted
+    # entries vacuous, and the published parameters of two more entries moved before
+    # anything here was authored.
+    #
+    # The statements never quote a reference value. They do state the modelling facts
+    # a correct scheme needs -- the Stratonovich convention, an attainable boundary,
+    # a compensated jump channel -- because those are the problem, not the answer.
+    {
+        "id": "N01",
+        "slug": "sde_clark_cameron",
+        "type": "sde",
+        "tier": 3,
+        "suite": "notable",
+        "family": "clark_cameron",
+        "title": "Clark-Cameron system (Levy area)",
+        "challenge": "The counterexample of the strong-convergence literature: no scheme built from the Brownian increments alone beats strong order 1/2 on U = int S dW1 (Clark & Cameron 1980). Fine sub-increments are supplied so a Milstein scheme that assembles the Levy area from them converges at order 1; Euler-Maruyama at the graded step does not.",
+        "state_dimension": 2,
+        "noise_dimension": 2,
+        "T": 1.0,
+        "dt": 0.04,
+        "num_paths": 1000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "pathwise",
+        # H-N1: the truth is a functional of the whole path, so it is a reference
+        # built from the fine increments rather than a formula in W(T), and its own
+        # error is declared. Measured at this fine grid against a 4x coarsening:
+        # 1.65e-3 relative on U, i.e. ~1e-3 on the (S, U) norm; declared 2e-3.
+        "pathwise_reference": partial(clark_cameron_reference, s0=1.0, mu=1.0),
+        "pathwise_reference_error": 2e-3,
+        "pathwise_fine_steps": 6400,
+        "pathwise_substeps": 256,
+        # Calibrated on the two-component norm the harness grades (plan §5): Euler
+        # 5.17%, Milstein without the area 3.71%, Milstein with the area from the
+        # 256 sub-increments 0.88%. Gate 2%: Euler fails 2.6x, the correct scheme
+        # clears 2.3x. A left-point sum over the fine grid scores 0.06% and is
+        # excluded by the ladder as carrying no discretisation error.
+        "pathwise_tol": 0.02,
+        "work_precision_levels": [(1000, 0.04), (1000, 0.02), (1000, 0.01)],
+        "description": """# Clark-Cameron system
+
+Simulate the two-dimensional Ito system driven by **two independent** Brownian
+motions W1 and W2:
+
+    dS = mu dt + dW2,        S(0) = 1
+    dU = S dW1,              U(0) = 0
+
+with mu = 1, over the time interval [0, 1]. The state is (S, U), in that order.
+
+This problem is graded **path by path**, not in distribution: the harness compares
+your terminal states to a reference solution driven by the very same Brownian
+path. The reference is built on a finer grid than the one you step on, and you are
+handed that finer grid too: `dW_sub[:, k, :, :]` holds the 256 sub-increments that
+sum to `dW[:, k, :]` for step k. The strong error of any scheme that uses only the
+step increments `dW` is bounded below by a constant times sqrt(dt), whatever the
+scheme (Clark and Cameron, 1980); the quantity that bound depends on is the Levy
+area of (W1, W2) over each step, which the sub-increments carry and the step
+increments do not. Advance the state step by step at the step `dt` you are given.
+""",
+    },
+    {
+        "id": "N02",
+        "slug": "sde_kubo_oscillator",
+        "type": "sde",
+        "tier": 3,
+        "suite": "notable",
+        "family": "kubo_oscillator",
+        "title": "Kubo oscillator (Stratonovich)",
+        "challenge": "The textbook Stratonovich system (Kloeden & Platen; Milstein, Repin & Tretyakov 2002): the exact flow is a rotation and conserves |X|. Reading the coefficients as Ito solves a different equation whose amplitude grows by e^{sigma^2 T/2}.",
+        "state_dimension": 2,
+        "noise_dimension": 1,
+        "T": 1.0,
+        "dt": 0.04,
+        "num_paths": 2000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "pathwise",
+        "pathwise_exact": partial(kubo_pathwise, a=1.0, sigma=1.0, x1=1.0, x2=0.0),
+        # Measured at dt = 0.04 against the exact rotation: Stratonovich Heun 3.76%,
+        # Euler-Maruyama on the Ito-converted equation 15.1% (right law, strong order
+        # 1/2), the Ito-misread coefficients 69.5%. The gate is set so that *both*
+        # correct schemes clear it -- 20% -- and the misreading fails it 3.5x.
+        "pathwise_tol": 0.20,
+        "pathwise_fine_steps": 400,
+        # H-N3: the structural gate, calibrated in
+        # docs/notable-sde-data/kubo_invariant_calibration.py (34.5x separation).
+        "diagnostics": [
+            {"name": "conserved_norm", "fn": _sde_diag_conserved_norm(1.0, 0.30), "gate": True},
+            {"name": "amplitude_spread", "fn": _sde_diag_amplitude_spread(1.0), "gate": False},
+        ],
+        "description": """# Kubo oscillator
+
+Simulate the two-dimensional **Stratonovich** system
+
+    dX1 = -a X2 dt - sigma X2 o dW
+    dX2 =  a X1 dt + sigma X1 o dW,        X(0) = (1, 0)
+
+with a = 1 and sigma = 1, driven by a single Brownian motion W, over the time
+interval [0, 1]. The symbol `o dW` denotes the Stratonovich integral: the
+coefficients above are Stratonovich coefficients, not Ito ones.
+
+The exact flow of this system is a rotation of X(0), so the amplitude |X(t)| is
+conserved on every path at every time. The harness checks that the sample you
+return has conserved it; a scheme that reads the coefficients as Ito coefficients
+solves a different equation, whose amplitude grows.
+
+This problem is graded **path by path**, not in distribution. You are handed the
+Brownian increments and your job is to advance the state through them with a
+discretised scheme; the harness compares your terminal states to the exact solution
+driven by those same increments.
+""",
+    },
+    {
+        "id": "N03",
+        "slug": "sde_aitsahalia_rate",
+        "type": "sde",
+        "tier": 3,
+        "suite": "notable",
+        "family": "aitsahalia",
+        "title": "Ait-Sahalia interest-rate model",
+        "challenge": "Ait-Sahalia's (1996) strongly nonlinear short rate: a 1/X drift that repels the origin, a superlinear X^2 mean reversion and an X^{3/2} diffusion. Backward Euler-Maruyama preserves positivity (Szpruch, Mao, Higham & Pan 2011); the explicit step overshoots into X < 0 and the variance it reports is garbage.",
+        "state_dimension": 1,
+        # The critical case rho = 2, theta = 3/2 at the parameter set of arXiv:2401.02596
+        # Example 5.3 (its ref. [10], SET II). T = 0.1: at T = 0.25 the moments are
+        # within 4% of the stationary law and the entry is answerable by transcribing
+        # it (rule 6); at 0.1 they sit 20% (mean) and 85% (variance) away.
+        "T": 0.1,
+        # The step is the whole calibration (plan §5): at dt = 0.004 explicit Euler
+        # never leaves the domain and passes; at 0.01 it fails the variance gate by
+        # 1.3x; at 0.02 it fails by 17x (its paths reach X = -85) while backward Euler
+        # sits at -0.5% on the variance and +2.0% on the mean. Five steps is unusual
+        # for this harness and is stated as such -- it is the step at which the
+        # decision this entry is about has consequences.
+        "dt": 0.02,
+        "num_paths": 200000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "reference",
+        "moments": partial(aitsahalia_moments, **AITSAHALIA_PARAMS),
+        "stationary_moments": aitsahalia_stationary(
+            **{k: v for k, v in AITSAHALIA_PARAMS.items() if k != "X0"}),
+        "diagnostics": [{"name": "positive", "fn": _sde_diag_positive(), "gate": True}],
+        "description": """# Ait-Sahalia interest-rate model
+
+Simulate the scalar Ito SDE on X > 0
+
+    dX = ( a_{-1} / X - a_0 + a_1 X - a_2 X^2 ) dt + sigma X^{3/2} dW,     X(0) = 1
+
+with a_{-1} = 2, a_0 = 3, a_1 = 4, a_2 = 7 and sigma = sqrt(2), over the time
+interval [0, 0.1].
+
+The drift blows up at the origin (the 1/X term repels it), the X^2 term is a
+superlinear mean reversion, and the diffusion grows superlinearly too. The exact
+process stays strictly positive for all time. A scheme must as well: a step that
+lands at X <= 0 is outside the domain of the equation, and the harness checks that
+every returned terminal state is finite and strictly positive.
+
+There is no closed form for the terminal distribution or its moments; the
+harness's ground truth is computed independently of any formula. Compute the
+empirical mean E[X(T)] and variance Var[X(T)] at T = 0.1 by Monte Carlo and compare
+to the reference moments.
+""",
+    },
+    {
+        "id": "N04",
+        "slug": "sde_wright_fisher_mutation",
+        "type": "sde",
+        "tier": 3,
+        "suite": "notable",
+        "family": "wright_fisher",
+        "title": "Wright-Fisher diffusion with mutation",
+        "challenge": "Kimura's diffusion of population genetics (the Jacobi diffusion in finance), bounded in [0,1] with both boundaries attainable at these mutation rates. A boundary-preserving step is required; clipping to [0,1] stays finite and biases the mean by 8%.",
+        "state_dimension": 1,
+        "T": 1.0,
+        "dt": 0.04,
+        "num_paths": 200000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "exact",
+        "moments": partial(wright_fisher_moments, **WRIGHT_FISHER_PARAMS),
+        "stationary_moments": wright_fisher_stationary(
+            **{k: v for k, v in WRIGHT_FISHER_PARAMS.items() if k != "X0"}),
+        "diagnostics": [{"name": "within_unit_interval", "fn": _sde_diag_within(0.0, 1.0),
+                         "gate": True}],
+        "description": """# Wright-Fisher diffusion with mutation
+
+Simulate the scalar Ito SDE on [0, 1]
+
+    dX = ( a (1 - X) - b X ) dt + sigma sqrt( X (1 - X) ) dW,     X(0) = 0.05
+
+with a = b = 1/4 and sigma = 1, over the time interval [0, 1]. (In the population
+genetics parametrisation this is theta_1 = theta_2 = 1/2.)
+
+X is an allele frequency and the exact process stays in [0, 1] for all time. With
+2a/sigma^2 = 1/2 < 1 the boundaries are **attainable**: the process reaches 0 (and 1)
+with positive probability and is reflected there by the mutation drift. A
+fixed-step Euler-Maruyama update steps outside [0, 1] and then takes the square
+root of a negative number; what a scheme does at the boundary decides whether its
+moments are right. The harness checks that every returned terminal state is finite
+and inside [0, 1].
+
+Compute the empirical mean E[X(T)] and variance Var[X(T)] at T = 1 by Monte Carlo
+and compare to the known moments. (The generator maps polynomials to polynomials,
+so the moments are exact: they solve a closed triangular linear ODE system.)
+""",
+    },
+    {
+        "id": "N05",
+        "slug": "sde_merton_jump_call",
+        "type": "sde",
+        "tier": 3,
+        "suite": "notable",
+        "family": "merton_jump",
+        "title": "Merton jump diffusion (European call)",
+        "challenge": "Merton's (1976) lognormal jump diffusion, the first jump-diffusion option model, at a published parameter set. The only non-Gaussian driver in the benchmark; the compensator is the decision -- dropping it moves the mean by 1.4% (inside the gate) and the price by 19%.",
+        "state_dimension": 1,
+        "T": 0.25,
+        "dt": 0.01,
+        # The price is a Monte-Carlo estimate graded at 1%: its standard error at this
+        # count is 0.20% of the price (plan §5), so the gate is 5 sigma above noise.
+        "num_paths": 400000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "exact",
+        # No moment gate. The vacuity table (H-N4) refused the mean before this entry
+        # ever ran: at the published horizon S0 e^{rT} sits 1.26% from S0, inside the 5%
+        # gate, so a solver returning the initial condition passes it -- the plan's §2b
+        # finding 4 made measurable. The variance gate did not decide anything either
+        # (the compensator dropped moves it 2.4% against a 10% gate). The price is the
+        # whole grade, as §2b concluded; `merton_moments` stays as the validator's
+        # cross-check of the simulated law.
+        "moments": None,
+        "functional_truth": {"call_price": _MERTON_TRUTH_PRICE},
+        "functional_tol": 0.01,
+        "description": """# Merton jump diffusion: a European call
+
+Simulate the scalar Ito SDE with jumps
+
+    dX = ( r - lambda kappa ) X dt + sigma X dW + X dJ,     X(0) = 100
+
+where J is a compound Poisson process with intensity lambda whose jumps multiply X
+by Y = e^Z with Z ~ N(m, delta^2), and kappa = E[Y] - 1 = e^{m + delta^2/2} - 1 is
+the mean relative jump size, so that the drift is **compensated** and E[X(t)] grows
+at the rate r. Parameters: r = 0.05, sigma = 0.15, lambda = 0.1, m = -0.90,
+delta = 0.45, over the time interval [0, 0.25].
+
+You draw the jump times and sizes yourself (seeded, like the Brownian increments).
+A path with no jumps is geometric Brownian motion.
+
+Report, in the `functionals` dict, the discounted European call price at T = 0.25,
+
+    call_price = e^{-rT} E[ (X(T) - K)^+ ],      K = 100
+
+estimated from your terminal paths, which you return as `terminal_paths`.
+""",
+    },
+    {
+        "id": "N06",
+        "slug": "sde_sis_epidemic",
+        "type": "sde",
+        "tier": 3,
+        "suite": "notable",
+        "family": "stochastic_sis",
+        "title": "Stochastic SIS epidemic",
+        "challenge": "The SDE SIS model of Gray, Greenhalgh, Hu, Mao & Pan (2011) at its own Example 5.2: a superlinear sigma I (N - I) diffusion on (0, N) and a stiff logistic drift. Explicit Euler diverges at the graded step; the same splitting with the noise step clipped in I rather than taken in the logit chart biases the mean by 10%.",
+        "state_dimension": 1,
+        "T": 0.5,
+        # 25 steps. At dt = 0.02 explicit Euler in I diverges (loud), Euler + clip is
+        # -25% on the mean, the explicit chart scheme is -78%, and the drift-implicit
+        # chart scheme is +5.7% -- the stiff chart drift needs a splitting, not just a
+        # chart. Strang splitting with the exact logistic flow and the noise step in
+        # the chart: -0.39% / -3.1%. Same splitting with the noise step in I and a
+        # clip: -9.8% / +8.8% (plan §5).
+        "dt": 0.02,
+        "num_paths": 200000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "reference",
+        "moments": partial(sis_logit_moments, **SIS_PARAMS),
+        "stationary_moments": sis_stationary(
+            **{k: v for k, v in SIS_PARAMS.items() if k != "I0"}),
+        "diagnostics": [{"name": "within_population", "fn": _sde_diag_within(0.0, 100.0),
+                         "gate": True}],
+        "description": """# Stochastic SIS epidemic
+
+Simulate the scalar Ito SDE for the number of infectives I in a population of
+fixed size N,
+
+    dI = I [ (beta N - mu - gamma) - beta I ] dt + sigma I (N - I) dW,     I(0) = 90
+
+with N = 100, beta = 0.5, mu = 20, gamma = 25 and sigma = 0.03 (the unit of time is
+one day), over the time interval [0, 0.5].
+
+The exact process stays in the open interval (0, N) for all time. The diffusion
+coefficient is quadratic in I, and the drift relaxes from I(0) = 90 toward the
+endemic level on a time scale much shorter than a day, so the equation is both
+superlinear and stiff at the start. The harness checks that every returned
+terminal state is finite and inside [0, N].
+
+There is no closed form for the terminal distribution or its moments; the
+harness's ground truth is computed independently of any formula. Compute the
+empirical mean E[I(T)] and variance Var[I(T)] at T = 0.5 by Monte Carlo and compare
+to the reference moments.
+""",
+    },
+    {
+        "id": "N07",
+        "slug": "sde_langevin_baoab",
+        "type": "sde",
+        "tier": 3,
+        "suite": "notable",
+        "family": "underdamped_langevin",
+        "title": "Underdamped Langevin dynamics (BAOAB)",
+        "challenge": "The workhorse of molecular sampling, at moderate friction. Leimkuhler & Matthews (2012/13) compare integrators by the invariant measure they sample: BAOAB's bias on Var(q) is a hundredth of the gate here, Euler-Maruyama's is 2.8x the gate while linearly stable.",
+        "state_dimension": 2,
+        "noise_dimension": 1,
+        "T": 1.0,
+        "dt": 0.04,
+        "num_paths": 100000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "exact",
+        "moments": partial(langevin_moments, **LANGEVIN_PARAMS),
+        "stationary_moments": langevin_stationary(
+            **{k: v for k, v in LANGEVIN_PARAMS.items() if k not in ("q0", "p0")}),
+        "description": """# Underdamped Langevin dynamics
+
+Simulate the two-dimensional Ito system for position q and momentum p
+
+    dq = p dt
+    dp = ( -omega^2 q - gamma p ) dt + sqrt(2 gamma / beta) dW,     (q, p)(0) = (1, 0)
+
+with omega = 4, gamma = 1 and beta = 1, driven by a single Brownian motion, over the
+time interval [0, 1]. The state is (q, p), in that order.
+
+This is Langevin dynamics in a harmonic potential V(q) = omega^2 q^2 / 2 at
+friction gamma and inverse temperature beta. The noise enters the momentum only.
+Integrators for this equation are usually compared by how accurately they sample
+the invariant (Gibbs) measure; the horizon here is short enough that the terminal
+law is still far from it, so the terminal moments measure the scheme's bias along
+the way rather than its stationary bias alone.
+
+Compute the empirical means and variances of q(T) and p(T) at T = 1 by Monte Carlo
+and compare to the known per-component moments. (The system is linear with
+additive noise, so the terminal law is Gaussian with exactly known moments.)
+""",
+    },
+    {
+        "id": "N08",
+        "slug": "sde_three_halves_vol",
+        "type": "sde",
+        "tier": 3,
+        "suite": "notable",
+        "family": "three_halves",
+        "title": "3/2 stochastic-volatility model (Ahn-Gao)",
+        "challenge": "The 3/2 model of Ahn & Gao (1999) at Drimus's (2012) S&P 500 fit: a V^{3/2} diffusion with a vol-of-vol of 8.56. 1/V is a CIR process with exact moments; explicit Euler on V reflected at 0 biases E[1/V] by 18% and Var[1/V] by 39x.",
+        "state_dimension": 1,
+        "T": 0.1,
+        "dt": 0.004,
+        "num_paths": 200000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "exact",
+        # No moment gate on V: E[V^4] is infinite at this parameter set (the Feller
+        # ratio of 1/V is 2.62), so a sample variance of V has infinite variance and
+        # could fail a correct solver on noise. The quantities of interest are the
+        # moments of the reciprocal, which are CIR moments and well behaved.
+        "moments": None,
+        "functional_truth": {"inv_var_mean": float(_THREE_HALVES_U["mean"]),
+                             "inv_var_variance": float(_THREE_HALVES_U["variance"])},
+        # The moment gates' own tolerances, since these are moments (plan §5).
+        "functional_tol": {"inv_var_mean": V_SDE_MEAN_TOL, "inv_var_variance": V_SDE_VAR_TOL},
+        "diagnostics": [{"name": "positive", "fn": _sde_diag_positive(), "gate": True}],
+        "description": """# The 3/2 stochastic-volatility model
+
+Simulate the scalar Ito SDE for an instantaneous variance V > 0
+
+    dV = kappa V ( theta - V ) dt + epsilon V^{3/2} dW,     V(0) = 0.15
+
+with kappa = 22.84, theta = 0.218 and epsilon = 8.56, over the time interval
+[0, 0.1].
+
+The diffusion coefficient grows like V^{3/2}, so a large excursion is amplified
+rather than damped, and the drift is quadratic. The exact process stays strictly
+positive for all time; the harness checks that every returned terminal state is
+finite and strictly positive.
+
+The quantities graded are the moments of the **reciprocal** variance at T = 0.1.
+Report, in the `functionals` dict, estimated from your terminal paths:
+
+    inv_var_mean       E[ 1 / V(T) ]
+    inv_var_variance   Var[ 1 / V(T) ]   (use ddof=1)
+
+Both are known exactly. Return the terminal values of V itself as `terminal_paths`.
+""",
+    },
+    {
+        "id": "N09",
+        "slug": "sde_geometric_asian",
+        "type": "sde",
+        "tier": 3,
+        "suite": "notable",
+        "family": "geometric_asian",
+        "title": "Geometric-average Asian option (Kemna-Vorst)",
+        "challenge": "Kemna & Vorst's (1990) closed-form Asian option, the standard MLMC test problem (Giles 2008). The only entry grading a time integral along the path: an endpoint Riemann sum of int ln S dt misprices the call by 3.4% against a 1% gate; the trapezoid by 0.02%.",
+        "state_dimension": 1,
+        "T": 1.0,
+        "dt": 0.04,
+        # Payoff standard deviation ~8.5: at 400k paths the price's standard error is
+        # 0.24% of its value, 4 sigma inside the 1% gate.
+        "num_paths": 400000,
+        "seed": 42,
+        "has_ground_truth": True,
+        "ground_truth_kind": "exact",
+        # No moment gate on S(T), for the reason N05 has none: the vacuity table refused
+        # it -- 100 e^{0.05} is 4.9% from S0, inside the 5% mean gate. (The same
+        # arithmetic refuses `sde_black_scholes` in the main suite; see the plan.) The
+        # two quantities of interest are the grade, and both depend on the quadrature.
+        "moments": None,
+        "functional_truth": {"call_price": _GEO_ASIAN["price"],
+                             "geo_average_variance": _GEO_ASIAN["variance"]},
+        # Measured at n = 25 (plan §5): the left-point sum is -6.1% on Var[A] and
+        # -3.4% on the price; the trapezoid -0.04% and -0.02%.
+        "functional_tol": {"call_price": 0.01, "geo_average_variance": 0.03},
+        "description": """# Geometric-average Asian option
+
+Simulate the scalar Ito SDE (Black-Scholes asset)
+
+    dS = r S dt + sigma S dW,     S(0) = 100
+
+with r = 0.05 and sigma = 0.2, over the time interval [0, 1], and price the
+fixed-strike **geometric-average** Asian call with strike K = 100: the payoff is
+(A - K)^+ where
+
+    A = exp( (1/T) int_0^T ln S(t) dt )
+
+is the continuous geometric average of the path.
+
+The average is a time integral along each path, and how you discretise that
+integral decides the answer: at 25 steps the choice of quadrature rule moves the
+price by several percent.
+
+Return the terminal asset values S(T) as `terminal_paths`, and report, in the
+`functionals` dict, estimated from the same paths:
+
+    call_price             e^{-rT} E[ (A - K)^+ ]
+    geo_average_variance   Var[ A ]   (use ddof=1)
+
+Both are known in closed form.
+""",
+    },
 ]
 
 
@@ -4736,6 +5567,13 @@ def sciml_problems():
     the ``pathwise`` route and the ``ANALYTIC_TRANSCRIPTION`` exclusion rather than a
     new answer key: see §0b of the plan."""
     return [p for p in PROBLEMS if p.get("suite") == "sciml"]
+
+
+def notable_problems():
+    """The notable-SDE suite (plan-notable-sde.md): recognisable, cited problems, each
+    punishing one numerical decision, run on its own denominator like the other two
+    externally anchored suites."""
+    return [p for p in PROBLEMS if p.get("suite") == "notable"]
 
 
 def no_closed_form_problems():

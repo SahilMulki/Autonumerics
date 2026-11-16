@@ -28,8 +28,17 @@ import verify as V  # noqa: E402  (single source of truth for the evaluation ste
 MANIFEST_PATH = os.path.join(HERE, "manifest.json")
 
 
-def workspace_dir(slug, workspace_root):
-    return os.path.join(workspace_root, slug)
+def workspace_name(slug, arm=None):
+    """The workspace directory name for one problem in one arm: the slug alone in the
+    default arm (so every existing workspace, results path and `--resume` key is
+    unchanged) and ``<slug>-<arm>`` otherwise. Mirrors ``oneshot._arm_tag``: the arm
+    has to reach the artifact path, because on a scheme benchmark the solver source is
+    the evidence and two arms writing to one directory delete each other's."""
+    return slug if not arm or arm == DEFAULT_ARM else f"{slug}-{arm}"
+
+
+def workspace_dir(slug, workspace_root, arm=None):
+    return os.path.join(workspace_root, workspace_name(slug, arm))
 
 
 def functional_gate(problem):
@@ -59,6 +68,15 @@ def functional_gate(problem):
         return (f"{names} must each be within their own relative tolerance of the "
                 f"reference value — {per}.{why}")
     return f"{names} must be within {ftol * 100:g}% (relative) of the reference value."
+
+
+def _pathwise_arm_paragraph(problem, arm):
+    """The arm paragraph a pathwise brief carries: the closed-form pair for a problem
+    with a `pathwise_exact`, the sub-grid pair for one with a `pathwise_reference`."""
+    if problem.get("pathwise_substeps"):
+        return (UNRESTRICTED_SUBSTEP_PARAGRAPH if arm == "unrestricted"
+                else SCHEME_MATCHED_SUBSTEP_PARAGRAPH)
+    return UNRESTRICTED_PARAGRAPH if arm == "unrestricted" else SCHEME_MATCHED_PARAGRAPH
 
 
 def contract_footer(problem, arm=None):
@@ -137,16 +155,27 @@ def contract_footer(problem, arm=None):
                 f"That number is recorded for comparison with published results and is "
                 f"**not** part of the pass decision — returning it cannot fail you, and "
                 f"omitting it cannot either.")
+            if V._pathwise_truth_kind(problem) == "reference":
+                truth_sentence = (
+                    f"This problem is graded **path by path** rather than in distribution, "
+                    f"against a reference solution the harness computes on the finer grid "
+                    f"from the very same Brownian path it handed you (the reference's own "
+                    f"error, measured, is "
+                    f"{float(problem['pathwise_reference_error']) * 100:g}% relative, far "
+                    f"below the gate). Scoring is independent of any self-report: the "
+                    f"harness gates the relative strong error ")
+            else:
+                truth_sentence = (
+                    "This problem has an exact solution that is a function of the Brownian "
+                    "path, so it is graded **path by path** rather than in distribution. "
+                    "Scoring is independent of any self-report: the harness evaluates its "
+                    "own exact solution on the very increments it handed you and gates the "
+                    "relative strong error ")
             scoring = (
-                f"This problem has an exact solution that is a function of the Brownian "
-                f"path, so it is graded **path by path** rather than in distribution. "
-                f"Scoring is independent of any self-report: the harness evaluates its "
-                f"own exact solution on the very increments it handed you and gates the "
-                f"relative strong error "
-                f"`sqrt(mean((X_num - X_exact)^2)) / sqrt(mean(X_exact^2))` "
+                truth_sentence
+                + f"`sqrt(mean((X_num - X_exact)^2)) / sqrt(mean(X_exact^2))` "
                 f"over paths at < {V._pathwise_tol(problem) * 100:g}%."
-                + (UNRESTRICTED_PARAGRAPH if arm == "unrestricted" else
-                   SCHEME_MATCHED_PARAGRAPH) + hist)
+                + _pathwise_arm_paragraph(problem, arm) + hist)
         else:
             no_formula = (
                 "This problem has no closed-form moments; the harness's ground truth is "
@@ -163,6 +192,9 @@ def contract_footer(problem, arm=None):
             scoring = (
                 f"{no_formula}Scoring is independent of any self-report: {moments}."
             )
+            if problem_suite(problem) == "notable":
+                scoring += (UNRESTRICTED_LAW_PARAGRAPH if arm == "unrestricted"
+                            else SCHEME_MATCHED_LAW_PARAGRAPH)
             if sde_functionals:
                 n_lo = V._sde_level_paths(problem, problem["num_paths"])
                 scoring += (
@@ -182,8 +214,10 @@ def contract_footer(problem, arm=None):
         # statement said before step 5, deliberately: a problem statement is an agent
         # *input*, and churn in it makes a later run incomparable with an earlier one
         # for a reason that has nothing to do with the solver.
+        substeps = int(problem.get("pathwise_substeps") or 0) if pathwise else 0
         pathwise_sig = "" if not pathwise else (
-            ",\n              dW: np.ndarray | None = None")
+            ",\n              dW: np.ndarray | None = None"
+            + (",\n              dW_sub: np.ndarray | None = None" if substeps else ""))
         m_pw = V.sde_noise_dimension(problem)
         nt_pw = max(1, round(float(problem["T"]) / dtv))
         # Kept as one substitution including the sentence that follows it, so the
@@ -203,7 +237,14 @@ def contract_footer(problem, arm=None):
                 f"increments, **already scaled by sqrt(dt)**{axis_note}. Use exactly "
                 f"these — take `Nt = dW.shape[1]` and `dt = T / Nt` — and do not draw "
                 f"your own randomness for the Brownian path."
-                f"\n\nIt must return a dict with:")
+                + ("" if not substeps else (
+                    f"\n\n`dW_sub` is always supplied too: a numpy array of shape "
+                    f"`({problem['num_paths']}, {nt_pw}, {substeps}{channels})` holding, "
+                    f"for each step, the {substeps} finer increments that sum to it "
+                    f"(`dW_sub.sum(axis=2) == dW` to rounding), each already scaled by "
+                    f"the square root of its own sub-step `dt / {substeps}`. They are the "
+                    f"same Brownian path at a finer resolution, not independent noise."))
+                + "\n\nIt must return a dict with:")
         once = "**once**" if not sde_functionals else "**twice**"
         second_call = "" if not sde_functionals else (
             f"\n\nand then again with `num_paths="
@@ -368,7 +409,7 @@ def write_problem_md(problem, workspace_root, arm=None):
     ``arm`` is threaded from the runner rather than defaulted here, because the
     staged brief is the *only* thing that distinguishes the two arms of the sciml
     comparison and a default would silently stage the wrong experiment."""
-    wdir = workspace_dir(problem["slug"], workspace_root)
+    wdir = workspace_dir(problem["slug"], workspace_root, arm)
     os.makedirs(wdir, exist_ok=True)
     path = os.path.join(wdir, "problem.md")
     with open(path, "w") as fh:
@@ -434,6 +475,13 @@ def manifest_entry(problem):
             )
             if problem.get("pathwise_save_points"):
                 entry["pathwise_save_points"] = int(problem["pathwise_save_points"])
+            # H-N1: written only where declared, so the sciml entries stay byte-identical.
+            if problem.get("pathwise_reference") is not None:
+                entry["pathwise_truth"] = V._pathwise_truth_kind(problem)
+            if problem.get("pathwise_substeps"):
+                entry["pathwise_substeps"] = int(problem["pathwise_substeps"])
+            if problem.get("pathwise_reference_error") is not None:
+                entry["pathwise_reference_error"] = float(problem["pathwise_reference_error"])
         if kind == "reference":
             gt = problem["moments"](problem["T"])  # {key: (value, standard_error)}
             entry["ground_truth_moments"] = {k: float(v[0]) for k, v in gt.items()}
@@ -572,6 +620,52 @@ UNRESTRICTED_PARAGRAPH = (
     "error at all, because recognising that this equation is exactly solvable is part of "
     "what is being measured. A discretised scheme is equally acceptable and is graded by "
     "the same gate.")
+
+
+#: H-N1 (plan-notable-sde.md). A pathwise problem whose truth is a *reference* on a
+#: finer grid than the solver steps on, with the sub-increments handed over. The
+#: closed-form sentence of the paragraphs above would be false here, so the pair is
+#: restated for what the ladder actually detects on such a problem: a solver that
+#: integrates on the sub-grid regardless of `dt` carries no `dt`-dependent error.
+SCHEME_MATCHED_SUBSTEP_PARAGRAPH = (
+    "\n\n**A discretised scheme at the step `dt` is required.** The harness re-solves at "
+    "`dt`, `dt/2` and `dt/4` driven by coarsenings of one Brownian path, and a solver that "
+    "simply integrates on the sub-grid whatever `dt` it is given returns terminal states "
+    "identical to rounding at all three. Such a run is **excluded** from the comparison "
+    "rather than failed — it is recorded as having bypassed the step rather than "
+    "integrating at it. Use `dW_sub` to inform the step (for instance to assemble the "
+    "iterated integrals a higher-order scheme needs), and advance the state once per "
+    "step of `dW`.")
+
+UNRESTRICTED_SUBSTEP_PARAGRAPH = (
+    "\n\n**Any method is permitted, including integrating on the sub-grid.** The harness "
+    "still re-solves at `dt`, `dt/2` and `dt/4` on coarsenings of one Brownian path, and "
+    "it records whether your solver carried any `dt`-dependent error at all, because "
+    "recognising that the sub-increments make a finer integration available is part of "
+    "what is being measured. A scheme that steps once per entry of `dW` is equally "
+    "acceptable and is graded by the same gate.")
+
+#: And the pair for the suite's moment-graded entries, which the sciml fix never
+#: reached: `contract_footer` rendered an arm paragraph on pathwise problems only, so
+#: on every other route the two arms staged a byte-identical brief -- the defect
+#: plan-sciml-benchmark.md §7a found, one route over. On these routes the solver
+#: draws its own randomness, so the ladder cannot see whether an exact law was used;
+#: what distinguishes the arms is the brief, and what records the method is the
+#: plan's own declared `scheme_family`. Rendered only on the `notable` suite so the
+#: other 75 briefs stay byte-identical.
+SCHEME_MATCHED_LAW_PARAGRAPH = (
+    "\n\n**A discretised time-stepping scheme is required.** Advance the state step by "
+    "step at the `dt` you are given. Where this equation has an exactly samplable "
+    "terminal law or an exact transformation that makes one available, sampling it "
+    "directly is not what this problem measures: declare the scheme you step with, and "
+    "step with it.")
+
+UNRESTRICTED_LAW_PARAGRAPH = (
+    "\n\n**Any method is permitted, including sampling an exact law.** If this equation "
+    "has an exactly samplable terminal law, or a transformation under which it does, "
+    "using it is a correct and expected answer here — recognising that is part of what "
+    "is being measured, and the scheme you declare is recorded. A discretised scheme is "
+    "equally acceptable and is graded by the same gate.")
 
 
 def problem_suite(problem):

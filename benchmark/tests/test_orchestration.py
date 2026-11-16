@@ -845,3 +845,83 @@ def test_a_fully_implemented_pool_records_no_hole(tmp_path, monkeypatch):
     out = RUN.grade_every_plan(prob, str(ws), rec, None, None)
     assert "not_implemented" not in out
     assert "plans_implemented" not in out and "plans_planned" not in out
+
+
+# --- E11: the ranking inputs the record is supposed to carry ----------------------
+
+
+def _two_plan_pool(tmp_path, monkeypatch, blocks, slot="ws"):
+    """A two-plan pool whose `<metrics>` blocks are `blocks`, keyed by plan name.
+
+    `slot` is a fresh subdirectory per call: `grade_every_plan` walks the plans
+    directory, so two pools built under one `tmp_path` would grade each other's plan
+    dirs against the wrong block map.
+    """
+    prob = problem("sde_sciml_weak_noncommutative")
+    ws = tmp_path / slot
+    for name in blocks:
+        (ws / "plans" / name).mkdir(parents=True)
+        (ws / "plans" / name / "solver.py").write_text("x = 1\n")
+    first = sorted(blocks)[0]
+    monkeypatch.setattr(RUN.V, "best_plan_dir",
+                        lambda *a, **k: str(ws / "plans" / first))
+    monkeypatch.setattr(RUN.V, "verify_problem", lambda *a, **k: {
+        "status": "ok", "passed": True, "verified_score": 10})
+    monkeypatch.setattr(RUN, "solution_metrics",
+                        lambda d: blocks[os.path.basename(d)])
+    rec = {"has_ground_truth": True, "ground_truth_kind": "pathwise",
+           "pipeline": {"best_plan": first, "plans": {}}}
+    return RUN.grade_every_plan(prob, str(ws), rec, None, None)
+
+
+def test_a_pool_missing_the_order_error_bar_is_recorded_as_such(tmp_path, monkeypatch):
+    """`ranking.order` needs `observed_order_se` on **every** plan before it will read
+    one measured rate against another (plan-sciml-benchmark.md 10o), and one plan
+    short disables the comparison for the whole pool -- correctly, and *silently*.
+    The pool then scores exactly as it did before the rule existed.
+
+    That is not hypothetical. Shipping 10o nearly went out inert twice: the field was
+    produced by `sde/driver.py` and filtered out of the `<metrics>` block by
+    `metrics.BLOCK_KEYS`, so the rule measured 8 of 9 pools offline against
+    `evaluation.json` while the live pipeline would have read none of them. A test
+    caught the block. Nothing would have caught a *run* whose blocks lacked it, which
+    is what this records.
+    """
+    out = _two_plan_pool(tmp_path, monkeypatch, {
+        "1-euler-maruyama": {"score": 10, "observed_order": 0.51,
+                             "observed_order_se": 9.6e-3, "order_floor": 0.5},
+        # The hole: a measured rate with no error bar beside it.
+        "2-milstein": {"score": 10, "observed_order": 0.99, "order_floor": 1.0},
+    })
+    gap = out["ranking_inputs_incomplete"]
+    assert gap["field"] == "observed_order_se"
+    assert gap["plans"] == ["2-milstein"], gap
+    assert gap["plans_with_observed_order"] == ["1-euler-maruyama", "2-milstein"]
+    assert gap["pool_order_comparison"] == "disabled"
+    assert "every plan in the pool" in gap["reason"]
+
+
+def test_a_complete_pool_records_no_gap_and_a_pool_with_no_order_study_is_not_one(
+        tmp_path, monkeypatch):
+    """Two controls, because the key's *presence* is the whole signal.
+
+    A pool that carries both fields has nothing to report. A pool that ran no order
+    study at all is not missing an error bar -- it is missing the measurement, which
+    `order_check` already says and which `ranking.order` already returns None for.
+    Reporting that as an incomplete ranking input would fire on every exact-sampler
+    pool in the BENCHOP holdout, where `order` is comparable in 0 of 9 pools by
+    construction (10m).
+    """
+    complete = _two_plan_pool(tmp_path, monkeypatch, {
+        "1-euler-maruyama": {"score": 10, "observed_order": 0.51,
+                             "observed_order_se": 9.6e-3},
+        "2-milstein": {"score": 10, "observed_order": 0.99,
+                       "observed_order_se": 2.3e-4},
+    })
+    assert "ranking_inputs_incomplete" not in complete
+
+    no_study = _two_plan_pool(tmp_path, monkeypatch, {
+        "1-exact-chi2-bridge": {"score": 10, "order_check": "unavailable"},
+        "2-qe-conditional": {"score": 10, "order_check": "unavailable"},
+    }, slot="holdout-shaped")
+    assert "ranking_inputs_incomplete" not in no_study

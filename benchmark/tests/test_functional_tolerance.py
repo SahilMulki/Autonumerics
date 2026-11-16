@@ -173,8 +173,10 @@ def test_no_problem_outside_the_anchored_suite_has_a_widened_functional_gate():
     # for the same reason: its three observables differ by five orders of magnitude.
     # The claim that matters is unchanged and is now stated as what it always meant --
     # the suites that carry *measured baselines* are untouched.
+    # ...and a fifth (`notable`, plan-notable-sde.md step 6): three of its entries
+    # grade a Monte-Carlo price or a reciprocal moment at its own declared gate.
     older = [p for p in CORPUS_FUNCTIONAL
-             if p.get("suite") not in ("benchop", "sciml")]
+             if p.get("suite") not in ("benchop", "sciml", "notable")]
     assert older, "expected the pre-existing functional problems to still be here"
     for p in older:
         base = V._functional_tol(p)

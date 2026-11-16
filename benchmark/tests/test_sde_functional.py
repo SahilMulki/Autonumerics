@@ -403,7 +403,7 @@ def test_no_problem_outside_the_anchored_suite_is_changed_by_any_of_this():
     for prob in P.PROBLEMS:
         # ~~`== "benchop"`~~ -- `sciml` joined in step 6 and its weak entry carries a
         # `functional_truth` too, so it opts into the second call on the same terms.
-        if prob["type"] != "sde" or prob.get("suite") in ("benchop", "sciml"):
+        if prob["type"] != "sde" or prob.get("suite") in ("benchop", "sciml", "notable"):
             continue
         md = S.contract_footer(prob)
         assert "called **once**" in md, prob["slug"]
@@ -422,10 +422,14 @@ def test_the_sde_problems_that_carry_a_functional_are_exactly_the_anchored_suite
     # is the only one of its nine scored on numbers rather than on a path. The
     # invariant that survives: every SDE problem scored on a functional belongs to an
     # externally anchored suite, never to the two that carry measured baselines.
-    assert sde and all(p.get("suite") in ("benchop", "sciml") for p in sde)
-    assert len(sde) == len(P.benchop_problems()) + 1
+    # ...and three of the `notable` suite's nine (plan-notable-sde.md step 6): a Merton
+    # call, the reciprocal-variance moments of the 3/2 model, and a geometric Asian.
+    assert sde and all(p.get("suite") in ("benchop", "sciml", "notable") for p in sde)
+    assert len(sde) == len(P.benchop_problems()) + 1 + 3
     assert [p["slug"] for p in sde if p.get("suite") == "sciml"] == \
         ["sde_sciml_weak_noncommutative"]
+    assert [p["slug"] for p in sde if p.get("suite") == "notable"] == \
+        ["sde_merton_jump_call", "sde_three_halves_vol", "sde_geometric_asian"]
 
 
 def test_the_second_call_reaches_the_problems_that_asked_for_it():

@@ -105,6 +105,16 @@ state dimension in either direction — `sde_multichannel_stiff_m13` has 2 state
 names (`(num_paths, Nt)` for one channel, `(num_paths, Nt, m)` for `m`), so getting it wrong hands a
 correct solver an array of the wrong rank and reports the crash against the solver.
 
+**Sub-increments**: when the Solver contract hands the solver a `dW_sub` array — the finer Brownian
+increments inside each step, of shape `(num_paths, Nt, S)` or `(num_paths, Nt, S, m)` — set the
+top-level **`sub_increments_per_step: S`**, the count per graded step that the contract states. The
+kernel then passes `dW_sub` on the graded call and on every CRN level, at the same sub-step
+`dt / S` throughout, exactly as the harness does; without the field it passes only `dW`, and a
+Lévy-area scheme is graded on its `dW_sub=None` fallback — measured on N01 (2026-11-15), where
+three correct order-1 plans and the Euler control came out as one order-½ scheme and tied. It is a
+problem fact, not an ambiguity: ledger it `kind: evaluation`, `status: mapped`. Leave it absent
+when the contract has no `dW_sub`.
+
 **Write** `problem_spec.json` following `problem_spec-example-sde.json`. Key fields:
 - `equation_type: "SDE"`
 - `sde_family`, `state_dimension`, `noise_structure`, `linear`, `stiff`
@@ -112,6 +122,7 @@ correct solver an array of the wrong rank and reports the crash against the solv
 - `milstein_eligible`, `milstein_ineligible_reason` (when `false`), `diffusion_derivative`,
   `milstein_correction`
 - `noise_dimension` — **required when `state_dimension > 1`**
+- `sub_increments_per_step` — **only when the contract supplies `dW_sub`** (above)
 - `analytic_moments: {has_analytic_solution, state_dimension, mean_expression, variance_expression}` — use `mean_X/variance_X/mean_Y/variance_Y` for 2D
 - `drift_expression`, `diffusion_expression`, `diffusion_derivative_expression`
 - `evaluation_thresholds: {variance_rel_err_max: 0.10, mean_rel_err_max: 0.05, near_zero_mean_threshold: 0.01, num_paths: 50000, seed: 42, stability_check: null, ci_mult: 2.0, dt0: 0.02, conv_levels: 3}`
@@ -213,6 +224,8 @@ Rules:
   A moment tolerance is not a substitute: `variance_rel_err_max` says nothing about a call price. Measured on B03 (2026-10-31) — three gated Heston prices were all ledgered `ambiguous` as "no `evaluation_thresholds` key exists for a per-functional price tolerance", so the kernel never measured the only quantity the problem is scored on, two plans tied with no accuracy signal, and the tie fell through to the order study and picked the worse scheme.
 
   **A stated grading path count is a requirement too.** When the contract says the harness calls the solver at `num_paths = 2000000` and again at `500000`, set `evaluation_thresholds.num_paths` to the count the kernel evaluates at and **`graded_num_paths` to the larger count the problem is scored at**. The kernel projects the solver's measured peak memory to the grading scale and warns when it crosses the memory ceiling; without it, a solver that fits at the evaluated count and cannot allocate at the graded one looks fine until the harness reports `crashed`.
+
+  **The reverse case is the common one on a pathwise or small-sample contract, and the rule is the same: the two fields say different things.** When the contract's graded count is too small for the moment checks to resolve — `solve_sde(num_paths=1000, ...)` against a 10% variance tolerance — **do not copy it into `num_paths`.** Set `graded_num_paths` to the contract's count and leave `num_paths` at a count that resolves the tolerances: the template's 50000 unless memory forbids it, and never below twice `4 · (ci_mult / var_tol)² · (2 + excess kurtosis)` — the count at which the variance interval first fits inside half the tolerance, which is the kernel's `resolved` bar (≈ 3 200 for a Gaussian component at a 10% tolerance; N01's measured interval at 1 000 paths implies 3 600). The solver is handed `num_paths` as an argument and cannot raise it, so a kernel pinned to a count that cannot resolve leaves **every** plan MC-inconclusive at 6 with no lever to escape — measured on the N02 smoke test and on N01 (2026-11-15), where the four-way tie this produced crowned the Euler control. The audit compares `graded_num_paths`, not `num_paths`, against the harness's run, so evaluating above the graded count is not a spec defect.
 - **A periodic domain's endpoint convention is not an ambiguity either.** `problem.md` now states that both `np.linspace(a, b, N)` and `np.linspace(a, b, N, endpoint=False)` are accepted and scored identically on a periodic domain. Do not ledger it; the solver chooses.
 - Do not weaken a stated value to something more convenient to solve. If `eps = 1e-3` makes the problem hard, the spec still says `1e-3`.
 

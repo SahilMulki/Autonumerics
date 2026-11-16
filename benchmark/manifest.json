@@ -1,12 +1,13 @@
 {
-  "n_total": 75,
+  "n_total": 84,
   "n_pde": 33,
-  "n_sde": 42,
+  "n_sde": 51,
   "n_by_suite": {
     "main": 49,
     "no-closed-form": 7,
     "benchop": 10,
-    "sciml": 9
+    "sciml": 9,
+    "notable": 9
   },
   "pass_thresholds": {
     "pde": {
@@ -2223,6 +2224,264 @@
         "second_moment_x2": 0.0
       },
       "functional_level_paths": 25000
+    },
+    {
+      "id": "N01",
+      "slug": "sde_clark_cameron",
+      "type": "sde",
+      "tier": 3,
+      "family": "clark_cameron",
+      "title": "Clark-Cameron system (Levy area)",
+      "challenge": "The counterexample of the strong-convergence literature: no scheme built from the Brownian increments alone beats strong order 1/2 on U = int S dW1 (Clark & Cameron 1980). Fine sub-increments are supplied so a Milstein scheme that assembles the Levy area from them converges at order 1; Euler-Maruyama at the graded step does not.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "pathwise",
+      "discriminator": false,
+      "suite": "notable",
+      "state_dimension": 2,
+      "T": 1.0,
+      "dt": 0.04,
+      "eval_dt": 0.04,
+      "num_paths": 1000,
+      "seed": 42,
+      "noise_dimension": 2,
+      "pathwise_tol": 0.02,
+      "pathwise_fine_steps": 6400,
+      "pathwise_ladder_dts": [
+        0.04,
+        0.02,
+        0.01
+      ],
+      "pathwise_truth": "reference",
+      "pathwise_substeps": 256,
+      "pathwise_reference_error": 0.002
+    },
+    {
+      "id": "N02",
+      "slug": "sde_kubo_oscillator",
+      "type": "sde",
+      "tier": 3,
+      "family": "kubo_oscillator",
+      "title": "Kubo oscillator (Stratonovich)",
+      "challenge": "The textbook Stratonovich system (Kloeden & Platen; Milstein, Repin & Tretyakov 2002): the exact flow is a rotation and conserves |X|. Reading the coefficients as Ito solves a different equation whose amplitude grows by e^{sigma^2 T/2}.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "pathwise",
+      "discriminator": false,
+      "suite": "notable",
+      "state_dimension": 2,
+      "T": 1.0,
+      "dt": 0.04,
+      "eval_dt": 0.04,
+      "num_paths": 2000,
+      "seed": 42,
+      "noise_dimension": 1,
+      "pathwise_tol": 0.2,
+      "pathwise_fine_steps": 400,
+      "pathwise_ladder_dts": [
+        0.04,
+        0.02,
+        0.01
+      ]
+    },
+    {
+      "id": "N03",
+      "slug": "sde_aitsahalia_rate",
+      "type": "sde",
+      "tier": 3,
+      "family": "aitsahalia",
+      "title": "Ait-Sahalia interest-rate model",
+      "challenge": "Ait-Sahalia's (1996) strongly nonlinear short rate: a 1/X drift that repels the origin, a superlinear X^2 mean reversion and an X^{3/2} diffusion. Backward Euler-Maruyama preserves positivity (Szpruch, Mao, Higham & Pan 2011); the explicit step overshoots into X < 0 and the variance it reports is garbage.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "reference",
+      "discriminator": false,
+      "suite": "notable",
+      "state_dimension": 1,
+      "T": 0.1,
+      "dt": 0.02,
+      "eval_dt": 0.02,
+      "num_paths": 200000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 0.7488660833578002,
+        "variance": 0.04936281113783758
+      },
+      "ground_truth_se": {
+        "mean": 2e-06,
+        "variance": 5e-06
+      }
+    },
+    {
+      "id": "N04",
+      "slug": "sde_wright_fisher_mutation",
+      "type": "sde",
+      "tier": 3,
+      "family": "wright_fisher",
+      "title": "Wright-Fisher diffusion with mutation",
+      "challenge": "Kimura's diffusion of population genetics (the Jacobi diffusion in finance), bounded in [0,1] with both boundaries attainable at these mutation rates. A boundary-preserving step is required; clipping to [0,1] stays finite and biases the mean by 8%.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "notable",
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.04,
+      "eval_dt": 0.04,
+      "num_paths": 200000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 0.22706120312931496,
+        "variance": 0.060992897613620416
+      }
+    },
+    {
+      "id": "N05",
+      "slug": "sde_merton_jump_call",
+      "type": "sde",
+      "tier": 3,
+      "family": "merton_jump",
+      "title": "Merton jump diffusion (European call)",
+      "challenge": "Merton's (1976) lognormal jump diffusion, the first jump-diffusion option model, at a published parameter set. The only non-Gaussian driver in the benchmark; the compensator is the decision -- dropping it moves the mean by 1.4% (inside the gate) and the price by 19%.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "notable",
+      "state_dimension": 1,
+      "T": 0.25,
+      "dt": 0.01,
+      "eval_dt": 0.01,
+      "num_paths": 400000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 101.25784515406345,
+        "variance": 147.94671758296317
+      },
+      "functional_truth": {
+        "call_price": 4.39124568920264
+      },
+      "functional_tol": 0.01,
+      "functional_level_paths": 100000
+    },
+    {
+      "id": "N06",
+      "slug": "sde_sis_epidemic",
+      "type": "sde",
+      "tier": 3,
+      "family": "stochastic_sis",
+      "title": "Stochastic SIS epidemic",
+      "challenge": "The SDE SIS model of Gray, Greenhalgh, Hu, Mao & Pan (2011) at its own Example 5.2: a superlinear sigma I (N - I) diffusion on (0, N) and a stiff logistic drift. Explicit Euler diverges at the graded step; the same splitting with the noise step clipped in I rather than taken in the logit chart biases the mean by 10%.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "reference",
+      "discriminator": false,
+      "suite": "notable",
+      "state_dimension": 1,
+      "T": 0.5,
+      "dt": 0.02,
+      "eval_dt": 0.02,
+      "num_paths": 200000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 6.601725075907273,
+        "variance": 39.79884248432973
+      },
+      "ground_truth_se": {
+        "mean": 1e-05,
+        "variance": 0.0001
+      }
+    },
+    {
+      "id": "N07",
+      "slug": "sde_langevin_baoab",
+      "type": "sde",
+      "tier": 3,
+      "family": "underdamped_langevin",
+      "title": "Underdamped Langevin dynamics (BAOAB)",
+      "challenge": "The workhorse of molecular sampling, at moderate friction. Leimkuhler & Matthews (2012/13) compare integrators by the invariant measure they sample: BAOAB's bias on Var(q) is a hundredth of the gate here, Euler-Maruyama's is 2.8x the gate while linearly stable.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "notable",
+      "state_dimension": 2,
+      "T": 1.0,
+      "dt": 0.04,
+      "eval_dt": 0.04,
+      "num_paths": 100000,
+      "seed": 42,
+      "noise_dimension": 1,
+      "ground_truth_moments": {
+        "mean_X": -0.46689475052370816,
+        "variance_X": 0.0362254786489285,
+        "mean_Y": 1.7995627626756225,
+        "variance_Y": 0.6719833571773459
+      }
+    },
+    {
+      "id": "N08",
+      "slug": "sde_three_halves_vol",
+      "type": "sde",
+      "tier": 3,
+      "family": "three_halves",
+      "title": "3/2 stochastic-volatility model (Ahn-Gao)",
+      "challenge": "The 3/2 model of Ahn & Gao (1999) at Drimus's (2012) S&P 500 fit: a V^{3/2} diffusion with a vol-of-vol of 8.56. 1/V is a CIR process with exact moments; explicit Euler on V reflected at 0 biases E[1/V] by 18% and Var[1/V] by 39x.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "notable",
+      "state_dimension": 1,
+      "T": 0.1,
+      "dt": 0.004,
+      "eval_dt": 0.004,
+      "num_paths": 200000,
+      "seed": 42,
+      "functional_truth": {
+        "inv_var_mean": 11.622786285052442,
+        "inv_var_variance": 45.23510647598555
+      },
+      "functional_tol": 0.1,
+      "functional_tol_used": {
+        "inv_var_mean": 0.05,
+        "inv_var_variance": 0.1
+      },
+      "reference_abs_err": {
+        "inv_var_mean": 0.0,
+        "inv_var_variance": 0.0
+      },
+      "functional_level_paths": 50000
+    },
+    {
+      "id": "N09",
+      "slug": "sde_geometric_asian",
+      "type": "sde",
+      "tier": 3,
+      "family": "geometric_asian",
+      "title": "Geometric-average Asian option (Kemna-Vorst)",
+      "challenge": "Kemna & Vorst's (1990) closed-form Asian option, the standard MLMC test problem (Giles 2008). The only entry grading a time integral along the path: an endpoint Riemann sum of int ln S dt misprices the call by 3.4% against a 1% gate; the trapezoid by 0.02%.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "discriminator": false,
+      "suite": "notable",
+      "state_dimension": 1,
+      "T": 1.0,
+      "dt": 0.04,
+      "eval_dt": 0.04,
+      "num_paths": 400000,
+      "seed": 42,
+      "ground_truth_moments": {
+        "mean": 105.12710963760242,
+        "variance": 451.0288078157963
+      },
+      "functional_truth": {
+        "call_price": 5.546818633789223,
+        "geo_average_variance": 140.17051781155084
+      },
+      "functional_tol": 0.03,
+      "functional_tol_used": {
+        "call_price": 0.01,
+        "geo_average_variance": 0.03
+      },
+      "reference_abs_err": {
+        "call_price": 0.0,
+        "geo_average_variance": 0.0
+      },
+      "functional_level_paths": 100000
     }
   ]
 }

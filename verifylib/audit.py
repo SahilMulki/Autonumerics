@@ -208,7 +208,20 @@ def audit_sde_output(spec, run_meta) -> list[Finding]:
     """
     out = []
     thresholds = spec.get("evaluation_thresholds") or {}
-    checks = (("num_paths", thresholds.get("num_paths")),
+    # **Which ledger field claims the harness's path count.** `num_paths` is the
+    # count the *kernel* evaluates at; `graded_num_paths`, when declared, is the
+    # count the problem is scored at, and only that one is a claim about the run
+    # this function sees. Comparing `num_paths` regardless flagged the formulator
+    # that did the right thing: on the N02 smoke test (2026-11-15) the unrestricted
+    # formulator evaluated at 20 000 so the moments resolve, kept the brief's 2 000
+    # as `graded_num_paths`, and was told its ledger was a spec defect -- while the
+    # scheme-matched formulator, which pinned the kernel to 2 000 and left every
+    # plan MC-inconclusive at 6, was not.
+    graded = thresholds.get("graded_num_paths")
+    declared_paths = graded if graded is not None else thresholds.get("num_paths")
+    paths_at = ("evaluation_thresholds.graded_num_paths" if graded is not None
+                else _SDE_DECLARED_AT["num_paths"])
+    checks = (("num_paths", declared_paths),
               ("seed", thresholds.get("seed")),
               ("T", _declared_horizon(spec)))
     for key, want in checks:
@@ -217,7 +230,7 @@ def audit_sde_output(spec, run_meta) -> list[Finding]:
             continue
         if not _close(got, want):
             out.append(spec_defect(
-                "ledger-audit", _SDE_DECLARED_AT[key],
+                "ledger-audit", paths_at if key == "num_paths" else _SDE_DECLARED_AT[key],
                 f"the ledger declares {key}={want}, but the harness runs this "
                 f"problem at {key}={got}. The solver is handed {key} as a call "
                 f"argument and has no say in it, so this is a defect in the spec "

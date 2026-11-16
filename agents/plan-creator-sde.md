@@ -118,6 +118,14 @@ boundary_treatment: {brownian-bridge | absorption | reflection | none — only w
 strategy: {one-sentence summary}
 ---
 
+**Declare the scheme you implement when the spec supplies sub-increments.** On a spec with
+`sub_increments_per_step`, the kernel hands the solver `dW_sub` on every solve, so a multi-noise
+Milstein that builds its Lévy area from it is graded as that scheme: declare `scheme_family:
+milstein` with a `levy_area_treatment: sub-increments` line, and the order study holds it to the
+order-1 floor. Declaring `other` to dodge a floor the kernel could not measure was right before the
+kernel passed `dW_sub` (N01, 2026-11-15); it now forfeits the evidence that separates the plan from
+Euler–Maruyama.
+
 **`exact_sampling_components` — declare it for any component that draws its own randomness instead of
 consuming the supplied `dW`.** Add the line `exact_sampling_components: 0, 1` (the state indices, as
 in `state_components`) to the frontmatter. **The test is non-consumption, not exactness** — the field's

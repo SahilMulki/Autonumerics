@@ -852,6 +852,30 @@ def is_pde(spec) -> bool:
     return not ("sde_family" in spec or "state_dimension" in spec)
 
 
+def check_sub_increments(spec) -> list[Finding]:
+    """``sub_increments_per_step``, when declared, is a whole number of at least 2.
+
+    It is the number of finer Brownian increments the problem hands the solver
+    inside each graded step (``dW_sub``), and the kernel rebuilds the same grid for
+    its own solves from it. A value of 1 carries no Levy area, and a non-integer
+    cannot tile a step, so either one would hand a correct solver a grid it cannot
+    use. Absent is fine and is the common case: it means no ``dW_sub`` is passed.
+    """
+    if is_pde(spec) or "sub_increments_per_step" not in spec:
+        return []
+    value = spec.get("sub_increments_per_step")
+    if value is None:
+        return []
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 2:
+        return []
+    return [error(
+        "sub_increments", "sub_increments_per_step",
+        f"sub_increments_per_step is {value!r}. It must be a whole number of at "
+        f"least 2 -- the count of finer increments inside each graded step that the "
+        f"problem hands the solver as dW_sub -- or absent when no dW_sub is passed",
+    )]
+
+
 def check_spec(spec) -> list[Finding]:
     """Every static check on a spec. The reference check (§4c/§4e) is not here --
     it evaluates the formula on a grid, which is ``reference.py``."""
@@ -862,6 +886,7 @@ def check_spec(spec) -> list[Finding]:
         *check_operator_declaration(spec),
         *check_invariant_names(spec),
         *check_noise_dimension(spec),
+        *check_sub_increments(spec),
         *check_strong_order_declared(spec),
         *check_stability_check(spec),
         *check_invariant_expressions(spec),

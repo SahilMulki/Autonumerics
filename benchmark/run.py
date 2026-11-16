@@ -341,11 +341,18 @@ def clear_pipeline_outputs(workspace_dir):
 
 def process(problem, args):
     slug = problem["slug"]
-    workspace_dir = os.path.join(WORKSPACE_ROOT, slug)
+    arm = getattr(args, "arm", None)
+    # The arm reaches the workspace *path*, not only the record (plan-notable-sde.md
+    # step 3b). `oneshot.py` learned this on SciML: two arms keyed on the same artifact
+    # directory, and the second run wrote its solver.py over the first's. The pipeline
+    # had the same hole -- `workspace/<slug>` for both arms -- and on a scheme benchmark
+    # the plans directory is the evidence. The default arm keeps the old spelling.
+    wsname = S.workspace_name(slug, arm)
+    workspace_dir = os.path.join(WORKSPACE_ROOT, wsname)
 
     # 1. always (re)write the input problem.md, in this run's own arm -- the staged
     #    brief is the only thing that makes the two arms different experiments.
-    S.write_problem_md(problem, WORKSPACE_ROOT, arm=getattr(args, "arm", None))
+    S.write_problem_md(problem, WORKSPACE_ROOT, arm=arm)
 
     # 2. run the pipeline (unless skipped)
     #    `t_launch` is the clock the stale-workspace guard in 3c compares against. It
@@ -359,7 +366,7 @@ def process(problem, args):
         if args.fresh:
             clear_pipeline_outputs(workspace_dir)
         t_launch = time.time()
-        run = run_conductor(slug, args.timeout, args.skip_permissions,
+        run = run_conductor(wsname, args.timeout, args.skip_permissions,
                             args.permission_mode, args.model)
 
     # 3. pipeline self-score from STATE.md
@@ -465,6 +472,7 @@ def process(problem, args):
         "has_ground_truth": problem["has_ground_truth"],
         "ground_truth_kind": problem.get("ground_truth_kind", "exact"),
         "arm": getattr(args, "arm", S.DEFAULT_ARM),
+        "workspace": os.path.relpath(workspace_dir, REPO_ROOT),
         "run": run, "pipeline": pipeline, "verify": verify,
     }
     if kernel is not None:
@@ -564,6 +572,49 @@ def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, 
             "verify": harness,
         })
         out["plans"][name] = entry
+
+    # --- the ranking inputs this record is supposed to carry -----------------
+    #
+    # `ranking.order` reads `observed_order_se` to decide whether a pool's two best
+    # measured rates are *resolved* before it ranks one against the other
+    # (plan-sciml-benchmark.md SS10o), and it needs it on **every** plan: one plan
+    # without it and `_order_against_pool` returns the absolute, floor-relative
+    # reading for the whole pool. That fallback is correct and it is silent, which is
+    # the problem -- the pool simply scores as it did before the rule existed.
+    #
+    # Shipping SS10o cost exactly that, twice over, and both were near-misses: the
+    # field was produced by `sde/driver.py` and filtered out of the `<metrics>` block
+    # by `metrics.BLOCK_KEYS`, so the rule measured 8 of 9 pools offline against
+    # `evaluation.json` and would have been inert in the live pipeline. A test caught
+    # the block; nothing would have caught a *run* that wrote blocks without it. So
+    # the record says so, per pool, where every comparison downstream will see it.
+    #
+    # It does not raise. A multi-hour suite aborting on a reporting defect loses the
+    # eight problems that were fine, and the condition is a fact about the record
+    # rather than about any solver -- the same argument SS10j made for
+    # `findings.SPEC`. `test_a_pool_missing_the_order_error_bar_is_recorded_as_such`
+    # is what makes it impossible to land quietly.
+    graded_orders = {n: (e.get("kernel") or {}) for n, e in out["plans"].items()}
+    with_order = {n: b for n, b in graded_orders.items()
+                  if b.get("observed_order") is not None}
+    missing_se = sorted(n for n, b in with_order.items()
+                        if b.get("observed_order_se") is None)
+    if missing_se:
+        out["ranking_inputs_incomplete"] = {
+            "field": "observed_order_se",
+            "plans": missing_se,
+            "plans_with_observed_order": sorted(with_order),
+            # The consequence, stated rather than left to be re-derived: one plan
+            # short disables the comparison for all of them.
+            "pool_order_comparison": "disabled",
+            "reason": "`ranking.order` needs `observed_order_se` on every plan in "
+                      "the pool before it will read one measured rate against "
+                      "another; without it the pool falls back to the absolute "
+                      "floor-relative reading, silently and for every plan",
+        }
+        print(f"    [record] {len(missing_se)} of {len(with_order)} plans carry "
+              f"`observed_order` without `observed_order_se` -- the pool order "
+              f"comparison is disabled: {', '.join(missing_se)}", flush=True)
 
     # The comparable number, per problem type. A PDE's is the relative field error;
     # an SDE has no field, so it is the worst moment error *relative to the gate that
@@ -783,9 +834,13 @@ RECORDED_METRICS = (
         # that separates a Milstein from an Euler-Maruyama was invisible to every
         # reader of this file except the conductor that wrote it.
         "observed_order", "order_check", "order_floor", "scheme_family",
-        # Reported, not read by `ranking.order()` (it retired the `order_band`
-        # branch), and kept because they are what `crn.guards` applied in deciding
-        # whether the order passed -- the audit trail for the number above it.
+        # `observed_order_se` **is** read by `ranking.order()` as of
+        # plan-sciml-benchmark.md SS10o -- it is the resolution test that decides
+        # whether a pool's two best measured rates may be ranked against each other,
+        # so this entry stopped being a reporting field and became a ranking input.
+        # `order_band` is still reporting only (`ranking.order` retired that branch),
+        # kept because it is what `crn.guards` applied in deciding whether the order
+        # passed -- the audit trail for the number above it.
         "observed_order_se", "order_band",
         # [sciml 10h] `ranking.structure()` reads `invariant_worst_headroom`. The
         # field above it is `invariant_max_drift`, a *different* quantity, so the

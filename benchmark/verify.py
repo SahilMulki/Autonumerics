@@ -449,9 +449,15 @@ def sde_pathwise_crn(problem, num_paths, dt):
     if nt > fine or fine % nt:
         return None
     m = sde_noise_dimension(problem)
-    return {"seed": int(problem["seed"]), "num_paths": int(num_paths),
-            "Nt_fine": int(fine), "T": T, "aggregate": int(fine // nt),
-            "m": (m if m > 1 else None), "dt": T / nt}
+    payload = {"seed": int(problem["seed"]), "num_paths": int(num_paths),
+               "Nt_fine": int(fine), "T": T, "aggregate": int(fine // nt),
+               "m": (m if m > 1 else None), "dt": T / nt}
+    # H-N1: a problem that declares `pathwise_substeps` hands the solver the fine
+    # increments *underneath* each step as well as the step increments. The flag is
+    # all the child needs, because `aggregate` already says how many there are.
+    if problem.get("pathwise_substeps"):
+        payload["substeps"] = True
+    return payload
 
 
 def sde_pathwise_ladder(problem, num_paths=None):
@@ -487,6 +493,24 @@ def crn_increments(payload):
     return dW
 
 
+def crn_increments_sub(payload):
+    """``(dW, dW_sub)`` for a level whose problem declares ``pathwise_substeps`` (H-N1).
+
+    ``dW_sub`` is the fine grid reshaped to ``(paths, Nt, aggregate, [m])`` -- the
+    sub-increments underneath each graded step -- and ``dW`` is their sum, which is
+    bit-identical to ``crn_increments(payload)`` because that function performs the
+    very same reshape-and-sum. A solver that uses only ``dW`` is in the situation
+    Clark & Cameron (1980) bound; one that assembles the Levy area from ``dW_sub`` is
+    not. ``runner._crn_increments_sub`` is the child's byte-for-byte copy.
+    """
+    fine = crn_increments(dict(payload, aggregate=1))
+    paths, nf = fine.shape[0], fine.shape[1]
+    agg = max(int(payload["aggregate"]), 1)
+    tail = fine.shape[2:]
+    sub = fine.reshape(paths, nf // agg, agg, *tail)
+    return sub.sum(axis=2), sub
+
+
 def _pathwise_W(payload, save_points):
     """``(W_T, W_at_saves, t_at_saves)`` for the path the solver was handed.
 
@@ -517,6 +541,38 @@ def _sde_pathwise_truth(problem, t, W):
     if not callable(fn):
         return None
     return np.asarray(fn(t, W), dtype=float)
+
+
+def _sde_pathwise_reference(problem, payload):
+    """The reference terminal state on the supplied Brownian path, from the *fine*
+    increments (H-N1). ``pathwise_reference(dW_fine, T)`` receives the whole fine
+    grid of the level -- ``(paths, Nt_fine, [m])`` -- because the truth is a functional
+    of the path and no function of ``W(T)`` can give it. Returns ``None`` if the
+    problem declares none."""
+    fn = problem.get("pathwise_reference")
+    if not callable(fn):
+        return None
+    fine = crn_increments(dict(payload, aggregate=1))
+    return np.asarray(fn(fine, float(problem["T"])), dtype=float)
+
+
+def _pathwise_truth_kind(problem):
+    """``"exact"``, ``"reference"``, or an error string. Exactly one of the two keys
+    may be declared, and a reference must declare its own error: the harness refuses
+    to grade against a reference whose error nobody measured, which is the rule the
+    field route has always had (benchmark/README.md, "Ground truth")."""
+    has_exact = callable(problem.get("pathwise_exact"))
+    has_ref = callable(problem.get("pathwise_reference"))
+    if has_exact and has_ref:
+        return "problem declares both pathwise_exact and pathwise_reference"
+    if has_ref:
+        err = problem.get("pathwise_reference_error")
+        if err is None or not np.isfinite(float(err)) or float(err) <= 0.0:
+            return "pathwise_reference declared without a measured pathwise_reference_error"
+        return "reference"
+    if has_exact:
+        return "exact"
+    return "problem declares neither pathwise_exact nor pathwise_reference"
 
 
 def _rel_l2_over_paths(num, exact):
@@ -574,7 +630,10 @@ def _run_and_read_sde(problem, plan_dir, injected=None, crn=None):
         kwargs = {"num_paths": problem["num_paths"], "dt": dt_verify, "T": T,
                   "seed": problem["seed"]}
         if crn is not None:
-            kwargs["dW"] = crn_increments(crn)
+            if crn.get("substeps"):
+                kwargs["dW"], kwargs["dW_sub"] = crn_increments_sub(crn)
+            else:
+                kwargs["dW"] = crn_increments(crn)
         try:
             result = mod.solve_sde(**kwargs)
         except TypeError as exc:
@@ -966,6 +1025,139 @@ def _sde_moment_truth(problem):
     return fn(problem["T"]) if callable(fn) else None
 
 
+# --- the vacuity table on the SDE moment routes [H-N4, plan-notable-sde.md] ---
+
+#: Keyword names under which an entry's moment callable carries its initial
+#: condition, per component label. Read off the callable's signature rather than
+#: declared, because no entry carries the initial state as a field and 24 entries
+#: already exist; a name not in this list is reported as "no initial condition
+#: found" rather than guessed.
+_IC_KEYWORDS = {"X": ("X0", "x0", "S0", "s0", "V0", "I0", "q0", "u0"),
+                "Y": ("Y0", "y0", "p0", "v0"),
+                "Z": ("Z0", "z0")}
+
+
+def _moment_callable_params(fn):
+    """``{name: value}`` of the numeric parameters a moment callable was built with
+    -- a ``functools.partial``'s keywords, or a plain function's defaults. Empty for a
+    lambda, which the table then reports as not introspectable."""
+    import inspect
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return {}
+    out = {}
+    for name, prm in sig.parameters.items():
+        if name == "T" or prm.default is inspect.Parameter.empty:
+            continue
+        if isinstance(prm.default, (int, float, np.floating, np.integer)) \
+                and not isinstance(prm.default, bool):
+            out[name] = float(prm.default)
+    return out
+
+
+def _moment_value(v):
+    """A reference moment is ``(value, se)``; an exact one is a number."""
+    return float(v[0]) if isinstance(v, (tuple, list, np.ndarray)) else float(v)
+
+
+def sde_vacuity_table(problem, perturb=0.10):
+    """Rule 6 of plan-notable-sde.md §1, as a measurement per moment gate: *no gate may
+    be answerable by a constant, the initial condition, or the stationary law.*
+
+    For every component's mean and variance gate the table records the truth, how far
+    the initial condition sits from it (the variance of the initial condition is 0,
+    so only the mean gate can be vacuous that way), how far a declared
+    ``stationary_moments`` law sits from it, and how much a ``perturb`` relative
+    change of each parameter the callable was built with moves it. A gate is
+    ``refused`` when the initial condition or the stationary value lies *inside* its
+    tolerance -- a solver returning either would pass -- or when no parameter moves
+    it at all. A near-zero mean is skipped, exactly as the rubric skips it.
+
+    What this deliberately does **not** do is refuse a gate because a 10%
+    parameter change moves it by less than its tolerance, which is what H-N4's
+    first acceptance line asked for. Measured, that criterion refuses
+    ``sde_gbm``'s mean -- a 10% change of ``mu = 0.1`` moves ``e^{mu T}`` by 1.0%
+    against a 5% gate -- although the gate is plainly not vacuous: returning the
+    initial condition fails it by 10.5%. Sensitivity is reported; the three rule-6
+    tests decide.
+    """
+    fn = problem.get("moments")
+    kind = problem.get("ground_truth_kind", "exact")
+    d = int(problem["state_dimension"])
+    labels = ["X", "Y", "Z"][:d]
+    out = {"slug": problem["slug"], "introspectable": False, "gates": {}}
+    if not callable(fn) or kind in ("pathwise", "stability"):
+        out["reason"] = "no moment callable on this route"
+        return out
+    T = float(problem["T"])
+    base = {k: _moment_value(v) for k, v in fn(T).items()}
+    params = _moment_callable_params(fn)
+    out["introspectable"] = bool(params)
+    out["params"] = params
+    stationary = problem.get("stationary_moments") or {}
+    for lab in labels:
+        suf = "" if d == 1 else f"_{lab}"
+        for gate, tol in (("mean", SDE_MEAN_TOL), ("variance", SDE_VAR_TOL)):
+            key = gate + suf
+            if key not in base:
+                continue
+            truth = base[key]
+            rec = {"truth": truth, "tol": tol, "refused": False, "reasons": []}
+            if gate == "mean" and abs(truth) < 0.01:
+                rec["skipped"] = "near-zero mean"
+                out["gates"][key] = rec
+                continue
+            # (i) the initial condition
+            if gate == "mean":
+                ic_name = next((n for n in _IC_KEYWORDS.get(lab, ()) if n in params), None)
+                if ic_name is not None:
+                    ic = params[ic_name]
+                    rec["ic"] = {"name": ic_name, "value": ic,
+                                 "rel_distance": _rel(ic, truth)}
+                    if rec["ic"]["rel_distance"] < tol:
+                        rec["refused"] = True
+                        rec["reasons"].append("initial condition inside the gate")
+                else:
+                    rec["ic"] = None
+            # (ii) the stationary law
+            if key in stationary:
+                st = float(stationary[key])
+                rec["stationary"] = {"value": st, "rel_distance": _rel(st, truth)}
+                if rec["stationary"]["rel_distance"] < tol:
+                    rec["refused"] = True
+                    rec["reasons"].append("stationary value inside the gate")
+            # (iii) sensitivity to each parameter
+            sens = {}
+            for name, val in params.items():
+                moved = val * (1.0 + perturb) if val != 0.0 else perturb
+                try:
+                    pert = {k: _moment_value(v)
+                            for k, v in _rebuild(fn, {name: moved})(T).items()}
+                    sens[name] = _rel(pert[key], truth)
+                except Exception as exc:  # noqa: BLE001 -- a parameter the callable rejects is reported, not fatal
+                    sens[name] = f"{type(exc).__name__}"
+            rec["sensitivity"] = sens
+            numeric = [v for v in sens.values() if isinstance(v, float)]
+            if params and numeric and max(numeric) == 0.0:
+                rec["refused"] = True
+                rec["reasons"].append("no parameter moves this gate")
+            rec["max_sensitivity"] = max(numeric) if numeric else None
+            out["gates"][key] = rec
+    out["refused"] = sorted(k for k, g in out["gates"].items() if g.get("refused"))
+    return out
+
+
+def _rebuild(fn, overrides):
+    """The moment callable with some of its baked parameters replaced."""
+    from functools import partial
+    if isinstance(fn, partial):
+        kw = dict(fn.keywords or {})
+        kw.update(overrides)
+        return partial(fn.func, *fn.args, **kw)
+    return partial(fn, **overrides)
+
+
 # --- structure diagnostics on the SDE side [H-N3, plan-notable-sde.md] ------
 #
 # The PDE side has had hard structural gates since the systems extension: a
@@ -1170,10 +1362,14 @@ def verify_sde_pathwise(problem, plan_dir, injected=None):
                     "error": f"dt={run_meta['dt']!r} does not nest in the fine grid"}
         level = relevel
 
-    W_T, _W, _t = _pathwise_W(level, None)
-    exact = _sde_pathwise_truth(problem, float(problem["T"]), W_T)
-    if exact is None:
-        return {"status": "error", "error": "problem declares no pathwise_exact"}
+    truth_kind = _pathwise_truth_kind(problem)
+    if truth_kind not in ("exact", "reference"):
+        return {"status": "error", "error": truth_kind}
+    if truth_kind == "exact":
+        W_T, _W, _t = _pathwise_W(level, None)
+        exact = _sde_pathwise_truth(problem, float(problem["T"]), W_T)
+    else:
+        exact = _sde_pathwise_reference(problem, level)
     num = np.asarray(result.get("terminal_paths"), dtype=float)
     d = int(problem["state_dimension"])
     n = int(level["num_paths"])
@@ -1193,6 +1389,12 @@ def verify_sde_pathwise(problem, plan_dir, injected=None):
         "verified_score": pathwise_score(rel),
         "pathwise_rel_err": float(rel),
         "pathwise_tol_used": float(tol),
+        # H-N1: which kind of truth the error is against, and -- for a reference --
+        # the reference's own measured error, so a reader can see how far below the
+        # graded error it sits. Absent for an exact truth, which has none.
+        "pathwise_truth": truth_kind,
+        **({"pathwise_reference_error": float(problem["pathwise_reference_error"])}
+           if truth_kind == "reference" else {}),
         # SciML's own axis, for the comparator table. `None` with a reason rather
         # than absent, so a record that simply could not measure it is not read as
         # one that measured it as zero.
@@ -2410,8 +2612,13 @@ def _fold_sde_pathwise_ladder(out, problem, plan_dir, graded_result, *, timeout_
                     return out
                 arr = np.asarray(run["result"].get("terminal_paths"), dtype=float)
                 spent.append(run.get("solve_s"))
-            terminals.append(arr.reshape(arr.shape[0], -1)[:, 0]
-                             if arr.ndim > 1 else arr.ravel())
+            # Every component, not the first (H-N1 found the hole on N01): there the
+            # first component `S` is integrated *exactly* by every scheme -- it is
+            # Brownian motion with drift -- so a reading of column 0 alone called a
+            # genuine Euler-Maruyama run on `U` degenerate at all three levels. A
+            # scalar problem is unchanged by this; no sciml entry has d > 1 on this route.
+            terminals.append(arr.reshape(arr.shape[0], -1) if arr.ndim > 1
+                             else arr.reshape(-1, 1))
         if len({t.shape for t in terminals}) != 1:
             out["pathwise_ladder"] = {"status": "not_run",
                                       "reason": "levels returned different path counts"}
@@ -2422,7 +2629,7 @@ def _fold_sde_pathwise_ladder(out, problem, plan_dir, graded_result, *, timeout_
         scale = scale if scale > 0 else 1.0
         d0 = float(np.mean(np.abs(terminals[0] - terminals[1])))
         d1 = float(np.mean(np.abs(terminals[1] - terminals[2])))
-        across_paths = float(np.std(terminals[-1]))
+        across_paths = float(np.mean(np.std(terminals[-1], axis=0)))
         level_degenerate = bool(max(d0, d1) / scale < ROUNDOFF_REL)
         path_degenerate = bool(across_paths / scale < ROUNDOFF_REL)
         block = {

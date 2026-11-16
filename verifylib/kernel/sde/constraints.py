@@ -123,8 +123,20 @@ def compare_moment(empirical, se, reference, tol, *, near_zero=None, ci_mult=2.0
     if near_zero is not None and abs(reference) < float(near_zero):
         # An |exact| below the near-zero threshold makes a relative error
         # meaningless; the spec says so, so compare absolutely against the CI.
-        ok = abs(float(empirical) - reference) < max(ci_mult * float(se), float(near_zero))
-        return bool(ok), {**detail, "near_zero": float(near_zero), "mode": "absolute"}
+        #
+        # **And do not report the relative one.** It was left in `detail`, and
+        # `_compare` folds every float `rel_error` into `worst_rel_error`, which is
+        # the plan's `estimated_rel_error` and the ranker's accuracy input. Against
+        # an exact mean of 0 the denominator is the 1e-14 guard: on N01
+        # (2026-11-15) U's mean of -0.044 -- a pass, correctly judged absolutely --
+        # became an estimated error of 4.4e12 on all four plans. The harness has
+        # always left near-zero means out of its worst error (`verify.py`), and so
+        # does this now; the absolute difference is reported in its place.
+        detail.pop("rel_error")
+        diff = abs(float(empirical) - reference)
+        ok = diff < max(ci_mult * float(se), float(near_zero))
+        return bool(ok), {**detail, "abs_error": diff, "near_zero": float(near_zero),
+                          "mode": "absolute"}
     if ci_mult * float(se) / (abs(reference) + 1e-14) > float(tol):
         return "unresolved", {**detail, "reason": "the confidence interval is wider than "
                                                   "the tolerance band"}

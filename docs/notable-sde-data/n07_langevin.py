@@ -11,11 +11,11 @@ Three things this script establishes, in order of what the plan needs:
 
   1. the truth, by **two independent routes** (Gauss-Legendre quadrature of the
      stochastic-convolution integral, and `solve_ivp` on the covariance ODE), plus
-     the closed-form stationary limit as a third anchor;
+     the closed-form stationary limit as a third anchor
   2. the **(gamma, omega) choice**, which plan-notable-sde.md section 2 (N07) says is
      set by this sweep and not by taste: the pair must make Euler-Maruyama's bias on
      Var(q) exceed the 10% variance gate at the step the verifier re-runs at, while
-     BAOAB clears it;
+     BAOAB clears it
   3. the **vacuity check** (section 1 rule 6): Var(q) at T must sit far from both the
      initial condition and the stationary value, or the entry is answerable without
      integrating anything.
@@ -27,7 +27,8 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.linalg import expm
 
-BETA = 1.0                      # inverse temperature; kT = 1
+BETA = 1.0                      # inverse temperature
+kT = 1
 X0 = np.array([1.0, 0.0])       # (q, p)
 T = 1.0
 DT = 0.04                       # verify.sde_verify_dt: min(dt, 0.04/T)

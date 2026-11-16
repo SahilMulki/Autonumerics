@@ -70,6 +70,19 @@ def evaluate_sde(spec, plan_dir, agent):
         noise_dim, bool) and noise_dim > 1 else None
     cfg.set("noise_dimension", noise_dim,
             "spec" if spec.get("noise_dimension") is not None else "kernel_default")
+    # Sub-increments (plan-notable-sde.md H-N1, carried into the kernel). On a spec
+    # that declares them the harness hands the solver `dW_sub` -- the finer Brownian
+    # increments inside each step -- beside `dW`, and a Levy-area scheme is only that
+    # scheme when it gets them. The kernel used to pass neither on the graded call and
+    # only `dW` on its ladders, so it graded every such plan on its `dW_sub=None`
+    # fallback: on N01 (2026-11-15) four plans, three of them a correct order-1
+    # Milstein the harness passed at 0.45%, measured as one order-1/2 scheme and tied,
+    # and the tie crowned the Euler control. The sub-step is held fixed at the graded
+    # `dt / sub_increments_per_step` on every solve, as the harness holds it.
+    sub_per_step = _sub_increments_per_step(spec)
+    cfg.set("sub_increments_per_step", sub_per_step,
+            "spec" if sub_per_step is not None else "kernel_default")
+    sub_dt = dt / sub_per_step if sub_per_step else None
     timeout_s = int(cfg.pick("timeout_s", agent, None, sandbox.DEFAULT_TIMEOUT_S))
 
     m = metrics.new_metrics("sde", path, cfg)
@@ -111,7 +124,14 @@ def evaluate_sde(spec, plan_dir, agent):
         return out
 
     base_call = {"num_paths": num_paths, "dt": dt, "T": T, "seed": seed}
-    got = solve(base_call)
+    graded_crn = None
+    if sub_dt:
+        graded, sub_detail = crn.with_sub_increments(
+            crn.graded_payload(num_paths, dt, T, seed=seed, m=noise_dim), sub_dt)
+        m["summary"]["sub_increments_graded"] = sub_detail
+        if graded[0].get("substeps"):
+            graded_crn = graded[0]
+    got = solve(base_call, crn=graded_crn) if graded_crn else solve(base_call)
     if got["status"] != "ok":
         return _crashed(m, got, started)
     # The graded run's own cost, apart from `wall_time_s` (the whole evaluation:
@@ -393,7 +413,7 @@ def evaluate_sde(spec, plan_dir, agent):
             plan_dir, solve, conv_paths, dt0, T, levels, seed,
             expected_strong, expected_weak, declared=family_declared,
             candidates=strong_candidates, m=noise_dim, components=len(stats),
-            exact_sampling=exact_sampling)
+            exact_sampling=exact_sampling, sub_dt=sub_dt)
     else:
         ladder = []
         # ~~"the moments match an exact reference and the scheme's strong order is
@@ -553,7 +573,8 @@ def evaluate_sde(spec, plan_dir, agent):
     if run_dynkin:
         outcome, detail = _dynkin_replicated(
             spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult,
-            levels=dynkin_levels, m=noise_dim, replicates=replicates, margin=margin)
+            levels=dynkin_levels, m=noise_dim, replicates=replicates, margin=margin,
+            sub_dt=sub_dt)
     else:
         # ~~"the plan is not in reach of certification on this path, so the
         # generator check cannot change the outcome"~~ -- true of the *score* and
@@ -1296,7 +1317,7 @@ def _distribution(verification, X, stats, T, parameters, ci_mult):
 
 def _orders(plan_dir, solve, num_paths, dt0, T, levels, seed, expected_strong,
             expected_weak, *, declared=True, candidates=(), m=None, components=1,
-            exact_sampling=()):
+            exact_sampling=(), sub_dt=None):
     """The CRN ladder. Every level is a coarsening of one Brownian path.
 
     ``m`` is the declared noise dimension and decides the *shape* of the increments
@@ -1312,6 +1333,7 @@ def _orders(plan_dir, solve, num_paths, dt0, T, levels, seed, expected_strong,
     ``unavailable`` rather than losing the levels that did run.
     """
     payloads = crn.ladder_spec(num_paths, dt0, T, levels=levels, seed=seed, m=m)
+    payloads, sub_detail = crn.with_sub_increments(payloads, sub_dt)
     runs, ladder = [], []
     for payload in payloads:
         got = solve({"num_paths": num_paths, "dt": payload["dt"], "T": T, "seed": seed},
@@ -1336,6 +1358,8 @@ def _orders(plan_dir, solve, num_paths, dt0, T, levels, seed, expected_strong,
                     "richardson": crn.richardson_moment(runs, weak, component)})
     binding = _worst_component(per, expected_strong)
     detail = {**binding, "dts": [p["dt"] for p in payloads]}
+    if sub_detail is not None:
+        detail["sub_increments"] = sub_detail
     if binding.get("abstained"):
         # The verdict binds to the abstaining component, which is right -- a
         # component the estimator could not read is not evidence that the others are
@@ -1424,7 +1448,7 @@ DYNKIN_MARGIN = 0.7
 
 def _dynkin_replicated(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult, *,
                        levels=3, m=None, replicates=DYNKIN_REPLICATES,
-                       margin=DYNKIN_MARGIN):
+                       margin=DYNKIN_MARGIN, sub_dt=None):
     """Dynkin once, and again on more seeds only if the first one landed near the bar.
 
     **The median z decides** (plan §11 D9). ``dynkin.py``'s own docstring records a
@@ -1449,7 +1473,7 @@ def _dynkin_replicated(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult, *
     is evidence and silence is not.
     """
     outcome, detail = _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult,
-                              levels=levels, m=m)
+                              levels=levels, m=m, sub_dt=sub_dt)
     worst, bar = _worst_z(detail), detail.get("family_wise_multiplier")
     record = {"seeds": [int(seed)], "worst_z": [worst], "replicated": False,
               "margin": float(margin), "rule": "median z over seeds (D9)"}
@@ -1474,7 +1498,7 @@ def _dynkin_replicated(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult, *
     outcomes, details = [outcome], [detail]
     for other in extra:
         got, sub = _dynkin(spec, plan_dir, solve, num_paths, dt, T, other, ci_mult,
-                           levels=levels, m=m)
+                           levels=levels, m=m, sub_dt=sub_dt)
         outcomes.append(got)
         details.append(sub)
         record["seeds"].append(other)
@@ -1553,7 +1577,7 @@ def _dynkin_footprint(num_paths, dt, T, levels, m):
 
 
 def _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult, levels=3, m=None,
-            max_bytes=None):
+            max_bytes=None, sub_dt=None):
     # [REV 60]: resolved here rather than as a default argument. A default is
     # evaluated once at import, so `DYNKIN_MAX_BYTES` was captured and the module
     # attribute could not be overridden by anything -- which is why the budget
@@ -1602,6 +1626,7 @@ def _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult, levels=3, m=
     # `2*dt`, so a scheme mis-diagnosed by the assumed order had no `dt` it could
     # choose to escape. Cost: the dt/4 level is 4x the steps, ~30 s per plan here.
     payloads = crn.ladder_spec(num_paths, dt, T, levels=levels, seed=seed, m=m)
+    payloads, _ = crn.with_sub_increments(payloads, sub_dt)
     runs = []
     # Formed **before** the ladder runs. `initial_moments` reads the spec and the
     # test functions and nothing else -- no solve feeds it -- yet it used to be
@@ -1780,6 +1805,20 @@ def _reported_moments(result, stats):
 #: The reason a spec can give for ``milstein_eligible: false`` that makes a Milstein
 #: plan a *claim defect* rather than a harmless no-op.
 MILSTEIN_LEVY_REASON = "levy_area"
+
+
+def _sub_increments_per_step(spec):
+    """The spec's ``sub_increments_per_step`` as an int of at least 2, else None.
+
+    ``schema.check_sub_increments`` refuses any other value at Phase 1, so this is a
+    reader, not a validator: an unusable value here means the schema check did not
+    run, and the kernel then evaluates as if nothing were declared rather than
+    guessing a resolution.
+    """
+    value = spec.get("sub_increments_per_step")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 2:
+        return None
+    return int(value)
 
 
 def _milstein_claim(spec, m_plan):

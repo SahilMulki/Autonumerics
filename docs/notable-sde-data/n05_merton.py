@@ -8,7 +8,7 @@
 Two truths, both exact, and the second by three independent routes:
 
   * **terminal moments**, in closed form from
-    `X(T) = X0 exp((mu - lambda kappa - sigma^2/2)T + sigma W(T)) * prod Y_i`;
+    `X(T) = X0 exp((mu - lambda kappa - sigma^2/2)T + sigma W(T)) * prod Y_i`
   * **the European call**, by Merton's Poisson-weighted Black-Scholes series, checked
     against (i) a direct quadrature of the lognormal-mixture density -- which uses no
     Black-Scholes formula at all -- and (ii) Monte Carlo of the exact solution. Two

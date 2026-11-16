@@ -1062,6 +1062,109 @@ def _ranking_reads_are_carried():
             'm["summary"]["observed_order_se"]' in driver)
 
 
+def _capability_gate_incidence():
+    """``(unevaluated plans, with a SOLUTION.md, in SDE pools, declaring anything,
+    pools the gate would fire on)`` over every recorded pool (§10o step 3).
+
+    The gate §10n proposed: hold the exit while an unevaluated plan declares a
+    capability no evaluated plan declares. This counts its opportunities. Measured
+    across `workspace/` and the two saved snapshots, both suites, so a rule with no
+    instance is retired on data rather than on the one case that motivated it.
+
+    "Unevaluated" is read **narrowly**: no `solver.py` on disk, plus the one plan the
+    winner early-exit skipped. The looser reading -- also counting a plan left
+    `state: unfinished` with a solver written -- gives 19 rather than 15 and is
+    returned beside it, because the conclusion must not rest on where that boundary
+    sits. Both report zero declarations and zero firings.
+    """
+    import re
+
+    from verifylib.kernel import plan_meta
+
+    roots = ["workspace", "benchmark/results/pipeline/workspace-pre-probe",
+             "benchmark/results/pipeline/workspace-probe2"]
+    total = with_solution = in_sde = declaring = fires = 0
+    loose = loose_fires = 0
+    for root in roots:
+        for state in sorted((ROOT / root).glob("*/STATE.md")):
+            pool, states, cur = state.parent, {}, None
+            for line in state.read_text().splitlines():
+                found = re.match(r"^  ([A-Za-z0-9][\w.-]*):\s*$", line)
+                if found:
+                    cur = found.group(1)
+                    states.setdefault(cur, None)
+                elif cur and line.strip().startswith("state:"):
+                    states[cur] = line.split(":", 1)[1].strip()
+            evaluated, unevaluated, loose_un = [], [], []
+            for plan in sorted((pool / "plans").glob("*")):
+                meta = plan_meta.read(str(plan))
+                caps = {("exact_sampling", c)
+                        for c in meta.get("exact_sampling_components") or ()}
+                if meta.get("boundary_treatment") not in (None, "", "none"):
+                    caps.add(("boundary", meta["boundary_treatment"]))
+                state_of = states.get(plan.name)
+                done = ((plan / "solver.py").exists()
+                        and state_of != "unfinished_winner_exited")
+                (evaluated if done else unevaluated).append((plan, caps))
+                if not done or state_of == "unfinished":
+                    loose_un.append((plan, caps))
+            have = set().union(*[c for _, c in evaluated]) if evaluated else set()
+            loose += len(loose_un)
+            loose_fires += sum(bool(caps - have) for _, caps in loose_un)
+            for plan, caps in unevaluated:
+                total += 1
+                with_solution += (plan / "SOLUTION.md").exists()
+                in_sde += ((plan / "SOLUTION.md").exists()
+                           and pool.name.startswith("sde_"))
+                declaring += bool(caps)
+                fires += bool(caps - have)
+    return total, with_solution, in_sde, declaring, fires, loose, loose_fires
+
+
+def _m09_winner_has_the_skipped_plans_capability():
+    """``(winner, what it declares, whether its strategy claims the exact leg,
+    what the skipped plan declares)`` (§10o step 3).
+
+    Why correcting §10n's part 1 does not rescue its part 2: the plan the exit fired
+    on integrates the same component in closed form from the supplied increments, so
+    it holds every capability the skipped plan could declare and one more.
+    """
+    from verifylib.kernel import plan_meta
+
+    pool = ROOT / RUN2_WS / "sde_sciml_weak_noncommutative" / "plans"
+    winner, skipped = pool / "4-rao-blackwellised-x2", pool / "2-exact-x1-leg-control-variate"
+    front = plan_meta.parse_frontmatter(
+        (winner / "SOLUTION.md").read_text()[:8192])
+    return (winner.name,
+            plan_meta.read(str(winner))["exact_sampling_components"],
+            "exactly in closed form from the supplied increments"
+            in (front.get("strategy") or ""),
+            plan_meta.read(str(skipped))["exact_sampling_components"])
+
+
+def _records_without_the_order_error_bar():
+    """``[(id, plans with observed_order, plans missing observed_order_se)]`` over
+    every recorded run that carries an order at all (§10o step 3).
+
+    What `grade_every_plan`'s new `ranking_inputs_incomplete` would have said about
+    the records as written -- which is §10o step 2's inertness confirmed on live
+    output rather than argued from the block whitelist.
+    """
+    out = []
+    for path in (PROBE, REST, M09R, ROOT / RUN2):
+        for rec in _load(path)["results"]:
+            plans = ((rec.get("harness_by_plan") or {}).get("plans") or {})
+            carried = [n for n, e in plans.items()
+                       if (e.get("kernel") or {}).get("observed_order") is not None]
+            if not carried:
+                continue
+            missing = [n for n in carried
+                       if (plans[n].get("kernel") or {}).get("observed_order_se")
+                       is None]
+            out.append((rec["id"], len(carried), len(missing)))
+    return sorted(out)
+
+
 @_pre10o
 def _fallback_fires():
     """`(fallback fires, shared set of one, only one component varies)` over all 18
@@ -2096,6 +2199,18 @@ def main():
         ("and the field the shipped rule reads is carried on the block it reads",
          _ranking_reads_are_carried() == (True, True, True),
          "**completely inert in\nthe pipeline**"),
+        # --- SS10o step 3: the gate retired, the blindness recorded ---------
+        ("the capability exit gate has no instance in 19 opportunities",
+         _capability_gate_incidence() == (15, 14, 3, 0, 0, 19, 0),
+         "| **pools where the gate would fire** | **0** |"),
+        ("and the plan the exit fired on holds the skipped plan's capability",
+         (_m09_winner_has_the_skipped_plans_capability()
+          == ("4-rao-blackwellised-x2", (1,), True, ())),
+         "The winner strictly dominates the skipped plan in declared\ncapability."),
+        ("every pool that recorded an order recorded it without an error bar",
+         _records_without_the_order_error_bar() == [("M01", 3, 3), ("M05", 3, 3),
+                                                    ("M09", 2, 2)],
+         "**Checked against the records as written, it fires on 3 of 3:**"),
         ("step 10 is complete at nine of nine",
          (sum(1 for r in by.values() if r["verdict"] == "VERIFIED_PASS") == 5
           and sum(1 for r in by.values() if r["verdict"] == "UNDERCLAIM") == 4

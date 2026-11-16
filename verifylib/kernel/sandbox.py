@@ -203,6 +203,33 @@ def _build_override(payload, arrays):
 CRN_BLOCK_BYTES = 256 * 1024 ** 2
 
 
+def _crn_increments_sub(crn):
+    """``(dW, dW_sub)`` for one level of a ladder the spec gave sub-increments.
+
+    ``dW_sub`` has shape ``(paths, Nt, aggregate[, m])``: for each of the level's
+    ``Nt`` steps, the ``aggregate`` fine increments of the shared Brownian path
+    that make it up, each scaled by the square root of the fine sub-step. ``dW`` is
+    their sum over that axis, so the two are one path at two resolutions -- the
+    same contract the harness's ``crn_increments_sub`` states to the solver.
+
+    Drawn as one array rather than in path blocks: the solver is handed the whole
+    fine grid, so blocking would save nothing, and the parent caps its size
+    (``crn.SUB_INCREMENT_MAX_BYTES``) before the payload is sent.
+    """
+    import numpy as np
+    rng = np.random.default_rng(int(crn["seed"]))
+    paths, fine, T = int(crn["num_paths"]), int(crn["Nt_fine"]), float(crn["T"])
+    m = int(crn["m"]) if crn.get("m") else None
+    tail = (m,) if m else ()
+    aggregate = int(crn["aggregate"])
+    if fine % aggregate:
+        raise ValueError(f"Nt_fine={fine} is not a multiple of aggregate={aggregate}")
+    sub = rng.standard_normal((paths, fine) + tail)
+    sub *= np.sqrt(T / fine)
+    dW_sub = sub.reshape((paths, fine // aggregate, aggregate) + tail)
+    return dW_sub.sum(axis=2), dW_sub
+
+
 def _crn_increments(crn):
     """Rebuild one level of the §18 CRN ladder from its seed, not from a 160 MB
     array shipped through a file. Deterministic, so the child's increments are the
@@ -479,7 +506,9 @@ def _child_main(spec_path):
             _dump_pde(res, out)
         else:
             call = dict(spec["call"])
-            if spec.get("crn"):
+            if spec.get("crn") and spec["crn"].get("substeps"):
+                call["dW"], call["dW_sub"] = _crn_increments_sub(spec["crn"])
+            elif spec.get("crn"):
                 call["dW"] = _crn_increments(spec["crn"])
             if spec.get("observables"):
                 call["observables"] = _make_observables(spec["observables"])

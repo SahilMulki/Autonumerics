@@ -1,7 +1,7 @@
 # SciMLBenchmarks (SDE) — External Benchmark Adoption Plan
 
 **Status:** **researched 2026-11-09; rev 1 the same day; rev 2–5 2026-11-10; rev 6–7 2026-11-11;
-rev 8–10 2026-11-12; rev 11–20 2026-11-13; rev 21–23 2026-11-14 — steps 1–10 of §7 done on the scheme-matched arm. The suite exists, is
+rev 8–10 2026-11-12; rev 11–20 2026-11-13; rev 21–24 2026-11-14 — steps 1–10 of §7 done on the scheme-matched arm. The suite exists, is
 calibrated, is smoke-tested end to end, has its comparator numbers, has its C0 baseline in both
 arms, and has **all nine of its entries through the pipeline** — 5 `VERIFIED_PASS`, 4
 `UNDERCLAIM`, **zero overclaims**, 139.3 min of wall time. Rev 12 then answers what the suite was
@@ -188,8 +188,33 @@ the test is now the pool's. And shipping broke **twelve** audit claims at once, 
 statements about the pre-ship ranker that this change was argued from, so
 `rank_study.floor_order_only()` restores that era exactly by holding the floor at infinity;
 the audit defaults to it, the four new claims opt out explicitly, and it is back to
-**165/165**. What remains is the other six entries of this arm, the unrestricted arm and the
-optional Phase 2 (step 11).** Rev 6–7 `[2026-11-11]` diagnose the M01 probe and
+**165/165**. **Rev 24 retires the exit gate and ships what step 2's near-miss generalises to**
+(10o step 3). §10n's part 1 is **withdrawn as wrong, not merely inert**: requiring
+`exact_sampling_components` wherever a component is integrated in closed form would have made a
+plan declare a property it does not have, because that field keys on **non-consumption of the
+supplied `dW`** and M09's plan 2 integrates X1 exactly *from* those increments — it declined the
+field under a heading of its own, correctly, and `plan_meta.parse_components` confirms the kernel
+already excuses exact *integration* because the pathwise differences collapse to roundoff. Part 1
+would have forfeited a measurable order check, which step 2 made more costly than it was when
+§10n proposed it. Part 2 is retired on data: **0 of 15** unevaluated plans across every recorded
+pool in both suites declares any capability at all (0 of 19 on the looser reading), and
+correcting part 1 does not rescue the M09 case either, because the plan the exit **fired on**
+integrates the same component in closed form from the supplied increments and declares
+`exact_sampling_components: 1` besides — the winner strictly dominates the skipped plan in
+declared capability. What actually distinguished plan 2 was **control variates on the two coupled
+functionals**, which no declared field expresses and the gate could not have seen in principle; so
+§10n's own framing — a hole in measurement, not a weak pool — is the right one and the recorder
+work it already shipped is the fix. Exiting on the first certification stays a **cost** decision
+and the owner's call, not a defect. What ships instead is the assertion step 2's near-miss
+generalises to: `ranking.order` needs `observed_order_se` on **every** plan before it reads one
+rate against another, one plan short disables the pool comparison *silently*, so
+`grade_every_plan` now records `ranking_inputs_incomplete` per pool — and checked against the
+records as written it fires on **3 of 3** pools that carry an order at all, every plan the live
+pipeline wrote on 2026-11-14 having a measured order with no error bar beside it. That is step
+2's inertness confirmed on live output rather than argued: without the block fix the arm would
+have gone on scoring 6 of 9 while every table here said 8. Two tests, section **E11**, with the
+control that a pool which ran no order study is not missing an error bar. What remains is the
+other six entries of this arm, the unrestricted arm and the optional Phase 2 (step 11).** Rev 6–7 `[2026-11-11]` diagnose the M01 probe and
 run the other two. **`wrong_plan_won: true` on all three problems, by three different
 mechanisms** (§10a): on M01 the scores separated and did so backwards, decided by a terminal-law
 KS statistic that a *pathwise-exact* solver also fails on the run's own increments; on M06 and M09
@@ -4911,6 +4936,132 @@ knobs. With the single constant it is **[2, 13]** — at 2.0 the rule fires on M
 still 8/9. That makes declining M06 a *principled* choice rather than an outcome-driven one,
 which is a better position than the one the draft claimed, and the floor's argument is restated
 above on that footing.
+
+
+##### Step 3: the capability gate is retired, and the record now says when the ranker is blind `[rev24 2026-11-14]`
+
+**Status:** the two-part exit fix §10n named is **not shipped, and its first part is withdrawn as
+wrong.** The gate is retired on data — it would fire on **0 of 15** unevaluated plans across every
+recorded pool in both suites, and 0 of 19 on the looser reading of "unevaluated". What ships instead is the assertion that falls out of §10o step 2's
+near-miss: the record now says, per pool, when the order comparison the ranker depends on is
+disabled. It fires on **3 of 3** pools where an order study reached the record at all.
+
+##### Part 1 is not a stricter rule, it is a false declaration
+
+§10n's part 1 was: *require `exact_sampling_components` whenever any component is integrated
+exactly or in closed form, including when the plan's family is not `exact-transition`.* That
+would have corrupted the field.
+
+`exact_sampling_components` keys on **non-consumption of the supplied `dW`**, not on exactness —
+`crn.EXACT_SAMPLING_FAMILIES` and `plan_meta.parse_components` both say so at length, and
+`agents/plan-creator-sde.md` says it in bold with the one prohibition spelled out: *"Never declare
+it for a component you stepped with the supplied increments: there the near-zero order is a real
+defect."* M09's plan 2 integrates X1 exactly **from the supplied increments** (`p*dW1 + r*dW2`),
+so the CRN ladder stays correlated and the strong order stays measurable. It declined the field
+and wrote its reasoning out under a heading of its own:
+
+> ### Why `exact_sampling_components` is **not** declared here
+> The field tests **non-consumption of the supplied `dW`**, not exactness. […] The kernel already
+> excuses a step that integrates exactly, because its pathwise differences between levels collapse
+> to roundoff. Declaring the component here would buy nothing and would forfeit the order check.
+
+Every clause of that is correct, including the last: `plan_meta.parse_components`' own docstring
+confirms it — *"`crn.abstention` already excuses the sibling case, exact integration, and it
+detects it because the differences collapse to roundoff."* So part 1 would have made a plan
+declare a property it does not have, forfeiting a measurable order check to do it. **Worse now
+than when §10n proposed it**, because step 2 made `order` a component that decides pools.
+
+This is the §10n reading corrected, not a new finding about the plan: §10n read plan 2's silence
+as the vocabulary gap. The silence was the plan being right.
+
+##### Part 2 is inert on the case it was written for, and on all 19
+
+The gate was: *the exit may not fire while an unevaluated plan declares a capability no evaluated
+plan declares.* §10n already measured it inert on M09 because plan 2 declares nothing. Correcting
+part 1 does not rescue it, and the reason is in the **winner's** frontmatter:
+
+```yaml
+# 4-rao-blackwellised-x2, the plan the exit fired on
+scheme_family: other
+exact_sampling_components: 1
+strategy: … simulate X1 exactly in closed form from the supplied increments, and
+          integrate component 1 (X2) out by propagating its exact conditional moments …
+```
+
+Plan 4 integrates component 0 exactly in closed form from the supplied increments — the **same**
+capability plan 2 would declare under any corrected part 1 — and declares an exact-sampling
+capability on component 1 besides. The winner strictly dominates the skipped plan in declared
+capability. No keying of the gate holds the exit here.
+
+Measured over every recorded pool, both suites, three workspace snapshots:
+
+| | count |
+|---|---|
+| unevaluated plans in recorded pools | **15** |
+| …with a `SOLUTION.md` the gate could read | 14 |
+| …in SDE pools, where the capability vocabulary applies at all | 3 (2 distinct) |
+| …declaring any capability | **0** |
+| **pools where the gate would fire** | **0** |
+| the same, counting a plan left `unfinished` with a solver written | 19, **0** |
+
+"Unevaluated" is read narrowly above — no `solver.py` on disk, plus the one plan the winner
+early-exit skipped. The last row is the looser reading, carried so the conclusion does not rest on
+where that boundary sits. Eleven of the fourteen are PDE pools, where the vocabulary does not
+exist. The two distinct SDE
+cases are `3-milstein-symmetric-levy` (`scheme_family: other`, nothing else) and plan 2 above. So
+the gate is a rule with no instance in 15 opportunities, or 19 — retired on the standard §10h,
+§10l and §10m each retired a candidate by.
+
+**And it was the wrong instrument regardless.** What made plan 2 better was not a capability: it
+was **control variates on the two coupled functionals**, regressing out `X1(T)` and `X1(T)²` whose
+expectations are closed-form. That is variance reduction, no declared field expresses it, and the
+exit gate could not have seen it even in principle. §10n's own framing — *"an apparent 2.9×
+regression in generation is more likely a hole in measurement"* — is the right one, and the fix for
+a measurement hole is the §10n recorder work that already shipped, not a gate.
+
+**What is left open, and is the owner's call rather than a defect.** `certified: true` is the
+loop-exit by design (`commands/conductor.md:130`, and line 132 is explicit that `certified` and
+not `score == 10` is the condition). Exiting on the first certification is a **cost** decision, and
+the only rule that would have kept plan 2 alive is "do not exit while any planned plan is
+unimplemented" — which prices every pool at its full width. That trade is not something nine pools
+can settle, and nothing here recommends it. What the pipeline now does instead is **say** when it
+took the trade: `harness_by_plan.not_implemented` with `plans_implemented` / `plans_planned`, from
+§10n.
+
+##### What ships: the record says when the ranker is blind
+
+Step 2's `BLOCK_KEYS` near-miss generalises. `ranking.order` needs `observed_order_se` on **every**
+plan in a pool before it will read one measured rate against another, and one plan short returns
+the absolute floor-relative reading **for the whole pool** — correctly, and silently. The pool then
+scores exactly as it did before the rule existed, and nothing anywhere says so.
+
+So `grade_every_plan` now records `ranking_inputs_incomplete` per pool: the field, the plans
+missing it, the plans that carry `observed_order` at all, `pool_order_comparison: "disabled"`, and
+the reason. It prints a line during the run. It does **not** raise — a multi-hour suite aborting on
+a reporting defect loses the eight problems that were fine, and the condition is a fact about the
+record rather than about any solver, which is the argument §10j made for `findings.SPEC`.
+
+**Checked against the records as written, it fires on 3 of 3:**
+
+| pool | plans with `observed_order` | missing the error bar |
+|---|---|---|
+| M01 (run 2) | 3 of 3 | **3** |
+| M05 (run 2) | 3 of 3 | **3** |
+| M09 (run 2) | 2 of 3 | **2** |
+
+Every plan the live pipeline recorded on 2026-11-14 carries a measured order with no error bar
+beside it, because `metrics.BLOCK_KEYS` dropped the field until step 2 added it. That is the
+inertness step 2 reasoned about, confirmed on live output rather than argued: had §10o shipped
+without the block fix, the arm would have gone on scoring 6 of 9 while every table in this document
+said 8. Run 1's pools report nothing, for a different reason — `observed_order` itself did not
+reach the record until §10h, so there was no order there to lack a bar.
+
+Two tests, `test_orchestration.py` section **E11**, including the two controls that matter: a pool
+carrying both fields reports nothing, and a pool that ran **no** order study is not missing an
+error bar — it is missing the measurement, which `order_check` already says and which
+`ranking.order` already returns None for. Without that second control the check would fire on
+every exact-sampler pool in the BENCHOP holdout, where `order` is comparable in 0 of 9 pools by
+construction.
 
 ---
 

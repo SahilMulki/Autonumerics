@@ -47,6 +47,21 @@ So the increments are passed in explicitly:
 
 Write the time loop to index `dW[:, n]` either way, so there is one code path rather than two.
 
+### `dW_sub` — the sub-increments, only when the spec declares them
+
+When `problem_spec.json` has a top-level `sub_increments_per_step: S`, the problem hands the solver
+the finer Brownian increments inside each step, and **add `dW_sub: np.ndarray | None = None` to the
+signature**. The kernel passes it on the graded call and on every CRN level whenever it passes `dW`:
+shape `(num_paths, Nt, k)` or `(num_paths, Nt, k, m)`, each sub-increment already scaled by the
+square root of its own sub-step, with `dW_sub.sum(axis=2) == dW` to rounding. `k` is the number of
+sub-steps in **this** call's step, which is `S` at the graded `dt` and grows as the step coarsens —
+read it from `dW_sub.shape[2]`, never from `S`. Use it for what it is for (the iterated integrals
+and Lévy areas a higher-order multi-noise scheme needs) and still advance the state once per step
+of `dW`. Keep a `dW_sub is None` branch — the conditional-mean area `½ ΔW₁ΔW₂` is the standard one —
+because a call that passes `dW` without `dW_sub` is still legal: the kernel withholds the
+sub-increments when they would not fit its memory cap. On a spec without the field, leave the
+argument out entirely.
+
 ### `observables` — path integrals for the Dynkin check
 
 `observables` is `None` or a dict `{name: φ(X)}`. When given, accumulate `∫₀ᵀ φ(X_s) ds` along each path by the trapezoid rule and return them under `path_integrals`:

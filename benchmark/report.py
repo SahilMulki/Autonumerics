@@ -844,15 +844,17 @@ def generate_report(results, config=None):
        "discretization-free Monte-Carlo of the known exact solution, compared within an "
        "SE-aware tolerance); *stability* (no ground truth — the independent check only confirms "
        "a correct scheme stays finite / in its domain, which is what a naive scheme gets wrong).")
-    ap("- **Four suites, four baseline denominators.** `main` (49) is the default; "
-       "`no-closed-form` (7), `benchop` (10) and `sciml` (9) each run only when asked "
-       "for by `--suite`, because mixing them into the main suite would move the "
-       "denominator every published pass rate is quoted against. `benchop` is graded "
+    ap("- **Five suites, five baseline denominators.** `main` (49) is the default; "
+       "`no-closed-form` (7), `benchop` (10), `sciml` (9) and `notable` (9) each run only "
+       "when asked for by `--suite`, because mixing them into the main suite would move "
+       "the denominator every published pass rate is quoted against. `benchop` is graded "
        "against 24 published reference values; `sciml` is graded against truth this "
        "repo owns and *compared* against another library's schemes, which is why it "
        "carries the `scheme-matched` / `unrestricted` arm distinction and the "
-       "`ANALYTIC_TRANSCRIPTION` exclusion. A run records its arm; two arms are never "
-       "merged.")
+       "`ANALYTIC_TRANSCRIPTION` exclusion; `notable` is nine recognisable, cited SDE "
+       "problems each punishing one numerical decision, run in both arms, with the "
+       "arm staged into the brief and the workspace path on every route. A run records "
+       "its arm; two arms are never merged.")
     ap("- **Problems with no closed form** (`closed_form: False`) run as their own suite "
        "(`--no-closed-form`) and are excluded by default, so the main benchmark's baseline "
        "denominators stay comparable. They are still independently checked, by one of four "

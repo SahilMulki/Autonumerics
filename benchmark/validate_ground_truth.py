@@ -404,7 +404,9 @@ if not _pathwise:
 for prob in _pathwise:
     slug, d = prob["slug"], prob["state_dimension"]
     m = V.sde_noise_dimension(prob)
-    check(f"{slug} declares pathwise_exact", callable(prob.get("pathwise_exact")))
+    # H-N1: exactly one truth, and a reference carries its measured error.
+    _tk = V._pathwise_truth_kind(prob)
+    check(f"{slug} declares exactly one pathwise truth", _tk in ("exact", "reference"), _tk)
     # The ladder and every work-precision level must be coarsenings of one draw.
     ladder = V.sde_pathwise_ladder(prob)
     check(f"{slug} ladder nests in the fine grid", all(lv is not None for lv in ladder),
@@ -424,12 +426,13 @@ for prob in _pathwise:
     dW = V.crn_increments(probe)
     want = (8, int(probe["Nt_fine"] // probe["aggregate"])) + ((m,) if m > 1 else ())
     check(f"{slug} increments are {want}", dW.shape == want, f"got {dW.shape}")
-    exact = V._sde_pathwise_truth(prob, float(prob["T"]), dW.sum(axis=1))
+    exact = (V._sde_pathwise_truth(prob, float(prob["T"]), dW.sum(axis=1)) if _tk == "exact"
+             else V._sde_pathwise_reference(prob, probe))
     want_state = (8,) if d == 1 else (8, d)
-    check(f"{slug} pathwise_exact returns {want_state}",
+    check(f"{slug} pathwise truth ({_tk}) returns {want_state}",
           exact is not None and exact.shape == want_state,
           f"got {None if exact is None else exact.shape}")
-    check(f"{slug} pathwise_exact is finite",
+    check(f"{slug} pathwise truth is finite",
           exact is not None and bool(np.all(np.isfinite(exact))))
     # §2a.1: a terminal state that does not vary across paths cannot be graded -- a
     # constant scores perfectly without consuming an increment. Caught here rather
@@ -1498,6 +1501,536 @@ for prob in ncf:
           (callable(prob.get("moments")) if prob["type"] == "sde" else
            V._pde_truth(prob) is not None or bool(prob.get("functional_truth"))))
 
+
+# ---------------------------------------------------------------------------
+# NOTABLE suite (plan-notable-sde.md): every truth by a route that shares nothing
+# with the entry (§6), the H-N1 reference checks, the step-5 calibration pairs at
+# the verifier's own step, and the H-N4 vacuity table over every SDE moment entry.
+# ---------------------------------------------------------------------------
+print("\n=== notable suite: independent truth validation (plan-notable-sde.md §6) ===")
+
+NB = {p["id"]: p for p in P.notable_problems()}
+check("notable suite has nine entries", len(NB) == 9, sorted(NB))
+
+
+def _mc_components(X):
+    return [("X", float(X.mean()), float(X.var(ddof=1)))]
+
+
+def _both_ways(prob, correct, wrong, label_ok, label_bad, functional=None):
+    """The calibration rule (§5): the correct scheme clears every gate at the
+    verifier's (paths, dt, seed), the one-decision-wrong scheme fails one."""
+    gt = prob["moments"](prob["T"]) if callable(prob.get("moments")) else None
+    meta = {"num_paths": prob["num_paths"], "dt": V.sde_verify_dt(prob), "T": prob["T"],
+            "seed": prob["seed"]}
+    ref = prob.get("ground_truth_kind") == "reference"
+    for X, want, label in ((correct, True, label_ok), (wrong, False, label_bad)):
+        comps = _mc_components(X) if X.ndim == 1 else [
+            (lab, float(X[:, i].mean()), float(X[:, i].var(ddof=1)))
+            for i, lab in enumerate(["X", "Y"][:X.shape[1]])]
+        result = {"terminal_paths": X, "functionals": functional(X) if functional else None}
+        out = V._score_sde_moments(prob, comps, gt, meta, reference=ref, result=result)
+        out = V._fold_sde_diagnostics(out, prob, result, meta)
+        errs = [f"{c['component']}: mean {c['mean_rel_err']:.2%} var {c['variance_rel_err']:.2%}"
+                for c in out.get("components", [])]
+        if out.get("functional_errs"):
+            errs.append("functionals " + ", ".join(f"{k} {v:.2%}" for k, v in out["functional_errs"].items()))
+        if out.get("violated_constraints"):
+            errs.append(f"violated {out['violated_constraints']}")
+        check(f"{prob['slug']}: {label} at the verifier's (paths, dt, seed) "
+              f"{'passes' if want else 'fails'}",
+              bool(out.get("passed")) is want, "; ".join(errs))
+
+
+# --- N01 Clark-Cameron -------------------------------------------------------
+_n01 = NB["N01"]
+# Var[U(T)] = int_0^T E[S^2] dt, by quadrature of E[S(t)^2] = (s0 + mu t)^2 + t, against
+# the closed form s0^2 T + s0 mu T^2 + mu^2 T^3 / 3 + T^2 / 2 = 17/6.
+_varU_quad = quad(lambda t: (1.0 + t) ** 2 + t, 0.0, 1.0)[0]
+check("sde_clark_cameron Var[U(1)] by moment-ODE quadrature equals the closed form 17/6",
+      abs(_varU_quad - 17.0 / 6.0) < 1e-12, f"{_varU_quad:.12f}")
+# H-N1 acceptance (2): the trapezoidal reference on the entry's fine grid against the
+# same reference on a 4x finer path, coarsened to it. Under the Levy-area error model
+# the two differ by sqrt(3) times the reference's own error, which must sit inside the
+# declared `pathwise_reference_error`.
+_lv = V.sde_pathwise_crn(_n01, _n01["num_paths"], V.sde_verify_dt(_n01))
+_ref = V._sde_pathwise_reference(_n01, _lv)
+check("sde_clark_cameron reference returns (num_paths, 2) and is finite",
+      _ref.shape == (_n01["num_paths"], 2) and bool(np.all(np.isfinite(_ref))))
+check("sde_clark_cameron reference variance of U matches 17/6 within MC noise",
+      abs(_ref[:, 1].var(ddof=1) / (17.0 / 6.0) - 1.0) < 3.0 * np.sqrt(2.0 / _n01["num_paths"]),
+      f"sample Var[U] {_ref[:, 1].var(ddof=1):.4f}")
+_fine4 = V.crn_increments(dict(_lv, Nt_fine=4 * _lv["Nt_fine"], aggregate=1, seed=7))
+_ref4 = P.clark_cameron_reference(_fine4, 1.0, 1.0, 1.0)
+_refc = P.clark_cameron_reference(_fine4.reshape(_fine4.shape[0], -1, 4, 2).sum(axis=2), 1.0, 1.0, 1.0)
+_e_ref = float(np.sqrt(np.mean((_ref4 - _refc) ** 2)) / np.sqrt(np.mean(_ref4 ** 2))) / np.sqrt(3.0)
+check("sde_clark_cameron reference error, measured against a 4x finer path, is inside the declared one",
+      _e_ref <= float(_n01["pathwise_reference_error"]),
+      f"estimated {_e_ref:.2e} (on the (S,U) norm) vs declared {_n01['pathwise_reference_error']:.0e}")
+check("sde_clark_cameron the reference error is far below the gate",
+      float(_n01["pathwise_reference_error"]) < 0.2 * V._pathwise_tol(_n01),
+      f"{_n01['pathwise_reference_error']} vs gate {V._pathwise_tol(_n01)}")
+check("sde_clark_cameron sub-increments sum to the step increments bit-identically",
+      bool(np.array_equal(V.crn_increments_sub(_lv)[0], V.crn_increments(_lv))))
+# Calibration (§5) on the harness's own increments and norm: Euler fails, Milstein with
+# the Levy area from the sub-increments clears.
+_dW, _sub = V.crn_increments_sub(_lv)
+
+
+def _n01_scheme(kind):
+    n, nt = _dW.shape[0], _dW.shape[1]
+    dt = 1.0 / nt
+    U, Sn = np.zeros(n), np.ones(n)
+    for k in range(nt):
+        dw1, dw2 = _dW[:, k, 0], _dW[:, k, 1]
+        if kind == "em":
+            U = U + Sn * dw1
+        else:
+            w2 = np.cumsum(_sub[:, k, :, 1], axis=1)
+            w2p = np.concatenate([np.zeros((n, 1)), w2[:, :-1]], axis=1)
+            U = U + Sn * dw1 + np.sum(w2p * _sub[:, k, :, 0], axis=1)
+        Sn = Sn + 1.0 * dt + dw2
+    return np.stack([Sn, U], axis=1)
+
+
+for kind, want in (("milstein_area", True), ("em", False)):
+    rel_err = V._rel_l2_over_paths(_n01_scheme(kind), _ref)
+    check(f"sde_clark_cameron: {kind} at the graded step {'passes' if want else 'fails'} the {V._pathwise_tol(_n01):.0%} gate",
+          (rel_err < V._pathwise_tol(_n01)) is want, f"rel strong err {rel_err:.4f}")
+
+# --- N02 Kubo ------------------------------------------------------------------
+_n02 = NB["N02"]
+_lv2 = V.sde_pathwise_crn(_n02, _n02["num_paths"], V.sde_verify_dt(_n02))
+_dW2 = V.crn_increments(_lv2)
+_ex2 = V._sde_pathwise_truth(_n02, 1.0, _dW2.sum(axis=1))
+check("sde_kubo_oscillator exact solution conserves |X| on every path",
+      bool(np.allclose((_ex2 ** 2).sum(axis=1), 1.0, atol=1e-12)))
+# E[X1(T)] = e^{-sigma^2 T/2} cos(aT): the exact law's mean, against the sample of the
+# rotation on 2000 paths (3 sigma), and against a fine-step Stratonovich Heun with its own
+# randomness -- a simulation that shares nothing with the rotation formula.
+_m1_formula = np.exp(-0.5) * np.cos(1.0)
+check("sde_kubo_oscillator E[X1(T)] formula matches the sampled rotation",
+      abs(_ex2[:, 0].mean() - _m1_formula) < 3.0 * _ex2[:, 0].std() / np.sqrt(_n02["num_paths"]),
+      f"{_ex2[:, 0].mean():.4f} vs {_m1_formula:.4f}")
+_rng = np.random.default_rng(3)
+_X = np.tile([1.0, 0.0], (100000, 1))
+_J = np.array([[0.0, -1.0], [1.0, 0.0]])
+for _ in range(1000):
+    _inc = 0.001 + _rng.standard_normal(100000)[:, None] * np.sqrt(0.001)
+    _Xp = _X + (_X @ _J.T) * _inc
+    _X = _X + 0.5 * ((_X @ _J.T) + (_Xp @ _J.T)) * _inc
+check("sde_kubo_oscillator fine-step Stratonovich Heun reproduces E[X1(T)] and E|X|^2 = 1",
+      abs(_X[:, 0].mean() - _m1_formula) < 0.01 and abs((_X ** 2).sum(axis=1).mean() - 1.0) < 0.01,
+      f"E[X1] {_X[:, 0].mean():.4f} vs {_m1_formula:.4f}; E|X|^2 {(_X ** 2).sum(axis=1).mean():.4f}")
+
+
+def _n02_scheme(kind):
+    n, nt = _dW2.shape
+    dt = 1.0 / nt
+    X = np.tile([1.0, 0.0], (n, 1))
+    for k in range(nt):
+        inc = dt + _dW2[:, k][:, None]
+        if kind == "heun":
+            Xp = X + (X @ _J.T) * inc
+            X = X + 0.5 * ((X @ _J.T) + (Xp @ _J.T)) * inc
+        else:  # the coefficients read as Ito
+            X = X + (X @ _J.T) * inc
+    return X
+
+
+for kind, want in (("heun", True), ("ito_misread", False)):
+    Xk = _n02_scheme(kind)
+    out = V.verify_sde_pathwise(_n02, None, injected=(
+        {"terminal_paths": Xk, "empirical_mean": Xk.mean(axis=0).tolist(),
+         "empirical_variance": Xk.var(axis=0, ddof=1).tolist()},
+        {"num_paths": _n02["num_paths"], "dt": V.sde_verify_dt(_n02), "T": 1.0, "seed": 42}))
+    check(f"sde_kubo_oscillator: {kind} at the verifier's (paths, dt, seed) {'passes' if want else 'fails'}",
+          bool(out.get("passed")) is want,
+          f"strong err {out.get('pathwise_rel_err', float('nan')):.4f}; "
+          f"diagnostics {[(d['name'], round(d['value'], 4), d['passed']) for d in out.get('diagnostics', [])]}")
+
+# --- N03 Ait-Sahalia ----------------------------------------------------------
+_n03 = NB["N03"]
+_gt3 = _n03["moments"](_n03["T"])
+_alt3 = P.aitsahalia_moments(_n03["T"], **P.AITSAHALIA_PARAMS, hi=8.0, N=768)
+check("sde_aitsahalia_rate Kolmogorov solve is domain- and resolution-independent within the declared error",
+      abs(_gt3["mean"][0] - _alt3["mean"][0]) < _gt3["mean"][1]
+      and abs(_gt3["variance"][0] - _alt3["variance"][0]) < _gt3["variance"][1],
+      f"hi=12/N=1024 vs hi=8/N=768: d(mean) {abs(_gt3['mean'][0] - _alt3['mean'][0]):.1e}, "
+      f"d(var) {abs(_gt3['variance'][0] - _alt3['variance'][0]):.1e}")
+_st3 = _n03["stationary_moments"]
+# t = 2 is many relaxation times here (the mean is within 0.3% of stationary by t = 0.5);
+# at t = 3 and t = 20 the dense exponential of this stiff operator returns NaN, which is recorded
+# rather than worked around.
+_inf3 = P.aitsahalia_moments(2.0, **P.AITSAHALIA_PARAMS)
+check("sde_aitsahalia_rate Kolmogorov solve reaches the stationary quadrature at long horizon",
+      abs(_inf3["mean"][0] / _st3["mean"] - 1.0) < 1e-4 and abs(_inf3["variance"][0] / _st3["variance"] - 1.0) < 1e-3,
+      f"t=2: mean {_inf3['mean'][0]:.6f} vs {_st3['mean']:.6f}; var {_inf3['variance'][0]:.6f} vs {_st3['variance']:.6f}")
+_c3 = P.AITSAHALIA_PARAMS
+
+
+def _as_b(x):
+    return _c3["a_m1"] / x - _c3["a_0"] + _c3["a_1"] * x - _c3["a_2"] * x ** _c3["rho"]
+
+
+def _as_bem(n, dt, seed):
+    rng = np.random.default_rng(seed)
+    nt = round(_n03["T"] / dt)
+    x = np.full(n, _c3["X0"])
+    for _ in range(nt):
+        rhs = x + _c3["sigma"] * x ** _c3["theta"] * np.sqrt(dt) * rng.standard_normal(n)
+        xn = np.maximum(x, 0.1)
+        for _ in range(40):
+            F = xn - _as_b(xn) * dt - rhs
+            Fp = 1 - dt * (-_c3["a_m1"] / xn ** 2 + _c3["a_1"] - _c3["a_2"] * _c3["rho"] * xn ** (_c3["rho"] - 1))
+            xn = np.maximum(xn - F / Fp, 1e-6)
+        x = xn
+    return x
+
+
+def _as_em_clamp(n, dt, seed):
+    rng = np.random.default_rng(seed)
+    nt = round(_n03["T"] / dt)
+    x = np.full(n, _c3["X0"])
+    for _ in range(nt):
+        x = x + _as_b(x) * dt + _c3["sigma"] * x ** _c3["theta"] * np.sqrt(dt) * rng.standard_normal(n)
+        x = np.maximum(x, 1e-3)
+    return x
+
+
+_fine3 = _as_bem(100000, 0.001, 5)
+check("sde_aitsahalia_rate fine-step backward Euler agrees with the Kolmogorov truth",
+      abs(_fine3.mean() / _gt3["mean"][0] - 1.0) < 0.01 and abs(_fine3.var(ddof=1) / _gt3["variance"][0] - 1.0) < 0.03,
+      f"mean {_fine3.mean():.5f} vs {_gt3['mean'][0]:.5f}; var {_fine3.var(ddof=1):.5f} vs {_gt3['variance'][0]:.5f}")
+_both_ways(_n03, _as_bem(_n03["num_paths"], V.sde_verify_dt(_n03), 42),
+           _as_em_clamp(_n03["num_paths"], V.sde_verify_dt(_n03), 42),
+           "backward Euler", "explicit Euler with a clamp")
+
+# --- N04 Wright-Fisher -------------------------------------------------------
+_n04 = NB["N04"]
+_gt4 = _n04["moments"](_n04["T"])
+_p4 = P.WRIGHT_FISHER_PARAMS
+_sol4 = solve_ivp(lambda t, y: [_p4["a"] - (_p4["a"] + _p4["b"]) * y[0],
+                                (2 * _p4["a"] + _p4["sigma"] ** 2) * y[0]
+                                - (2 * (_p4["a"] + _p4["b"]) + _p4["sigma"] ** 2) * y[1]],
+                  [0, _n04["T"]], [_p4["X0"], _p4["X0"] ** 2], rtol=1e-12, atol=1e-14)
+check("sde_wright_fisher_mutation matrix exponential agrees with solve_ivp on the hierarchy",
+      abs(_sol4.y[0, -1] - _gt4["mean"]) < 1e-9 and abs(_sol4.y[1, -1] - _sol4.y[0, -1] ** 2 - _gt4["variance"]) < 1e-9)
+
+
+def _wf_lamperti(n, dt, seed):
+    rng = np.random.default_rng(seed)
+    nt = round(_n04["T"] / dt)
+    a, b, sig = _p4["a"], _p4["b"], _p4["sigma"]
+    Y = np.full(n, 2 / sig * np.arcsin(np.sqrt(_p4["X0"])))
+    L = np.pi / sig
+    for _ in range(nt):
+        X = np.sin(sig * Y / 2) ** 2
+        q = np.sqrt(np.clip(X * (1 - X), 1e-300, None))
+        f = (a * (1 - X) - b * X) / (sig * q) - 0.5 * sig * (1 - 2 * X) / (2 * q)
+        Y = np.abs(Y + f * dt + rng.standard_normal(n) * np.sqrt(dt))
+        Y = np.where(Y > L, 2 * L - Y, Y)
+    return np.sin(sig * Y / 2) ** 2
+
+
+def _wf_em_clip(n, dt, seed):
+    rng = np.random.default_rng(seed)
+    nt = round(_n04["T"] / dt)
+    a, b, sig = _p4["a"], _p4["b"], _p4["sigma"]
+    X = np.full(n, _p4["X0"])
+    for _ in range(nt):
+        X = X + (a * (1 - X) - b * X) * dt + sig * np.sqrt(np.clip(X * (1 - X), 0, None)) * rng.standard_normal(n) * np.sqrt(dt)
+        X = np.clip(X, 0, 1)
+    return X
+
+
+_fine4 = _wf_lamperti(100000, 0.002, 5)
+check("sde_wright_fisher_mutation fine-step boundary-preserving MC agrees with the hierarchy",
+      abs(_fine4.mean() / _gt4["mean"] - 1.0) < 0.01 and abs(_fine4.var(ddof=1) / _gt4["variance"] - 1.0) < 0.02,
+      f"mean {_fine4.mean():.5f} vs {_gt4['mean']:.5f}; var {_fine4.var(ddof=1):.5f} vs {_gt4['variance']:.5f}")
+_both_ways(_n04, _wf_lamperti(_n04["num_paths"], V.sde_verify_dt(_n04), 42),
+           _wf_em_clip(_n04["num_paths"], V.sde_verify_dt(_n04), 42),
+           "Lamperti chart with reflection", "Euler clipped to [0,1]")
+
+# --- N05 Merton -----------------------------------------------------------------
+_n05 = NB["N05"]
+_gt5 = P.merton_moments(_n05["T"], S0=100.0, mu=0.05, sigma=0.15, lam=0.1, m=-0.90, delta=0.45)
+_pm = P.MERTON_PARAMS
+_kap = np.exp(_pm["m"] + 0.5 * _pm["delta"] ** 2) - 1.0
+# The price by direct quadrature of the lognormal mixture -- no Black-Scholes formula.
+_pw = np.exp(-_pm["lam"] * _pm["T"]) * np.cumprod(np.r_[1.0, (_pm["lam"] * _pm["T"]) / np.arange(1, 60)])
+_price_quad = 0.0
+for _k, _w in enumerate(_pw):
+    _mu_k = (np.log(_pm["S0"]) + (_pm["r"] - _pm["lam"] * _kap - 0.5 * _pm["sigma"] ** 2) * _pm["T"]
+             + _k * _pm["m"])
+    _sd_k = np.sqrt(_pm["sigma"] ** 2 * _pm["T"] + _k * _pm["delta"] ** 2)
+    _price_quad += _w * quad(lambda y, mu=_mu_k, sd=_sd_k: (np.exp(y) - _pm["K"]) * np.exp(-0.5 * ((y - mu) / sd) ** 2) / (sd * np.sqrt(2 * np.pi)),
+                             np.log(_pm["K"]), _mu_k + 12 * _sd_k)[0]
+_price_quad *= np.exp(-_pm["r"] * _pm["T"])
+check("sde_merton_jump_call series price agrees with direct quadrature of the lognormal mixture",
+      abs(_price_quad - _n05["functional_truth"]["call_price"]) < 1e-9,
+      f"{_price_quad:.10f} vs {_n05['functional_truth']['call_price']:.10f}")
+check("sde_merton_jump_call price agrees with the published figure 4.391246 (d'Halluin, Forsyth & Vetzal)",
+      abs(_n05["functional_truth"]["call_price"] - 4.391246) < 1e-6)
+
+
+def _merton_paths(n, dt, seed, compensate=True, on_log=True):
+    rng = np.random.default_rng(seed)
+    nt = round(_n05["T"] / dt)
+    drift = _pm["r"] - (_pm["lam"] * _kap if compensate else 0.0)
+    L = np.full(n, np.log(_pm["S0"]))
+    X = np.full(n, _pm["S0"])
+    for _ in range(nt):
+        dW = rng.standard_normal(n) * np.sqrt(dt)
+        k = rng.poisson(_pm["lam"] * dt, n)
+        J = np.where(k > 0, rng.normal(_pm["m"] * k, _pm["delta"] * np.sqrt(np.maximum(k, 1))), 0.0)
+        if on_log:
+            L = L + (drift - 0.5 * _pm["sigma"] ** 2) * dt + _pm["sigma"] * dW + J
+        else:
+            X = (X + drift * X * dt + _pm["sigma"] * X * dW) * np.exp(J)
+    return np.exp(L) if on_log else X
+
+
+def _merton_functional(X):
+    return {"call_price": float(np.exp(-_pm["r"] * _pm["T"]) * np.maximum(X - _pm["K"], 0.0).mean())}
+
+
+_ex5 = _merton_paths(400000, _n05["T"], 5)
+check("sde_merton_jump_call exact-solution MC agrees with the closed-form moments",
+      abs(_ex5.mean() / _gt5["mean"] - 1.0) < 3 * _ex5.std() / np.sqrt(_ex5.size) / _gt5["mean"]
+      and abs(_ex5.var(ddof=1) / _gt5["variance"] - 1.0) < 0.02,
+      f"mean {_ex5.mean():.4f} vs {_gt5['mean']:.4f}; var {_ex5.var(ddof=1):.2f} vs {_gt5['variance']:.2f}")
+_both_ways(_n05, _merton_paths(_n05["num_paths"], V.sde_verify_dt(_n05), 42),
+           _merton_paths(_n05["num_paths"], V.sde_verify_dt(_n05), 42, compensate=False),
+           "log-exact scheme with the compensated jump channel", "the same with the compensator dropped",
+           functional=_merton_functional)
+
+# --- N06 stochastic SIS ---------------------------------------------------------
+_n06 = NB["N06"]
+_gt6 = _n06["moments"](_n06["T"])
+_ps = P.SIS_PARAMS
+_alt6 = P.sis_logit_moments(_n06["T"], **_ps, zlo=-10.0, zhi=8.0, N=192)
+check("sde_sis_epidemic Kolmogorov solve is domain- and resolution-independent within the declared error",
+      abs(_gt6["mean"][0] - _alt6["mean"][0]) < _gt6["mean"][1]
+      and abs(_gt6["variance"][0] - _alt6["variance"][0]) < _gt6["variance"][1],
+      f"d(mean) {abs(_gt6['mean'][0] - _alt6['mean'][0]):.1e}, d(var) {abs(_gt6['variance'][0] - _alt6['variance'][0]):.1e}")
+_st6 = _n06["stationary_moments"]
+_sig02 = P.sis_stationary(_ps["N_pop"], _ps["beta"], _ps["mu"], _ps["gamma"], 0.02)
+check("sde_sis_epidemic stationary formula reproduces the paper's sigma=0.02 figures",
+      abs(_sig02["mean"] - 6.493506) < 1e-6 and abs(_sig02["variance"] - 22.76944) < 1e-5)
+_N, _bt, _mu, _gm, _sg, _I0 = (_ps["N_pop"], _ps["beta"], _ps["mu"], _ps["gamma"], _ps["sigma"], _ps["I0"])
+_al = _bt * _N - _mu - _gm
+
+
+def _sis_logistic(i, h):
+    return _al * i / (_bt * i + (_al - _bt * i) * np.exp(-_al * h))
+
+
+def _sis_split(n, dt, seed, chart=True):
+    rng = np.random.default_rng(seed)
+    nt = round(_n06["T"] / dt)
+    i = np.full(n, _I0)
+    for _ in range(nt):
+        dW = rng.standard_normal(n) * np.sqrt(dt)
+        i = _sis_logistic(i, dt / 2)
+        if chart:
+            z = np.log(i / (_N - i)) + 0.5 * _sg ** 2 * _N * (2 * i - _N) * dt + _sg * _N * dW
+            i = _N / (1 + np.exp(-z))
+        else:
+            i = np.clip(i + _sg * i * (_N - i) * dW, 1e-9, _N - 1e-9)
+        i = _sis_logistic(i, dt / 2)
+    return i
+
+
+def _sis_em_I(n, dt, seed):
+    rng = np.random.default_rng(seed)
+    nt = round(_n06["T"] / dt)
+    i = np.full(n, _I0)
+    for _ in range(nt):
+        i = i + i * (_al - _bt * i) * dt + _sg * i * (_N - i) * rng.standard_normal(n) * np.sqrt(dt)
+    return i
+
+
+_fine6 = _sis_em_I(100000, 0.0005, 5)
+check("sde_sis_epidemic fine-step Euler in the original coordinates agrees with the chart solve",
+      abs(_fine6.mean() / _gt6["mean"][0] - 1.0) < 0.01 and abs(_fine6.var(ddof=1) / _gt6["variance"][0] - 1.0) < 0.03,
+      f"mean {_fine6.mean():.4f} vs {_gt6['mean'][0]:.4f}; var {_fine6.var(ddof=1):.3f} vs {_gt6['variance'][0]:.3f}")
+_both_ways(_n06, _sis_split(_n06["num_paths"], V.sde_verify_dt(_n06), 42, chart=True),
+           _sis_split(_n06["num_paths"], V.sde_verify_dt(_n06), 42, chart=False),
+           "Strang splitting with the noise step in the logit chart",
+           "the same splitting with the noise step clipped in I")
+with np.errstate(all="ignore"):
+    _loud6 = _sis_em_I(_n06["num_paths"], V.sde_verify_dt(_n06), 42)
+check("sde_sis_epidemic explicit Euler in I at the graded step diverges (the loud control)",
+      not bool(np.all(np.isfinite(_loud6))) or bool(np.nanmax(np.abs(_loud6)) > 1e3))
+
+# --- N07 Langevin ---------------------------------------------------------------
+_n07 = NB["N07"]
+_gt7 = _n07["moments"](_n07["T"])
+_pl = P.LANGEVIN_PARAMS
+_A7 = np.array([[0.0, 1.0], [-_pl["omega"] ** 2, -_pl["gamma"]]])
+_Q7 = np.array([[0.0, 0.0], [0.0, 2 * _pl["gamma"] / _pl["beta"]]])
+_cov7 = solve_ivp(lambda t, c: (_A7 @ c.reshape(2, 2) + c.reshape(2, 2) @ _A7.T + _Q7).ravel(),
+                  [0, _n07["T"]], np.zeros(4), rtol=1e-12, atol=1e-14).y[:, -1].reshape(2, 2)
+check("sde_langevin_baoab Van Loan covariance agrees with solve_ivp on the Lyapunov ODE",
+      abs(_cov7[0, 0] - _gt7["variance_X"]) < 1e-9 and abs(_cov7[1, 1] - _gt7["variance_Y"]) < 1e-9,
+      f"Var q {_gt7['variance_X']:.10f} vs {_cov7[0, 0]:.10f}")
+_inf7 = P.langevin_moments(200.0, **_pl)
+check("sde_langevin_baoab moments reach the Gibbs law as t -> inf",
+      abs(_inf7["variance_X"] - 1 / (_pl["beta"] * _pl["omega"] ** 2)) < 1e-9 and abs(_inf7["variance_Y"] - 1 / _pl["beta"]) < 1e-9)
+
+
+def _langevin(n, dt, seed, baoab):
+    rng = np.random.default_rng(seed)
+    nt = round(_n07["T"] / dt)
+    g, w, be = _pl["gamma"], _pl["omega"], _pl["beta"]
+    q, p = np.full(n, _pl["q0"]), np.full(n, _pl["p0"])
+    c1, c3 = np.exp(-g * dt), np.sqrt((1 - np.exp(-2 * g * dt)) / be)
+    for _ in range(nt):
+        xi = rng.standard_normal(n)
+        if baoab:
+            p = p - 0.5 * dt * w ** 2 * q
+            q = q + 0.5 * dt * p
+            p = c1 * p + c3 * xi
+            q = q + 0.5 * dt * p
+            p = p - 0.5 * dt * w ** 2 * q
+        else:
+            q, p = q + p * dt, p + (-w ** 2 * q - g * p) * dt + np.sqrt(2 * g / be) * np.sqrt(dt) * xi
+    return np.stack([q, p], axis=1)
+
+
+_both_ways(_n07, _langevin(_n07["num_paths"], V.sde_verify_dt(_n07), 42, True),
+           _langevin(_n07["num_paths"], V.sde_verify_dt(_n07), 42, False), "BAOAB", "Euler-Maruyama")
+check("sde_langevin_baoab Euler-Maruyama is linearly stable at the graded step (so its failure is a bias, not a blow-up)",
+      float(max(abs(np.linalg.eigvals(np.eye(2) + _A7 * V.sde_verify_dt(_n07))))) < 1.0)
+
+# --- N08 the 3/2 model ---------------------------------------------------------
+_n08 = NB["N08"]
+_p8 = P.THREE_HALVES_PARAMS
+_ku, _thu = _p8["kappa"] * _p8["theta"], (_p8["kappa"] + _p8["eps"] ** 2) / (_p8["kappa"] * _p8["theta"])
+_sol8 = solve_ivp(lambda t, y: [_ku * (_thu - y[0]), 2 * _ku * (_thu * y[0] - y[1]) + _p8["eps"] ** 2 * y[0]],
+                  [0, _n08["T"]], [1 / _p8["V0"], 1 / _p8["V0"] ** 2], rtol=1e-12, atol=1e-14)
+check("sde_three_halves_vol CIR moments of 1/V agree with the moment ODE",
+      abs(_sol8.y[0, -1] - _n08["functional_truth"]["inv_var_mean"]) < 1e-8
+      and abs(_sol8.y[1, -1] - _sol8.y[0, -1] ** 2 - _n08["functional_truth"]["inv_var_variance"]) < 1e-7)
+_d8 = 4 * _ku * _thu / _p8["eps"] ** 2
+_c8 = _p8["eps"] ** 2 * (1 - np.exp(-_ku * _n08["T"])) / (4 * _ku)
+_U8 = _c8 * np.random.default_rng(5).noncentral_chisquare(_d8, (1 / _p8["V0"]) * np.exp(-_ku * _n08["T"]) / _c8, 400000)
+check("sde_three_halves_vol exact noncentral-chi-square sampler of 1/V agrees with the CIR moments",
+      abs(_U8.mean() / _n08["functional_truth"]["inv_var_mean"] - 1.0) < 0.005
+      and abs(_U8.var(ddof=1) / _n08["functional_truth"]["inv_var_variance"] - 1.0) < 0.02,
+      f"mean {_U8.mean():.4f} vs {_n08['functional_truth']['inv_var_mean']:.4f}")
+
+
+def _th_ft_U(n, dt, seed):
+    rng = np.random.default_rng(seed)
+    nt = round(_n08["T"] / dt)
+    U = np.full(n, 1 / _p8["V0"])
+    for _ in range(nt):
+        Up = np.maximum(U, 0)
+        U = U + _ku * (_thu - Up) * dt - _p8["eps"] * np.sqrt(Up) * rng.standard_normal(n) * np.sqrt(dt)
+    return 1.0 / np.maximum(U, 1e-12)
+
+
+def _th_em_V_reflect(n, dt, seed):
+    rng = np.random.default_rng(seed)
+    nt = round(_n08["T"] / dt)
+    a, b = _p8["kappa"] * _p8["theta"], _p8["kappa"]
+    Vv = np.full(n, _p8["V0"])
+    for _ in range(nt):
+        Vv = np.abs(Vv + Vv * (a - b * Vv) * dt + _p8["eps"] * Vv ** 1.5 * rng.standard_normal(n) * np.sqrt(dt))
+    return Vv
+
+
+def _th_functional(Vv):
+    U = 1.0 / Vv
+    return {"inv_var_mean": float(U.mean()), "inv_var_variance": float(U.var(ddof=1))}
+
+
+with np.errstate(all="ignore"):
+    _both_ways(_n08, _th_ft_U(_n08["num_paths"], V.sde_verify_dt(_n08), 42),
+               _th_em_V_reflect(_n08["num_paths"], V.sde_verify_dt(_n08), 42),
+               "full-truncation Euler on U = 1/V", "explicit Euler on V reflected at 0",
+               functional=_th_functional)
+
+# --- N09 geometric Asian ------------------------------------------------------
+_n09 = NB["N09"]
+_pg = P.GEO_ASIAN_PARAMS
+_mA = np.log(_pg["S0"]) + (_pg["r"] - 0.5 * _pg["sigma"] ** 2) * _pg["T"] / 2
+_vA = _pg["sigma"] ** 2 * _pg["T"] / 3
+_price_q = np.exp(-_pg["r"] * _pg["T"]) * quad(
+    lambda y: (np.exp(y) - _pg["K"]) * np.exp(-0.5 * ((y - _mA) / np.sqrt(_vA)) ** 2) / np.sqrt(2 * np.pi * _vA),
+    np.log(_pg["K"]), _mA + 12 * np.sqrt(_vA))[0]
+check("sde_geometric_asian Kemna-Vorst price agrees with quadrature against the lognormal density of A",
+      abs(_price_q - _n09["functional_truth"]["call_price"]) < 1e-9,
+      f"{_price_q:.10f} vs {_n09['functional_truth']['call_price']:.10f}")
+_lnA = np.random.default_rng(5).normal(_mA, np.sqrt(_vA), 1000000)
+_pm9 = np.exp(-_pg["r"] * _pg["T"]) * np.maximum(np.exp(_lnA) - _pg["K"], 0.0)
+check("sde_geometric_asian sampling the Gaussian law of ln A directly reproduces the price and Var[A]",
+      abs(_pm9.mean() - _n09["functional_truth"]["call_price"]) < 3 * _pm9.std() / 1000.0
+      and abs(np.exp(_lnA).var(ddof=1) / _n09["functional_truth"]["geo_average_variance"] - 1.0) < 0.01)
+
+
+def _asian(n, dt, seed, rule):
+    rng = np.random.default_rng(seed)
+    nt = round(_pg["T"] / dt)
+    lnS = np.full(n, np.log(_pg["S0"]))
+    acc = 0.5 * lnS if rule == "trapezoid" else lnS.copy()
+    for k in range(nt):
+        lnS = lnS + (_pg["r"] - 0.5 * _pg["sigma"] ** 2) * dt + _pg["sigma"] * np.sqrt(dt) * rng.standard_normal(n)
+        if rule == "trapezoid":
+            acc = acc + (0.5 if k == nt - 1 else 1.0) * lnS
+        elif k < nt - 1:
+            acc = acc + lnS
+    A = np.exp(acc / nt)
+    return np.exp(lnS), A
+
+
+def _asian_functional(A):
+    return {"call_price": float(np.exp(-_pg["r"] * _pg["T"]) * np.maximum(A - _pg["K"], 0.0).mean()),
+            "geo_average_variance": float(A.var(ddof=1))}
+
+
+_S_tr, _A_tr = _asian(_n09["num_paths"], V.sde_verify_dt(_n09), 42, "trapezoid")
+_S_lp, _A_lp = _asian(_n09["num_paths"], V.sde_verify_dt(_n09), 42, "left")
+_gt9 = None  # price-only entry: no moment gate (H-N4 refused the mean of S(T))
+_meta9 = {"num_paths": _n09["num_paths"], "dt": V.sde_verify_dt(_n09), "T": _n09["T"], "seed": 42}
+for S_, A_, want, label in ((_S_tr, _A_tr, True, "trapezoid quadrature"), (_S_lp, _A_lp, False, "left-point quadrature")):
+    out = V._score_sde_moments(_n09, [], _gt9, _meta9, reference=False,
+                               result={"terminal_paths": S_, "functionals": _asian_functional(A_)})
+    check(f"sde_geometric_asian: {label} at the verifier's (paths, dt, seed) {'passes' if want else 'fails'}",
+          bool(out.get("passed")) is want,
+          "functionals " + ", ".join(f"{k} {v:.2%}" for k, v in (out.get("functional_errs") or {}).items()))
+
+# --- H-N4: the vacuity table, over every SDE entry with a moment gate -------------
+print("\n--- vacuity table (plan-notable-sde.md rule 6, H-N4) ---")
+_refused_existing = []
+for prob in P.sde_problems():
+    tab = V.sde_vacuity_table(prob)
+    if "gates" not in tab or not tab["gates"]:
+        continue
+    cells = []
+    for key, g in tab["gates"].items():
+        if g.get("skipped"):
+            cells.append(f"{key}: skipped")
+            continue
+        ic = g.get("ic")
+        st = g.get("stationary")
+        cells.append(f"{key}: ic {ic['rel_distance']:.1%}" if ic else f"{key}: ic ?")
+        if st:
+            cells[-1] += f", stat {st['rel_distance']:.1%}"
+        if g.get("max_sensitivity") is not None:
+            cells[-1] += f", sens {g['max_sensitivity']:.1%}"
+    line = f"{prob['slug']:34s} " + " | ".join(cells)
+    if prob.get("suite") == "notable":
+        check(f"{prob['slug']} no moment gate is answerable by a constant, the initial condition or the stationary law",
+              not tab["refused"], line + (f"  REFUSED {tab['refused']}" if tab["refused"] else ""))
+    else:
+        print(f"  [{'REFUSED' if tab['refused'] else 'ok     '}] {line}")
+        if tab["refused"]:
+            _refused_existing.append((prob["slug"], tab["refused"]))
+print(f"  H-N4 over the pre-existing entries: {len(_refused_existing)} refused "
+      f"(a finding for the plan, not a failure here): {_refused_existing}")
 
 print("\n" + "=" * 60)
 if FAILS:

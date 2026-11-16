@@ -845,6 +845,7 @@ def solve_sde(num_paths: int, dt: float, T: float, seed: int = 42,
 |---|---|
 | `dW` | Pre-generated Brownian **increments** (already scaled by `√dt`), shape `(num_paths, Nt)` for scalar noise or `(num_paths, Nt, m)` for `m` noise sources. When given, the solver **must** use exactly these and take `Nt = dW.shape[1]`, `dt = T / Nt` — it must not draw its own. |
 | `observables` | `{name: φ(X)}`. The solver accumulates `∫₀ᵀ φ(X_s) ds` along each path by trapezoid and returns it under `path_integrals[name]`, shape `(num_paths,)`. |
+| `dW_sub` | **Only on a spec declaring `sub_increments_per_step`.** The fine increments inside each step, shape `(num_paths, Nt, k[, m])`, summing over axis 2 to `dW`. The kernel holds the sub-step at the graded `dt / sub_increments_per_step` on the graded call and on every ladder level, so `k` grows as the step coarsens and the Lévy area a scheme builds from it has the same resolution at every level the order is read from. Withheld (with the reason recorded under `sub_increments`) when the fine grid would exceed `crn.SUB_INCREMENT_MAX_BYTES` with two or more sub-steps per finest step. |
 
 Canonical fallback when `dW is None` — draw as a single block, path-major:
 

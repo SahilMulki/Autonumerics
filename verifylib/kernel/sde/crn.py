@@ -44,6 +44,75 @@ def ladder_spec(num_paths, dt0, T, levels=3, seed=42, m=None):
     return out
 
 
+#: The largest fine increment array one solve may be handed when the spec declares
+#: sub-increments. The child holds it once (``dW_sub`` is a view of it, ``dW`` its
+#: small sum), so this bounds the extra memory a sub-step channel costs a solve. The
+#: harness hands N01 a 1000 x 6400 x 2 grid, 0.1 GB; the kernel evaluates at more
+#: paths than the harness grades at, and without a cap 50 000 paths at the same
+#: resolution would be 5 GB per level.
+SUB_INCREMENT_MAX_BYTES = 1024 ** 3
+
+
+def with_sub_increments(payloads, sub_dt, *, max_bytes=None):
+    """``(payloads, detail)``: the same levels, each also handed ``dW_sub``.
+
+    ``sub_dt`` is the sub-step the spec declares (the graded ``dt`` divided by
+    ``sub_increments_per_step``). It is held **fixed across every level**, which is
+    what the harness does: its fine grid is one array and each coarser step is a
+    larger block of the same sub-increments. A per-level ``S`` would refine the
+    Brownian path along with the step, and the Levy area a scheme assembles from it
+    would change resolution between the levels the order is read from.
+
+    Every level shares one fine grid, so the sub-step count per step is the
+    ladder's aggregate times one factor ``k``. ``k`` is the declared resolution,
+    reduced until the fine array fits :data:`SUB_INCREMENT_MAX_BYTES`. Below two
+    sub-steps on the finest level the channel is **withheld** rather than sent: a
+    single sub-increment per step carries no area at all, and a scheme that builds
+    the area as a left-point sum would read zero, which is worse than the
+    conditional-mean fallback it takes when ``dW_sub`` is absent.
+    """
+    max_bytes = SUB_INCREMENT_MAX_BYTES if max_bytes is None else int(max_bytes)
+    if not payloads or not sub_dt or float(sub_dt) <= 0.0:
+        return payloads, None
+    base = payloads[0]
+    fine, T = int(base["Nt_fine"]), float(base["T"])
+    paths, m = int(base["num_paths"]), max(int(base.get("m") or 1), 1)
+    wanted = max(1, round((T / fine) / float(sub_dt)))
+    fits = int(max_bytes // max(paths * fine * m * 8, 1))
+    k = min(wanted, fits)
+    finest_sub = min(int(p["aggregate"]) for p in payloads) * k
+    detail = {"sub_dt_declared": float(sub_dt), "factor_declared": int(wanted),
+              "factor": int(k), "sub_steps_finest_level": int(finest_sub),
+              "fine_bytes": int(paths * fine * k * m * 8), "max_bytes": int(max_bytes)}
+    if finest_sub < 2:
+        detail["withheld"] = (
+            f"{paths} paths x {fine} steps x {m} channel(s) leaves room for "
+            f"{finest_sub} sub-step(s) per finest step under the "
+            f"{max_bytes / 1024 ** 3:.1f} GiB cap; fewer than two carry no Levy area, "
+            f"so dW_sub is not sent and the solver takes its dW_sub=None branch")
+        return payloads, detail
+    if k < wanted:
+        detail["reduced"] = (
+            f"declared {wanted} sub-steps per fine step reduced to {k} to fit the "
+            f"{max_bytes / 1024 ** 3:.1f} GiB cap at {paths} paths")
+    out = [{**p, "Nt_fine": fine * k, "aggregate": int(p["aggregate"]) * k,
+            "substeps": True} for p in payloads]
+    return out, detail
+
+
+def graded_payload(num_paths, dt, T, seed=42, m=None):
+    """The one-level CRN payload for the graded call, at the graded ``dt``.
+
+    The graded call normally passes no increments (the solver draws from ``seed``).
+    On a spec with sub-increments it has to pass both, because the harness does:
+    a solver whose Levy-area branch only runs when ``dW_sub`` is supplied would
+    otherwise be graded by the kernel on its fallback and by the harness on its
+    real scheme. Built through :func:`ladder_spec` so the shapes match a ladder
+    level exactly.
+    """
+    return ladder_spec(num_paths, dt, T, levels=1, seed=seed, m=m)
+
+
 #: The half-width of the band :func:`guards` judges the strong order against --
 #: two-sided and one-sided alike. Named because the abstention rule is stated
 #: *against the band*: an estimate whose own uncertainty admits more than the band

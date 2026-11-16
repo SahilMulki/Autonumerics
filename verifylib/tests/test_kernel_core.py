@@ -260,7 +260,12 @@ def test_an_undeclared_plan_falls_back_rather_than_guessing(tmp_path):
                    # sensitive to, read by `pool.check_boundary_facts`. Also an SDE
                    # notion, and also None rather than absent on a PDE plan, so the
                    # shape of this dict does not depend on which kernel reads it.
-                   "boundary_treatment": None}
+                   "boundary_treatment": None,
+                   # Acknowledged 2026-11-15 (plan-notable-sde.md §8c): how a
+                   # multi-noise Milstein plan obtains its Levy area, read by
+                   # `driver._milstein_claim`, which had read it from the plan since
+                   # it was written while this function never returned it.
+                   "levy_area_treatment": None}
 
 
 # --- the asymptotic guards depend on the scheme family ------------------------

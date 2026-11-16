@@ -10,11 +10,11 @@ Sections:
 
   0. the solver, and its validation against `problems.double_well_moments`, whose
      Kolmogorov truth is independently cross-checked in `validate_ground_truth.py`
-     (4th-order FD to 1e-10, the stationary quadrature, and a weak-order-2 MC);
+     (4th-order FD to 1e-10, the stationary quadrature, and a weak-order-2 MC)
   1. **N06 -- the go/no-go the plan asked for**, which comes back NO on the premise
      and YES on a better route: the Brownian SIS model is *not* reducible, but the
      logit chart makes its noise **additive**, which is a better-conditioned truth
-     than the one the plan assumed;
+     than the one the plan assumed
   2. **N03 -- Ait-Sahalia**, with the machinery working and the parameters still
      owed by step 1.
 
@@ -51,7 +51,8 @@ def kolmogorov_general(b, s, x0, T, lo, hi, N=192, funcs=None):
     `b` and `s` are callables, and the interval need not be symmetric.
 
     The ends must sit where the process effectively cannot reach within `T`, which is
-    what makes the reflecting condition harmless; `lo`/`hi` independence is measured
+    what makes the reflecting condition harmless
+    `lo`/`hi` independence is measured
     by the callers rather than assumed.
     """
     D, xi = cheb(N)
@@ -268,7 +269,8 @@ if __name__ == "__main__":
   chart Z = ln(I/(N-I)) does not linearise the equation, but it makes the noise
   ADDITIVE (constant sigma*N), which is a *better* truth route than the one the
   plan assumed: in I the diffusion sigma*I*(N-I) vanishes at both ends of (0,N)
-  and the Kolmogorov operator is degenerate there; in Z it is a constant-diffusion
+  and the Kolmogorov operator is degenerate there
+  in Z it is a constant-diffusion
   operator on the real line. The chart is also the technique the entry punishes a
   solver for not finding, so the truth route and the lesson coincide.
 """)

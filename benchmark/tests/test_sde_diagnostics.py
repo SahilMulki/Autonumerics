@@ -320,12 +320,17 @@ def test_the_gated_statistic_is_the_sharper_of_the_two():
 
 # --- D. the change is inert on everything that already ships ----------------
 
-def test_no_sde_problem_on_record_declares_diagnostics():
-    """So H-N3 cannot move a measured baseline on any of the five suites. When the
-    first one does (N02), this test is the place to say so deliberately."""
+def test_only_the_notable_suite_declares_sde_diagnostics():
+    """So H-N3 cannot move a measured baseline on any of the four older suites. ~~No
+    SDE problem declares one~~ -- the first ones did, in plan-notable-sde.md step 6,
+    and this is the place that says so deliberately: N02's conserved norm, and the
+    domain gates of N03, N04, N06 and N08. Every other SDE entry still declares none."""
     declared = [p["slug"] for p in P.PROBLEMS
                 if p["type"] == "sde" and p.get("diagnostics")]
-    assert declared == []
+    assert declared == ["sde_kubo_oscillator", "sde_aitsahalia_rate",
+                        "sde_wright_fisher_mutation", "sde_sis_epidemic",
+                        "sde_three_halves_vol"]
+    assert all(P.by_slug(s).get("suite") == "notable" for s in declared)
 
 
 def test_a_structural_gate_never_ships_alone_on_an_sde_problem():
