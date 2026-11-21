@@ -164,6 +164,23 @@ def accuracy(summary, tol):
     # actually knows here is that the error was **not resolved** at this budget, and
     # the vocabulary for that is None.
     if noise_limited(summary):
+        # A seed study changes what this condition means, so it changes the answer.
+        # On one run, "the error is inside its own bar" is ignorance: the estimate
+        # conflates bias with noise and nobody knows which. Over ``k`` seeds the
+        # sampling term has been divided by ``sqrt(k)`` and the bias has not, so the
+        # same inequality is a **measurement** -- this plan's bias is below what the
+        # study can resolve, i.e. it is at the floor its path count allows, which is
+        # the definition of this component's ceiling.
+        #
+        # This is the one place the study moves an outcome rather than sharpening a
+        # number, and it is deliberate. F16's note that "a tie at the ceiling is not
+        # a tie, it is a claim" is right about a single run, where the claim has no
+        # evidence; 16 seeds are the evidence. Measured on `sde_sis_epidemic`'s
+        # three-plan pool (§8i): the two plans with resolved biases score 0.6875 and
+        # 0.5383 and the plan at the floor scores 1.0, which is the ordering the
+        # harness independently measures and the one the pool failed to make.
+        if seed_resolved(summary):
+            return 1.0
         return None
     return _clip01(headroom_fraction(summary, tol))
 
@@ -202,10 +219,46 @@ def noise_limited(summary):
     produced it, so the plan's real error is somewhere in ``[0, half_width]`` and the
     estimate does not locate it. False where the error is resolved, and False where
     there is no error bar to compare against (every PDE Path A plan).
+
+    **The comparison is made on one statistic, not two.** Where
+    :func:`seed_resolved` has a median, that median is the estimate and its
+    between-seed bar is the bar; where it does not, the single graded run is both.
+    Mixing them -- a single-seed error against a ``sqrt(k)``-tighter bar -- would
+    declare plans resolved on the strength of their noise, which is the opposite of
+    what this predicate is for.
     """
-    err = _num(summary.get("estimated_rel_error"))
+    seeded = seed_resolved(summary)
+    err = seeded[0] if seeded else _num(summary.get("estimated_rel_error"))
     half_width = uncertainty(summary)
     return err is not None and half_width is not None and err < half_width
+
+
+def seed_resolved(summary):
+    """``(median_rel_error, se_of_that_median)`` from the kernel's accuracy seed
+    study, or ``None`` where it was not run.
+
+    **Why a seed median resolves what one seed cannot.** A single graded run reports
+    ``bias + noise`` and an error bar that measures the noise alone, so on an SDE the
+    two are routinely the same size and :func:`noise_limited` is True -- the honest
+    verdict that the estimate does not locate the error. Averaging over ``k``
+    independent seeds leaves the bias untouched and shrinks the sampling term as
+    ``1/sqrt(k)``, so the median *is* an estimate of the quantity the ranker wants to
+    order plans on, with an error bar that can be smaller than it.
+
+    Measured on `sde_sis_epidemic` (`docs/plan-notable-sde.md` §8h): a graded variance
+    error of 0.73% against a within-run standard error of 0.50% is not resolved, while
+    the median over 16 seeds is 0.45% against a between-seed standard error of about
+    0.12%, which is. The same pool is the one that shipped under
+    ``decided_by: sqi (accuracy did not resolve pool-wide)``, with accuracy's 0.35 of
+    the index renormalised onto the other components -- i.e. the most important
+    component ordered nothing, on a question the compute could have answered.
+    """
+    err = _num(summary.get("accuracy_seed_median_rel_error"))
+    bar = _num(summary.get("accuracy_seed_median_se_rel"))
+    k = _num(summary.get("accuracy_seeds"))
+    if err is None or bar is None or k is None or k < 2:
+        return None
+    return err, bar
 
 
 def headroom_decades(summary, tol):
@@ -217,7 +270,12 @@ def headroom_decades(summary, tol):
     :data:`verifylib.kernel.score.PLACEMENT_DECADES` for why placement must not read
     the composite.
     """
-    err = _num(summary.get("estimated_rel_error"))
+    seeded = seed_resolved(summary)
+    # The seed median where there is one: it estimates the plan's bias, which is the
+    # quantity that distinguishes two schemes, where the single graded run reports
+    # bias and noise together. The snap below still applies, against the median's own
+    # (smaller) bar rather than the single run's.
+    err = seeded[0] if seeded else _num(summary.get("estimated_rel_error"))
     if err is None or not _num(tol):
         return None
     # Worst case over the horizon and grid the problem is graded on: an error quoted
@@ -304,10 +362,18 @@ def uncertainty(summary):
     the ``pde_heat_2d`` spread as a difference without it, which is the case that
     motivated the snap in the first place.
     """
+    ci = _num(summary.get("ci_mult")) or 2.0
+    seeded = seed_resolved(summary)
+    if seeded:
+        # The between-seed standard error of the median, at the same ``ci_mult`` the
+        # rest of §14's comparisons use. It is the bar on the statistic actually being
+        # ranked, so substituting it here is what lets `accuracy` stop returning None
+        # on a pool whose single-seed errors all sat inside their own noise.
+        return seeded[1] * ci
     se = _num(summary.get("mc_se_rel"))
     if se is None:
         return None
-    return se * (_num(summary.get("ci_mult")) or 2.0)
+    return se * ci
 
 
 def order(summary, pool=()):
@@ -554,7 +620,7 @@ def _order_against_pool(summary, pool, absolute):
 
 _SDE_FAMILIES = frozenset({"euler-maruyama", "milstein", "tamed-euler-maruyama",
                            "tamed-milstein", "implicit", "exact-transition",
-                           "quadratic-exponential"})
+                           "quadratic-exponential", "strang-splitting"})
 
 #: §26's outcomes as a graded component. ``clean`` is the residual falling at or past
 #: the design rate, or sitting at the round-off floor; ``slow`` falls but

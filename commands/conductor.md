@@ -168,7 +168,22 @@ Run solver↔evaluator cycles until a plan **wins** (`certified: true`) or every
 
 > The graded `{moment_bias_binding}` carries a measured discretisation bias worth `{moment_bias_frac_tol}` of its own tolerance — the kernel extrapolated that moment down the `dt` ladder and the graded step sits that far from the limit. This is bias, not sampling: more paths cannot touch it. Where the problem's contract fixes `dt` (it usually does — `evaluation_thresholds.dt` is the step the harness calls you with), the only route is a step that carries less bias in that moment. Say which sub-step of your scheme carries it and raise its order, or say why the current one is the floor.
 
+> If raising that sub-step's order changes what the scheme *is*, re-declare
+> `scheme_family` in the frontmatter to match what you actually wrote, and say in the
+> Implementation Notes what it was before. The vocabulary is
+> `verifylib/kernel/plan_meta.SDE_FAMILIES`; a value outside it is read as null and
+> costs the order check its evidence.
+
 Record `bias_retry: true` under the plan in STATE.md and say which moment it named.
+
+**Why the second paragraph is there.** This instruction *rewrites schemes*, and nothing
+downstream re-derives the family from the code. Both failure directions are measured on the same
+problem: on `sde_sis_epidemic` rep 2 plan 3 took the retry, rewrote itself into a Strang
+composition, declared `scheme_family: strang-splitting` — then unrecognised by `SDE_FAMILIES`,
+so the kernel read null and the plan went from 10 to 3 — while in §8h the winner replaced its
+Milstein noise sub-step with a Heun step in the Lamperti coordinate and went on declaring
+`milstein`, which is now simply false. The vocabulary gap is fixed (`strang-splitting` is in
+`SDE_FAMILIES` as of 2026-11-20); the stale-label half is this instruction.
 
 Three rules about what this is **not**:
 
@@ -239,7 +254,10 @@ Then:
    > This plan is already certified and will ship whatever you do here. Change only the sub-step
    > that carries the bias. If you cannot raise its order without disturbing the rest of the
    > scheme, say so and change nothing: a cycle that reverts costs the run one pass, and a
-   > regression would cost it the winner.
+   > regression would cost it the winner. If what you write is no longer the family the
+   > frontmatter declares, re-declare `scheme_family` — the winner of this problem currently
+   > ships a Lamperti-plus-Heun composition labelled `milstein`, which is how that defect was
+   > found.
 
 4. Dispatch `evaluator-{sde|pde}` once. Steps 2b, 3b and 3c of the normal cycle apply unchanged —
    the solver hash check still catches an evaluator that edits the code it is grading.

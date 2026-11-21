@@ -525,7 +525,13 @@ def process_unit(problem, condition, manuals, model, rep, args):
 
     verify = V.verify_problem(problem, plan_dir, plan_dir=plan_dir, sandbox=True,
                               timeout_s=args.timeout, mem_mb=args.mem_mb,
-                              work_precision=getattr(args, "work_precision", True))
+                              work_precision=getattr(args, "work_precision", True),
+                              # Both sides of the comparison or neither: a median on
+                              # the pipeline's side against a single draw on the
+                              # baseline's is not a comparison. Same flag name, same
+                              # fixed seed set (`verify.seed_study_seeds`), so the two
+                              # records are paired on seeds as well as on conditions.
+                              seed_study=getattr(args, "seed_study", 0))
     with open(os.path.join(plan_dir, "verify.json"), "w") as fh:
         json.dump(verify, fh, indent=2, default=_json_default)
 
@@ -648,6 +654,12 @@ def main(argv=None):
     ap.add_argument("--mem-mb", type=int, default=V.DEFAULT_SOLVER_MEM_MB,
                     help=f"sandbox memory cap in MB, best-effort "
                          f"(default {V.DEFAULT_SOLVER_MEM_MB})")
+    ap.add_argument("--seed-study", type=int, default=0, metavar="K",
+                    help="re-grade at K extra seeds after the verdict and record the "
+                         "median / p10 / p90 of the worst-moment-over-its-own-tolerance "
+                         "metric (SDE moment routes only; 0 = off). Must be passed with "
+                         "the same K as run.py's --seed-study, or the two sides are "
+                         "measured differently. The verdict never moves")
     ap.add_argument("--no-work-precision", dest="work_precision", action="store_false",
                     default=True,
                     help="skip the extra solves of the work-precision sweep. On by "

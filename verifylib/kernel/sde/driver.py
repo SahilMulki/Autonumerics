@@ -10,6 +10,7 @@ are exhausted before anything falls back to self-convergence.
 
 from __future__ import annotations
 
+import os
 import time
 
 import numpy as np
@@ -296,6 +297,41 @@ def evaluate_sde(spec, plan_dir, agent):
     e_fine = moment_detail.get("worst_rel_error")
     m["summary"]["estimated_rel_error"] = e_fine
     m["summary"]["error_is_estimate"] = path != "A"
+    # The accuracy seed study, fired on the same principle as `_dynkin_replicated`'s
+    # margin: spend the seeds only where they change the answer. Here that is exactly
+    # when the graded error sits inside its own sampling bar, because that is the
+    # condition under which `ranking.accuracy` returns None and 0.35 of the quality
+    # index orders nothing. A resolved plan needs no study and does not get one, and
+    # the decision is recorded either way -- "this plan's accuracy was already
+    # resolved" is evidence and silence is not.
+    seed_study_k = int(cfg.pick("accuracy_seeds", agent,
+                                thresholds.get("accuracy_seeds"),
+                                _accuracy_seeds_default()))
+    bar = m["summary"]["mc_se_rel"] * ci_mult
+    if not seed_study_k:
+        study = {"ran": False, "reason": "not requested (accuracy_seeds is 0)"}
+    elif e_fine is None:
+        study = {"ran": False, "reason": "no graded error to study"}
+    elif e_fine >= bar:
+        study = {"ran": False, "reason": "the graded error is already resolved against "
+                                         f"its own bar ({e_fine:.4g} >= {bar:.4g})"}
+    else:
+        def _regrade(sd):
+            got_s = solve({"num_paths": num_paths, "dt": dt, "T": T, "seed": int(sd)})
+            if got_s["status"] != "ok":
+                return None
+            Xs = np.asarray(got_s["result"]["terminal_paths"], dtype=float)
+            stats_s = [C.moment_stats(col) for col in Xs.reshape(len(Xs), -1).T]
+            _, det = _compare(reference, stats_s, mean_tol, var_tol, near_zero,
+                              ci_mult, components=ref_detail.get("components"))
+            return det.get("worst_rel_error")
+
+        study = _accuracy_seed_study(_regrade, k=seed_study_k)
+    m["summary"]["accuracy_seed_study"] = study
+    if study.get("ran"):
+        m["summary"]["accuracy_seeds"] = study["k"]
+        m["summary"]["accuracy_seed_median_rel_error"] = study["median_rel_error"]
+        m["summary"]["accuracy_seed_median_se_rel"] = study["median_se_rel"]
     for name in ("mean", "variance"):
         if moment_detail.get(f"{name}_rel_err") is not None:
             m["summary"][f"{name}_rel_err"] = moment_detail[f"{name}_rel_err"]
@@ -1804,6 +1840,92 @@ REPORTED_MOMENT_RTOL = 1e-6
 #: two to three above the line rather than against it, which is the check that the
 #: line was not drawn around them.
 MOMENT_BIAS_WORTH_SAYING = 0.1
+
+
+#: How many seeds the accuracy seed study runs when it fires, and the first of them.
+#: The seed set is **fixed and shared with the harness** (`benchmark/verify.py`'s
+#: ``SEED_STUDY_BASE`` / ``seed_study_seeds``) so that the kernel's median and the
+#: harness's are the same statistic on the same sample, not two medians over two
+#: seed sets that happen to have the same size. 16 is where
+#: `docs/plan-notable-sde.md` §8g measured this suite's medians to stop moving.
+ACCURACY_SEEDS = 16
+ACCURACY_SEED_BASE = 1000
+
+
+def _accuracy_seeds_default():
+    """The kernel default for ``accuracy_seeds``: 0 unless an operator asks.
+
+    Read from the environment because the study has to be switchable for a whole
+    **run**, and the two places `cfg.pick` already looks cannot do that: the spec is
+    rewritten by the formulator on every run (so an edit there does not survive
+    `--fresh`), and the agent config is the plan choosing for itself, which is the
+    wrong authority for a measurement the operator is commissioning.
+
+    It sits at the **default** level deliberately, the lowest of the three. A spec
+    that declares ``accuracy_seeds`` still wins, so this can switch the study on
+    where nobody has an opinion and can never override a problem that has one --
+    which is `cfg.pick`'s own rule ("an agent that could override the spec would be
+    able to relax a threshold the formulator set").
+    """
+    raw = os.environ.get("AUTONUMERICS_ACCURACY_SEEDS", "").strip()
+    if not raw:
+        return 0
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
+def _accuracy_seed_study(recompute, *, k=ACCURACY_SEEDS, base=ACCURACY_SEED_BASE):
+    """Re-grade the solver at ``k`` fresh seeds and return the median error with the
+    **between-seed** standard error of that median, or a record saying why not.
+
+    ``recompute(seed)`` returns that seed's worst graded relative error, or ``None``.
+
+    This exists because of what one seed cannot decide. A single graded run reports
+    ``bias + noise`` with an error bar measuring only the noise, so on an SDE the two
+    are routinely the same size, ``ranking.noise_limited`` is True, and
+    ``ranking.accuracy`` correctly returns ``None`` -- at which point **0.35 of the
+    quality index orders nothing** and the pool is decided by the components that
+    remain. Measured on `sde_sis_epidemic` rep 2, which shipped under
+    ``decided_by: sqi (accuracy did not resolve pool-wide)``. Averaging over seeds
+    leaves the bias and shrinks the sampling term as ``1/sqrt(k)``, so the median is
+    an estimate of the quantity that actually separates two schemes.
+
+    **The median, and the median's own standard error.** The median rather than the
+    mean for the reason `_dynkin_replicated` gives: one unlucky seed must not decide,
+    and §8g measured seed 42 to be the worst of 120 draws on one of these entries.
+    Its standard error is taken as ``1.253 * sd / sqrt(k)`` -- the asymptotic
+    efficiency of a median against a mean for a roughly normal sample -- which is
+    conservative here and is the one factor in this function that is theory rather
+    than measurement.
+
+    **It gates nothing.** The pass/fail verdict, ``certified`` and the moment gates
+    all stay on the declared contract seed; this changes only what the *ranker* can
+    resolve, and only where it would otherwise have been handed nothing.
+    """
+    seeds, errs, failures = list(range(base, base + int(k))), [], []
+    for sd in seeds:
+        try:
+            e = recompute(sd)
+        except Exception as exc:                      # noqa: BLE001 - a study must not
+            failures.append({"seed": sd, "error": str(exc)[:200]})   # fail an evaluation
+            continue
+        if e is None or not np.isfinite(e):
+            failures.append({"seed": sd, "error": "no graded error at this seed"})
+            continue
+        errs.append(float(e))
+    if len(errs) < 2:
+        return {"ran": False, "reason": "fewer than two seeds produced a graded error",
+                "failures": failures, "seeds_requested": int(k)}
+    a = np.asarray(errs, dtype=float)
+    med = float(np.median(a))
+    se = float(1.253 * np.std(a, ddof=1) / np.sqrt(len(a)))
+    return {"ran": True, "k": len(a), "seeds": seeds[:len(a)],
+            "median_rel_error": med, "median_se_rel": se,
+            "p10": float(np.percentile(a, 10)), "p90": float(np.percentile(a, 90)),
+            "per_seed": errs, "failures": failures,
+            "rule": "median over fixed seeds; se = 1.253*sd/sqrt(k) (D9's median rule)"}
 
 
 def moment_bias(order_detail, mean_tol, var_tol):

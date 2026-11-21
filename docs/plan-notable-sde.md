@@ -1962,6 +1962,215 @@ exact moments, so rules 6 and 0c both apply, and naive Euler there biases `E[1/V
 about the other eight entries: this is one problem, one seed, one cycle.
 
 
+### 8i. Measuring the seed instead of the scheme, and what it was worth on a live pool `[rev4 2026-11-21, N]`
+
+§8g found that three of four reported accuracy gaps were artifacts of the single graded seed; §8h
+then made the same error in the opposite direction on a measured improvement. Both are the same
+defect, and it is not in any scheme: **nothing in the harness or the kernel ever measured the
+distribution the graded seed was drawn from.** Two instruments were built on 2026-11-20/21 and both
+are **off by default**, so every record taken before them re-ranks unchanged.
+
+**(1) The harness-side seed study** (`benchmark/verify.py:sde_seed_study`, `--seed-study K` on both
+`run.py` and `oneshot.py`). After the verdict is settled it re-grades at a **fixed** seed set and
+reports the median, p10/p90 and the p90/p10 spread of the comparable metric — the worst moment as a
+fraction of *its own* tolerance — plus `graded_over_median`, which is how far the one seed the
+verdict rests on sits from the middle of its own distribution.
+
+Three deliberate choices. The seed set is fixed (`SEED_STUDY_BASE = 1000`, `k = 16`) rather than
+caller-chosen, because a median over seeds nobody can reproduce is not a measurement, and because
+the pipeline and the baseline then pair on *seeds* as well as on conditions. The spread is p90/p10
+and not max/min, since a range statistic grows with `k` and is not comparable between studies of
+different size — which is how §8g's k=8 sweep misread N03. And **the verdict does not move**: it
+stays on the problem's declared contract seed and the study is recorded beside it, because a verdict
+that changed once the harness started averaging would be a gate moved after the schemes were seen.
+`runner.run_solver` gained `sde_seed` for this, whose docstring had said the seed was deliberately
+un-overridable; that reasoning stands and this caller is its mirror image — the work-precision sweep
+moves the work and holds the seed, the seed study moves the seed and holds the work, and each is
+sound because it varies one axis.
+
+Validated against an independent implementation before being believed
+(`docs/notable-sde-data/n06_halfflow_coordinate.py` against the harness on §8h's solver): median
+0.049574 against 0.0496, p90/p10 5.0412 against 5.04, median mean/variance 0.1665%/0.4549% on both.
+16 seeds cost 16 s on this entry.
+
+**(2) The kernel-side accuracy study**, which is the fix to a different defect: the pipeline could
+not *rank* on accuracy at all. `ranking.accuracy` returns `None` when the error sits inside its own
+error bar, `comparable_keys` then drops it, and the pool is decided by whatever remains — this is
+`sde_sis_epidemic` rep 2's recorded `decided_by: sqi (over order, structure, consistency only —
+accuracy did not resolve pool-wide)`. **The logic is right and was being starved.** One graded run
+reports `bias + noise` with a bar measuring only the noise, so on an SDE the two are routinely the
+same size. Averaging over `k` seeds leaves the bias and divides the sampling term by `sqrt(k)`, so
+the median estimates the quantity that actually separates two schemes.
+
+So `sde/driver._accuracy_seed_study` re-grades at the same fixed seed set and reports the median with
+its **between-seed** standard error, and `ranking.seed_resolved` makes `headroom_decades`,
+`uncertainty` and `noise_limited` read that pair. It fires on `_dynkin_replicated`'s cost principle —
+only where the graded error is inside its own bar, which is exactly where accuracy would otherwise
+order nothing — and records why when it declines.
+
+**A flaw found in the instrument, not by it.** The first version compared the *single-seed* error
+against the *seed-median's* `sqrt(k)`-tighter bar. It gave the right ordering on N06 and it was
+wrong: comparing a noisy point estimate against a tight bar declares plans resolved on the strength
+of their own noise. Made consistent, plan 2's median (0.539%) sits just *below* its own bar
+(0.554%), which raised the real question — and the answer is that a seed study changes what that
+inequality *means*. On one run it is ignorance. Over 16 seeds, with the sampling term divided by four
+and the bias untouched, it is a **measurement** that the plan's bias is below what the study can
+resolve, i.e. that it is at the floor its path count allows, which is this component's ceiling. So it
+scores 1.0 there rather than `None`. F16's note that "a tie at the ceiling is not a tie, it is a
+claim" is right about a single run, where the claim has no evidence; 16 seeds are the evidence. This
+is the one place either instrument moves an outcome rather than sharpening a number.
+
+**The live run (2026-11-21, 44.4 min, `notable_9e_n06_phase2b_live.json`).** N06 re-run fresh with
+both instruments on, the conductor carrying Phase 2b, and `sde_manual.md` pinned to `df2001c` — its
+pre-rule-6 commit — because rules 0c and 6 were written *from* N04 and N06 and name them, so a run
+with them in place measures the transcription. `VERIFIED_PASS`, all three plans certified at 10.
+
+| plan | kernel median / se | harness graded | harness median | sqi |
+|---|---|---|---|---|
+| `2-drift-implicit-milstein` | 0.0067 / 0.0017 | 0.0726 | **0.0483** | **0.6793** |
+| `1-lamperti-split-step-backward-euler` | 0.0082 / 0.0020 | 0.0936 | 0.0665 | 0.6721 |
+| `3-explicit-milstein-clipped` | 0.0109 / 0.0011 | 0.1306 | 0.1986 | 0.6082 |
+
+**Accuracy resolved pool-wide for the first time on this entry**, `cost` became admissible, and
+`decided_by: sqi` picked the plan the harness independently ranks best on the graded seed *and* on
+the median, at `wrong_plan_won: false`. This is the case the instrument was built for: all three
+plans certified at 10, so `score` could not break the tie the way 10/9/3 did in rep 2 — the quality
+index had to decide, and it could.
+
+**What it was worth, measured by stripping the three fields back out of the same blocks:**
+
+| | comparable components | winner |
+|---|---|---|
+| with the study | accuracy, consistency, order, structure | `2-drift-implicit-milstein` (sqi 0.6793) |
+| without it | consistency, order, structure | **`3-explicit-milstein-clipped`** (sqi 0.6218) |
+
+Without the study this pool ships the plan whose harness median is **0.1986 against the winner's
+0.0483 — 4.1x worse** — and nothing would have caught it, because every plan certified and
+`wrong_plan_won` is computed from the harness the pipeline cannot see. On this pool the instrument is
+the difference between shipping the best plan and shipping the worst.
+
+Note also what the seed study does to plan 3 specifically: graded 0.1306, median 0.1986. The graded
+seed **flatters** it, so the single-seed ordering understates the gap it loses by — the same
+direction of error §8g measured on N06's winner, on a different plan, in the same run.
+
+**Phase 2b did not fire, and the reason is the result.** STATE.md records it:
+`polish_cycle: not_run`, `polish_reason: winner's metrics carry no moment_bias_actionable — graded-dt
+bias under 0.2% of either moment's tolerance, so Phase 2b had nothing to remove`. All three plans
+were uncertified after cycle 1, all three took the in-loop `bias_retry`, and all three repaired
+themselves while still **eligible** — so the window Phase 2b exists to cover never opened. That is
+the honest reading: §8h measured the forfeit this phase prevents, and this run measures how narrow
+the window is. It also confirms the gate declines cleanly and records why, which is the
+"recorded as absent rather than left out" discipline the other folds are held to.
+
+**Three findings that cost something.**
+
+1. **The bias retry collapses the pool onto one family.** `single_family_pool: true`, because all
+   three plans independently rewrote into Strang splittings on cycle 2 in response to the same
+   instruction. The Path B cross-family agreement break therefore could not be earned — the
+   instruction bought accuracy and spent a circularity check doing it, and nothing prices that trade
+   today.
+2. **The family vocabulary fix was load-bearing.** All three plans declared
+   `scheme_family: strang-splitting`, which `SDE_FAMILIES` did not carry until 2026-11-20 (§8g: plan
+   3 declared it in rep 2 and lost seven of ten points to a null read). Had the vocabulary not been
+   extended first, this run would have scored three plans at 3.
+3. **`accuracy_seeds` needed an operator switch and had none.** The spec is rewritten by the
+   formulator on every run, so an edit there does not survive `--fresh`, and the agent config is the
+   plan choosing for itself — the wrong authority for a measurement the operator is commissioning.
+   `AUTONUMERICS_ACCURACY_SEEDS` sits at `cfg.pick`'s **default** level, the lowest of the three, so
+   a spec that declares the field still wins and this can never relax a threshold the formulator set.
+
+**What this does not establish.** One entry, one run, one pool. The study's own `k = 16` is justified
+by §8g's measurement on *this* suite and nothing wider. The counterfactual above is a re-rank of one
+pool's recorded blocks, not a second run. And the ceiling rule in (2) is a judgment about what 16
+seeds license, which is the one decision here a reader should check rather than take.
+
+
+### 8j. N08, the held-out entry: 42x past C0, and why that does not yet credit the manual `[rev4 2026-11-21, N]`
+
+Rules 0c and 6 were written **from** N04 and N06 and name both entries, so neither can test them —
+§8h says so and withdrew rule 6 from disk to measure Phase 2b at all. N08 `sde_three_halves_vol` was
+chosen as the held-out test before the run: it is named in neither rule, and both apply to it from
+opposite directions. Its diffusion is `epsilon * V**1.5`, so rule 6's Lamperti transform exists; and
+its own `challenge` text says `1/V` **is a CIR process with exact moments**, which is rule 0c's
+trigger exactly. The spec also puts naive Euler at 18% on `E[1/V]` and **39x** on `Var[1/V]`, so
+unlike N04 (1.08x) and N06 (needs 64 seeds) there is headroom a single seed can read.
+
+Run 2026-11-21, 39.3 min, `notable_9e_n08_rule6.json`, manual **unpinned** (both new rules present),
+both seed instruments requested.
+
+| | `E[1/V]` err (5% gate) | `Var[1/V]` err (10% gate) | worst / its own gate |
+|---|---|---|---|
+| C0 Opus, median of 3 reps | 0.801% | 2.417% | **0.2417** |
+| pipeline winner | **0.0016%** | **0.057%** | **0.005725** |
+
+**42.2x better than C0**, harness `verified_score: 10`, `passed: true`, `wrong_plan_won: false`. The
+verdict is `UNDERCLAIM`: the pipeline claimed 9 against the harness's 10, which §12 already records
+as the one error direction this benchmark exists to reward. The 9 is structural rather than a defect
+-- `certified: false`, `bound_by: rubric`, reason *"no surrogate: the orders, Dynkin and the
+constraints all hold and the Richardson moments are stable across the ladder"*. The harness has an
+exact functional truth and the pipeline has no independent route to `E[1/V]`, so 9 is the honest
+ceiling for it here.
+
+The winner is rule 6's prescription almost verbatim:
+
+```yaml
+scheme: lamperti-transform + strang-splitting (exact drift flow, exact additive-noise sub-step)
+strategy: Transform to the Lamperti coordinate X = V**-0.5 where the noise becomes constant and
+  additive, then advance with a Strang composition whose drift half-flows and noise sub-step are
+  each the exact flow of their own vector field, reflecting at X = 0 ...
+```
+
+**And that is not evidence that the rule caused it.** Two measurements say so, both from this
+project's own runs:
+
+1. **No plan cites the manual.** Grepping all three `SOLUTION.md` files for `rule 0c`, `rule 6`,
+   `rule 0`, `sde_manual`, `moment-match*` or `conditional moments` returns **nothing**. The plans
+   describe the transform on its own terms.
+2. **The pipeline reaches this family without the rule.** §8i's N06 run had `sde_manual.md` pinned to
+   its pre-rule-6 commit and all three plans independently rewrote into Strang splittings, one of
+   them named `1-lamperti-split-step-backward-euler`. So Lamperti-plus-splitting is inside the
+   pipeline's reach unaided, which §8h had already measured on a single sub-step.
+
+There is also a competing sufficient cause *inside this run*. Plan 2's own one-sentence records its
+history: *"Strang splitting in V with exact logistic drift half-flows plus the exact additive-noise
+flow in Z = V^-1/2; **was a Milstein noise sub-step scoring 3 in round 1**"*. That is the bias retry
+making the same move rule 6 prescribes, on the same problem, in the same run -- so the two candidate
+causes are confounded here exactly as they were on N06.
+
+**What would settle it** is the counterfactual this section cannot supply: N08 re-run with
+`sde_manual.md` pinned to `df2001c`, everything else held. One run, ~39 min. Until then the honest
+claim is the capability one -- *the pipeline reaches 0.0057 of tolerance on a held-out entry where a
+one-shot baseline reaches 0.2417* -- and **not** that rules 0c and 6 are what got it there. Fix 2
+remains unmeasured, which is the same sentence §8h ended on; what has changed is that the entry it
+would be measured on is no longer the entry it was written from.
+
+**Three further observations.**
+
+1. **Both seed instruments were inert, as predicted before the run.** N08 declares no analytic
+   moments -- its entire truth is `functional_truth` -- so `sde_seed_study` returned
+   `not_applicable: no graded moments` and the kernel study had no graded error to study.
+   `ranking.accuracy` took its `_functional_fraction` branch, which resolves on its own because a
+   functional error carries its noise *inside* it rather than under it (F3). So the pool ranked on
+   accuracy without any help from §8i.
+
+   This is a coverage gap worth naming: **the seed instruments cover moment-graded entries only.**
+   Four of the nine notable entries are moment-graded -- precisely §8g's N03/N04/N06/N07 table --
+   and the other five are functional or pathwise. Resolution is not blocked there, but a seed median
+   would still sharpen a pipeline-vs-C0 comparison, and a suite-wide parity claim currently rests on
+   single draws for five of nine entries.
+2. **All three plans scored 9, so the quality index decided again** -- and decided correctly: the
+   winner is also the best by harness (0.00057 against 0.0030 and 0.0130). That is the §8i scenario
+   arriving unprompted on a second entry, this time with accuracy resolving through the functional
+   branch rather than through a seed study.
+3. **The winner declares `scheme_family: other`** while being, by its own `scheme:` line, a Strang
+   splitting -- and plan 2 **in the same pool** declares `strang-splitting`. The vocabulary added on
+   2026-11-20 is being used, inconsistently, by two plans describing the same composition. The
+   inference table would have read `other` correctly from a `scheme:` beginning `lamperti-transform`;
+   what it cannot do is overrule a declaration. Nothing is lost here -- `other` costs only the
+   cross-family agreement arithmetic -- but it is the stale/wrong-label failure §8i's finding 2
+   describes, now in its third variant.
+
+
 ## 9. Cost
 
 Rough, and in the units the other plans use.

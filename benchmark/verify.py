@@ -784,6 +784,14 @@ def _score_sde_moments(problem, comps, gt, run_meta, reference, result=None):
             "empirical_variance": ev, "exact_variance": xv, "variance_rel_err": var_rel,
             "near_zero_mean": near_zero, "mean_ok": mean_ok, "variance_ok": var_ok,
             "passed": passed,
+            # The tolerances that were actually applied, including the reference
+            # widening above. Recorded because the comparable accuracy metric is the
+            # worst moment as a fraction of *its own* gate, and a raw percentage
+            # flatters whichever moment has the looser one -- so a reader who cannot
+            # see the two tolerances cannot reconstruct the number. `sde_seed_study`
+            # reads these rather than recomputing them, so the study and the verdict
+            # can never disagree about the bar.
+            "mean_tol": float(mean_tol), "variance_tol": float(var_tol),
         }
         if reference:
             rec["reference_se_mean"] = se_m
@@ -1220,6 +1228,156 @@ def _run_sde_diagnostics(problem, paths, result):
             rec.update(value=float("nan"), passed=False,
                        error=f"{type(exc).__name__}: {exc}")
         out.append(rec)
+    return out
+
+
+#: The seed study's sample size and its first seed. Both are constants rather than
+#: knobs so that two records of the same problem are always comparable: a median over
+#: a caller-chosen seed set is not a measurement anyone can reproduce. ``16`` is where
+#: `docs/plan-notable-sde.md` §8g measured this suite's medians to stop moving (k=8 is
+#: too few -- it misread N03's reversal as a tie); the base is held away from the
+#: problems' own contract seeds so the study never re-measures the graded sample.
+SEED_STUDY_K = 16
+SEED_STUDY_BASE = 1000
+
+
+def seed_study_seeds(k=SEED_STUDY_K):
+    """The study's seeds: fixed, contiguous, and independent of the problem."""
+    return tuple(range(SEED_STUDY_BASE, SEED_STUDY_BASE + int(k)))
+
+
+def moment_frac_tol(components):
+    """The comparable accuracy metric: the worst graded moment as a fraction of **its
+    own** tolerance, over all components.
+
+    ``None`` where no component carries both tolerances (a problem graded only on a
+    functional, or a hand-built component list from the tests). A near-zero mean is
+    skipped exactly as the rubric skips it, so this never divides by a mean the
+    verdict itself declined to check.
+
+    Why a fraction and not a percentage: the mean gate is 5% and the variance gate is
+    10%, so a raw percentage makes the variance look twice as good as it is. Every
+    accuracy comparison in `docs/plan-notable-sde.md` §8e-§8h is in these units.
+    """
+    worst = None
+    for c in components or []:
+        for err_key, tol_key, skip in (("mean_rel_err", "mean_tol", c.get("near_zero_mean")),
+                                       ("variance_rel_err", "variance_tol", False)):
+            if skip:
+                continue
+            err, tol = c.get(err_key), c.get(tol_key)
+            if err is None or not tol:
+                continue
+            f = float(err) / float(tol)
+            worst = f if worst is None else max(worst, f)
+    return worst
+
+
+def sde_seed_study(problem, plan_dir, *, k=SEED_STUDY_K, timeout_s, mem_mb,
+                   reference, graded_frac=None):
+    """Re-grade one solver at ``k`` fresh seeds, holding everything else fixed.
+
+    **This moves no gate.** The verdict stays on the problem's declared contract seed;
+    what this adds is the distribution that verdict was drawn from. The two are
+    reported side by side and the median is never substituted for the graded value --
+    a verdict that changed because the harness started averaging would be a gate
+    moved after the schemes were seen, which is the rule the rest of this suite is
+    held to.
+
+    Why it exists. `docs/plan-notable-sde.md` §8g: of the four accuracy gaps this
+    suite reported against its one-shot baseline, **three were artifacts of the single
+    graded seed** -- N04's 7.5x collapsed to 1.08x at 64 seeds, N03's 3.6x deficit
+    reversed to 0.84x, N07's 1.5x to 1.11x -- and the one real gap was *worse* than
+    recorded, because that seed happened to flatter the pipeline. §8h then repeated
+    the same error in the other direction on a measured improvement: a cycle worth
+    4.01x at the median read as 1.80x at the contract seed, with an invented 1.32x
+    residual. A single draw cannot support a parity claim in either direction, and the
+    p90/p10 spreads here run from 1.5x to 5x.
+
+    Returns the per-seed fractions, their median and p10/p90, and the spread. The
+    spread statistic is **p90/p10 and not max/min**, because a range statistic grows
+    with ``k`` and is therefore not comparable between two studies of different size
+    -- which is how a k=8 sweep misread N03.
+    """
+    import runner  # local import: keeps the pipeline path free of the dependency
+
+    gt = _sde_moment_truth(problem)
+    if not gt:
+        return {"status": "not_applicable", "reason": "no graded moments"}
+    rows, failures = [], []
+    for sd in seed_study_seeds(k):
+        run = runner.run_solver(problem=problem, plan_dir=plan_dir, timeout_s=timeout_s,
+                                mem_mb=mem_mb, sde_seed=sd)
+        if run["status"] != "ok":
+            failures.append({"seed": sd, "reason": run.get("reason"),
+                             "error": (run.get("error") or "")[:200]})
+            continue
+        comps, run_meta, result, err = _run_and_read_sde(
+            problem, plan_dir, injected=(run["result"], run["run_meta"]))
+        if err is not None:
+            failures.append({"seed": sd, "reason": err.get("status"),
+                             "error": (err.get("error") or "")[:200]})
+            continue
+        scored = _score_sde_moments(problem, comps, gt, run_meta, reference=reference,
+                                    result=result)
+        f = moment_frac_tol(scored.get("components"))
+        if f is None:
+            return {"status": "not_applicable",
+                    "reason": "components carry no comparable tolerance"}
+        rows.append({"seed": sd, "frac_tol": f,
+                     "mean_rel_err": scored.get("worst_mean_rel_err"),
+                     "variance_rel_err": scored.get("worst_variance_rel_err"),
+                     "passed": bool(scored.get("passed"))})
+
+    if not rows:
+        return {"status": "crashed", "seeds_requested": int(k), "failures": failures}
+
+    fr = np.array([r["frac_tol"] for r in rows], dtype=float)
+    p10, p90 = (float(np.percentile(fr, 10)), float(np.percentile(fr, 90)))
+    out = {
+        "status": "ok",
+        "k": len(rows), "seeds_requested": int(k),
+        "seeds": [r["seed"] for r in rows],
+        "metric": "worst graded moment as a fraction of its own tolerance",
+        "median_frac_tol": float(np.median(fr)),
+        "p10_frac_tol": p10, "p90_frac_tol": p90,
+        # p90/p10, not max/min: see the docstring.
+        "spread_p90_p10": (p90 / p10) if p10 > 0 else None,
+        "median_mean_rel_err": float(np.median([r["mean_rel_err"] for r in rows
+                                                if r["mean_rel_err"] is not None] or [np.nan])),
+        "median_variance_rel_err": float(np.median([r["variance_rel_err"] for r in rows
+                                                    if r["variance_rel_err"] is not None]
+                                                   or [np.nan])),
+        "passed_fraction": float(np.mean([r["passed"] for r in rows])),
+        "per_seed": rows,
+    }
+    if graded_frac is not None:
+        out["graded_frac_tol"] = float(graded_frac)
+        # How far the one seed the verdict rests on sits from the middle of its own
+        # distribution. This is the number that says whether a reported gap is real.
+        out["graded_over_median"] = (float(graded_frac) / out["median_frac_tol"]
+                                     if out["median_frac_tol"] > 0 else None)
+    if failures:
+        out["failures"] = failures
+        out["status"] = "partial"
+    return out
+
+
+def _fold_sde_seed_study(out, problem, plan_dir, *, k, timeout_s, mem_mb, reference):
+    """Attach the seed study to a passing moment-graded record, or say why not.
+
+    Recorded as absent rather than left out, for the reason the other folds give: a
+    record with nothing in this field would read as one that had the study and found
+    a tight distribution.
+    """
+    if not isinstance(out, dict) or out.get("status") != "ok":
+        return out
+    if not k:
+        out["seed_study"] = {"status": "not_run", "reason": "not requested"}
+        return out
+    out["seed_study"] = sde_seed_study(
+        problem, plan_dir, k=k, timeout_s=timeout_s, mem_mb=mem_mb,
+        reference=reference, graded_frac=moment_frac_tol(out.get("components")))
     return out
 
 
@@ -2657,7 +2815,7 @@ def _fold_sde_pathwise_ladder(out, problem, plan_dir, graded_result, *, timeout_
 
 def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
                    timeout_s=DEFAULT_SOLVER_TIMEOUT_S, mem_mb=DEFAULT_SOLVER_MEM_MB,
-                   work_precision=True):
+                   work_precision=True, seed_study=0):
     """Independently verify one solved problem. Returns a result dict with a
     ``status`` field: no_ground_truth | ok | inconclusive | nonfinite | contract |
     error | crashed. ``contract`` is a solver that ran but did not return what the
@@ -2785,6 +2943,15 @@ def verify_problem(problem, workspace_dir, plan_dir=None, sandbox=False,
                 extra_levels=bool(work_precision), timeout_s=timeout_s,
                 mem_mb=mem_mb, reference=(kind == "reference"),
                 pathwise=(kind == "pathwise"))
+            # Last, and for the same reason work-precision is late: the verdict is
+            # already settled and this is measurement taken after it. Only the two
+            # moment-graded routes -- `pathwise` grades a path against supplied
+            # increments (there is no free seed to vary) and `stability` has no
+            # accuracy metric to take a median of.
+            if kind in ("exact", "reference"):
+                out = _fold_sde_seed_study(
+                    out, problem, plan_dir, k=seed_study, timeout_s=timeout_s,
+                    mem_mb=mem_mb, reference=(kind == "reference"))
     except OracleLeak as exc:
         return {"status": "error", "error": f"answer-key leakage: {exc}",
                 "leakage": True, "plan_dir": os.path.relpath(plan_dir, REPO_ROOT)}

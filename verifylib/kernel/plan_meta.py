@@ -47,9 +47,25 @@ PDE_FAMILIES = ("fd", "spectral", "fv", "fe", "other")
 #: CRN order study reads 0.23-0.31 against declared floors of 0.5 on six plans
 #: across three families, so it is in no state to have more requirements hung off
 #: it. The vocabulary is the fix; an order bar is not.
+#: ``strang-splitting`` is here for F6's reason and on F6's terms, measured on
+#: `sde_sis_epidemic` rep 2 (`docs/plan-notable-sde.md` §8g): plan 3 rewrote itself
+#: into a Strang composition, declared ``scheme_family: strang-splitting``, and the
+#: kernel read an unrecognised value as null -- which cost it seven of its ten points.
+#: The vocabulary gap is now worse than a one-off, because the bias retry and Phase 2b
+#: *generate* such rewrites: §8h's accepted solver is a Lamperti-plus-Heun composition
+#: still declaring ``milstein``, so the field misdescribes the winner of the problem
+#: this entry was added for. Splitting is also the one family here whose members are
+#: routinely cross-family partners for the agreement gate, which is the circularity
+#: break F6 exists to let them earn.
+#:
+#: Absent from :data:`..sde.crn.FAMILY_ORDER_KEY`, exactly as ``exact-transition`` and
+#: ``quadratic-exponential`` are: a Strang composition's weak order depends on what
+#: its sub-steps are -- §8h measured the same skeleton at first order with a Milstein
+#: noise sub-step and at effectively second with a Heun one in the Lamperti coordinate
+#: -- so there is no single rate to hang off the name. The vocabulary is the fix.
 SDE_FAMILIES = ("euler-maruyama", "milstein", "tamed-euler-maruyama",
                 "tamed-milstein", "implicit", "exact-transition",
-                "quadratic-exponential", "other")
+                "quadratic-exponential", "strang-splitting", "other")
 FAMILIES = (*PDE_FAMILIES, *SDE_FAMILIES)
 
 #: Prefixes of the free-text ``scheme:`` field that identify a family, used only
@@ -76,6 +92,9 @@ _INFERRED_PREFIX = (
     ("exact-conditional", "exact-transition"),
     ("broadie-kaya", "exact-transition"),
     ("non-central-chi", "exact-transition"),
+    ("strang", "strang-splitting"),
+    ("split-step", "strang-splitting"),
+    ("lie-trotter", "strang-splitting"),
     ("tamed-euler", "tamed-euler-maruyama"),
     ("tamed-milstein", "tamed-milstein"),
     ("euler-maruyama", "euler-maruyama"),

@@ -295,6 +295,15 @@ BLOCK_KEYS = (
     # variance tolerance sitting in removable `dt` bias, and the only moment the
     # kernel extrapolated was the mean, which carried 0.008% and 0.6%.
     "moment_bias_binding", "moment_bias_frac_tol", "moment_bias_actionable",
+    # The accuracy seed study (`sde/driver._accuracy_seed_study`): how many seeds, the
+    # median graded error over them, and the between-seed standard error of that
+    # median. On the block because `ranking.seed_resolved` reads it -- a field the
+    # block does not carry makes the rule that reads it inert, which is the §10h
+    # reason `functional_limited_by` and the `moment_bias_*` fields above are here.
+    # Unlike those, this one does change an outcome: it is what lets `accuracy` stop
+    # returning None on a pool whose single-seed errors all sat inside their own
+    # noise, so it moves the *ranking* (never a gate, and never `certified`).
+    "accuracy_seeds", "accuracy_seed_median_rel_error", "accuracy_seed_median_se_rel",
     # Roache's factor of safety on the reported error: 1.25 for a measured order,
     # 3.0 for one imported from an MMS probe (§7a). It sets the *pass* bar, not the
     # solver's quality, so the band placement divides it back out.

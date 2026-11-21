@@ -244,7 +244,12 @@ def test_run_py_defaults_to_grading_in_the_sandbox():
     args = argparse.Namespace()
     kw = RUN._verify_kwargs(args)
     assert kw == {"sandbox": True, "timeout_s": V.DEFAULT_SOLVER_TIMEOUT_S,
-                  "mem_mb": V.DEFAULT_SOLVER_MEM_MB, "work_precision": True}
+                  "mem_mb": V.DEFAULT_SOLVER_MEM_MB, "work_precision": True,
+                  # Off by default: the seed study costs K extra solves per plan, and
+                  # a default that silently multiplied every run's verify cost would
+                  # be exactly the kind of untracked condition change this test
+                  # exists to catch. `--seed-study 16` turns it on.
+                  "seed_study": 0}
 
 
 def test_every_plan_is_graded_under_the_winners_conditions(tmp_path, monkeypatch):

@@ -502,7 +502,7 @@ def _write_meta(out_base, meta):
 
 
 def run_solver(plan_dir, problem, timeout_s=120, mem_mb=4096, scratch_dir=None, pde_N=None,
-               sde_num_paths=None, sde_dt=None, sde_crn=None):
+               sde_num_paths=None, sde_dt=None, sde_crn=None, sde_seed=None):
     """Run ``plan_dir/solver.py`` in a sandboxed subprocess.
 
     Returns a dict:
@@ -534,9 +534,15 @@ def run_solver(plan_dir, problem, timeout_s=120, mem_mb=4096, scratch_dir=None, 
     declares. The graded call never passes them -- it is the problem's own
     resolution, or ``2 * grid_N`` for the order check -- so they exist for the
     work-precision sweep, which re-solves the same problem at other points on the
-    cost axis (plan-benchop-slv.md §6, step 3). The seed is deliberately NOT
-    overridable: a sweep that also moved the sample would be measuring two things at
-    once, and the whole value of the curve is that only the work changes.
+    cost axis (plan-benchop-slv.md §6, step 3).
+
+    ``sde_seed`` overrides the sample, and is the exact mirror image: the
+    work-precision sweep moves the work and must hold the seed, so the curve measures
+    only cost; the **seed study** (``verify.sde_seed_study``) moves the seed and must
+    hold the work, so its spread measures only sampling. Each is sound because it
+    varies one axis, and passing both at once would measure neither -- which is why
+    the seed stayed un-overridable until there was a caller that holds everything
+    else fixed. Nothing in the graded path passes it.
     """
     import uuid
 
@@ -570,8 +576,9 @@ def run_solver(plan_dir, problem, timeout_s=120, mem_mb=4096, scratch_dir=None, 
         # graded configuration, which would record a wrong level against a real time.
         npaths = problem["num_paths"] if sde_num_paths is None else sde_num_paths
         dt = _V.sde_verify_dt(problem) if sde_dt is None else sde_dt
+        seed = problem["seed"] if sde_seed is None else sde_seed
         spec["call"] = {"num_paths": int(npaths), "dt": float(dt),
-                        "T": float(problem["T"]), "seed": int(problem["seed"])}
+                        "T": float(problem["T"]), "seed": int(seed)}
         if sde_crn is not None:
             spec["crn"] = dict(sde_crn)
     else:

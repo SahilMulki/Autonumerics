@@ -579,7 +579,13 @@ def _verify_kwargs(args):
     return {"sandbox": getattr(args, "verify_sandbox", True),
             "timeout_s": getattr(args, "verify_timeout", V.DEFAULT_SOLVER_TIMEOUT_S),
             "mem_mb": getattr(args, "verify_mem_mb", V.DEFAULT_SOLVER_MEM_MB),
-            "work_precision": getattr(args, "work_precision", True)}
+            "work_precision": getattr(args, "work_precision", True),
+            # On every plan, not only the winner, and for the reason above: the
+            # question `wrong_plan_won` asks is whether the pool shipped the less
+            # accurate plan, and that is exactly the comparison a single seed cannot
+            # resolve. Studying the winner alone would answer it against a median on
+            # one side and a lottery on the other.
+            "seed_study": getattr(args, "seed_study", 0)}
 
 
 def grade_every_plan(problem, workspace_dir, rec, winner_verify, winner_kernel, *,
@@ -896,7 +902,13 @@ RECORDED_HARNESS = (
     # number it rests on.
     "functional_errs", "functional_abs_errs", "functional_tol",
     "functional_tol_used", "worst_functional_rel_err", "functional_ok",
-    "reference_abs_err", "functional_levels")
+    "reference_abs_err", "functional_levels",
+    # The distribution the graded seed was drawn from (`--seed-study`). Reporting
+    # only -- it moves no verdict -- but it is what makes an accuracy comparison
+    # between two records a measurement rather than a draw, so a record that omits
+    # it cannot support a parity claim in either direction. See verify.sde_seed_study
+    # and `docs/plan-notable-sde.md` §8g/§8h.
+    "seed_study")
 
 
 #: The `<metrics>` fields `solution_metrics` copies into the per-plan record.
@@ -912,6 +924,12 @@ RECORDED_METRICS = (
         # that separates a Milstein from an Euler-Maruyama was invisible to every
         # reader of this file except the conductor that wrote it.
         "observed_order", "order_check", "order_floor", "scheme_family",
+        # The accuracy seed study's three fields. `ranking.seed_resolved` reads them
+        # to decide whether accuracy resolves at all, which makes them ranking inputs
+        # rather than reporting fields -- the same promotion `observed_order_se`
+        # records just below. A record without them re-ranks as though the study had
+        # never run, i.e. back to the single-seed lottery it exists to replace.
+        "accuracy_seeds", "accuracy_seed_median_rel_error", "accuracy_seed_median_se_rel",
         # `observed_order_se` **is** read by `ranking.order()` as of
         # plan-sciml-benchmark.md SS10o -- it is the resolution test that decides
         # whether a pool's two best measured rates may be ranked against each other,
@@ -1271,6 +1289,18 @@ def main(argv=None):
     ap.add_argument("--verify-mem-mb", type=int, default=V.DEFAULT_SOLVER_MEM_MB,
                     help=f"address-space cap for a graded solve, best-effort "
                          f"(default {V.DEFAULT_SOLVER_MEM_MB})")
+    ap.add_argument("--seed-study", type=int, default=0, metavar="K",
+                    help="after the verdict is settled, re-grade every plan at K extra "
+                         "seeds and record the median, p10/p90 and p90/p10 spread of the "
+                         "worst-moment-over-its-own-tolerance metric (SDE moment routes "
+                         "only). 0 (the default) skips it. The verdict itself never "
+                         "moves: it stays on the problem's declared contract seed, and "
+                         "the study is recorded beside it. Pass 16 for a parity claim -- "
+                         "`docs/plan-notable-sde.md` §8g measured three of four reported "
+                         "accuracy gaps on this suite to be artifacts of the single "
+                         "graded seed, and §8h measured a real improvement at less than "
+                         "half its size for the same reason. Costs K extra sandboxed "
+                         "solves per plan")
     ap.add_argument("--no-work-precision", dest="work_precision", action="store_false",
                     default=True,
                     help="skip the extra solves of the work-precision sweep. Only the "
