@@ -174,7 +174,7 @@ Three rules about what this is **not**:
 
 - **It is not a gate, and it moves no verdict.** `certified`, the score, the winner early-exit and the ranker are all untouched; a plan that certifies still exits the loop immediately, bias or no bias. The field is reporting-only in the kernel too. That is deliberate: it was added on 2026-11-18, *after* the notable suite's verdicts were measured, and a check that changes a verdict after seeing the schemes it judges is a moved gate whatever its merits.
 - **It is not the `unresolved` retry.** That one fires on a plan whose accuracy statistic could not be resolved against its own noise and reads `functional_limited_by`; this one fires on a plan that measured fine and is simply further from the achievable answer than it needs to be. A plan can qualify for both, and then it gets both instructions.
-- **It does not fire on a certified plan**, because such a plan is not eligible. The window is real but narrow: `sde_sis_epidemic` plan 1 ran three cycles and was uncertified for the first two (capped at 9 by a spec-form finding), and spent both on the Dynkin observable quadrature while carrying 22% of its variance tolerance in removable bias.
+- **It does not fire on a certified plan during the loop**, because such a plan is not eligible — the loop's cost model is unchanged and a certification still exits immediately. A certified *winner* instead gets exactly one cycle after the loop, under the accept-or-revert rule in **Phase 2b**, which cannot make the shipped solver worse. Inside the loop the window is real but narrow: `sde_sis_epidemic` plan 1 ran three cycles and was uncertified for the first two (capped at 9 by a spec-form finding), and spent both on the Dynkin observable quadrature while carrying 22% of its variance tolerance in removable bias.
 
 **Why it exists.** Measured on the notable suite (2026-11-18): the kernel's only `dt`-extrapolation ran on the **mean**, and on the two plans the external harness faults worst for accuracy the mean was the moment with no bias in it — `sde_sis_epidemic` plan 1 reported a 0.005% mean shift and `richardson_stable: true` while its variance sat 2.2% from the limit, and `sde_wright_fisher_mutation` plan 1 reported 0.06% against a variance 2.8% out. Both certified at a 10% gate. A one-shot model with no manual and no verification loop beat both on the same graded step, because it wrote a higher-order noise step in its first draft; the pipeline had three refine cycles and no instrument pointing at the step that mattered.
 
@@ -213,7 +213,65 @@ First check for a winner: if any plan already has `certified: true` (on Path B: 
 
 **Refill immediately**: whenever a plan finishes its cycle, first check its new metrics — if `certified: true` (and, on Path B, the early-exit gate is satisfied), stop: start no more cycles and go to Phase 3. Otherwise (having set its state in step 5) re-sort the **eligible** plans and start the next one. If no plan is eligible, go to Phase 3.
 
-**Exit condition**: a plan comes back `certified: true` and, on Path B, the early-exit gate is satisfied (finalize on that winner), or no plan is eligible — every plan is a winner, at `iter >= max_iter`, or `stopped` → go to Phase 3. On Path B, run the agreement gate on the two highest-ranked plans before finalizing if it has not already run on them.
+**Exit condition**: a plan comes back `certified: true` and, on Path B, the early-exit gate is satisfied (finalize on that winner, via Phase 2b), or no plan is eligible — every plan is a winner, at `iter >= max_iter`, or `stopped` → go to Phase 3. On Path B, run the agreement gate on the two highest-ranked plans before finalizing if it has not already run on them.
+
+## Phase 2b: the winner's one bias-removal cycle
+
+Run this **once**, on every path that leaves the loop with a winner, before entering Phase 3. It
+fires iff all three hold:
+
+- the loop exited on a plan with `certified: true`. If no plan certified, the bias instruction was
+  already reachable through eligibility inside the loop and this phase is a no-op;
+- that winner's latest `<metrics>` block carries `moment_bias_actionable: true`;
+- STATE.md does not already record `polish_cycle` for that plan.
+
+Then:
+
+1. Record under the plan in STATE.md: `polish_cycle: true`, plus the `moment_bias_binding` moment
+   and the `moment_bias_frac_tol` it entered with. Those are the pre-cycle numbers — step 5 needs
+   them, so do not overwrite them with the post-cycle block.
+2. **Preserve the certified artifact byte-for-byte**: copy `solver.py` to `solver.certified.py` and
+   `SOLUTION.md` to `SOLUTION.certified.md`. `benchmark/verify.py` re-hashes `solver.py` against the
+   block's `solver_sha256` and renders a mismatch `UNVERIFIED`, so a reverted plan has to get back
+   the file that was scored and not a reconstruction of it.
+3. Dispatch `solver-{sde|pde}` **once**, with the bias instruction above and one line more:
+
+   > This plan is already certified and will ship whatever you do here. Change only the sub-step
+   > that carries the bias. If you cannot raise its order without disturbing the rest of the
+   > scheme, say so and change nothing: a cycle that reverts costs the run one pass, and a
+   > regression would cost it the winner.
+
+4. Dispatch `evaluator-{sde|pde}` once. Steps 2b, 3b and 3c of the normal cycle apply unchanged —
+   the solver hash check still catches an evaluator that edits the code it is grading.
+5. **Accept or revert on the measurement, not on the diff.** Accept the new file iff all three of:
+   its block carries `certified: true`; its `score` is not below the pre-cycle score; and its
+   `moment_bias_frac_tol` is strictly below the pre-cycle one. A block that no longer reports the
+   field at all counts as below it — the graded shift fell inside its own paired standard error,
+   which is bias removed rather than bias hidden. Otherwise restore `solver.py` and `SOLUTION.md`
+   from the `.certified` copies, record `polish_reverted: true` with which of the three conditions
+   failed, and treat the pre-cycle score as the plan's score everywhere downstream.
+6. Go to Phase 3 either way, and report both numbers there: which moment bound, the
+   `moment_bias_frac_tol` before and after, and whether the cycle was accepted or reverted.
+
+**What this does not change.** No gate moves, and the winner is the same plan after the cycle as
+before it. `certified` is not re-decided, the ranker is not shown a new candidate, and no other plan
+in the pool gets a cycle out of it — the only thing at stake is which of two files that both certify
+is the one shipped. The cost is bounded at one solver pass plus one evaluator pass, and the failure
+mode is a restored file.
+
+**Why the winner, when the field gates nothing.** Because the winner is where the forfeit was
+measured. `sde_sis_epidemic` (N06, rep 2): the kernel recorded `moment_bias_binding: mean`,
+`moment_bias_frac_tol: 0.2239` and `moment_bias_actionable: true` **on the certified winner**, and
+the eligibility rule then forbade acting on it. That number was not a guess about the scheme —
+0.2239 of a 5% mean gate predicts 1.12% of removable mean bias, against 1.09% measured directly over
+64 seeds, so the instrument was right to within 3%. The same instrument drove this run's largest
+single repair, plan 2's variance from 33.9% to 0.26%, on a cycle it happened to be eligible for. And
+the bias it named on the winner was removable by one sub-step: holding the Strang composition and
+the exact logistic half-flows fixed, and taking the noise sub-step in logit coordinates — additive
+noise plus a Heun step on the bounded Itô drift — instead of Milstein in `I`, moves the mean bias
+from `-0.9779%` to `+0.0536%` at the contract `dt`, and the external harness's worst-moment fraction
+from `0.1556` to `0.0550`, which closes that problem's entire measured gap to the one-shot baseline.
+See `docs/plan-notable-sde.md` §8g and `references/sde_manual.md` rule 6.
 
 ## Phase 3: done
 
@@ -343,6 +401,10 @@ When the loop exits:
      `invariants_not_reported` — a declared invariant the kernel has no evaluator for is a
      property the run did not establish, however clean `invariants_ok` looks beside it. These bound what the run actually established, so they belong in the report rather than being quietly dropped.
    - **On a chaotic problem**, quote both numbers from the block: `estimated_rel_error` is the error at `error_horizon` (the reference horizon, where the order was measured) and `estimated_rel_error_T` is the error at the requested `t_final`. The second is the one the problem asks about; never present the first as "the error".
+   - **If Phase 2b ran**, the winner's `moment_bias_binding` moment with its `moment_bias_frac_tol`
+     before and after, and whether the cycle was accepted or reverted. A reverted cycle is a result
+     and belongs in the report: it says the bias the kernel measured was there and the solver could
+     not reach it, which is different from there having been none
    - **On Path B**, the agreement gate's result for the winner: which plan it was compared against, the family, the measured difference at which grid — and, if the pool was a single family, that the second break could not be earned.
 4. **Final gate.** Run
 

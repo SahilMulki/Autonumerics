@@ -262,10 +262,49 @@ more accurate on seven.
    work-precision study went 500k → 2M paths and the error got *worse*, 0.003647 → 0.004019, because
    the estimator is bias-dominated and more paths tighten the term that is not binding.
 
+0c. **Where the *conditional moments* are known in closed form but the law is not, match the
+   moments.** Rule 0 is keyed on the transition law, and most problems do not have one. A weaker
+   condition is far more common and buys the same thing for the moments that are graded: if the
+   generator maps polynomials to polynomials of no higher degree — which every
+   polynomial-coefficient SDE does, and that is most of the mean-reverting, logistic and population
+   models in this suite —
+   then `E[X_{t+h} | X_t]` and `E[X_{t+h}^2 | X_t]` solve a *closed, finite* linear ODE system and
+   come out exactly, as explicit functions of `X_t` and `h`. Draw the step from any convenient
+   distribution on the right support carrying those two moments, and by the tower property the
+   graded mean and variance of `X_T` are **exact at every `dt`** — no ladder, no refinement, and no
+   need for the problem to be integrable in the sense rule 0 wants.
+
+   Measured on `sde_wright_fisher_mutation` (N04, `dX = (a - (a+b)X) dt + sigma sqrt(X(1-X)) dW`).
+   An unaided model draw solved the two moment ODEs,
+
+   ```python
+   def _conditional_moments(x, h):          # a = b = sigma^2/4, sigma = 1
+       e1 = np.exp(-0.5 * h); e2 = np.exp(-2.0 * h)
+       mean = 0.5 + (x - 0.5) * e1
+       B = x - 0.5; C = x * x - 0.375 - B
+       second = 0.375 + B * e1 + C * e2
+       return mean, second - mean * mean
+   ```
+
+   and drew each step from the Beta on `(0, 1)` carrying that mean and variance. Its graded moments
+   are bias-free by construction at the contract step, and it stays in the domain for free because
+   the Beta does. The pipeline's own pool reached the same accuracy by a different route (a Lamperti
+   transform under which the drift vanishes identically), but that route needed the problem to be
+   integrable and this one does not.
+
+   **Declare it, with the same field and for the same reason as rule 0**: the Beta draw generates
+   its own randomness, so it cannot consume the evaluator's increments and the common-random-number
+   order study would read a strong order near zero on it. And know what the declaration then claims:
+   the `dt`-bias term abstains on the whole state, which is exactly right for the two moments the
+   matching makes exact and **stronger than this scheme earns for anything else** — a third moment,
+   a path functional or a quantile still carries discretization error. Where the spec grades
+   something beyond the first two moments, say so in the Implementation Notes and keep a discretised
+   plan in the pool as the cross-check.
+
 1. **`noise_structure == "additive"` OR `state_dimension > 1`** → **Milstein** adds no value for
    additive noise (dg/dX = 0) and is not well-defined for multi-D without Lévy areas. This rule
    rules Milstein out; it does **not** rule everything but EM in — see rule 0, and consider an
-   implicit or split-step treatment of a stiff component.
+   implicit or split-step treatment of a stiff component (rule 6: transform before you split).
 
 2. **`noise_structure == "multiplicative"` AND `state_dimension == 1`** → propose both EM and Milstein. Milstein achieves strong order 1.0 vs EM's 0.5.
 
@@ -307,6 +346,46 @@ more accurate on seven.
    payoff is insensitive to the crossing — say the argument in the Implementation Notes. What is not
    legitimate is silence, which is what `verifylib/pool.py` reports: a pool where a declared barrier
    or absorbing boundary is named by the spec and by no plan.
+
+6. **Split in the coordinate that makes the noise additive, not in the one the problem is posed
+   in.** Two techniques in this manual are usually read as alternatives and pay off most when
+   composed: the Lamperti transform (which removes the state-dependence from the diffusion) and
+   operator splitting (which lets a stiff or superlinear drift be advanced by its exact flow). Doing
+   the transform **first** changes what the splitting has left to do. For a scalar SDE
+   `dX = f(X) dt + g(X) dW`, `Y = int dx / g(x)` gives
+
+   ```
+   dY = [ f(X)/g(X) - 0.5 g'(X) ] dt + dW,      X = X(Y)
+   ```
+
+   — unit additive noise, and a drift that splits cleanly into the original equation's stiff part
+   (whose exact flow is the original ODE's, written in `Y`) and a bounded Itô-correction remainder.
+   The noise sub-step is then a problem with *no* multiplicative structure to get wrong, so a
+   two-stage method on the remainder makes it second order, where a Milstein step in the original
+   coordinate is weak order one however good the rest of the composition is.
+
+   Measured on `sde_sis_epidemic` (N06, 2026-11-20). `Y = log(I/(N - I))` turns the SIS equation
+   into `dY = [N(a - bI)/(N - I) + 0.5 sigma^2 N(2I - N)] dt + sigma N dW`, whose correction term is
+   `0.5 sigma^2 N^2 tanh(Y/2)` — bounded. Holding the Strang composition and the exact logistic
+   half-flows fixed and changing **only** the noise sub-step:
+
+   | `dt` | Milstein in `I` (mean bias) | logit coordinate + Heun (mean bias) |
+   |---|---|---|
+   | 0.020 (the contract step) | `-0.9779%` | `+0.0536%` |
+   | 0.010 | `-0.4593%` | `+0.0170%` |
+   | 0.005 | `-0.2175%` | `+0.0138%` |
+
+   18x on the binding moment at the graded step, and the bias stops being first order in `dt` — the
+   left column halves with `dt` and the right column is already at its floor. At the harness's
+   graded seed this is the difference between a worst-moment fraction of `0.1556` and one of
+   `0.0550`, the whole of that problem's measured gap to a single unaided model draw.
+
+   The composition is what was missing, not either half: that pool contained a plan working in logit
+   coordinates and a plan using Strang with the exact logistic half-flows, and no plan doing both.
+   So where a transform is available, propose at least one plan that **transforms, then splits, then
+   raises the order of the residual drift's stage** — and where the diffusion vanishes at a
+   boundary, note that the transform usually maps that boundary to infinity, which is what keeps
+   the state in the domain without clipping.
 
 ---
 

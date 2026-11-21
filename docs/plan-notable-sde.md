@@ -1647,7 +1647,14 @@ measured. That is the whole case for the three reps the plan asked for.
 1. **The winner-exit window is the binding constraint.** N04 is the proof: a plan that certifies on
    cycle 1 is never eligible, so no instruction can reach it, however large its bias. Widening this
    means ending certify-then-stop or adding a polish cycle — the first is close to a gate move, and
-   neither is done.
+   neither is done. **`[rev4 2026-11-20]` Superseded twice over.** N04 is *not* the proof: §8g
+   measured `moment_bias_actionable: False` on its winner, so that exit forfeited nothing. N06's
+   winner is, at `0.2239` of its mean tolerance with `actionable: True` — and the polish cycle is
+   now **done**, as the conductor's Phase 2b: one cycle on a certified winner whose bias is
+   actionable, accepted only if the new file still certifies, does not lose score, and strictly
+   lowers `moment_bias_frac_tol`, and otherwise reverted byte-for-byte to the scored `solver.py`.
+   No gate moves and the winner does not change; the only thing decided is which of two certifying
+   files ships.
 2. **N06 still ships the wrong plan.** Plan 2 was better by harness (0.130 against 0.273) and also
    certified at 10, but `decided_by: sqi (over order, structure, consistency only — accuracy did not
    resolve pool-wide)`. Accuracy is 35% of the index and did not enter the decision.
@@ -1781,10 +1788,14 @@ not comparable across `k`.
   place where the single-seed grade overstates the pipeline rather than understating it.
 
 **The seed spread separates bias-limited from noise-limited at a glance**, and it agrees with the
-pipeline's own instrument. A wide `p90/p10` (N03, N04) is a solver whose error is sampling noise; one near 2× (N06, N07) is
-one whose error is bias. `moment_bias_actionable` was `False` on N04's
-winner and fired on N06's — the kernel was right both times, and §8f's reading of it as a missed
-opportunity on N04 was wrong.
+pipeline's own instrument. The `p90/p10` of the pipeline's own error over 64 seeds is 9.1× on N03 and
+7.4× on N04 — a solver whose error is sampling noise — against 1.7× on N06 and 1.8× on N07, a solver
+whose error is bias and whose seed hardly matters. C0's reads 7.4×, 5.2×, 4.1× and 2.1×, so on N06
+the two sides sit on opposite sides of that divide: the pipeline is bias-limited there and C0 is
+still noise-limited. `moment_bias_actionable` was `False` on N04's winner and fired on N06's — the
+kernel was right both times, and §8f's reading of it as a missed opportunity on N04 was wrong. This
+is the cheapest available bias/noise test: it needs no ladder, no extrapolation and no truth beyond
+the one already in the suite.
 
 **On N04 both sides are bias-free, by different routes.** Over 20 seeds the pipeline's winner
 measures mean bias +0.049% ± 0.048% and variance bias +0.018% ± 0.085%; C0's measures −0.020% ±
@@ -1831,10 +1842,124 @@ a bias-free entry reports a lottery, and this section is the measured instance.
 
 **Next:** one more rep of each condition would now add little — N04's condition has zero spread
 and N06's real gap is already resolved at 3.29×. The seed fix comes first, because every accuracy
-number in §8e–§8g is a single draw until it lands. Then the manual experiment (step 5), which
+number in §8e–§8h is a single draw until it lands — §8h included, which is why its 1.80× is reported
+as one seed's improvement and not as a rate. Then the manual experiment (step 5), which
 §8f's finding that C0 reaches bias-freedom by a route absent from `sde_manual.md` makes sharper:
 the binary outcome should be widened from "a noise sub-step of weak order above 1" to "any scheme
 whose graded moments are free of `dt` bias by construction".
+
+
+### 8h. The polish cycle, replayed under isolation: the scheme was reachable all along `[rev4 2026-11-20, N]`
+
+§8f read the winner-exit window as the binding constraint, §8g withdrew that for N04
+(`moment_bias_actionable: False` — nothing was forfeited), and the question left open was whether
+the window costs anything *where the flag does fire*. N06's rep-2 winner is the one case on record
+that fires: `moment_bias_binding: mean`, `moment_bias_frac_tol: 0.2239`, `moment_bias_actionable:
+true`, on a plan that certified and was therefore ineligible for another cycle.
+
+Two fixes were implemented on 2026-11-20 and this section measures the first in isolation:
+
+- **Fix 1** — `commands/conductor.md` **Phase 2b**: a certified winner whose bias is actionable gets
+  exactly one cycle, accepted only if the new file still certifies, does not lose score, *and*
+  strictly lowers `moment_bias_frac_tol`; otherwise `solver.py` and `SOLUTION.md` are restored
+  byte-for-byte from snapshots taken before the cycle. No gate moves and the winner never changes.
+- **Fix 2** — `references/sde_manual.md` rules **0c** (match the conditional moments where the law
+  is unavailable: C0's N04 Beta step) and **6** (transform so the noise is additive, *then* split).
+
+**The confound, and how it was removed.** Rule 6 was written from N06 and names the problem, the
+transform, the coordinate, the method and the measured numbers. Any N06 re-run with that rule in
+place measures the transcription, not the pipeline — teaching to the test. So fix 2 was *withdrawn
+from disk* for this experiment (`references/sde_manual.md` pinned to its pre-rule-6 commit,
+`grep -c "Split in the coordinate"` = 0), and Phase 2b was executed by hand against rep 2's saved
+artifacts, whose `solver.py` still hashed to its recorded `solver_sha256` (`0593fb0a…`).
+
+The isolation was checked rather than assumed. `benchmark/pipeline-settings.json` denies
+`Read(./benchmark/**)` and `Read(./docs/**)`, and those are `Read` rules, which the permission layer
+does enforce — so the solver could see neither the ground truth nor this document, which contains
+the answer. Afterwards `git status` showed it had touched nothing outside its plan directory, and
+its `solver.py` hash was unchanged across the evaluator pass (no grading violation). Three startup
+warnings about `Write(...)` rules not being matched were cosmetic: `Edit(./benchmark/**)` is in the
+same deny list and Edit rules cover every file-editing tool, so `benchmark/` was never writable and
+no run condition changed. The redundant `Write(...)` duplicates were removed afterwards.
+
+**The result: the solver derived the scheme from the bias number alone.** Its entire instruction was
+that the graded mean carried `0.2239` of its own tolerance in removable bias, and that it should say
+which sub-step carried it and raise its order. It replaced the Milstein noise sub-step with
+
+```python
+u  = np.log(Y / (N_POP - Y))                    # Lamperti / logit coordinate: additive noise
+b0 = _C_LAM * np.tanh(0.5 * u)                  # the bounded Ito correction
+u1 = u + b0 * dt + SIGMA * N_POP * w            # Heun predictor
+u2 = u + 0.5 * (b0 + _C_LAM * np.tanh(0.5 * u1)) * dt + SIGMA * N_POP * w
+Z  = N_POP / (1.0 + np.exp(-u2))
+```
+
+— the same construction §8g measured, with rule 6 absent from the manual. **The scheme was reachable
+by the pipeline's own solver at its own model; what was missing was permission to spend a cycle on
+it.** That is a stronger claim than §8f's and a narrower one than §8g withdrew: the window costs
+something exactly where the flag fires, and nothing where it does not.
+
+At the graded seed, and then at `k = 16` seeds, which is where §8g measured this suite's medians to
+become stable (`docs/notable-sde-data/n06_halfflow_coordinate.py`, and C0's own solver file re-run
+over the same seeds):
+
+| | seed 42: mean / var / frac | k=16 median frac |
+|---|---|---|
+| rep 2 as shipped | 0.6529% / 0.2524% / **0.1306** | **0.1986** |
+| after one Phase 2b cycle | 0.3602% / 0.7265% / **0.0726** | **0.0496** |
+| C0 Opus | — / — / 0.0550 | 0.0569 |
+
+Kernel after the cycle: `score: 10`, `certified: true`, `moment_bias_frac_tol` 0.2239 → **0.0862**,
+binding moment `mean` → `variance`, `actionable` → `false`. All three accept conditions held, so the
+cycle was **accepted**; the harness then graded it `VERIFIED_PASS`.
+
+**The cycle is worth 4.01x at the median, and it closes the gap to C0 completely**: 3.49x behind
+before (consistent with §8g's 3.29x measured at 64 seeds), **0.87x after** — marginally ahead, which
+on a p90/p10 spread of 5.04x means parity rather than a lead.
+
+**Three findings. The first two were my errors, and the measurement overturned both.**
+
+1. **I read a single seed again — the mistake §8g exists to document.** On first reading the cycle
+   looked like a partial success: seed 42 went 0.1306 → 0.0726 against C0's 0.0550, so "1.80x, and
+   1.32x still remains". Both halves of that are seed artifacts. At `k = 16` the improvement is
+   **4.01x**, not 1.80x, because seed 42 flatters the *shipped* solver (0.1306 against a 0.1986
+   median) — §8g had already measured that seed 42 flatters the pipeline on N06 and I did not apply
+   it to my own result. And the residual gap is **not** 1.32x: C0's median is 0.0569 against the
+   accepted solver's 0.0496. The gap is gone.
+2. **The coordinate of the half-flows explains nothing — the hypothesis was wrong on the
+   mathematics.** §8h first proposed that the residual came from the solver keeping the exact
+   logistic half-flows in `I` and round-tripping `I → u → I` each step, where C0 stays in the logit
+   coordinate. Measured paired on common increments, the two agree to four decimal places on every
+   seed, because the logit map is an **exact bijection**: conjugating an exact flow by it returns
+   the same map, so the round-trip costs floating point and nothing else. They are not two
+   compositions; they are one composition written two ways. What is left is that the pipeline's
+   accepted scheme and C0's are *the same scheme*, which is why their medians agree to within the
+   seed noise.
+
+   The variance did genuinely rise, 0.2524% → 0.7265% at seed 42, and the evaluator flagged it
+   unprompted — "the variance bias roughly doubled … the write-up presents it as a one-sided win".
+   At the median it did not: 0.4201% → 0.4549%, inside the spread. The trade the evaluator
+   described was real at one seed and not a property of the scheme.
+3. **Phase 2b is self-terminating here.** The post-cycle `moment_bias_frac_tol` of 0.0862 is below
+   `MOMENT_BIAS_WORTH_SAYING` (0.1), so `actionable` is `false` and a second cycle would not fire
+   even were one permitted. The remaining variance bias is real (3.4 SE) and under the threshold
+   that is worth an instruction.
+
+**One defect the cycle introduced.** `work_precision` still records `scheme_family: milstein` for a
+scheme whose noise sub-step is no longer Milstein, so the family label now misdescribes the solver.
+This is the same class of defect as §8g's unrecognised `strang-splitting`: the bias retry *rewrites
+schemes* and nothing re-derives the declared family afterwards.
+
+**What this does and does not establish.** It establishes that Phase 2b's accept-or-revert mechanism
+works on real kernel numbers, that the bias instrument's point estimate is accurate enough to steer
+a repair, that the scheme N06's gap turns on was within the pipeline's reach without being told, and
+that one such cycle takes **the suite's only real accuracy deficit** from 3.49x behind C0 to parity.
+It does **not** establish that fix 2 adds anything on N06 — the manual rules were withdrawn for this
+run, and whether they help has to be measured on an entry they do not name (N08
+`sde_three_halves_vol` is the designed test: a `V^{3/2}` diffusion whose `1/V` is a CIR process with
+exact moments, so rules 6 and 0c both apply, and naive Euler there biases `E[1/V]` by 18% and
+`Var[1/V]` by 39x, which is headroom a single seed can resolve). It also does not establish anything
+about the other eight entries: this is one problem, one seed, one cycle.
 
 
 ## 9. Cost
@@ -1966,6 +2091,12 @@ Stated here so the write-up in step 10 cannot drift.
   exists to reward.
 - `wrong_plan_won` and the kernel-vs-harness cross-check, which is the thing this benchmark exists to
   produce and which a conventional benchmark table does not contain.
+- **That the suite's one real accuracy deficit was an exit-policy defect and not a capability
+  limit** `[rev4 2026-11-20]`, on §8h's evidence: told only that its graded mean carried `0.2239` of
+  its own tolerance in removable bias, with the relevant manual rule withdrawn from disk and
+  `Read` denied on `benchmark/` and `docs/`, the pipeline's own solver derived the Lamperti-plus-Heun
+  noise sub-step unaided, and one cycle took N06 from 3.49× behind C0 to 0.87× at `k = 16`. Claim it
+  with the three limits §8h states: one problem, one cycle, and a scheme C0 had already found.
 
 **May not claim:**
 

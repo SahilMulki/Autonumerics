@@ -5224,6 +5224,92 @@ the price of a pool that planned four plans and a problem with two noise channel
 
 ---
 
+#### 10q. The Sonnet sweep, M01: the pin works, and the order component rewards measurement noise `[rev26 2026-11-20]`
+
+**Status: in progress — 1 of 9 entries.** M01 is recorded; M02 was interrupted mid-run. The finding
+below is about the *ranker* and does not depend on the rest of the sweep.
+
+##### The pin is confirmed by the cost record
+
+`--model sonnet` rewrote all seven `agents/*.md` and appended `--model sonnet` to the conductor.
+M01's `cost.model_usage` holds **`claude-sonnet-5-5` and nothing else** — no Opus line at all, where
+every run-3 entry carried two. That is the pin verified from the outside rather than from the flag:
+the formulator and the SDE plan-creator, both `model: opus` in the committed tree, ran on Sonnet.
+The interrupt went through the context manager's `finally` (`agents/` clean, no sidecar), so nothing
+needs the self-heal path.
+
+##### M01, three ways
+
+| | Opus cold | run 3 (Opus 5.5) | **Sonnet** |
+|---|---|---|---|
+| `pathwise_rel_err` | 2.477e-03 | 3.574e-05 | **2.925e-03** |
+| vs Opus cold | 1.000× | 0.014× | **1.181×** |
+| vs run 3 | — | 1.000× | **81.8× worse** |
+| winner | — | — | `2-platen-derivative-free-milstein` |
+| wall / cost | — | 1037.6 s / $3.70 | **423.4 s / $1.81** |
+| verdict | PASS | VERIFIED_PASS | **VERIFIED_PASS** |
+| `wrong_plan_won` | — | false | **true** |
+
+Sonnet is 2.4× cheaper and 2.5× faster and **loses to Opus answering cold** on the one entry where
+run 3 won by 69×. But the pool says the generation is not where it lost.
+
+##### The pool was good and the ranker picked the wrong plan
+
+All three plans certified at 10, and the harness separates them cleanly:
+
+| plan | harness error | `observed_order` ± se | floor | `order` component |
+|---|---|---|---|---|
+| `1-milstein` | **0.02608** | 0.9865 ± 0.0096 | 1.0 | 0.9865 |
+| `2-platen-derivative-free-milstein` (winner) | 0.03079 | 1.0100 ± 0.0132 | 1.0 | **1.0000** |
+| `3-euler-maruyama` | 0.21663 | 0.4804 ± 0.0152 | 0.5 | 0.9608 |
+
+`wrong_plan_won: true`, and unlike every true cell in run 3 this one is **outside the margin**: the
+gap is 0.00471 against `harness_error_margin` 0.000689, so **6.8×** resolved. The pool's best plan
+was available, implemented, certified, and lost.
+
+Recomputing `ranking.components` on the recorded blocks shows there is exactly one component doing
+it:
+
+```
+1-milstein      {accuracy: null, order: 0.9865, structure: 1.0, consistency: 0.5267, cost: null}
+2-platen        {accuracy: null, order: 1.0000, structure: 1.0, consistency: 0.5250, cost: null}
+3-euler         {accuracy: null, order: 0.9608, structure: 1.0, consistency: 0.5301, cost: null}
+```
+
+`accuracy` is unresolved (the §10m condition, on 7 of 9 sciml pools), `structure` ties at 1.0 on all
+three — `invariant_worst_headroom` is 6.0 for every plan — and `consistency` spans 0.005 and points
+at **Euler-Maruyama**, the pool's worst. So `order` decides, and `order` inverts the top two.
+
+##### Why it inverts them, and why §10o's rule is not the fix
+
+The pool-relative reading shipped in §10o **correctly declines this pool**. Its top two are 0.0235
+apart on a combined standard error of 0.0163 — **1.44σ**, far under `MIN_ORDER_SEPARATION = 5.0` —
+so guard 2 fires and every plan falls back to the absolute floor-relative reading. That is the floor
+working as designed: two Milstein variants whose measured orders differ by 1.4σ are not
+distinguishable on order, and the rule says so.
+
+The defect is in **what it falls back to**. `order` measures a one-sided shortfall against the
+floor, so plan 2's `1.0100` — an *overshoot*, 0.76σ above its floor — collects a free **1.0**, while
+plan 1's `0.9865` — a 1.4σ undershoot of the same floor — is docked **0.0135**. Both plans are
+order-1 Milstein schemes that measured order 1 to within their error bars. The component is reading
+**the sign of the noise in the order estimate** and ranking a pool on it.
+
+This is §10k's asymmetry in a second place. §10k fixed the *gate* on the module's own §19 rule —
+*an order far above the theoretical one is noise, not a bonus* — and recorded that `ranking.order`
+"had already been corrected on that sentence." It was corrected on the *failing* side: an overshoot
+is no longer penalised. It was never corrected on the *rewarding* side, and on a pool where every
+other component ties, being un-penalised **is** the bonus.
+
+**The candidate, named and not shipped:** saturate `order` at 1.0 for any plan that clears its floor
+*within its own error bar*, so a 1.4σ undershoot is not scored below an overshoot. On this pool that
+ties plans 1 and 2 at 1.0, leaves plan 3 at 0.9608 (3.4σ short on the one-sided reading, correctly
+last), and hands the top pair to `consistency` — which here prefers plan 1, **the harness's best**.
+So it repairs M01-Sonnet. It is recorded as a candidate on **n = 1** and goes nowhere until it is
+priced on both corpora the way §10m and §10o priced theirs; three of this plan's shipped rules were
+argued from a single pool and two of those readings were later wrong.
+
+---
+
 ## 11. Deliberately not done `[N]`
 
 - **Adaptive-tolerance comparison.** The contract fixes `dt` (_"Use the `dt` you are given"_) `[R]`;
