@@ -279,6 +279,22 @@ BLOCK_KEYS = (
     # 500k -> 2M paths moved the error the wrong way, 0.003647 -> 0.004019. See
     # `sde/driver._limited_by`.
     "functional_limited_by",
+    # The same bias/sampling question asked of the **graded moments** rather than of a
+    # declared functional, which most SDE problems do not have: which moment's `dt`
+    # bias binds, how much of that moment's tolerance it is worth, and whether it is
+    # worth an instruction (`sde/driver.MOMENT_BIAS_WORTH_SAYING`). Reporting only --
+    # no gate reads them, deliberately, since they were added to a suite whose
+    # verdicts were already measured.
+    #
+    # On the block and not only in the JSON for the §10h reason: the conductor's
+    # retry branch reads the block, so a field the block does not carry makes the
+    # rule that reads it inert in the live pipeline. `functional_limited_by` directly
+    # above is the same field for the functional case and was added for the same
+    # reason. Measured 2026-11-18: `sde_sis_epidemic` plan 1 and
+    # `sde_wright_fisher_mutation` plan 1 both certified with 22% and 28% of their
+    # variance tolerance sitting in removable `dt` bias, and the only moment the
+    # kernel extrapolated was the mean, which carried 0.008% and 0.6%.
+    "moment_bias_binding", "moment_bias_frac_tol", "moment_bias_actionable",
     # Roache's factor of safety on the reported error: 1.25 for a measured order,
     # 3.0 for one imported from an MMS probe (§7a). It sets the *pass* bar, not the
     # solver's quality, so the band placement divides it back out.

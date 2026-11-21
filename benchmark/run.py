@@ -962,6 +962,15 @@ RECORDED_METRICS = (
         # (docs/improving-autonumerics/11-sde-accuracy-fixes.md §1).
         "functional_name", "functional_rel_tol", "functional_rel_error",
         "functional_bias_rel", "functional_se_rel", "functional_limited_by",
+        # The same bias/sampling split asked of the **graded moments**, which is the
+        # form most SDE entries take (few declare a functional). Measured 2026-11-19
+        # on `notable_9e_rep1`: the three fields were on every plan's `<metrics>`
+        # block and on none of the records in `results.json`, so the evidence for the
+        # refine instruction that fired during the run -- `sde_sis_epidemic`'s two
+        # plans at 3.82x and 3.55x of tolerance in removable variance bias -- existed
+        # only in a gitignored workspace, and the durable record showed `None`. That
+        # is this whitelist's own documented failure mode, found the same way.
+        "moment_bias_binding", "moment_bias_frac_tol", "moment_bias_actionable",
         "solver_sha256")
 
 

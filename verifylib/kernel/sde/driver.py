@@ -456,6 +456,16 @@ def evaluate_sde(spec, plan_dir, agent):
         order_detail.get("richardson"), dict) else None
     metrics.record(m, "richardson_stable",
                    richardson["stable"] if richardson else "unavailable")
+    bias = moment_bias(order_detail, mean_tol, var_tol)
+    if bias is not None:
+        m["summary"]["moment_bias"] = bias
+        if bias.get("binding"):
+            # Named in the summary so the conductor's retry branch can read it
+            # without parsing the nested record, the same way it reads
+            # `functional_limited_by`.
+            m["summary"]["moment_bias_binding"] = bias["binding"]
+            m["summary"]["moment_bias_frac_tol"] = bias["bias_frac_tol"]
+            m["summary"]["moment_bias_actionable"] = bias["actionable"]
     m["summary"]["observed_order"] = order_detail.get("strong_order")
     m["summary"]["order_floor"] = expected_strong
     # F17. `ranking.order` needs a *design* rate to measure the observed one
@@ -1381,7 +1391,13 @@ def _orders(plan_dir, solve, num_paths, dt0, T, levels, seed, expected_strong,
                             exact_sampling=component in exact_sampling)
         per.append({**checks, "component": component, "strong_detail": strong_detail,
                     "weak_detail": weak_detail,
-                    "richardson": crn.richardson_moment(runs, weak, component)})
+                    "richardson": crn.richardson_moment(runs, weak, component),
+                    # The variance's own extrapolation, which is new (2026-11-18) and
+                    # is the one the graded moment usually needs: `richardson_moment`
+                    # defaulted to the mean, and on the two plans the harness faults
+                    # worst for accuracy the mean is the moment with no bias in it.
+                    "richardson_variance": crn.richardson_moment(
+                        runs, weak, component, statistic="variance")})
     # **A component integrated exactly does not veto the ones that were measured.**
     # Its ladder differences sit at roundoff, so `crn.abstention` abstains on it --
     # correctly, there is no rate to read -- and `_worst_component` ranks an
@@ -1631,8 +1647,61 @@ def _dynkin_footprint(num_paths, dt, T, levels, m):
                   "increment_bytes_finest": size}
 
 
+#: Levels the asymptotic self-consistency test needs: ``dynkin.check`` extrapolates
+#: two overlapping three-level windows and asks whether they reach the same limit, so
+#: the shortest ladder that can test its own asymptoticity has four.
+DYNKIN_CONFIRM_LEVELS = 4
+
+
 def _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult, levels=3, m=None,
             max_bytes=None, sub_dt=None):
+    """:func:`_dynkin_once`, plus one escalation: a **failure** measured on a ladder
+    too short to test its own asymptoticity is re-run on a longer one before it is
+    believed.
+
+    Only a ``False`` escalates, for the asymmetry :func:`dynkin.windows_agree`
+    documents — and because the cost falls where the evidence is wanted. A ladder of
+    ``L`` levels costs ``2^L - 1`` graded-step-units, so a passing plan keeps paying 7
+    and only a failing one pays the extra 15. Measured 2026-11-18: three of the four
+    Dynkin failures on the notable suite were plans the harness passes, and all three
+    came from reading a limit off levels that were not yet in one asymptotic regime.
+
+    The escalated run **replaces** the short one rather than being compared with it.
+    ``crn.ladder_spec`` draws one fine path at ``Nt0 * 2^(levels-1)`` and coarsens it,
+    so a four-level ladder is a different realization at every level, not the
+    three-level one with a level appended; there is nothing to pool.
+    """
+    outcome, detail = _dynkin_once(spec, plan_dir, solve, num_paths, dt, T, seed,
+                                   ci_mult, levels=levels, m=m, max_bytes=max_bytes,
+                                   sub_dt=sub_dt)
+    if outcome is not False or int(levels) >= DYNKIN_CONFIRM_LEVELS:
+        return outcome, detail
+    want = DYNKIN_CONFIRM_LEVELS
+    size, _ = _dynkin_footprint(num_paths, dt, T, want, m)
+    budget = DYNKIN_MAX_BYTES if max_bytes is None else max_bytes
+    if size > int(budget):
+        # The one case where a failure stands on an untested ladder. Recorded rather
+        # than silently downgraded: "the verdict could not be confirmed" is a
+        # different statement from "the verdict was confirmed", and a reader of the
+        # metrics block has to be able to tell them apart.
+        return outcome, {**detail, "confirmation": {
+            "ran": False, "levels_attempted": want, "levels": int(levels),
+            "reason": f"the failure could not be confirmed on a {want}-level ladder: "
+                      f"its finest level needs {size / 1000 ** 3:.1f} GB against the "
+                      f"{int(budget) / 1000 ** 3:.0f} GB budget, so this verdict rests "
+                      f"on {int(levels)} levels and its asymptoticity is untested"}}
+    got, sub = _dynkin_once(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult,
+                            levels=want, m=m, max_bytes=max_bytes, sub_dt=sub_dt)
+    return got, {**sub, "confirmation": {
+        "ran": True, "levels_attempted": want, "levels_short": int(levels),
+        "verdict_on_short_ladder": outcome,
+        "note": f"a failure on {int(levels)} levels was re-measured on {want}; the "
+                f"four-level ladder is a different CRN realization and its verdict "
+                f"is the one reported"}}
+
+
+def _dynkin_once(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult, levels=3,
+                 m=None, max_bytes=None, sub_dt=None):
     # [REV 60]: resolved here rather than as a default argument. A default is
     # evaluated once at import, so `DYNKIN_MAX_BYTES` was captured and the module
     # attribute could not be overridden by anything -- which is why the budget
@@ -1721,6 +1790,70 @@ def _dynkin(spec, plan_dir, solve, num_paths, dt, T, seed, ci_mult, levels=3, m=
 #: slip produces at the path counts in use (2e-5 at 50 000), which is the defect
 #: this exists to see.
 REPORTED_MOMENT_RTOL = 1e-6
+
+
+#: How much of a moment's own tolerance the graded step's discretization bias has to
+#: be worth before the retry instruction is worth issuing. Below a tenth, removing
+#: *all* of the bias cannot change whether the plan passes and barely moves its
+#: headroom, so the instruction would be noise on every explicit scheme -- at the
+#: path counts in use almost any real bias clears its standard error, which is the
+#: same reason ``richardson_moment``'s own ``stable`` verdict is left on a relative
+#: shift rather than on standard errors.
+#:
+#: The two plans this diagnostic was built for sit at 0.216 and 0.280 — a factor of
+#: two to three above the line rather than against it, which is the check that the
+#: line was not drawn around them.
+MOMENT_BIAS_WORTH_SAYING = 0.1
+
+
+def moment_bias(order_detail, mean_tol, var_tol):
+    """``{detail}`` or ``None``: how much of each graded moment's error is ``dt`` bias,
+    priced against that moment's own tolerance.
+
+    The Richardson extrapolations say where each moment is heading as ``dt -> 0``;
+    the distance from the finest level to that limit is the discretization bias the
+    graded step is carrying. Dividing by the tolerance makes the two moments
+    comparable and makes the number mean something on its own: ``0.22`` is "the
+    variance's ``dt`` bias is 22% of the variance's gate".
+
+    **Why this is reported and gates nothing.** Added after the fact on a suite whose
+    verdicts are already measured (2026-11-18), so making it a gate would be moving
+    one after seeing the schemes it judges. What it is for is the branch that already
+    exists: F19's retry reads ``limited_by`` and tells a *bias*-limited plan to cut
+    ``dt`` or move to a scheme carrying less bias, and that branch could only be
+    reached through the unresolved path — so a plan that was resolved, certified and
+    bias-dominated, which is exactly `sde_sis_epidemic` plan 1 at 2.2% of a 10% gate,
+    never saw it.
+
+    ``real`` is the honest qualifier: a shift inside its own paired standard error is
+    not a measured bias, and must not be reported as one.
+    """
+    out, worst, worst_frac = {}, None, None
+    for name, key, tol in (("mean", "richardson", mean_tol),
+                           ("variance", "richardson_variance", var_tol)):
+        r = order_detail.get(key)
+        if not isinstance(r, dict) or r.get("graded_relative_shift") is None:
+            continue
+        # The *graded* step's bias, not the finest ladder level's: the plan is scored
+        # on the number it reports at the graded `dt`, and on an O(dt) scheme the
+        # ladder's dt/4 level understates that bias fourfold.
+        bias = float(r["graded_relative_shift"])
+        tol = float(tol) if tol else None
+        frac = (bias / tol) if tol else None
+        real = r.get("graded_shift_within_noise") is False
+        out[name] = {"bias_rel": bias, "tol": tol, "bias_frac_tol": frac,
+                     "real": bool(real), "value_graded": r.get("value_graded"),
+                     "value_extrapolated": r.get("value_star"),
+                     "shift_in_se": r.get("graded_shift_in_se")}
+        if real and frac is not None and (worst_frac is None or frac > worst_frac):
+            worst, worst_frac = name, frac
+    if not out:
+        return None
+    return {"moments": out, "binding": worst, "bias_frac_tol": worst_frac,
+            "actionable": bool(worst is not None
+                               and worst_frac >= MOMENT_BIAS_WORTH_SAYING),
+            "note": ("the graded step's discretization bias in each moment, as a "
+                     "fraction of that moment's own tolerance; report-only")}
 
 
 #: How many times one term of the functional error has to exceed the other before the

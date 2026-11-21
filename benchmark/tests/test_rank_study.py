@@ -265,6 +265,25 @@ def test_dropping_the_error_bar_fabricates_an_accuracy_instead_of_abstaining():
         assert field in run.RECORDED_METRICS, field
 
 
+def test_every_field_a_conductor_instruction_branches_on_is_recorded():
+    """A field the *conductor* acts on has to survive into `results.json`, or the
+    run's own evidence for what it did lives only in a gitignored workspace.
+
+    Measured 2026-11-19 on `notable_9e_rep1`: the refine instruction fired on two
+    `sde_sis_epidemic` plans carrying 3.82x and 3.55x of tolerance in removable
+    variance bias, both plans' `<metrics>` blocks carried the three `moment_bias`
+    fields, and every record in `results.json` showed `None` for all three -- so the
+    only durable trace of why the instruction fired was the conductor's own prose in
+    `STATE.md`. `RECORDED_METRICS` is a ranking input *and* the audit trail.
+    """
+    from benchmark import run
+    from verifylib.kernel.metrics import BLOCK_KEYS
+    for field in ("moment_bias_binding", "moment_bias_frac_tol",
+                  "moment_bias_actionable", "functional_limited_by"):
+        assert field in BLOCK_KEYS, f"{field} never reaches the conductor"
+        assert field in run.RECORDED_METRICS, f"{field} never reaches results.json"
+
+
 def test_the_record_whitelist_loses_nothing_the_ranker_would_have_used():
     """End to end on a synthetic pool: cutting a summary to the whitelist leaves
     every ranking component bit-identical (SS10h).

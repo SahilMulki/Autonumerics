@@ -1483,6 +1483,360 @@ and the ranker ships **2-milstein-levy-area, `decided_by: sqi`** (order 1.0 agai
 against 0.042). Tests: `verifylib/tests/test_pool_tie_fixes.py`; full suite 1 417 passed, the same two workspace-driven failures as §8c. The two records above stay as
 measured; 9a restarts from N01.
 
+### 8e. Step 9a complete, and the two instrument defects it exposed `[rev4 2026-11-18, N]`
+
+**The five order-bearing entries all pass the external harness.** `notable_9a_v2.json`,
+`scheme-matched`, one rep: N01, N03, N04, N06 and N07 are all `VERIFIED_PASS`. N07 needed a second
+launch — its first run died when the Mac slept on battery overnight, which cut the network and
+failed the plan-creator three times with "Can't reach the API server"; the runner's timeout is on
+the monotonic clock, so 2 400 s took 11 281 s of wall clock to fire. Environmental, no defect, and
+the record marks it `RUN_ERROR` with `graded_incomplete: true`. The re-run took 863 s.
+
+**Against the C0 baseline the pipeline does not win on accuracy, and loses badly on two entries.**
+Same harness, same graded step, same path count, same seed on both sides; Opus is the worst of three
+reps, the pipeline is one run.
+
+| | Opus (C0, no manual, one reply) | pipeline | gate |
+|---|---|---|---|
+| N01 | 0.45% strong | 0.85% strong | 2% |
+| N03 | 0.12–0.82% var | 0.44% var | 10% |
+| N04 | **0.17% var** | **3.6% var** | 10% |
+| N06 | **0.55% var** | **2.2% var** | 10% |
+| N07 | 0.54% mean | 0.81% mean | 5% |
+
+Verdicts separate nothing (15/15 against 5/5), which is §8a's reading holding. The two wide gaps are
+the finding, and both are the *same* defect in the same place: the noise sub-step of an otherwise
+correct scheme. On N06 both systems derived the logit chart, the exact logistic half-flow and the
+Strang split — and the pipeline's plan wrote "Euler-Maruyama, additive noise so EM = Milstein here"
+for the middle step where Opus wrote Heun. Measured on shared increments at 2M paths, that one line
+is the whole gap: variance error 2.39% against 0.89% at the graded step, 0.45% against 0.05% at
+dt/4, i.e. first order against second.
+
+Four candidate causes were separated, and **the manual is not the binding one**. The pipeline
+proposed stochastic Heun on N07 under the same manual two problems later, and invents the logit
+chart, the exact flow and TR-BDF2 — none of which the manual contains. What the manual supplied was
+a *stopping argument* for the one sub-step nobody was thinking about: rule 1 says Milstein adds
+nothing for additive noise, and in a two-scheme taxonomy that reads as "EM is as good as it gets",
+which is false (the gain is in weak order). The binding causes are the two below.
+
+**Defect 1 — the kernel's only `dt`-extrapolation ran on the moment it was not grading.**
+`crn.richardson_moment` extrapolated the **mean**. On both wide-gap plans the mean is the moment with
+no bias in it:
+
+| plan | scored error | mean shift | verdict reported |
+|---|---|---|---|
+| N06 `1-logit-strang-splitting` | 2.23% (variance) | 0.005% | `richardson_stable: true` |
+| N04 `1-truncated-milstein` | 3.60% (variance) | 0.06% | `richardson_stable: true` |
+
+The strong-order study cannot see it either: in logit coordinates the noise is additive, so the EM
+and Heun middle steps both measure strong order 1.0 (N06 read 1.0001 against a 0.5 floor). The weak
+order *was* measured — 1.30 against a declared 1.0 — and the band is one-sided, so an overshoot
+passes and nothing compares 1.30 against the ≈2.0 the structure allows. The plan's own self-check
+recorded the variance moving 38.91 → 39.28 → 39.71 toward 39.80 as `dt` halved and concluded
+"variance bias shrinks roughly linearly in dt", i.e. it diagnosed an O(dt) weak bias correctly and,
+with `dt` fixed by the contract and the gate met, treated it as the floor.
+
+**Fixed:** `richardson_moment` takes a `statistic` and the driver now extrapolates the variance too,
+anchored at the **graded** step rather than the ladder's finest level. That anchor was a bug found by
+its own test: the ladder refines downward, so the finest level is `dt/4` and its leftover bias is a
+quarter of what the reported moment carries — 0.44% where the graded step carries 2.45%. Measured
+after the fix, with the limits landing on the independent references:
+
+| plan | graded variance | extrapolated limit | graded bias | reference | bias/tol |
+|---|---|---|---|---|---|
+| N06 plan 1 | 39.02 | 39.887 | 2.16% (36 s.e.) | 39.799 | 0.216 |
+| N04 plan 1 | 0.06275 | 0.061037 | 2.80% (41 s.e.) | 0.060993 | 0.280 |
+
+Both schemes converge to the right answer; essentially all of their reported error is removable
+discretisation bias. `moment_bias` reports it per moment against that moment's own tolerance, and
+the conductor now carries one instruction for an **eligible** plan whose bias is actionable, naming
+the moment and saying that more paths cannot touch it. **It gates nothing** — added after these
+verdicts were measured, so making it a gate would be moving one after seeing the schemes it judges.
+The window is narrow but real: N06 plan 1 ran three cycles, was uncertified for the first two, and
+spent both on the Dynkin observable quadrature.
+
+**Defect 2 — Dynkin failed three plans the harness passes.** All four Dynkin failures on the suite
+were read off three levels that were not in one asymptotic regime:
+
+| plan | 3-level verdict | what the ladder actually does |
+|---|---|---|
+| N07 `1-baoab-splitting` | z = 95 vs bar 2.43 | leftover 6.5e-7 → 4.8e-8 → 2.1e-9 → 1.7e-10, ~15× per halving |
+| N06 `2-strang-milstein-in-i` | z = −4.73 on `X**2` | settles to −16.7 (z = −1.2) two halvings finer |
+| N06 `3-logit-drift-implicit-euler` | z = +64 on `X**2` | +265 → +12 → −13.5 → −15.2, same limit as the plan that passed |
+
+BAOAB is the sharpest case: its residual on `q` is a smooth, nearly noiseless O(dt²) term, so the
+extrapolation removes it and a 6.6e-7 higher-order remnant survives against a 7e-9 standard error.
+Refining does not rescue it — z falls 42 → 25 → 8.5 → 5.6 and is still outside the bar at the finest
+pair, because the error bar shrinks as fast as the remnant. Stochastic Heun passed only because its
+`q` update happens to coincide with the kernel's own trapezoid rule, making its residual exactly
+zero: the check was rewarding agreement with the quadrature, not consistency with the generator.
+Cost: N07 lost the scheme the entry is built around, N06 ranked the wrong plan (plan 2's estimated
+error was 0.65% against the winner's 2.2%, and the harness agreed, 0.13 against 0.22 of gate), and
+three of the suite's kernel–harness disagreements are false.
+
+**Fixed:** with four or more levels a *failing* function must extrapolate to the same limit from two
+overlapping windows before the leftover is called a generator violation, and a `False` on three
+levels escalates to a four-level ladder once (`dynkin.windows_agree`,
+`driver.DYNKIN_CONFIRM_LEVELS`). The comparison is paired, since every level is a coarsening of one
+path. A real violation keeps its verdict: a `dt`-independent offset extrapolates to the same number
+in both windows, so §20's `−0.111` case still fails. Only failures escalate — a pass never pays for
+the fourth level and can never be turned into an abstention by it, which is asymmetric on purpose.
+An abstention is **not** a pass: it forfeits the Dynkin circularity break, so those plans land at 9,
+not 10.
+
+Building the test found a second bug in the fix: `−0.111 + 0.01 dt` extrapolates to `−0.111` from
+either window *analytically*, so both the shift and its paired standard error collapse to float64
+roundoff — 1.5e-17 against 1.4e-18, read as **10.8 standard errors** of disagreement, abstaining on
+a real violation. `WINDOW_ROUNDOFF_REL` floors the shift at 1e-12 of the residual magnitude the
+extrapolation was formed from.
+
+Tests: `verifylib/tests/test_dynkin_window.py` (18) and `verifylib/tests/test_moment_bias.py` (18); full suite **770 passed**, the same two workspace-driven failures as §8c and §8d. Both new files are synthetic by construction — `workspace/` is gitignored, so a test may not read a plan off disk, and the measured numbers live here instead. Three source-inspection guards needed updating, not weakening: `_dynkin` became a wrapper and the ladder is now `_dynkin_once`, so the two benchop guards follow the body, and the manual's example `<metrics>` block gained the three new keys it has to agree with.
+
+### 8f. The post-fix re-run: both instruments work, and neither moved the outcome `[rev4 2026-11-19, N]`
+
+`notable_9e_rep1.json`, N04 and N06, `scheme-matched`, one rep each, with both fixes live. **Both
+`VERIFIED_PASS`.** This is also the first pipeline run on this suite that records cost (Claude Code
+2.1.326), which changes what the comparison against C0 can say.
+
+| | Opus C0, 3 reps | run 1, pre-fix | run 2, post-fix |
+|---|---|---|---|
+| **N04** | **0.017** | 0.360 | 0.126 |
+| **N06** | **0.055** | 0.223 | **0.273** |
+| cost | $0.12–0.25 | not recorded | **$5.09 / $7.42** |
+| wall | 23–67 s | 464 / 603 s | 764 / 1 792 s |
+
+The metric is the worst moment as a fraction of **its own** gate, so the mean (5%) and the variance
+(10%) are comparable; §8e's table quoted raw percentages, which flatters whichever moment has the
+looser gate. On that metric the pipeline is **30–45× C0's cost**, 25–30× its wall time, and still
+5–7× its error.
+
+**Both fixes fired, and both are accurate as instruments.**
+
+- **The Dynkin escalation ran twice, both on N06.** Plan 1 **failed on three levels and passed on
+  four** — `verdict_on_short_ladder: false`, outcome `True`, z = −0.02 / −0.66 / −0.66 against a
+  2.43 bar — which is a false failure of run 1's exact class, caught and reversed in the live
+  pipeline. Plan 3, the Euler control, escalated and **abstained**: its `X**2` limit moves −282.3 to
+  −50.4 across the windows, 194 paired standard errors. Nothing slipped through — the moment gate
+  failed it at 3.81× tolerance — and the abstention is the more accurate statement, since that plan
+  integrates the right equation badly rather than the wrong equation.
+- **The bias diagnostic predicted the binding error.** On N06's winner it read 0.257 of tolerance
+  against an actual 0.273. It stayed **silent** on N04's winner, whose error is 0.63%, and fired on
+  both of N04's biased plans (0.254 and 0.274).
+- **The retry fired harder than predicted.** §8e guessed a 0.22-scale bias. Both N06 plans came out
+  of cycle 1 carrying **3.82×** and **3.55×** of tolerance in removable variance bias, and the
+  conductor's record shows both repaired in a single cycle: "cycle 1 variance (3.82x tol) -> fixed;
+  now mean at 0.257x tol".
+
+**And neither fix is why the numbers moved.** This is the finding.
+
+- **N04 improved 2.9× with the instruction never firing.** `STATE.md` says so in those words —
+  *"never acted on — winner exit fired first"*. Plan 1 certified on cycle 1 and the early exit ended
+  the pool. The gain is the plan-creator proposing a **Lamperti/arcsine** transform (additive noise,
+  exact folding reflection) instead of run 1's truncated Milstein — the same class of structural move
+  C0 makes unprompted. Run-to-run variation, not the fix.
+- **N06 is where the fix fired, and it came out slightly worse**, 0.223 → 0.273. The pool was
+  structurally weaker this run (Crank–Nicolson drift with Newton sub-steps, rather than run 1's exact
+  logistic half-flows); the retry rescued it from 3.8× tolerance and it still landed short of run 1.
+
+So **run-to-run scheme variance is larger than the fix's effect on the final number**, and one rep
+per condition cannot separate them. The instruments are validated; their effect on outcomes is not
+measured. That is the whole case for the three reps the plan asked for.
+
+**Three gaps are now measured rather than predicted.**
+
+1. **The winner-exit window is the binding constraint.** N04 is the proof: a plan that certifies on
+   cycle 1 is never eligible, so no instruction can reach it, however large its bias. Widening this
+   means ending certify-then-stop or adding a polish cycle — the first is close to a gate move, and
+   neither is done.
+2. **N06 still ships the wrong plan.** Plan 2 was better by harness (0.130 against 0.273) and also
+   certified at 10, but `decided_by: sqi (over order, structure, consistency only — accuracy did not
+   resolve pool-wide)`. Accuracy is 35% of the index and did not enter the decision.
+3. **`certified_pair_single_family: true` on N06** — both certified plans are `milstein`, so the
+   agreement gate bought no circularity break, only a record.
+
+**Two self-inflicted defects, both fixed before the next rep.**
+
+- **A confound I introduced in §8e's own fix.** The new §19 passage in
+  `references/verification_manual.md` contained the clause "removable by a higher-order noise
+  sub-step", and `agents/solver-sde.md` requires reading §18 and §20 of that file — so scheme advice
+  sat where a solver would read it, which would have muddied step 5's manual experiment. Cut; §19 now
+  says explicitly that it is a measurement recipe and that what to *do* about a bias belongs to the
+  conductor's instruction and the scheme manual. The §20 table's rows also named N06's own plans from
+  run 1, which is prior-run information about a problem still being benchmarked; the rows now name
+  the scheme class and keep the numbers.
+- **The record dropped the evidence.** The three `moment_bias` fields were on every plan's
+  `<metrics>` block and on **no** record in `results.json`, because `run.RECORDED_METRICS` did not
+  carry them — so the only durable trace of why the instruction fired was the conductor's prose in a
+  gitignored workspace. That is this whitelist's own documented failure mode, found the same way the
+  sciml census found it. Added, with a guard:
+  `benchmark/tests/test_rank_study.py::test_every_field_a_conductor_instruction_branches_on_is_recorded`.
+
+**Next:** two more reps of N06, then two of N04, before anything is concluded. Only then the manual
+experiment — `plan-creator-sde` alone against the frozen spec under three manual conditions, scoring
+one binary outcome: does any plan propose a noise sub-step of weak order above 1. Every run from here
+carries modified agent files, so `agent_file_hashes` differs and these records must stay their own
+condition, never folded into §8e's 9a numbers.
+
+
+### 8g. The second reps, and the finding that the accuracy axis cannot resolve them `[rev4 2026-11-20, N]`
+
+`notable_9e_rep2.json` (N06, 2026-11-19, $12.24, 2 168.7 s, 6 iterations) and
+`notable_9e_n04_rep2.json` (N04, 2026-11-20, $5.33, 809.5 s, 3 iterations), both
+`scheme-matched`, both **`VERIFIED_PASS`**. With these the two post-fix conditions have two
+reps each.
+
+| | Opus C0 | pre-fix | post-fix rep 1 | post-fix rep 2 |
+|---|---|---|---|---|
+| **N04** | **0.017** | 0.360 | 0.126 | 0.126 |
+| **N06** | **0.055** | 0.223 | 0.273 | **0.131** |
+
+**N06 rep 2 is the first directly attributable repair on this suite.** The winner,
+`2-split-step-implicit-milstein`, is also the first N06 winner that is the pool's best plan
+(`wrong_plan_won: false`). The conductor's record names the mechanism:
+
+> `bias_moment: variance (moment_bias_frac_tol 3.5424)` — fixed by replacing the first-order
+> backward-Euler drift substep with the exact logistic flow: variance 33.9% → 0.26%,
+> mean 7.6% → 0.92%
+
+So the diagnostic measured 3.54× of tolerance in removable variance bias, the instruction named
+it, and the solver reached the **exact logistic half-flow** — the same structural move run 1's
+winner had and rep 1's lost. Reached by measurement rather than by the plan-creator happening to
+propose it, which is what the fix was for.
+
+Two counterweights in the same run, both worth keeping:
+
+- **The instruction is not a guaranteed win, and a solver may correctly refuse it.** Plan 1
+  received it, tried TR-BDF2, **measured it worse at the graded step** and kept its fitted theta.
+- **A new defect: the instruction can push a plan into a family the kernel cannot name.** Plan 3
+  rewrote itself into Strang splitting and declared `scheme_family: strang-splitting`, which
+  `plan_meta.SDE_FAMILIES` does not carry, so the kernel read it as null and the plan silently
+  lost its family-specific order band. This is §12's `SDE_FAMILIES` caveat arriving by a second
+  route — the bias retry *generates* unrecognised families, so extending the vocabulary is no
+  longer only a work-axis question.
+
+**The Dynkin escalation fired twice more and composed correctly with D9.** Plan 1 **abstained**
+at z = 18.41: its limits move 4.07 → 1.18 and 473 → 157 across the windows (426 and 396 paired
+standard errors) with residual orders −1.41 and −0.32, so the stiff first step at `dt = 0.02` is
+simply not asymptotic. Pre-fix that was a flat failure on a plan the harness passes. It scored 9,
+not 10 — the abstention forfeits the circularity break, as designed. Plan 3's escalation then
+**passed thin**, z = 2.19 against a 2.43 bar, 0.243 inside the 0.7 replication margin, so D9 seed
+replication fired and the median over three seeds (3.30) returned `False`. The escalation did not
+let a weak plan through; the two rules compose.
+
+Also first-time on N06: the agreement gate returned **AGREE across different families** (implicit
+vs milstein), a real circularity break rather than rep 1's same-family record. And the
+`RECORDED_METRICS` fix is confirmed live — the three `moment_bias` fields appear on records in
+`results.json` for the first time, which is the only reason the attribution above is durable.
+
+A **formulator spec defect capped the pool at 9 again** before any solver ran:
+`verification.generator` was an unbuildable prose-only dict and the gated shape invariant raised
+`NameError`. One formulator re-dispatch fixed both. **Third run with a spec-form defect**, and it
+is now the most frequent single cause of a capped pool on this suite.
+
+**N04 rep 2 reproduces rep 1 to all 17 digits** — mean `0.0063106661794125043`, variance
+`0.0052039739545490333` — under a *different* plan name. This is not a stale workspace: `--fresh`
+was passed and the plan text differs (`Y = arcsin(2X−1)` against `Y = 2·arcsin(√X)`). Those are
+the same Lamperti transform up to a shift of π/2, so the pipeline rediscovered the same scheme
+twice and the fixed seed then returns the same sample. **Zero within-condition spread**, against
+N06's 2.1×.
+
+Its winner certified on iteration 1 again, with plans 2 and 3 frozen in `await_solver`, so the
+bias instruction again never reached the pool — but its `moment_bias_actionable` was **`False`**
+on the winner, correctly: that winner has no removable bias (measured below). **The early exit
+forfeited nothing, so §8f's gap 1 is not supported by this rep.** What the exit did leave behind
+is pool health: plan 3 froze at **1.1605×** of its mean tolerance and was the only failing plan
+(mean 8.68%), flagged actionable and probably repairable — though plan 3 was explicitly written
+as the control "pricing what omitting a real boundary rule costs", so leaving it broken is
+arguably correct.
+
+#### The finding: three of the four reported accuracy gaps are seed artifacts
+
+The suite grades every solver at one fixed seed. Re-grading each side's *graded source* at 64
+independent seeds, at the contract `(n, dt)`
+(`docs/notable-sde-data/n03_n04_n06_n07_seed_resolution.py`, which asserts that seed 42
+reproduces all eight recorded values before reporting anything):
+
+| | seed 42 — what the suite reports | | | median over 64 seeds | | | pipeline avg abs bias (mean / var) |
+|---|---|---|---|---|---|---|---|
+| | pipeline | C0 | ratio | pipeline | C0 | ratio | |
+| **N03** | 0.0442 | 0.0124 | 3.6× | 0.0395 | 0.0468 | **0.84×** | 0.056% / 0.481% |
+| **N04** | 0.1262 | 0.0169 | 7.5× | 0.0420 | 0.0387 | **1.08×** | 0.194% / 0.279% |
+| **N06** | 0.1306 | 0.0550 | 2.4× | 0.2237 | 0.0679 | **3.29×** | 1.091% / 0.462% |
+| **N07** | 0.1622 | 0.1086 | 1.5× | 0.1011 | 0.0908 | **1.11×** | 0.497% / 0.607% |
+
+The medians are stable from about `k = 16` and the ratios move by under 0.1 between `k = 16` and
+`k = 64`, but **`k = 8` is too few** — at eight seeds N03 reads as a 1.18× tie rather than a
+reversal. Quote the ratio, not a max/min range: a range statistic grows with the sweep size and is
+not comparable across `k`.
+
+- **N03's gap reverses.** The pipeline is *better* on the median (0.0395 against 0.0468) while the
+  record says it is 3.6× worse, and the two sides' biases agree to within 0.005 percentage
+  points on both moments (0.047% / 0.469% against 0.042% / 0.466% at `k = 16`).
+- **N04's 7.5× collapses to 1.08×**, and seed 42 is the **worst of 120 draws** for the pipeline's
+  own scheme (99.2nd percentile; median 0.0409, 95th 0.0936). The benchmark graded that scheme on
+  its single worst seed in 120 and the baseline on a 14th-percentile one.
+- **N07's 1.5× collapses to 1.11×**, a real but small residual.
+- **N06's gap is real, and seed 42 flatters the pipeline.** Reported 0.131 against a 0.224 median;
+  C0's 0.055 against 0.068. The honest ratio is **3.29×, worse than the 2.4× on record** — the one
+  place where the single-seed grade overstates the pipeline rather than understating it.
+
+**The seed spread separates bias-limited from noise-limited at a glance**, and it agrees with the
+pipeline's own instrument. A wide `p90/p10` (N03, N04) is a solver whose error is sampling noise; one near 2× (N06, N07) is
+one whose error is bias. `moment_bias_actionable` was `False` on N04's
+winner and fired on N06's — the kernel was right both times, and §8f's reading of it as a missed
+opportunity on N04 was wrong.
+
+**On N04 both sides are bias-free, by different routes.** Over 20 seeds the pipeline's winner
+measures mean bias +0.049% ± 0.048% and variance bias +0.018% ± 0.085%; C0's measures −0.020% ±
+0.050% and −0.117% ± 0.087%. Neither is distinguishable from zero.
+
+- The **pipeline** found that at `a = b = σ²/4` the Lamperti transform makes the drift vanish
+  *identically*, so `Y` is a reflected Brownian motion on `[0, π]` and Euler–Maruyama with unit
+  additive noise is exact in law. (It writes that drift as a cancelling pair of singular terms
+  rather than simplifying it to zero; the cancellation is benign — `μ_Y ~ 1e-17` — and forcing it
+  to zero changes the graded numbers not at all.)
+- **C0** did the more general thing: it draws each step from a **Beta carrying the exact
+  conditional mean and variance over `dt`**. Because the generator maps polynomials to
+  polynomials those two conditional moments are exactly affine and quadratic in `X_n`, so by the
+  tower property the two graded moments carry no discretization bias **at any step** — and unlike
+  the Lamperti route it does not need the problem to be integrable. That trick is not in
+  `sde_manual.md`, and it belongs in §3's gap table.
+
+**The pre-fix N04 winner's bias was real, so the fix is a larger result than the 2.85× headline.**
+Its 0.3603 is worse than **400 of 400** seeds of an exact scheme, while the post-fix winner's bias
+is ~0.02–0.05%. The run moved N04 from a biased scheme to a bias-free one; the residual 0.126 is a
+bad draw, not a deficiency, and there is nothing left to improve on that winner.
+
+The mechanism is the noise floor. A sample variance's relative standard error is
+`sqrt((kurtosis − 1) / n)`, set by the fourth moment — measured 0.68% (N03, kurtosis 10.3), 0.37%
+(N04, 3.8) and 0.55% (N06, 7.1) at these path counts, against reference truths whose own error is
+0.0101% or below. This is also why the variance gate is 10% and the mean's 5%: the ordering is the
+measured noise ordering, not two round numbers. **The gate was examined and left at 10%** — at
+these path counts a 1% variance gate would fail a perfect scheme 0.75–14.2% of the time and a
+0.1% gate 79–88% of the time, so tightening it would move the boundary out of the empty space
+between a 33.9% broken plan and a 0.26% repaired one and into the dense cluster of correct
+solvers.
+
+**What this costs the plan.** §12 must not claim an accuracy difference on **N03, N04 or N07**
+from single-seed grades; on the evidence the pipeline matches C0 on all three. Only N06 carries a
+measured accuracy deficit, and it is 3.29×, not 2.4×. The suite's verdicts are unaffected — every
+gate is cleared by 7× or more either way.
+
+**The fix, not done, and it is to the harness rather than the pipeline:** grade the winner at `k`
+seeds and report the seed-averaged error, or at minimum the measured per-seed spread beside the
+point estimate, whenever `moment_bias_actionable` is `False` — which is precisely the signal that
+says this solver's error is noise and not bias. Five seeds cuts the spread about 2.2×. It costs
+`k` extra graded solves, changes no agent file, and moves no gate. Without it the accuracy axis on
+a bias-free entry reports a lottery, and this section is the measured instance.
+
+**Next:** one more rep of each condition would now add little — N04's condition has zero spread
+and N06's real gap is already resolved at 3.29×. The seed fix comes first, because every accuracy
+number in §8e–§8g is a single draw until it lands. Then the manual experiment (step 5), which
+§8f's finding that C0 reaches bias-freedom by a route absent from `sde_manual.md` makes sharper:
+the binary outcome should be widened from "a noise sub-step of weak order above 1" to "any scheme
+whose graded moments are free of `dt` bias by construction".
+
+
 ## 9. Cost
 
 Rough, and in the units the other plans use.
@@ -1632,6 +1986,15 @@ Stated here so the write-up in step 10 cannot drift.
 - That any figure here is comparable to a published benchmark value. Unlike BENCHOP, none of these
   keys was published by a third party; what is external is the *problem*, not the answer.
 - Any suite-wide rate quoted against the main suite's 49-problem denominator. §0d.
+- **Any accuracy difference against C0 on N03, N04 or N07 read off a single-seed grade** `[rev4
+  2026-11-20]`. §8g: re-grading both sides' graded sources at 64 seeds collapses N04's reported
+  7.5× to 1.08×, N07's 1.5× to 1.11×, and **reverses** N03's 3.6× to 0.84× — and on N04 both sides
+  measure bias-free (±0.05% mean, ±0.12% variance, neither distinguishable from zero), so seed 42
+  is the *worst of 120 draws* for the pipeline's scheme and a 14th-percentile one for C0's. The
+  only entry with a measured accuracy deficit is **N06**, and it is 3.29×, not the 2.4× the record
+  shows, because there seed 42 flatters the pipeline. Until the winner is graded at `k` seeds,
+  every accuracy figure in §8e–§8g is one draw from a seed distribution; the **verdicts** are
+  unaffected, since every gate is cleared by 7× or more either way.
 
 ---
 
@@ -1653,5 +2016,11 @@ Stated here so the write-up in step 10 cannot drift.
 5. **The seven refused mean gates in the older suites** (§2c). Leave them, with the measurement on
    record, or revise the entries in their own plans — which would move three frozen baselines.
 6. **`SDE_FAMILIES`** (§12): extend the vocabulary before step 10, or carry the lower-bound caveat.
+7. **Grade the winner at `k` seeds?** §8g measured that three of the four reported accuracy gaps
+   against C0 are single-seed artifacts, and that the retry *generates* `scheme_family` values the
+   kernel cannot name. Five seeds on the winner alone costs five extra graded solves per problem,
+   changes no agent file and moves no gate — but it reprices every accuracy figure in §8e–§8g and is
+   the only route to an accuracy claim the suite can defend. Do it before step 9b, or publish the
+   single-seed figures with the spread beside them?
 4. **Does the paper want the §3 gap table?** It is the most publishable thing in this plan and it is
    a table of this repo's own manual's omissions.

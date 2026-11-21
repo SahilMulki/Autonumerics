@@ -604,11 +604,48 @@ def _abstained(strong, weak, expected_strong, expected_weak, candidates, declare
             "orders_ok": "unresolved", "abstained": reason}
 
 
-def richardson_moment(terminals, weak, component=0, *, ci_mult=2.0):
-    """The weak-order Richardson extrapolation of the mean (§19).
+def _as_statistic(x, statistic):
+    """The per-path quantity whose mean is ``statistic``.
 
-    ``stable`` is the verdict: the extrapolated mean sits within 5% of the finest
+    Richardson needs a per-path array, not a summary, because the extrapolation's
+    error bar is the *paired* one across levels (see this function's caller). The
+    mean is already of that form. The variance is too, once written as the mean of
+    the centred squares: ``Var(ddof=1) = mean((x - xbar)^2) * n / (n - 1)``, so the
+    same extrapolation and the same paired standard error apply to it unchanged.
+    """
+    x = np.asarray(x, dtype=float).ravel()
+    if statistic == "mean":
+        return x
+    if statistic == "variance":
+        n = x.size
+        scale = n / (n - 1.0) if n > 1 else 1.0
+        return (x - float(np.mean(x))) ** 2 * scale
+    raise ValueError(f"unknown statistic {statistic!r}")
+
+
+def richardson_moment(terminals, weak, component=0, *, ci_mult=2.0, statistic="mean"):
+    """The weak-order Richardson extrapolation of a terminal moment (§19).
+
+    ``stable`` is the verdict: the extrapolated value sits within 5% of the finest
     level's, so the ladder is somewhere the extrapolation means something.
+
+    ``statistic`` selects the moment. **The default is the mean, and for most of
+    this module's life it was the only option — which was a hole, because it is
+    routinely not the moment the plan is scored on.** Measured 2026-11-18 on the two
+    plans whose accuracy the external harness faults worst on the notable suite:
+
+    ====================================  ==================  ==================
+    plan                                  scored error         mean's shift
+    ====================================  ==================  ==================
+    ``sde_sis_epidemic`` 1                2.23% (variance)     0.005%, ``stable``
+    ``sde_wright_fisher_mutation`` 1      3.60% (variance)     0.06%,  ``stable``
+    ====================================  ==================  ==================
+
+    Both carry an ``O(dt)`` bias in the variance that a higher-order noise step
+    removes — the SIS winner's own self-check recorded the variance moving 38.91 ->
+    39.28 -> 39.71 against a reference of 39.80 as ``dt`` halved — and in both cases
+    the only moment extrapolated was the one with no bias in it. The check reported
+    ``stable: true`` and nothing else looked.
 
     ``shift_in_se`` is [REV 68], and it is **report-only**. A relative shift on its
     own cannot be read: 8.5% is a real bias on one plan and pure Monte Carlo noise
@@ -632,7 +669,7 @@ def richardson_moment(terminals, weak, component=0, *, ci_mult=2.0):
     statement about the *ladder*, and at 50000 paths almost any real shift clears
     the noise, so gating on standard errors would make it fire on correct plans.
     """
-    X = [_component(x, component) for x in terminals]
+    X = [_as_statistic(_component(x, component), statistic) for x in terminals]
     p = max(float(weak) if weak is not None else 0.5, 0.5)
     m1, m2 = float(np.mean(X[-2])), float(np.mean(X[-1]))
     star = m2 + (m2 - m1) / (2.0 ** p - 1.0)
@@ -655,7 +692,38 @@ def richardson_moment(terminals, weak, component=0, *, ci_mult=2.0):
         within = shift == 0.0
     else:
         in_se, within = shift / se_shift, bool(shift <= float(ci_mult) * se_shift)
-    return {"mean_star": star, "mean_finest": m2, "relative_shift": spread,
-            "shift": shift, "se_shift": se_shift, "shift_in_se": in_se,
-            "shift_within_noise": within,
-            "stable": bool(spread < 0.05), "p_used": p}
+    # The **graded** step's own distance to the limit, which is a different number
+    # from `shift` and usually the one worth reading. The ladder refines *downward*
+    # from the graded `dt`, so `X[-1]` is `dt/4` and `shift` is the bias left at
+    # dt/4 -- four times smaller than the bias the plan's reported moment actually
+    # carries. Measured on `sde_sis_epidemic` plan 1: `shift` is 0.44% of the
+    # variance where the graded step carries 2.45%, against a true error of 2.23%.
+    #
+    # Per path, then averaged, for the same reason `dynkin.check` extrapolates per
+    # path: the bar on `graded - star` is the paired standard error, and every level
+    # is a coarsening of one Brownian path.
+    pp_star = (np.asarray(X[-1], dtype=float).ravel()
+               + (np.asarray(X[-1], dtype=float).ravel()
+                  - np.asarray(X[-2], dtype=float).ravel()) / (2.0 ** p - 1.0))
+    pp_graded = np.asarray(X[0], dtype=float).ravel()
+    gd = pp_graded - pp_star
+    g_shift = float(np.mean(gd))
+    g_se = (float(np.std(gd, ddof=1) / np.sqrt(gd.size)) if gd.size > 1 else None)
+    g_rel = abs(g_shift) / (abs(star) + 1e-14)
+    out = {"value_star": star, "value_finest": m2, "statistic": statistic,
+           "relative_shift": spread,
+           "shift": shift, "se_shift": se_shift, "shift_in_se": in_se,
+           "shift_within_noise": within,
+           "value_graded": float(np.mean(pp_graded)),
+           "graded_shift": g_shift, "graded_relative_shift": g_rel,
+           "se_graded_shift": g_se,
+           "graded_shift_in_se": (abs(g_shift) / g_se) if g_se else None,
+           "graded_shift_within_noise": (None if g_se is None else
+                                         bool(abs(g_shift) <= float(ci_mult) * g_se)),
+           "stable": bool(spread < 0.05), "p_used": p}
+    if statistic == "mean":
+        # Kept under their original names as well: `richardson_stable`, the metrics
+        # blocks already on disk and the frozen tests all read `mean_star` /
+        # `mean_finest`, and a rename would make this change a migration.
+        out["mean_star"], out["mean_finest"] = star, m2
+    return out

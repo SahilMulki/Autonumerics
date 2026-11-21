@@ -1219,7 +1219,10 @@ def test_the_ladder_asks_for_that_budget_with_the_level_it_is_running():
 
     from verifylib.kernel.sde import driver
 
-    src = inspect.getsource(driver._dynkin)
+    # `_dynkin_once` is the ladder; `_dynkin` became a wrapper around it when the
+    # asymptotic-confirmation escalation shipped (2026-11-18). The property this
+    # guards is the ladder's, so it follows the body rather than the name.
+    src = inspect.getsource(driver._dynkin_once)
     assert "timeout_scale=level_steps / graded_steps" in src, (
         "the ladder must pass its own refinement factor, or every level gets the "
         "graded budget again")
@@ -1238,7 +1241,7 @@ def test_the_initial_moments_check_runs_before_the_ladder_not_after():
 
     from verifylib.kernel.sde import driver
 
-    src = inspect.getsource(driver._dynkin)
+    src = inspect.getsource(driver._dynkin_once)   # the ladder; see the test above
     hoisted = src.index("dynkin.initial_moments(spec, phis)")
     loop = src.index("for level in payloads:")
     assert hoisted < loop, (

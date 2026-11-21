@@ -164,6 +164,20 @@ Run solver↔evaluator cycles until a plan **wins** (`certified: true`) or every
 - If the next evaluation still reports `resolved: false`, *then* mark it `state: stopped`, and say so in REPORT.md as **"stopped unresolved"** rather than as a plateau. The two are different outcomes and the record must not conflate them: one is "this is as good as the scheme gets", the other is "nobody found out".
 - Never rank or ship an `unresolved` plan as though its error estimate were a measurement. On `sde_sabr_cev_call_ii` all three plans recorded `resolved: false` with a Monte-Carlo standard error 23–38× larger than the error they reported, all three plateaued at `iter: 2` with the evaluator finding no defect, and the shipped plan fails the external gate at one seed in three. Every signal the pipeline needed was recorded; nothing read it.
 
+**A bias-dominated plan is told so.** When an **eligible** plan's `<metrics>` block carries `moment_bias_actionable: true`, add one instruction to its next solver dispatch, naming what the kernel measured:
+
+> The graded `{moment_bias_binding}` carries a measured discretisation bias worth `{moment_bias_frac_tol}` of its own tolerance — the kernel extrapolated that moment down the `dt` ladder and the graded step sits that far from the limit. This is bias, not sampling: more paths cannot touch it. Where the problem's contract fixes `dt` (it usually does — `evaluation_thresholds.dt` is the step the harness calls you with), the only route is a step that carries less bias in that moment. Say which sub-step of your scheme carries it and raise its order, or say why the current one is the floor.
+
+Record `bias_retry: true` under the plan in STATE.md and say which moment it named.
+
+Three rules about what this is **not**:
+
+- **It is not a gate, and it moves no verdict.** `certified`, the score, the winner early-exit and the ranker are all untouched; a plan that certifies still exits the loop immediately, bias or no bias. The field is reporting-only in the kernel too. That is deliberate: it was added on 2026-11-18, *after* the notable suite's verdicts were measured, and a check that changes a verdict after seeing the schemes it judges is a moved gate whatever its merits.
+- **It is not the `unresolved` retry.** That one fires on a plan whose accuracy statistic could not be resolved against its own noise and reads `functional_limited_by`; this one fires on a plan that measured fine and is simply further from the achievable answer than it needs to be. A plan can qualify for both, and then it gets both instructions.
+- **It does not fire on a certified plan**, because such a plan is not eligible. The window is real but narrow: `sde_sis_epidemic` plan 1 ran three cycles and was uncertified for the first two (capped at 9 by a spec-form finding), and spent both on the Dynkin observable quadrature while carrying 22% of its variance tolerance in removable bias.
+
+**Why it exists.** Measured on the notable suite (2026-11-18): the kernel's only `dt`-extrapolation ran on the **mean**, and on the two plans the external harness faults worst for accuracy the mean was the moment with no bias in it — `sde_sis_epidemic` plan 1 reported a 0.005% mean shift and `richardson_stable: true` while its variance sat 2.2% from the limit, and `sde_wright_fisher_mutation` plan 1 reported 0.06% against a variance 2.8% out. Both certified at a 10% gate. A one-shot model with no manual and no verification loop beat both on the same graded step, because it wrote a higher-order noise step in its first draft; the pipeline had three refine cycles and no instrument pointing at the step that mattered.
+
 A plan is **eligible** for a new cycle iff it is **not** `certified` AND `iter < max_iter` AND `state != stopped`.
 
 **Fill the pool**:

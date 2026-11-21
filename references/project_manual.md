@@ -296,6 +296,9 @@ functional_rel_error: 7.0e-04      # ...and its dt bias plus its sampling term
 functional_bias_rel: 4.0e-04       # the same error split: what `dt` costs...
 functional_se_rel: 3.0e-04         # ...and what the path count costs
 functional_limited_by: sampling | bias | both | unavailable   # which of the two binds
+moment_bias_binding: variance | mean    # SDE: which graded moment's dt bias binds...
+moment_bias_frac_tol: 0.216             # ...as a fraction of that moment's own tolerance...
+moment_bias_actionable: true | false    # ...and whether it is worth a refine instruction
 error_fs: 1.25             # Roache's factor of safety, divided back out before ranking
 order_check: true | waived_spec | waived_chaotic
 asymptotic_source: ladder | probe

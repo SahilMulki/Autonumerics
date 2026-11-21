@@ -901,7 +901,28 @@ weak_order = np.log2(w0 / w1)            # ~1.0 for both EM and Milstein
 # Richardson-extrapolated moment estimate (weak order p)
 p = max(weak_order, 0.5)
 mean_star = float(np.mean(X[2])) + (float(np.mean(X[2])) - float(np.mean(X[1]))) / (2**p - 1)
+
+# ...and the same for the VARIANCE, which is usually the moment that carries the
+# bias. Written as the mean of the centred squares so one extrapolation serves both:
+#   Var(ddof=1) = mean((x - xbar)^2) * n/(n-1)
+V = [(x - x.mean())**2 * len(x) / (len(x) - 1) for x in X]
+var_star = float(np.mean(V[2])) + (float(np.mean(V[2])) - float(np.mean(V[1]))) / (2**p - 1)
+
+# The bias your GRADED step carries is the distance from X[0] -- not from X[2].
+# The ladder refines downward, so X[2] is dt/4 and its leftover is a quarter of
+# yours on an O(dt) scheme.
+graded_var_bias = abs(float(np.mean(V[0])) - var_star) / abs(var_star)
 ```
+
+**Extrapolate the moment you are scored on.** For most SDE entries the gate that binds is the
+**variance** (10%, against the mean's 5%), and the mean is routinely the moment with no bias in it.
+Measured 2026-11-18 on two plans the external harness faults for accuracy: both reported a mean
+shift under 0.1% and a `stable` ladder, and both certified, while their variances sat 2.2% and 2.8%
+from the `dt → 0` limit. Extrapolating the mean alone reported a clean ladder on both.
+
+This section is a measurement recipe and says nothing about which scheme to choose. What a plan
+should *do* about a bias this finds is the conductor's instruction and the scheme manual's business,
+not this file's.
 
 ### The strong order is the gate; the weak order is a diagnostic
 
@@ -1067,8 +1088,33 @@ plan −0.2095 → −0.0583 to **+0.0928** at 19.7 s.e. Both had mean and varia
 tolerances and a clean strong-order study; the residual was shrinking by 4× per halving, i.e. this
 section's own criterion was being met while the implementation of it failed.
 
-Two consequences for how the ladder is built:
+Three consequences for how the ladder is built:
 
+- **A *failing* function needs a fourth level before it is believed.** Three levels let you measure
+  the rate and test the limit, but not test whether the levels are in one asymptotic regime at all —
+  and that assumption is where the check's remaining false failures came from. With four, extrapolate
+  the finest three **and** the three below them, and require the two limits to be the same number
+  before calling the leftover a generator violation. The comparison is **paired**: every level is a
+  coarsening of one Brownian path, so `limit_fine − limit_coarse` has a standard error an order of
+  magnitude below either limit's own. Measured 2026-11-18, three plans the external harness passes
+  and this check failed on three levels:
+
+  | scheme, function | limit (coarse window) | limit (fine window) | outcome |
+  |---|---|---|---|
+  | a Langevin splitting, `q` | 6.48e-7 | 4.77e-8 | limits drift → abstain |
+  | a drift-implicit step, `X` | +1.647 | −0.0769 | limits drift → abstain |
+  | a split-step Milstein, `X**2` | −38.1 | −16.7 | agree, and inside the bar → pass |
+
+  The first is the case worth understanding: its residual on `q` is a smooth, nearly noiseless
+  `O(dt²)` term, so the extrapolation removes it and a 6.6e-7 remnant survives against a 7e-9
+  standard error —
+  **z = 95**. Refining further does not help, because the error bar shrinks as fast as the remnant
+  (z goes 42 → 25 → 8.5 → 5.6). A real violation is unaffected: a `dt`-independent offset extrapolates
+  to the same number in both windows, so the `−0.111` case below still fails. Only failures escalate,
+  so a passing plan never pays for the fourth level. **Floor the comparison at roundoff** — two
+  windows that agree exactly collapse both the shift and its paired standard error to float64 noise,
+  which read as 10.8 "standard errors" of disagreement on a residual of `−0.111 + 0.01 dt` and
+  abstained on a real violation.
 - **Three levels, not two.** With two, fitting `p` and extrapolating with it is circular:
   `p = log2(r0/r1)` makes `r1 + (r1 − r0)/(2^p − 1)` identically zero for any input, so the test would
   pass everything. Measuring the rate and testing the limit need separate information.

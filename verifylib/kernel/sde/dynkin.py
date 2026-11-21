@@ -467,10 +467,100 @@ def residual_order(means, diffs, ci_mult):
     return order, {**detail, "ratio": float(ratio), "order": order}
 
 
+def _extrapolate(seq, ci_mult):
+    """``(per-path extrapolated residual, order, order detail)`` for one function.
+
+    ``seq`` is the level sequence, coarse to fine, per path. Split out of
+    :func:`check` so the same extrapolation can be run on a *sub-window* of the
+    ladder without duplicating the rate measurement — which is what
+    :func:`windows_agree` needs.
+    """
+    if len(seq) >= 3:
+        order, detail = residual_order([np.mean(r) for r in seq],
+                                       (seq[-3] - seq[-2], seq[-2] - seq[-1]), ci_mult)
+    else:
+        order, detail = None, {"reason": "only two dt levels; no order can be measured"}
+    p = 1.0 if order is None else order
+    # r_extrap = r_fine + (r_fine - r_mid) / (2^p - 1); at p = 1 this is exactly
+    # the historical 2*r_fine - r_coarse, so a two-level ladder is unchanged.
+    return seq[-1] + (seq[-1] - seq[-2]) / (2.0 ** p - 1.0), order, detail
+
+
+#: Relative floor on the window shift, against the magnitude the extrapolation was
+#: formed from. The paired standard error is the right statistical bar and the wrong
+#: bar on its own: where two windows agree *exactly*, both the shift and its paired
+#: s.e. collapse to float64 roundoff and their ratio is meaningless. Measured while
+#: building this test (2026-11-18) on a residual of ``-0.111 + 0.01 dt``, i.e. a
+#: violation with a mild ``dt`` dependence, which both windows extrapolate to
+#: ``-0.111`` analytically: the shift came back 1.5e-17 against a paired s.e. of
+#: 1.4e-18 -- **10.8 "standard errors"** -- and the check abstained on a real
+#: violation it had the evidence to fail. 1e-12 is the same relative roundoff floor
+#: the pathwise ladder uses (``roundoff_rel``).
+WINDOW_ROUNDOFF_REL = 1e-12
+
+
+def windows_agree(fine, coarse, bar, scale=None):
+    """``(agrees, detail)``: do two overlapping windows of the ladder extrapolate to
+    the *same* limit?
+
+    ``scale`` is the magnitude the extrapolation was formed from -- the largest mean
+    residual on the ladder -- and sets the roundoff floor
+    (:data:`WINDOW_ROUNDOFF_REL`). It defaults to the two limits' own magnitude, which
+    is right whenever they are not themselves a cancellation.
+
+    Richardson's limit only means anything inside the asymptotic range. With three
+    levels that has to be assumed; with a fourth it can be **measured** — extrapolate
+    the finest three levels, extrapolate the three below them, and ask whether the
+    two limits are the same number. A limit that moves between the windows is the
+    extrapolation's own leftover, not a statement about the generator.
+
+    The comparison is **paired**: both limits are built from coarsenings of one
+    Brownian path (§18), so ``fine - coarse`` is a per-path difference whose standard
+    error is an order of magnitude below either limit's own. That is the same
+    discipline ``residual_order`` uses in reading its bar off ``r_fine - r_mid``, and
+    the same reason :func:`richardson_moment`'s shift is priced in paired standard
+    errors rather than in either mean's.
+
+    Measured on the three plans this test was built for (2026-11-18), all three
+    failed by :func:`check` on three levels and all three correct under the harness:
+
+    ====================================  ==============  ============  =====  =======
+    plan / function                       limit (coarse)  limit (fine)  ``se``  verdict
+    ====================================  ==============  ============  =====  =======
+    ``sde_langevin_baoab`` 1, ``q``       6.48e-7         4.77e-8       1.5e-8  drifts
+    ``sde_sis_epidemic`` 3, ``X``         +1.647          -0.0769       0.20    drifts
+    ``sde_sis_epidemic`` 2, ``X**2``      -38.1           -16.7         13      agrees
+    ====================================  ==============  ============  =====  =======
+
+    The first two abstain; the third agrees and is then *inside* the bar on the finer
+    window (``z`` = -1.2 against 2.43), so it passes on the measurement rather than on
+    an abstention. A real violation keeps its verdict by the same rule: a residual
+    that does not move with ``dt`` extrapolates to the same offset in both windows —
+    §20's documented ``-0.111`` case — so the windows agree and the failure stands.
+    """
+    d = np.asarray(fine) - np.asarray(coarse)
+    shift = float(np.mean(d))
+    se = float(np.std(d, ddof=1) / np.sqrt(d.size)) if d.size > 1 else 0.0
+    m_fine, m_coarse = float(np.mean(fine)), float(np.mean(coarse))
+    ref = max(abs(m_fine), abs(m_coarse)) if scale is None else abs(float(scale))
+    floor = WINDOW_ROUNDOFF_REL * ref
+    return (abs(shift) <= max(float(bar) * se, floor)), {
+        "limit_coarse": m_coarse, "limit_fine": m_fine,
+        "shift": shift, "se_shift": se,
+        "shift_in_se": (abs(shift) / se) if se > 0.0 else float("inf"),
+        "roundoff_floor": floor,
+        "at_roundoff": bool(abs(shift) <= floor)}
+
+
 def check(spec, phis, runs, phi0, ci_mult=2.0):
     """``(outcome, detail)``. Richardson-extrapolate the residual to ``dt -> 0`` **at
     the order the residual is measured to converge at**, and require the
     extrapolated value inside the MC CI of zero.
+
+    With **four or more** levels a failing function is additionally required to
+    extrapolate to the same limit from two overlapping windows before the leftover is
+    read as a generator violation — :func:`windows_agree`, and the fourth measured
+    case below.
 
     ``runs`` is the dt ladder, coarse to fine (at least two levels; three is what
     the driver sends and what a measured order needs).
@@ -590,19 +680,11 @@ def check(spec, phis, runs, phi0, ci_mult=2.0):
     extrapolated, orders, order_detail, sources = [], [], [], []
     for i in range(n_phi):
         seq = [lv[i] for lv in levels]                     # coarse -> fine, per path
-        order = None
-        if len(seq) >= 3:
-            order, od = residual_order([np.mean(r) for r in seq],
-                                       (seq[-3] - seq[-2], seq[-2] - seq[-1]), ci_mult)
-            order_detail.append(od)
-        else:
-            order_detail.append({"reason": "only two dt levels; no order can be measured"})
+        e, order, od = _extrapolate(seq, ci_mult)
+        order_detail.append(od)
         orders.append(order)
         sources.append("measured" if order is not None else "assumed_1")
-        p = 1.0 if order is None else order
-        # r_extrap = r_fine + (r_fine - r_mid) / (2^p - 1); at p = 1 this is exactly
-        # the historical 2*r_fine - r_coarse, so a two-level ladder is unchanged.
-        extrapolated.append(seq[-1] + (seq[-1] - seq[-2]) / (2.0 ** p - 1.0))
+        extrapolated.append(e)
 
     means = np.asarray([float(np.mean(r)) for r in extrapolated])
     ses = np.asarray([float(np.std(r, ddof=1) / np.sqrt(r.size)) for r in extrapolated])
@@ -611,13 +693,45 @@ def check(spec, phis, runs, phi0, ci_mult=2.0):
     # failure on any one function outranks it: an unreachable limit on `tanh(X)`
     # says nothing about a real violation on `X**2`.
     failing = [i for i in range(n_phi) if not inside[i]]
-    slow = [i for i in failing if order_detail[i].get("unresolved")]
+    # The asymptotic self-consistency test, and only on a *failing* function: a
+    # function already inside the bar has nothing to confirm, and running the test on
+    # it could only ever turn a pass into an abstention. Deliberately asymmetric —
+    # this fix exists to stop false failures, and nothing measured here argues that a
+    # three-level pass is wrong.
+    drifting, windows = [], {}
+    if len(levels) >= 4:
+        for i in failing:
+            seq = [lv[i] for lv in levels]
+            coarse, _, _ = _extrapolate(seq[:-1], ci_mult)
+            # The roundoff reference is the ladder's own residuals, not the limits:
+            # a limit can be a cancellation of much larger numbers, and it is the
+            # inputs that set how much of the shift is float64 noise.
+            agrees, wd = windows_agree(
+                extrapolated[i], coarse, bar,
+                scale=max(abs(float(np.mean(r))) for r in seq))
+            windows[list(phis)[i]] = {**wd, "agrees": bool(agrees)}
+            if not agrees:
+                drifting.append(i)
+    abstained = sorted(set(slow_i for slow_i in failing
+                           if order_detail[slow_i].get("unresolved")) | set(drifting))
     outcome = (True if not failing
-               else "unresolved" if len(slow) == len(failing) else False)
-    unresolved_detail = ({"unresolved_functions": [list(phis)[i] for i in slow],
-                          "reason": order_detail[slow[0]]["reason"]}
+               else "unresolved" if len(abstained) == len(failing) else False)
+
+    def _abstain_reason(i):
+        if order_detail[i].get("unresolved"):
+            return order_detail[i]["reason"]
+        w = windows[list(phis)[i]]
+        return (f"the extrapolated limit moves from {w['limit_coarse']:.4g} to "
+                f"{w['limit_fine']:.4g} between the ladder's two windows, "
+                f"{w['shift_in_se']:.1f} paired standard errors, so these levels are "
+                f"not in one asymptotic regime: the leftover is the extrapolation's "
+                f"own, not evidence about the generator")
+
+    unresolved_detail = ({"unresolved_functions": [list(phis)[i] for i in abstained],
+                          "reason": _abstain_reason(abstained[0])}
                          if outcome == "unresolved" else {})
     return outcome, {**unresolved_detail,
+        "window_agreement": windows,
         "residuals": [[float(np.mean(lv[i])) for lv in levels] for i in range(n_phi)],
         "residual_coarse": [float(np.mean(levels[-2][i])) for i in range(n_phi)],
         "residual_fine": [float(np.mean(levels[-1][i])) for i in range(n_phi)],

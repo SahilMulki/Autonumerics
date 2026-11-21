@@ -1,7 +1,7 @@
 # SciMLBenchmarks (SDE) — External Benchmark Adoption Plan
 
 **Status:** **researched 2026-11-09; rev 1 the same day; rev 2–5 2026-11-10; rev 6–7 2026-11-11;
-rev 8–10 2026-11-12; rev 11–20 2026-11-13; rev 21–24 2026-11-14 — steps 1–10 of §7 done on the scheme-matched arm. The suite exists, is
+rev 8–10 2026-11-12; rev 11–20 2026-11-13; rev 21–24 2026-11-14; rev 25 2026-11-20 — steps 1–10 of §7 done on the scheme-matched arm, and **run 3 of that arm is complete at 9 of 9**. The suite exists, is
 calibrated, is smoke-tested end to end, has its comparator numbers, has its C0 baseline in both
 arms, and has **all nine of its entries through the pipeline** — 5 `VERIFIED_PASS`, 4
 `UNDERCLAIM`, **zero overclaims**, 139.3 min of wall time. Rev 12 then answers what the suite was
@@ -213,8 +213,7 @@ records as written it fires on **3 of 3** pools that carry an order at all, ever
 pipeline wrote on 2026-11-14 having a measured order with no error bar beside it. That is step
 2's inertness confirmed on live output rather than argued: without the block fix the arm would
 have gone on scoring 6 of 9 while every table here said 8. Two tests, section **E11**, with the
-control that a pool which ran no order study is not missing an error bar. What remains is the
-other six entries of this arm, the unrestricted arm and the optional Phase 2 (step 11).** Rev 6–7 `[2026-11-11]` diagnose the M01 probe and
+control that a pool which ran no order study is not missing an error bar. **Rev 25 re-runs M09 under `--fresh` and closes run 3** (10p). The stale row's diagnosis is confirmed by its own correction: the same invocation plus the one flag ran **3278.1 s against 122.8 s** and `ranking_inputs_incomplete` is **absent** where it fired before — the tripwire shipped in rev 24 both caught the defect and confirms its repair. M09 lands **0.507× against Opus cold, 6.0× faster in solver time**, tying run 1 to within 0.35% of a statistic whose MC standard error is 0.79%, so the two are separated on cost and not on accuracy. The tie is **bit-identical**: run 3's winner and run 1's plan 2 are the same scheme and report `0.05707514462201586` against `0.05707514462202576`, twelve digits and two independent planning sessions apart, which is §8's CRN payload showing through and is why this plan's ties are exact rather than approximate. The **exit gate fires a third time** and this time takes the rev-23 rule's input with it: 4 planned / 3 implemented, `kernel: null` on both unevaluated plans, so **one** plan in the pool carries an order and the pool-relative reading is structurally inert — while the new tripwire correctly stays silent, because that plan is missing the *measurement* and not the error bar, which is what E11's second control was written for. `wrong_plan_won` is false (the harness's best beats the winner by 0.0075 against a margin of 0.0617), so the price of the gate here is not a wrong pick but that the one pool with a fourth plan is the one pool where the new ranker could not be exercised. One confound is recorded rather than smoothed over: M09 ran on **`claude-opus-5`** and the other eight on **`claude-opus-5-5`**, the session default having moved between 2026-11-16 and 2026-11-20 — which leaves the harness comparison intact (truth re-derived, path seeded) and qualifies only any reading of run 3's nine rows as one generator. **The arm closes at geomean 0.238 over nine** (0.217 over the eight Opus-5.5 entries), **8 of 9 tie or beat Opus answering cold**, 8 `VERIFIED_PASS` / 1 `UNDERCLAIM` / **0 overclaims**, $44.00 and 146.3 min. **M03 is the only loss, 1.374×**, and it is a regression against a run-1 tie — the one open entry. What remains is that entry, the unrestricted arm and the optional Phase 2 (step 11).** Rev 6–7 `[2026-11-11]` diagnose the M01 probe and
 run the other two. **`wrong_plan_won: true` on all three problems, by three different
 mechanisms** (§10a): on M01 the scores separated and did so backwards, decided by a terminal-law
 KS statistic that a *pathwise-exact* solver also fails on the run's own increments; on M06 and M09
@@ -5098,6 +5097,130 @@ error bar — it is missing the measurement, which `order_check` already says an
 `ranking.order` already returns None for. Without that second control the check would fire on
 every exact-sampler pool in the BENCHOP holdout, where `order` is comparable in 0 of 9 pools by
 construction.
+
+---
+
+#### 10p. M09 re-run: run 3 closes at 9 of 9, and the exit gate takes the pool comparison with it `[rev25 2026-11-20]`
+
+**Status: done.** The stale row §10o diagnosed is replaced by a real run. Run 3 is complete.
+
+##### The diagnosis confirmed by its own correction
+
+§10o's reading of the 122.8 s row was that `--fresh` had not reached M09, so the conductor found a
+complete `STATE` and dispatched no agents — run 1's pool, re-verified. The corrected invocation,
+identical but for the flag, ran **3278.1 s** and cost **$10.03**. A 26.7× difference in wall time
+on the same problem and the same arm is not a variance band; it is the difference between planning
+four plans and parsing a file. `ranking_inputs_incomplete` is **absent** from the new record, where
+it fired on the stale one — the tripwire shipped in §10o step 3 both caught the defect and now
+confirms its repair, which is the first time anything in this plan has had that round trip.
+
+##### The four gradings are on identical conditions
+
+Worth stating before any number: Opus cold, run 1, run 2 and run 3 were all graded at
+`num_paths=100000`, `dt=0.0025`, `T=3.0`, `seed=42`, against the same three tolerances
+(0.020 / 0.016 / 0.029). By §8's CRN payload that is the **same Brownian path** in all four cases,
+so these are four solvers on one sample, not four samples.
+
+| | Opus cold | run 1 | run 2 | **run 3** |
+|---|---|---|---|---|
+| `second_moment_x1` | 1.224e-03 | 6.649e-04 | 3.317e-03 | **5.834e-05** |
+| `cross_moment_x1x2` | 5.597e-04 | 9.433e-04 | 4.866e-04 | **9.132e-04** |
+| `second_moment_x2` | 1.866e-03 | 6.278e-04 | 7.664e-04 | **9.466e-04** |
+| worst relative | 1.866e-03 | 9.433e-04 | 3.317e-03 | **9.466e-04** |
+| vs Opus | 1.000× | **0.506×** | 1.778× | **0.507×** |
+| gate-relative (`max err/tol`) | 0.0643 | 0.0590 | 0.1658 | **0.0571** |
+| solver time | 15.25 s | 9.70 s | 4.94 s | **2.53 s** |
+| winner | — | `4-conditional-mc-rao-blackwell` | `4-rao-blackwellised-x2` | `1-exact-x1-exponential-splitting` |
+| verdict | PASS | VERIFIED_PASS | VERIFIED_PASS | **VERIFIED_PASS** |
+| `wrong_plan_won` | — | false | false | **false** |
+
+Run 3 **ties run 1 and bests Opus by 1.97×**, and does it 6.0× faster in solver time. The tie with
+run 1 is close enough to be worth naming as a tie and not a win: 9.466e-4 against 9.433e-4 is
+0.35% apart on a statistic whose MC standard error is `mc_se_rel = 0.0079`, so the two runs are
+indistinguishable on accuracy and separated only on cost. Run 2 remains the one regression, and
+§10n already attributed it — its pool was 4 planned / 3 implemented with the exact-leg method
+missing.
+
+##### The ties are bit-identical, which is the CRN mechanism showing through
+
+Run 3's winner and **run 1's plan 2** are both "exact lognormal transition for X1 plus
+variation-of-constants for X2". Their gate-relative harness errors:
+
+```
+run 3  1-exact-x1-exponential-splitting   0.05707514462201586
+run 1  2-exact-lognormal-exponential      0.05707514462202576
+```
+
+Twelve digits, six days and two independent planning sessions apart. Two agents wrote the same
+scheme, the harness handed both the same path from the same seed-and-shape payload, and the
+agreement is to roundoff. This is the clearest instance in the plan of why §8's CRN design makes
+the comparison table's ties *exact* rather than approximate, and it is also a usable regression
+signal: a future run of this scheme that does **not** reproduce 0.057075 has changed the solver,
+not the sample.
+
+##### The exit gate fires again, and this time it removes the §10o rule's input
+
+The pool was **4 planned, 3 implemented**, with `3-euler-maruyama` never written and plans 2 and 4
+carrying `state: unevaluated_winner_exit`. The benchmark graded all three implemented solvers, so
+the *harness* side of the pool is complete — but the **ledger** side is not: `kernel` is `null` on
+both unevaluated plans, because the pipeline never ran their order studies.
+
+| plan | harness error | `observed_order` | `observed_order_se` |
+|---|---|---|---|
+| `1-exact-x1-exponential-splitting` (winner) | 0.05708 | 0.6466 | 0.0109 |
+| `2-roessler-srk-weak2` | 0.16588 | — | — |
+| `4-conditional-mc-rao-blackwell` | **0.04957** | — | — |
+
+So §10o's pool-relative order reading is **structurally inert on this pool** — it needs two plans
+carrying order, error bar and floor, and there is one. And `ranking_inputs_incomplete` correctly
+stays silent, because the single plan that has an `observed_order` does carry its `se`: the field
+is missing the *measurement*, not the error bar, which is exactly the control section **E11**'s
+second test was written for. The check behaves as designed on a pool it was not designed around.
+
+This is a **third** instance of the exit gate costing the pool its width (M09 run 2 in §10n,
+`sde_clark_cameron` in the notable suite, now M09 run 3), and it lands on the rule §10o had just
+shipped. The cost is not a wrong pick here — `wrong_plan_won` is false, since the harness's best
+plan (`4-conditional-mc`, 0.04957) beats the winner by 0.0075 against a margin of **0.0617**, so
+the two are statistically indistinguishable and the ranker is not charged. The cost is that the
+one pool in run 3 where a fourth plan was planned is the one pool where the new ranker could not
+be exercised. Exiting on first certification remains a cost decision and the owner's call, per
+§10o; what this adds is that the decision now has a measurable price on *ranker evaluation*, not
+only on pool quality.
+
+##### One confound, recorded rather than smoothed over
+
+M09 ran on **`claude-opus-5`**; the other eight entries of run 3, measured 2026-11-16, ran on
+**`claude-opus-5-5`**. Both at Sonnet 5.5 for the sub-agents. Nothing was passed to `--model`; the
+session default moved between the two dates. The row is therefore **not strictly comparable** with
+its eight siblings in the generation dimension, in exactly the sense §7a's provenance note makes
+about `agents/*.md` edits. It does not touch the harness comparison — truth is re-derived from
+`problems.py` and the CRN path is seeded — so the 0.507× against Opus stands; what it qualifies is
+any claim that reads run 3's nine rows as one generator. The honest statement is **eight entries
+on Opus 5.5 and one on Opus 5**, and the arm's geomean is reported both ways below.
+
+##### Run 3, complete
+
+| problem | Opus cold | run 3 | ratio |
+|---|---|---|---|
+| M01 | 2.477e-03 | 3.574e-05 | **0.014** |
+| M02 | 5.430e-08 | 5.429e-08 | 1.000 |
+| M03 | 1.938e-04 | 2.663e-04 | **1.374** |
+| M04 | 3.248e-07 | 2.159e-07 | 0.665 |
+| M05 | 3.338e-03 | 5.364e-06 | **0.002** |
+| M06 | 6.256e-03 | 1.451e-03 | 0.232 |
+| M07 | 8.577e-04 | 8.577e-04 | 1.000 |
+| M08 | 5.136e-03 | 5.136e-03 | 1.000 |
+| M09 | 1.866e-03 | 9.466e-04 | 0.507 |
+
+**Geomean 0.238 over all nine** (0.217 over the eight Opus-5.5 entries). Eight of nine **tie or
+beat** Opus answering cold; the three exact ties at 1.000 are the CRN mechanism above, the same
+scheme on the same path. **M03 is the only loss, at 1.374×**, and it is a regression against run 1,
+which tied — the one entry of this arm that still needs an answer.
+
+Verdicts: **8 `VERIFIED_PASS`, 1 `UNDERCLAIM` (M02), 0 overclaims.** `wrong_plan_won` false on 7 of
+9, and both of the true cells sit inside the harness margin. Totals: **$44.00 and 146.3 min**, of
+which M09 alone is $10.03 and 54.6 min — 23% of the cost of the suite for one ninth of it, which is
+the price of a pool that planned four plans and a problem with two noise channels.
 
 ---
 
