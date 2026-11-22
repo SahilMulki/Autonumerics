@@ -550,6 +550,12 @@ def process(problem, args):
         "has_ground_truth": problem["has_ground_truth"],
         "ground_truth_kind": problem.get("ground_truth_kind", "exact"),
         "arm": getattr(args, "arm", S.DEFAULT_ARM),
+        # Recorded per record, not only per file: `agent_file_hashes` is captured once
+        # per *file* at write time, and a results file assembled across sessions then
+        # carries one block describing whichever problem was written last
+        # (`docs/paper-results-review.md` §4.3). The model must not inherit that bug.
+        "model": getattr(args, "effective_model", None),
+        "model_override": getattr(args, "model", None),
         "workspace": os.path.relpath(workspace_dir, REPO_ROOT),
         "run": run, "pipeline": pipeline, "verify": verify,
     }
@@ -1168,6 +1174,9 @@ AGENTS_DIR = os.path.join(REPO_ROOT, "agents")
 # Fixed (not results-relative) so self-heal finds it regardless of --results-json.
 _MODEL_BACKUP = os.path.join(HERE, ".agent_model_override.bak.json")
 _FM_MODEL_RE = re.compile(r"^(model:[ \t]*)\S.*$", re.M)
+#: The read side of the same line. `agent_models` uses it to record what each
+#: agent actually ran as, which `_FM_MODEL_RE` only ever overwrote.
+_FM_MODEL_READ_RE = re.compile(r"^model:[ \t]*(\S.*?)[ \t]*$", re.M)
 
 
 def _frontmatter_body_span(text):
@@ -1194,6 +1203,56 @@ def _rewrite_agent_model(text, model):
     s, e = span
     new_body, n = _FM_MODEL_RE.subn(rf"\g<1>{model}", text[s:e])
     return (text[:s] + new_body + text[e:], n) if n else (text, 0)
+
+
+def agent_models():
+    """``{relpath: model}`` for every pipeline agent that declares one in frontmatter.
+
+    Taken *inside* the ``--model`` override, for the same reason as
+    :func:`agent_file_hashes`: a pinned sweep must record the value it was pinned to,
+    not the originals restored on exit.
+
+    Why it exists. Before this, a pipeline run recorded no model at all -- the records
+    carried nothing and the model was asserted only by the results *filename*, which
+    is not a provenance record (`docs/paper-results-review.md` §4.2). The gap was not
+    cosmetic: the agents do **not** share one model by default (opus plans and
+    formulates, sonnet solves and evaluates), so "this suite ran on Opus" was not even
+    the right shape of claim for an un-overridden run.
+    """
+    out = {}
+    if not os.path.isdir(AGENTS_DIR):
+        return out
+    for name in sorted(os.listdir(AGENTS_DIR)):
+        if not name.endswith(".md") or name.startswith("."):
+            continue
+        path = os.path.join(AGENTS_DIR, name)
+        try:
+            with open(path) as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        span = _frontmatter_body_span(text)
+        if span is None:
+            continue
+        found = _FM_MODEL_READ_RE.search(text[span[0]:span[1]])
+        if found:
+            out[os.path.relpath(path, REPO_ROOT)] = found.group(1)
+    return out
+
+
+def effective_model(models):
+    """One label for a run's model, from :func:`agent_models`.
+
+    A single name when every agent shares it (what ``--model`` produces), and
+    ``"mixed:a+b"`` when they do not -- which is the *default* configuration, so the
+    mixed label is the common case and not an error path. None when no agent declares
+    a model. Deliberately not a single name picked from a mixture: the one thing this
+    field must never do is let a mixed run be pooled with a pinned one.
+    """
+    names = sorted(set(models.values()))
+    if not names:
+        return None
+    return names[0] if len(names) == 1 else "mixed:" + "+".join(names)
 
 
 def restore_agent_models_from_backup():
@@ -1383,6 +1442,7 @@ def main(argv=None):
         "mem_mb": args.verify_mem_mb,
         "work_precision": args.work_precision,
         "arm": args.arm,
+        "model_override": args.model,
         # Part of the invocation, not of the grading: a run made under the CLI's
         # default 600 s background ceiling can have been cut off mid-cycle, and the
         # config is the only place that distinguishes it from one that was not.
@@ -1395,6 +1455,14 @@ def main(argv=None):
     # just the conductor -- see override_agent_models. Restored on exit / crash.
     with override_agent_models(args.model):
         config["agent_file_hashes"] = agent_file_hashes()
+        config["agent_models"] = agent_models()
+        config["model"] = effective_model(config["agent_models"])
+        # Stashed on args so every record carries it too (see `process`), resolved
+        # once inside the override rather than re-read per problem.
+        args.effective_model = config["model"]
+        print(f"model: {config['model']}"
+              + ("" if args.model else "  (agent defaults; no --model override)"),
+              flush=True)
         write_results(records, config)
         for i, problem in enumerate(chosen, 1):
             slug = problem["slug"]

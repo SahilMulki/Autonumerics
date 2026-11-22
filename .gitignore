@@ -9,6 +9,10 @@ __pycache__/
 
 # Run outputs (generated artifacts, not source)
 outputs_new_paper/
+# Every scratch and backup workspace, not one rule per directory: a named-only
+# list let workspace_pre_frozen_backup_20261122/ (1041 files of agent output)
+# reach the index on 2026-11-22. `workspace/*` below covers the live one.
+workspace_*/
 workspace_oneshot/
 
 # Snapshots of previous pipeline runs, kept on disk for comparison. They are
