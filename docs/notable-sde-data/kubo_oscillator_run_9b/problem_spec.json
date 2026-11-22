@@ -1,0 +1,305 @@
+{
+  "id": "sde_kubo_oscillator",
+  "equation_type": "SDE",
+  "sde_family": "kubo_oscillator",
+  "state_dimension": 2,
+  "noise_dimension": 1,
+  "noise_structure": "multiplicative",
+  "linear": true,
+  "stiff": false,
+  "equation": "Stratonovich form: dX1 = -a*X2 dt - sigma*X2 o dW,  dX2 = a*X1 dt + sigma*X1 o dW,  X(0) = (1, 0).  Equivalent Ito form (Stratonovich-to-Ito correction 0.5*(Dg)g = -0.5*sigma**2*X): dX1 = (-a*X2 - 0.5*sigma**2*X1) dt - sigma*X2 dW,  dX2 = (a*X1 - 0.5*sigma**2*X2) dt + sigma*X1 dW.  Both are driven by the SAME single scalar Brownian motion W.",
+  "parameters": {
+    "a": 1.0,
+    "sigma": 1.0,
+    "X1_0": 1.0,
+    "X2_0": 0.0
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "initial_condition": {
+    "law": "deterministic",
+    "value": [
+      1.0,
+      0.0
+    ],
+    "note": "Restatement of the SAME deterministic initial state already carried in parameters.X1_0/X2_0 and verification.initial_condition -- not a second, independent claim. It is placed at the top level because that is where the Dynkin/generator reader looks (verifylib/kernel/sde/dynkin.py: `declared = spec.get(\"initial_condition\")`, resolved by `_initial_state`, which otherwise reports random_initial_condition: true because it matches only X_0/Y_0/Z_0 and not X1_0/X2_0). Components listed in state order (X1, X2), matching verification.generator.drift and the terminal_paths column order."
+  },
+  "milstein_eligible": true,
+  "milstein_ineligible_reason": null,
+  "diffusion_derivative": "g(X) = sigma*(-X2, X1) against the single channel W, so Dg = sigma*[[0, -1], [1, 0]] is constant. The Milstein/Stratonovich-Milstein correction needs only Dg.g = sigma**2*(-X1, -X2), which is available in closed form; with m = 1 noise channel no Levy area arises, so a strong-order-1 scheme is implementable despite state_dimension = 2.",
+  "milstein_correction": "Ito-Milstein: 0.5 * (Dg.g) * (dW**2 - dt) = -0.5*sigma**2*X_n*(dW**2 - dt), applied componentwise. Equivalently, Stratonovich-Milstein (which is what the Stratonovich coefficients call for directly): 0.5 * (Dg.g) * dW**2 = -0.5*sigma**2*X_n*dW**2 added to the Stratonovich Euler step. A Heun / midpoint (Stratonovich) predictor-corrector reaches the same strong order 1 without forming Dg.g explicitly.",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 2,
+    "mean_X": "np.cos(a*t) * np.exp(-0.5*sigma**2*t)",
+    "mean_expression": "np.cos(a*t) * np.exp(-0.5*sigma**2*t)",
+    "mean_Y": "np.sin(a*t) * np.exp(-0.5*sigma**2*t)",
+    "variance_X": "0.5*(1 + np.cos(2*a*t)*np.exp(-2*sigma**2*t)) - np.cos(a*t)**2 * np.exp(-sigma**2*t)",
+    "variance_expression": "0.5*(1 + np.cos(2*a*t)*np.exp(-2*sigma**2*t)) - np.cos(a*t)**2 * np.exp(-sigma**2*t)",
+    "variance_Y": "0.5*(1 - np.cos(2*a*t)*np.exp(-2*sigma**2*t)) - np.sin(a*t)**2 * np.exp(-sigma**2*t)",
+    "note": "Stratonovich calculus obeys the ordinary chain rule, so the exact flow is the rotation X(t) = R(theta(t)) X(0) with theta(t) = a*t + sigma*W(t). With X(0) = (1, 0) this is X1(t) = cos(a*t + sigma*W(t)), X2(t) = sin(a*t + sigma*W(t)) pathwise. The moments follow from E[cos(c + sigma*W_t)] = cos(c)*exp(-sigma**2*t/2) and the double-angle identity. At a = sigma = 1, t = 1: mean = (0.32770991402, 0.51037795154), variance = (0.36444653726, 0.26767402157), cross moment E[X1*X2] = 0.06153001240. All three were cross-checked against the exact moment ODE integrated at rtol 1e-12 and against a 4e6-path evaluation of the exact flow (agreement to 4e-4, i.e. MC noise).",
+    "alias_note": "mean_expression / variance_expression are aliases of mean_X / variance_X (state component 0, X1) -- the same component verification.moment_ode's mean_from / variance_from describe. They are present so the reference check can pair a claimed moment against the moment ODE and validate it; they are not an independent second claim."
+  },
+  "exact_pathwise_solution": "X1(T) = np.cos(a*T + sigma*W_T), X2(T) = np.sin(a*T + sigma*W_T) with W_T = dW.sum(axis=1). This is the reference the harness uses for the path-by-path strong error. A solver must NOT evaluate it directly (see implementation_notes) -- it is recorded here so the spec states what the discretised scheme is converging to.",
+  "drift_expression": "Ito drift, state X of shape (num_paths, 2): component 0 = -a*X[:, 1] - 0.5*sigma**2*X[:, 0]; component 1 = a*X[:, 0] - 0.5*sigma**2*X[:, 1]. (Stratonovich drift is the same without the -0.5*sigma**2*X terms.)",
+  "diffusion_expression": "Single noise channel, g(X) of shape (num_paths, 2): component 0 = -sigma*X[:, 1]; component 1 = sigma*X[:, 0]. Identical in the Ito and Stratonovich forms.",
+  "diffusion_derivative_expression": "Dg = sigma*[[0, -1], [1, 0]] (constant); Dg.g = sigma**2*(-X[:, 0], -X[:, 1]).",
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.1,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 50000,
+    "graded_num_paths": 2000,
+    "seed": 42,
+    "dt": 0.04,
+    "stability_check": null,
+    "ci_mult": 2.0,
+    "dt0": 0.02,
+    "conv_levels": 3,
+    "theoretical_order": 1.0,
+    "order_check": true
+  },
+  "verification": {
+    "expected_provenance": "analytic",
+    "theoretical_order": 1.0,
+    "expected_weak_order": 1.0,
+    "expected_strong_order": 0.5,
+    "expected_strong_order_milstein": 1.0,
+    "moment_ode": {
+      "state": [
+        "m1",
+        "m2",
+        "p11",
+        "p22",
+        "p12"
+      ],
+      "rhs": [
+        "-a*m2 - 0.5*sigma**2*m1",
+        "a*m1 - 0.5*sigma**2*m2",
+        "-2*a*p12 - sigma**2*p11 + sigma**2*p22",
+        "2*a*p12 + sigma**2*p11 - sigma**2*p22",
+        "a*(p11 - p22) - 2*sigma**2*p12"
+      ],
+      "initial": [
+        "X1_0",
+        "X2_0",
+        "X1_0**2",
+        "X2_0**2",
+        "X1_0*X2_0"
+      ],
+      "closes_exactly": true,
+      "mean_from": "m1",
+      "variance_from": "p11 - m1**2",
+      "applies_to_component": 0,
+      "applies_to_name": "X1",
+      "note": "The Ito drift is linear and g is linear, so the first- and second-moment equations close exactly. Integrated at rtol 1e-12 this reproduces the closed form to 1e-9. The second component's exact moments, as prose rather than a second answer key: mean_X2 from m2, variance_X2 = p22 - m2**2; and p11 + p22 is identically 1, which is the amplitude conservation visible at the moment level."
+    },
+    "kolmogorov": null,
+    "stationary_density": {
+      "ergodic": false,
+      "note": "The process lives on the unit circle and theta(t) = a*t + sigma*W(t) diffuses on the circle, so the law converges to the uniform distribution on the circle rather than to a density given by the scalar 1-D invariant-density formula. Not usable as a surrogate here, and unnecessary: the closed form and the exact moment ODE both apply."
+    },
+    "generator": {
+      "drift": [
+        "-a*X[:, 1] - 0.5*sigma**2*X[:, 0]",
+        "a*X[:, 0] - 0.5*sigma**2*X[:, 1]"
+      ],
+      "diffusion_matrix": [
+        [
+          "-sigma*X[:, 1]"
+        ],
+        [
+          "sigma*X[:, 0]"
+        ]
+      ],
+      "note": "Ito generator of the 2-state, 1-channel system. The diffusion matrix is 2x1 because there is exactly one independent Brownian channel. Hand-check: phi = X1**2 + X2**2 gives L.phi = 2*X1*(-a*X2 - 0.5*s^2*X1) + 2*X2*(a*X1 - 0.5*s^2*X2) + (s^2*X2^2 + s^2*X1^2) = 0 identically, which is the amplitude invariant."
+    },
+    "initial_condition": {
+      "law": "deterministic",
+      "value": [
+        1.0,
+        0.0
+      ],
+      "note": "Components listed in state order (X1, X2), matching `generator.drift` and the `terminal_paths` column order."
+    },
+    "dynkin_test_functions": [
+      "X[:, 0]",
+      "X[:, 0]**2 + X[:, 1]**2",
+      "X[:, 0]*X[:, 1]",
+      "np.tanh(X[:, 0])"
+    ],
+    "terminal_law": null,
+    "terminal_law_note": "X(T) = (cos(theta_T), sin(theta_T)) with theta_T ~ Normal(a*T, sigma**2*T) -- a wrapped-normal law on the unit circle. That is none of the three implemented laws (normal, lognormal, noncentral_chi2), so terminal_law is null rather than a mis-declared Gaussian. The circular structure is checked instead by the gated amplitude_conservation constraint and by the L.(X1^2 + X2^2) = 0 Dynkin test function.",
+    "constraints": [
+      {
+        "name": "finite",
+        "expr": "np.isfinite(X)",
+        "gate": true,
+        "note": "No NaN/Inf in terminal_paths."
+      },
+      {
+        "name": "amplitude_conservation",
+        "expr": "np.abs(np.sqrt(X[:, 0]**2 + X[:, 1]**2) - 1.0) <= 0.25",
+        "gate": true,
+        "note": "problem.md: 'the amplitude |X(t)| is conserved on every path at every time. The harness checks that the sample you return has conserved it.' The exact flow conserves |X| = 1 identically; a consistent discretisation conserves it to its own local-error order. The 0.25 bound is deliberately generous relative to the harness's 20% strong-error gate so that a correct order-1/2 or order-1 scheme at dt = 0.04 cannot be false-failed, while a scheme that reads the Stratonovich coefficients as Ito ones (omitting the -0.5*sigma**2*X drift) grows |X| like exp(0.5*sigma**2*T) = 1.65 per unit time and breaches it. This is the discriminating check the problem is built around."
+      }
+    ],
+    "invariants": [
+      {
+        "name": "estimator_stability",
+        "gate": false,
+        "tol": 0.01,
+        "note": "Batch-means scatter over the path sample, to confirm the path count has settled."
+      },
+      {
+        "name": "second_moment_sum",
+        "gate": false,
+        "note": "DECLARED BUT NOT CHECKED (no registry name applies, and no single evaluable expression over terminal_paths states it): E[X1**2] + E[X2**2] = 1 exactly, for all t. This is the expectation-level shadow of the pathwise amplitude invariant, which IS gated above as `amplitude_conservation`. Recorded for the reader; no tolerance given, because nothing evaluates it."
+      }
+    ]
+  },
+  "implementation_notes": "Two-state, single-channel Stratonovich system; the whole difficulty is the calculus convention. (1) THE STRATONOVICH-TO-ITO CORRECTION IS THE POINT. Reading the stated coefficients as Ito coefficients integrates a different equation whose amplitude grows like exp(0.5*sigma**2*t); problem.md says so explicitly. Either integrate the Ito form with drift (-a*X2 - 0.5*sigma**2*X1, a*X1 - 0.5*sigma**2*X2), or use a genuinely Stratonovich scheme (Heun / midpoint predictor-corrector, Stratonovich-Milstein) on the stated coefficients. (2) STRONG ORDER. Euler-Maruyama on the Ito form is strong order 1/2; Stratonovich-Milstein and Heun are strong order 1. With m = 1 noise channel no Levy area is needed, so order 1 is reachable even though the state is 2-D -- hence milstein_eligible is true with state_dimension = 2. (3) GRADED PATH BY PATH. The harness evaluates its own exact solution X1 = cos(a*T + sigma*W_T), X2 = sin(a*T + sigma*W_T) on the increments it hands the solver and gates the relative strong error at 20%. Consume the supplied dW exactly: Nt = dW.shape[1] = 25, dt = T/Nt, W_T = dW.sum(axis=1). Drawing fresh randomness, or ignoring dW, makes the pathwise comparison meaningless and makes the CRN order ladder read a strong order near zero. (4) A DISCRETISED SCHEME IS REQUIRED. Evaluating the closed-form rotation directly is detected (identical terminal states at dt, dt/2, dt/4 on coarsenings of one Brownian path) and the run is EXCLUDED from the comparison, not merely failed. Advance the state step by step. Do not declare `exact_sampling_components`: both components must be stepped from the supplied increments, and a near-zero order here is a real defect rather than a waivable one. (5) A matrix-exponential step exp((a*dt + sigma*dW_n)*J) applied per step IS a legitimate discretisation -- it is exact for this equation's flow given the step increment and so carries no discretization error either, which puts it at risk of the same exclusion; prefer an honestly discretised Heun/Milstein step. (6) Numerics are benign: the state is bounded by 1, no stiffness, no positivity constraint.",
+  "requirements": [
+    {
+      "id": "R1",
+      "kind": "equation",
+      "quote": "dX1 = -a X2 dt - sigma X2 o dW\n    dX2 =  a X1 dt + sigma X1 o dW",
+      "status": "mapped",
+      "spec_path": "equation, verification.generator, drift_expression, diffusion_expression"
+    },
+    {
+      "id": "R2",
+      "kind": "equation",
+      "quote": "The symbol `o dW` denotes the Stratonovich integral: the coefficients above are Stratonovich coefficients, not Ito ones.",
+      "status": "mapped",
+      "spec_path": "equation, verification.generator.drift, implementation_notes",
+      "note": "The Stratonovich-to-Ito correction 0.5*(Dg)g = -0.5*sigma**2*X is written out in `equation` and is the drift carried in `verification.generator`, which is the Ito generator the Dynkin check is built from."
+    },
+    {
+      "id": "R3",
+      "kind": "initial_condition",
+      "quote": "X(0) = (1, 0)",
+      "status": "mapped",
+      "spec_path": "initial_condition.value, parameters.X1_0, parameters.X2_0, verification.initial_condition.value",
+      "note": "Carried three times over, all stating the same deterministic state (1, 0) in state order (X1, X2): `parameters.X1_0/X2_0` for the solver, `verification.initial_condition` for the reader, and the top-level `initial_condition` because that is the field the Dynkin/generator reader resolves (dynkin.py `_initial_state`). The top-level copy is a restatement, not an independent claim."
+    },
+    {
+      "id": "R4",
+      "kind": "parameter",
+      "quote": "with a = 1 and sigma = 1",
+      "status": "mapped",
+      "spec_path": "parameters.a, parameters.sigma"
+    },
+    {
+      "id": "R5",
+      "kind": "equation",
+      "quote": "driven by a single Brownian motion W",
+      "status": "mapped",
+      "spec_path": "noise_dimension, verification.generator.diffusion_matrix"
+    },
+    {
+      "id": "R6",
+      "kind": "domain",
+      "quote": "over the time interval [0, 1]",
+      "status": "mapped",
+      "spec_path": "time_interval"
+    },
+    {
+      "id": "R7",
+      "kind": "evaluation",
+      "quote": "the amplitude |X(t)| is conserved on every path at every time. The harness checks that the sample you return has conserved it",
+      "status": "mapped",
+      "spec_path": "verification.constraints[1] (amplitude_conservation, gate: true)",
+      "note": "Gated with a 0.25 absolute bound on | |X| - 1 |; see that entry's note for why the bound is loose rather than 1e-8 (a discretisation conserves it only to its own order, while the Ito-misreading failure mode overshoots by 65% per unit time)."
+    },
+    {
+      "id": "R8",
+      "kind": "evaluation",
+      "quote": "This problem is graded **path by path**, not in distribution. You are handed the Brownian increments and your job is to advance the state through them with a discretised scheme",
+      "status": "mapped",
+      "spec_path": "exact_pathwise_solution, verification.expected_strong_order, evaluation_thresholds.order_check, implementation_notes"
+    },
+    {
+      "id": "R9",
+      "kind": "evaluation",
+      "quote": "solve_sde(num_paths=2000, dt=0.04, T=1, seed=42)",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.graded_num_paths, evaluation_thresholds.dt, evaluation_thresholds.seed, evaluation_thresholds.num_paths",
+      "note": "graded_num_paths = 2000 is the contract's count. `num_paths` is deliberately 50000 instead: the kernel's moment checks are gated at a 10% variance tolerance, and 2000 paths cannot resolve that (the `resolved` bar needs roughly 2*4*(2.0/0.10)**2*(2 + excess kurtosis) >= 3200 for a light-tailed component, and X1, X2 are bounded trig variables). Pinning the kernel to 2000 would leave every plan MC-inconclusive with no lever to escape."
+    },
+    {
+      "id": "R10",
+      "kind": "evaluation",
+      "quote": "Use the `dt` you are given (do not hardcode a different step).",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.dt, implementation_notes"
+    },
+    {
+      "id": "R11",
+      "kind": "method",
+      "quote": "`dW` is always supplied: a numpy array of shape `(2000, 25)` holding the Brownian increments, **already scaled by sqrt(dt)**. Use exactly these \u2014 take `Nt = dW.shape[1]` and `dt = T / Nt` \u2014 and do not draw your own randomness for the Brownian path.",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R12",
+      "kind": "evaluation",
+      "quote": "`terminal_paths`: 2-D numpy array of shape `(num_paths, 2)` \u2014 the 2 state components (X, Y) at time T, in that column order",
+      "status": "mapped",
+      "spec_path": "state_dimension, verification.initial_condition.note, implementation_notes"
+    },
+    {
+      "id": "R13",
+      "kind": "evaluation",
+      "quote": "`empirical_mean`: list of floats, one per component\n- `empirical_variance`: list of floats, one per component (use `ddof=1`)",
+      "status": "mapped",
+      "spec_path": "analytic_moments, implementation_notes"
+    },
+    {
+      "id": "R14",
+      "kind": "method",
+      "quote": "Seed all randomness with `np.random.default_rng(seed)` (not `np.random.seed`).",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.seed, implementation_notes"
+    },
+    {
+      "id": "R15",
+      "kind": "method",
+      "quote": "Round the step count: `Nt = max(1, round(T / dt))`, then `dt = T / Nt`.",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R16",
+      "kind": "method",
+      "quote": "Keep `solve_sde` importable \u2014 no work at module load outside `if __name__ == \"__main__\"`.",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R17",
+      "kind": "method",
+      "quote": "Use the Python standard library and numpy only.",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R18",
+      "kind": "evaluation",
+      "quote": "the harness evaluates its own exact solution on the very increments it handed you and gates the relative strong error `sqrt(mean((X_num - X_exact)^2)) / sqrt(mean(X_exact^2))` over paths at < 20%",
+      "status": "ambiguous",
+      "spec_path": "verification.expected_strong_order, evaluation_thresholds.order_check, exact_pathwise_solution",
+      "note": "`evaluation_thresholds` has no key for a pathwise strong-error tolerance -- the SDE accuracy keys are moment-space (variance_rel_err_max / mean_rel_err_max) and `functionals` takes only scalars the solver itself reports, which this is not. Carried instead as (a) the exact pathwise reference in `exact_pathwise_solution`, (b) the strong-order floors 0.5 / 1.0 that the kernel's CRN ladder measures, and (c) the moment tolerances, which a solver at 20% pathwise strong error comfortably clears. The 20% number itself is therefore recorded but not enforced as its own numeric gate."
+    },
+    {
+      "id": "R19",
+      "kind": "method",
+      "quote": "**A discretised scheme is required.** The exact solution of this equation is known in closed form, and a solver that evaluates it directly is exact at every `dt`. ... Such a run is **excluded** from the comparison rather than failed",
+      "status": "mapped",
+      "spec_path": "implementation_notes",
+      "note": "Also recorded as the reason `exact_sampling_components` must NOT be declared for either component: a near-zero measured strong order here is a real defect, not a waivable exact-transition step."
+    }
+  ]
+}

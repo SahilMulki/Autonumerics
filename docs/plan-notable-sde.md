@@ -2170,6 +2170,194 @@ would be measured on is no longer the entry it was written from.
    cross-family agreement arithmetic -- but it is the stale/wrong-label failure §8i's finding 2
    describes, now in its third variant.
 
+### 8k. The N08 counterfactual: rule 6 gets no credit, measured `[rev4 2026-11-21, N]`
+
+§8j left one question open and named the single measurement that would close it: N08 re-run with
+`sde_manual.md` pinned to `df2001c`, everything else held. That run is done. **The rule is not what
+got the pipeline there.**
+
+The cut is unusually clean. The pinned manual is 399 lines against the current 478, and it contains
+**zero** occurrences of `Lamperti`, `rule 6` or `rule 0c` -- the two rules are the entire delta, not
+a reworded version of something already present. The run recorded
+`agent_file_hashes["references/sde_manual.md"] = fa237e15277663d8` against the rule-6 run's
+`d56974dc2594f147`, so the swap is on the record rather than asserted; that hash is the receipt, and
+checking it is what distinguishes this from a run that silently read the current manual.
+
+| arm | `E[1/V]` err | `Var[1/V]` err | worst/gate | vs C0 | winner | selection |
+|---|---|---|---|---|---|---|
+| C0 Opus, median of 3 | 0.801% | 2.417% | 0.241653 | 1.0x | -- | -- |
+| rule 6 present | 1.63e-05 | 5.72e-04 | **0.005725** | 42.2x | `1-lamperti-strang-split` | `state` |
+| rule 6 **absent** | 1.47e-05 | 7.28e-04 | **0.007280** | 33.2x | `1-log-coordinate-tamed-milstein` | `fallback` |
+
+With the rule withdrawn, the pipeline shipped `scheme: reciprocal-chart-strang-splitting`,
+`scheme_family: strang-splitting`, described by its own one-sentence as *"Strang splitting in the
+reciprocal chart `Y = 1/V` (half drift flow, full noise step, half drift flow, both flows in closed
+form)"*. That is rule 6's prescription -- change coordinates until the noise sub-step is tractable,
+then Strang-split with exact sub-flows -- arrived at from a manual that never states it. It is not
+even the same chart: the rule-6 run used `X = V**-0.5`, the Lamperti coordinate proper, while this
+one used `Y = 1/V`, which is the chart in which `1/V` is exactly CIR. Grepping all three pinned
+`SOLUTION.md` files for `lamperti|rule 6|rule 0c|sde_manual|moment-match*` returns nothing.
+
+**So the honest attribution is now measured, and it is negative.** §8j declined to credit the rule on
+three grounds -- no citation, §8i's N06 precedent, and the bias retry as a competing cause. The
+counterfactual confirms the decline: the family is reachable without the rule, on this entry, at
+33.2x past C0. What the suite may claim is the capability, and §12's "may claim" bullet stands as
+written. **What it may not claim is that the manual's §3 gap table, once filled, is what produces
+these schemes** -- on the one entry where that has been tested, it is not.
+
+**This run is a `RUN_ERROR`, and the reason is worth recording because it is not the one offered.**
+The laptop slept for about five hours mid-run, which is the obvious suspect and is innocent. The
+kill came at exactly `wall_seconds: 2400.0` against `wall_clock_seconds: 21495.2`: the budget timer
+is monotonic-active, not wall-clock, so macOS suspending the process during sleep cost it no budget
+at all -- had the timer been wall-clock the kill would have landed at 06:56, not 12:14. The actual
+cause is that the counterfactual command omitted `--timeout`, taking the 2400 s default, while the
+rule-6 run it was meant to pair against ran at 3600 s and **used 2337.5 s of it**. The budget was 62
+seconds of margin over a known duration. *A counterfactual has to be paired on the harness settings,
+not only on the file under test* -- `timeout_seconds` is in `config` for exactly this reason and was
+not read before the run.
+
+**What the partial run does and does not support.** The conductor was left at `phase: running`, so
+`graded_incomplete: true` and the record carries `note: "conductor left phase='running': graded, but
+this is a partial run, not a pipeline result"`. Three consequences, in increasing severity:
+
+1. The harness grade is sound. `verify.status: ok`, `passed: true`, `verified_score: 10`,
+   `functional_ok: true`, the level check consistent on both functionals and `positive` holding --
+   the harness solved the plan on disk and graded it against the exact `1/V` law. Nothing about the
+   timeout touches that number.
+2. All three plans had reached `iter: 4` and plan 1 `state: stopped` with
+   `stop_reason: plateaued at the evidence-path ceiling`, so the scheme being graded is a finished
+   scheme, not a first draft. The `certification_ceiling` note is also independently interesting:
+   the conductor reasoned *before* the loop that no plan on N08 can certify, because
+   `moment_ode`, `kolmogorov` and `stationary_density` were all declined with structural reasons --
+   which is the same ceiling §8j read off the finished run, derived here without finishing.
+3. **But `best_plan_source: fallback` and `best_plan_tied: true`.** The run died before the compare
+   step, with all three plans tied at 9, so the graded plan is the fallback pick and *not*
+   necessarily the plan the ranker would have shipped. **The 0.007280 is therefore a floor on the
+   arm's quality, not its selected value**, and the 33.2x is not strictly comparable to 42.2x: one
+   is a ranked winner, the other a tied fallback. The qualitative finding -- that the
+   transform-then-split family is reachable without the rule -- does not depend on which of three
+   tied plans was graded, because the pool contains no plan that is not in a transformed chart.
+   The quantitative gap between 42.2x and 33.2x does depend on it, and is not established.
+
+**Two incidental results.** First, the pinned pool is **family-diverse** -- `strang-splitting`,
+`implicit`, `tamed-milstein` -- where the rule-6 run collapsed onto one family. The
+`single_family_pool` defect did not bite here, and the agreement gate consequently did real work:
+`1 vs 3 DISAGREE` at 7.95 sigma, `2 vs 3 DISAGREE` at 4.60 sigma, `1 vs 2 INCONCLUSIVE` at 3.01
+sigma, a hair above the bar. Plan 3 is the outlier and the conductor correctly attributed it to
+about `+0.7%` mean bias, noting that plan 3's *relative* gap to plan 1 shrank while its sigma rose,
+because its new antithetic estimator cut its own standard error about 4x and so sharpened the
+disagreement. All three plans took `agreement_cap: 8`, which is the gate declining to award a second
+circularity break to a pool whose members disagree -- the behaviour §8i wanted and did not get.
+Second, the vocabulary extension is load-bearing for the third consecutive run: without
+`strang-splitting` in `SDE_FAMILIES` the pinned winner would have scored this composition as `other`.
+
+**What is still open on N08, and what it costs.** One paired re-run at `--timeout 3600` with
+everything else held would convert the floor into a selected value and make 33.2x comparable to
+42.2x. ~40 min, ~$12. It is worth doing only if the paper wants to state the *size* of the rule's
+contribution; the *sign* is settled, and settled against the rule. Both workspaces are preserved --
+`docs/notable-sde-data/n08_rule6_run/` and `docs/notable-sde-data/n08_pinned_run/` -- because
+`workspace/` is gitignored and `--fresh` would otherwise have destroyed the rule-6 evidence §8j
+rests on when this run started. A third workspace,
+`docs/notable-sde-data/n02_preexisting_review_flag/`, is preserved for a different reason: it holds
+the two live-`workspace/` test failures §8d documents as owner decisions rather than defects, and
+the N02 re-run in step 9b will `--fresh` them away. **The suite would then go green for the wrong
+reason** -- `test_review`'s N02 Cayley flag (component 0's `variance_rel_err` 0.0194 quoted beside a
+`<metrics>` worst-component 0.0340) and `test_spec_field_coverage`'s unread spec fields are both
+glob results over `workspace/*/plans/*`, so deleting the run deletes the signal while leaving the
+underlying questions -- a pathwise kernel route, and whether invented spec fields get `UNREAD`
+entries -- exactly as open as they were. The full suite at this revision is **1457 passed, 3
+skipped, 2 failed in 858 s**, and both failures are those two.
+### 8l. N02, N05, N09: the head-to-head table closes, and the Dynkin check does not cover jumps `[rev4 2026-11-21, N]`
+
+The three remaining entries ran paired -- `--timeout 3600`, `--fresh`, `scheme-matched`, manual at
+`d56974dc2594f147` -- and all three completed: 17.5, 16.9 and 17.1 min, no timeout, no
+`graded_incomplete`. **All three beat C0 and all three were graded `passed: true` at
+`verified_score: 10`.** With §8g's four and §8j/§8k's N08 this closes the head-to-head at 9 of 9.
+
+| id | problem | C0 median | pipeline | ratio | verdict | winner |
+|---|---|---|---|---|---|---|
+| N02 | `sde_kubo_oscillator` | 0.162280 | **0.005279** | **30.7x** | `UNDERCLAIM` | `2-stratonovich-heun` |
+| N05 | `sde_merton_jump_call` | 0.195372 | **0.039974** | **4.89x** | `UNDERCLAIM` | `1-jump-adapted-milstein-control-variate` |
+| N09 | `sde_geometric_asian` | 0.143391 | **0.039203** | **3.66x** | `VERIFIED_PASS` | `1-log-exact-bridge-conditioned` |
+
+`worst/gate` throughout; N02 is pathwise against `SDE_PATHWISE_TOL = 0.10`, the others functional
+against their own per-functional gates. C0's reps are degenerate on two of the three -- N02 identical
+to six digits across all three reps and N09 identical across all three, because the one-shot produced
+the same scheme each time. Only N05 varies (0.195372, 0.195372, 0.21691). **`wrong_plan_won: false`
+on all three**, and in both pools where a per-plan error exists the ranker took the harness-best plan
+outright: N05 `0.039974 / 0.093183 / 0.187105` and N09 `0.039203 / 0.301709 / 0.131972`.
+
+**Finding 1: the Dynkin generator check is diffusion-only, and on a jump diffusion it fires
+identically on every correct solver.** N05's conductor recorded this as a verification gap bounding
+the whole run rather than working around it: plans 2 and 3 take the rubric's Dynkin-fails row and
+score 3, plan 1 scores 9 on `dynkin unresolved`, and *no solver change can reach the finding without
+falsifying the compensated drift* `a = r - lam*kappa`. All three plans therefore returned `solver.py`
+byte-identical in round 2 -- hash equal to the `solver_sha256` in their own metrics blocks -- and
+were called terminal at iter 1 rather than cycled to `max_iter`, on the explicit ground that
+re-grading identical bytes against an unchanged spec cannot produce new evidence. That is the right
+call and the right record, but it means **the pipeline shipped N05's winner on a pool where two of
+three plans were scored 3 by an instrument that cannot see their jump term.** The kernel needs a
+jump-aware generator, or the rubric needs a declared-jumps waiver; until then N05's ranking rests on
+one plan being *unresolved* rather than on three being compared.
+
+**Finding 2: the spec/kernel interface silently voided `dynkin_ok` on N02's entire pool.**
+`verifylib/kernel/sde/dynkin.py:203` reads a **top-level** `initial_condition` and params
+`X_0/Y_0/Z_0`, while the formulator's spec carried `parameters.X1_0/X2_0` and
+`verification.initial_condition`. The kernel therefore set `random_initial_condition: true` and the
+analytic rubric's 9 row bound every plan, with `dynkin_ok` carrying no verdict at all in round 1.
+`check-spec` exited 0 throughout -- the spec was *valid*, just not in the shape the reader expects --
+which is the failure mode a schema check cannot catch. The formulator spent its single allowed
+re-dispatch restating the initial condition top-level; `initial_moments()` then returned
+`x0 [1.0, 0.0]` with `random_initial_condition false`. **This is the second instrument whose contract
+is written in one place and read in another**, and both were found in the same three-problem run.
+
+**Finding 3: Phase 2b declined for the second time, and for the first time on a genuinely eligible
+winner.** N09 is the first `certified: true` winner since the cycle was built, so the gate was live
+rather than unreachable. It declined with `polish_cycle: false` and a measured reason:
+`moment_bias_actionable: false`, `moment_bias_frac_tol` **4.5e-13** on the winner and 0.0418 on plan
+2, both binding on the variance. There was no removable bias to remove. Taken with §8i's decline --
+where all three plans had already taken the in-loop `bias_retry` while still eligible -- the cycle
+has now been offered twice and fired zero times outside §8h's isolated replay. **The window is
+narrow by construction, and the two declines were both correct**; what is still unmeasured is the
+cycle's value on a live run, because §8h's 4.01x was measured under isolation.
+
+**Finding 4: N09's selection was decided by `sqi` at a 0.432-vs-0.423 margin, and the margin
+mattered.** Both plan 1 and plan 2 left the loop `certified: true` at kernel score 10, so score could
+not separate them and order and consistency did not resolve pool-wide and were excluded. The index
+decided on accuracy and structure alone -- and plan 2's harness error is **0.301709 against the
+winner's 0.039203, 7.7x worse**. Had the index gone the other way the run would have shipped a plan
+7.7x worse with `certified: true` and nothing downstream to catch it, exactly as §8i's counterfactual
+described. The conductor reported the margin as narrow in `REPORT.md`, which is the right behaviour;
+the standing concern is that **a 0.009 margin is carrying a 7.7x accuracy difference**, and nothing
+in the record claims that margin is resolved.
+
+**Finding 5: `harness_by_plan` records no error metric for a pathwise ground truth.** N02's three
+per-plan blocks carry `status`, `passed`, `verified_score` and `gt_kind` and nothing else -- no
+`pathwise_rel_err`, no tolerance. The winner-level `verify` has it (5.2788e-04), so the *suite*
+number is sound, but **`wrong_plan_won` cannot be evaluated by magnitude on a pathwise entry**; it
+reduces to the score ladder, which here read 10 / 10 / 8. The ordering is probably right -- plan 3 is
+plain Euler-Maruyama -- but the record cannot show by how much, and N01 and N07 are pathwise too.
+
+**One honest limit on the 9-of-9 table.** These three are single-seed on both sides, and the seed
+instruments were inert on all three for the reason §8j names: N02 is pathwise and N05/N09 are
+functional, so none declares the analytic moments `sde_seed_study` needs. §8g measured that three of
+four single-seed accuracy gaps were artifacts. A 30.7x is far outside that range, but **4.89x and
+3.66x are not**, and the suite still cannot bound the sampling term on five of its nine entries.
+
+**Two test-signal consequences, recorded because they are easy to misread.** `--fresh` wiped
+`workspace/sde_kubo_oscillator`, so `test_review::test_no_false_positives_on_archived_reviews` now
+**passes** -- its glob over `workspace/*/plans/*` lost its input. The N02 Cayley per-component flag
+is *gone, not fixed*, and the artifact is preserved at
+`docs/notable-sde-data/n02_preexisting_review_flag/` for exactly this reason. Meanwhile
+`test_spec_field_coverage` still fails and its count **rose from 18 unread SDE spec fields to 35**,
+the new ones coming from these three formulators: `jump_specification.{intensity,jump_multiplier,
+state_update_at_a_jump}`, `path_functionals.{geometric_average,call_price_closed_form,
+geo_average_variance_closed_form,intermediate_values.E_A,...}`,
+`verification.exact_functional_reference.{inv_var_second_moment,confirmed_by}` and
+`output_contract.{graded_call,harness_gate}`. **The formulators invent spec fields faster than the
+kernel grows readers**, and since every one of these runs passed, the fields are not wrong -- they
+are unconsumed. That is the same owner decision §8d names, now with twice the surface and a
+measured growth rate rather than a static count.
 
 ## 9. Cost
 
@@ -2309,6 +2497,13 @@ Stated here so the write-up in step 10 cannot drift.
 
 **May not claim:**
 
+- **That filling the manual's §3 gaps is what produces the schemes that close the C0 gap**
+  `[rev4 2026-11-21]`. §8k: N08 re-run with `sde_manual.md` pinned to `df2001c` -- a manual
+  containing zero occurrences of `Lamperti` -- still shipped `reciprocal-chart-strang-splitting`,
+  a Strang composition in the chart where `1/V` is exactly CIR, at 33.2x past C0 with no plan in
+  the pool citing the manual. The capability claim stands; the attribution claim is measured and
+  negative. The one qualifier is that the pinned run's winner was a tied `fallback` pick, so 33.2x
+  is a floor on that arm rather than its selected value.
 - Any **cost or work-axis** comparison on N01 or N07 without the caveat `[rev1 2026-11-13]`.
   `plan_meta.SDE_FAMILIES` is `euler-maruyama, milstein, tamed-euler-maruyama, tamed-milstein,
   implicit, exact-transition, quadratic-exponential, other` — verified 2026-11-13 — with no key for

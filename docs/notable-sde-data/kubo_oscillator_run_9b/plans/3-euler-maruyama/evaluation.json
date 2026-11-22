@@ -1,0 +1,545 @@
+{
+  "agent_cap": null,
+  "agreement": {
+    "agreement": null,
+    "disagreement": null,
+    "entries": [],
+    "stale": []
+  },
+  "certification": {
+    "agreement_is_break": false,
+    "bound_by": "certification",
+    "caps": [
+      {
+        "reason": "a gate constraint is violated",
+        "score": 4,
+        "source": "rubric"
+      },
+      {
+        "reason": "a gate:true structural violation",
+        "score": 3,
+        "source": "certification"
+      }
+    ],
+    "certified": false,
+    "d1_is_break": false,
+    "gates_clean": false,
+    "headroom_decades": 0.2190861842719553,
+    "headroom_fraction": 0.25614842097539586,
+    "provenance": "analytic",
+    "quality": 0.16300354062070643,
+    "reason": "a gate:true structural violation",
+    "score": 3,
+    "tier": "A"
+  },
+  "certified": false,
+  "checks": {
+    "constraints_ok": false,
+    "cross_check_ok": "unavailable",
+    "cross_plan_agreement": "unavailable",
+    "dynkin_ok": "not_run",
+    "functionals_ok": "unavailable",
+    "invariants_ok": false,
+    "moments_ok": true,
+    "orders_ok": "not_run",
+    "provenance_as_expected": true,
+    "reported_moments_agree": true,
+    "resolved": true,
+    "richardson_stable": "unavailable",
+    "surrogate_ok": "unavailable",
+    "variance_ok": true
+  },
+  "config": {
+    "T": {
+      "source": "spec",
+      "value": 1.0
+    },
+    "accuracy_seeds": {
+      "source": "kernel_default",
+      "value": 0
+    },
+    "ci_mult": {
+      "source": "spec",
+      "value": 2.0
+    },
+    "conv_levels": {
+      "source": "spec",
+      "value": 3
+    },
+    "conv_num_paths": {
+      "source": "kernel_default",
+      "value": 20000
+    },
+    "dt": {
+      "source": "spec",
+      "value": 0.04
+    },
+    "dt0": {
+      "source": "spec",
+      "value": 0.02
+    },
+    "dynkin_levels": {
+      "source": "kernel_default",
+      "value": 3
+    },
+    "dynkin_replicate_margin": {
+      "source": "kernel_default",
+      "value": 0.7
+    },
+    "expected_strong_order": {
+      "source": "spec",
+      "value": 0.5
+    },
+    "expected_weak_order": {
+      "source": "spec",
+      "value": 1.0
+    },
+    "mean_rel_err_max": {
+      "source": "spec",
+      "value": 0.05
+    },
+    "near_zero_mean_threshold": {
+      "source": "spec",
+      "value": 0.01
+    },
+    "noise_dimension": {
+      "source": "spec",
+      "value": null
+    },
+    "num_paths": {
+      "source": "spec",
+      "value": 50000
+    },
+    "run_crn_ladder": {
+      "source": "kernel_default",
+      "value": false
+    },
+    "run_dynkin": {
+      "source": "kernel_default",
+      "value": false
+    },
+    "scheme_family": {
+      "source": "plan",
+      "value": "euler-maruyama"
+    },
+    "seed": {
+      "source": "spec",
+      "value": 42
+    },
+    "seed_replicates": {
+      "source": "kernel_default",
+      "value": 3
+    },
+    "sub_increments_per_step": {
+      "source": "kernel_default",
+      "value": null
+    },
+    "timeout_s": {
+      "source": "kernel_default",
+      "value": 300
+    },
+    "variance_rel_err_max": {
+      "source": "spec",
+      "value": 0.1
+    }
+  },
+  "d2": {
+    "bars": {
+      "amplitude_conservation": 1e-08,
+      "estimator_stability": 0.01,
+      "finite": 1e-08,
+      "second_moment_sum": 1e-08
+    },
+    "declared": 4,
+    "drifts": {
+      "amplitude_conservation": 0.07016,
+      "estimator_stability": 0.008898579188051365,
+      "finite": 0.0,
+      "second_moment_sum": null
+    },
+    "gate_failed": [
+      "amplitude_conservation"
+    ],
+    "headroom": {
+      "amplitude_conservation": -6.846089580357984,
+      "estimator_stability": 0.050679330439121394,
+      "finite": 6.0
+    },
+    "invariants_ok": false,
+    "max_drift": 0.07016,
+    "non_gate_ok": true,
+    "not_reported": [
+      "second_moment_sum"
+    ],
+    "not_reported_gated": [],
+    "outcomes": {
+      "amplitude_conservation": false,
+      "estimator_stability": true,
+      "finite": true,
+      "second_moment_sum": "not_reported"
+    },
+    "worst_headroom": -6.846089580357984
+  },
+  "detail": {
+    "constraints_ok": {
+      "bars": {
+        "amplitude_conservation": 1e-08,
+        "estimator_stability": 0.01,
+        "finite": 1e-08,
+        "second_moment_sum": 1e-08
+      },
+      "declared": 4,
+      "drifts": {
+        "amplitude_conservation": 0.07016,
+        "estimator_stability": 0.008898579188051365,
+        "finite": 0.0,
+        "second_moment_sum": null
+      },
+      "gate_failed": [
+        "amplitude_conservation"
+      ],
+      "headroom": {
+        "amplitude_conservation": -6.846089580357984,
+        "estimator_stability": 0.050679330439121394,
+        "finite": 6.0
+      },
+      "invariants_ok": false,
+      "max_drift": 0.07016,
+      "non_gate_ok": true,
+      "not_reported": [
+        "second_moment_sum"
+      ],
+      "not_reported_gated": [],
+      "outcomes": {
+        "amplitude_conservation": false,
+        "estimator_stability": true,
+        "finite": true,
+        "second_moment_sum": "not_reported"
+      },
+      "worst_headroom": -6.846089580357984
+    },
+    "cross_check_ok": {
+      "relations": [],
+      "statement": null,
+      "violations": []
+    },
+    "cross_plan_agreement": {
+      "entries": [],
+      "stale": 0
+    },
+    "dynkin_ok": {
+      "reason": "a declared constraint gate failed, so the score is capped on that finding and the generator check cannot lift it (manual \u00a724's cost rule); it runs on every other plan, both paths"
+    },
+    "functionals_ok": {
+      "errors": {},
+      "gate_failed": [],
+      "ladder_dts": null,
+      "ladder_num_paths": 20000,
+      "not_reported": [],
+      "outcomes": {},
+      "values": {}
+    },
+    "moments_ok": {
+      "family_wise": {
+        "ci_mult": 2.0,
+        "multiplier": 2.530960494008708,
+        "tests": 4
+      },
+      "mean": [
+        {
+          "component": 0,
+          "empirical": 0.32172198698449445,
+          "outcome": true,
+          "reference": 0.32770991402245986,
+          "rel_error": 0.018272035058282805,
+          "se": 0.002780118229160709,
+          "tol": 0.05
+        },
+        {
+          "component": 1,
+          "empirical": 0.5286466918359171,
+          "outcome": true,
+          "reference": 0.5103779515445728,
+          "rel_error": 0.0357945327302182,
+          "se": 0.0023745191760538484,
+          "tol": 0.05
+        }
+      ],
+      "mean_ok": true,
+      "mean_rel_err": 0.0357945327302182,
+      "variance": [
+        {
+          "component": 0,
+          "empirical": 0.3864528684055838,
+          "outcome": true,
+          "reference": 0.36444653725532805,
+          "rel_error": 0.06038287897035964,
+          "se": 0.0022431246742702633,
+          "tol": 0.1
+        },
+        {
+          "component": 1,
+          "empirical": 0.28191706587237236,
+          "outcome": true,
+          "reference": 0.26767402157322967,
+          "rel_error": 0.053210409495213495,
+          "se": 0.001966898033224539,
+          "tol": 0.1
+        }
+      ],
+      "variance_ok": true,
+      "variance_rel_err": 0.06038287897035964,
+      "worst_rel_error": 0.06038287897035964
+    },
+    "orders_ok": {
+      "reason": "a declared constraint gate failed, so the score is capped on that finding and no order study can lift it -- the one case \u00a724's cost skip still covers"
+    },
+    "provenance_as_expected": {
+      "achieved": "analytic",
+      "expected": "analytic"
+    },
+    "reported_moments_agree": {
+      "agrees": true,
+      "per_moment": {
+        "empirical_mean": {
+          "kernel": [
+            0.32172198698449445,
+            0.5286466918359171
+          ],
+          "rel_diff": [
+            2.4156139420929315e-15,
+            5.0402949649543096e-15
+          ],
+          "reported": [
+            0.3217219869844952,
+            0.5286466918359197
+          ]
+        },
+        "empirical_variance": {
+          "kernel": [
+            0.3864528684055838,
+            0.28191706587237236
+          ],
+          "rel_diff": [
+            3.0164976667554234e-15,
+            5.316460990419202e-15
+          ],
+          "reported": [
+            0.38645286840558496,
+            0.28191706587237086
+          ]
+        }
+      },
+      "rtol": 1e-06,
+      "worst_rel_diff": 5.316460990419202e-15
+    },
+    "resolved": {
+      "per_component": [
+        {
+          "bar": 0.05,
+          "ci_mult": 2.0,
+          "ci_width_rel": 0.01230975984111869,
+          "component": 0,
+          "resolved": true
+        },
+        {
+          "bar": 0.05,
+          "ci_mult": 2.0,
+          "ci_width_rel": 0.014696219092642623,
+          "component": 1,
+          "resolved": true
+        }
+      ],
+      "resolved": true
+    },
+    "surrogate_ok": {
+      "components": {
+        "mean": [
+          0,
+          1
+        ],
+        "variance": [
+          0,
+          1
+        ]
+      },
+      "moments_evaluated": [
+        "mean",
+        "variance"
+      ],
+      "route": "analytic_moments"
+    }
+  },
+  "evidence": {
+    "any_test_ran": true,
+    "constraints_ok": false,
+    "converged": true,
+    "converged_measurable": true,
+    "crashed": false,
+    "cross_moment_ok": "unavailable",
+    "cross_plan_agreement": null,
+    "cross_plan_disagreement": null,
+    "d1_outcome": "not_run",
+    "dynkin_ok": "not_run",
+    "e_fine": 0.06038287897035964,
+    "functionals_ok": "unavailable",
+    "gate_violation": true,
+    "has_reference": true,
+    "headroom_decades": 0.2190861842719553,
+    "headroom_fraction": 0.25614842097539586,
+    "ic_consistent": null,
+    "invariants_ok": false,
+    "kind": "sde",
+    "ks_critical": null,
+    "ks_statistic": null,
+    "mean_ok": true,
+    "mem_fraction_used": 0.014,
+    "mem_mb_limit": 4096.0,
+    "milstein_claim": null,
+    "moments_ok": true,
+    "not_reported_functionals": [],
+    "not_reported_invariants": [],
+    "observed_order": null,
+    "operator_validated": false,
+    "operator_validation_route": "none",
+    "order_floor": 0.5,
+    "order_ok": "not_run",
+    "orders_ok": "not_run",
+    "path": "A",
+    "peak_mem_mb": 57.2,
+    "quality": 0.16300354062070643,
+    "reference_evaluable": true,
+    "reference_outcome": "validated",
+    "rel_err_tol": 0.1,
+    "resolved": true,
+    "richardson_stable": "unavailable",
+    "stability_ok": "unavailable",
+    "surrogate_ok": "unavailable",
+    "temporal_ok": "unavailable",
+    "terminal_law_ok": "unavailable",
+    "tier_b": "unavailable",
+    "variance_ok": true
+  },
+  "functionals": {
+    "detail": {},
+    "errors": {},
+    "functionals_ok": "unavailable",
+    "gate_failed": [],
+    "not_reported": [],
+    "not_reported_gated": [],
+    "outcomes": {},
+    "values": {}
+  },
+  "kind": "sde",
+  "moments": [
+    {
+      "excess_kurtosis": -0.31534318408983664,
+      "mean": 0.32172198698449445,
+      "num_paths": 50000,
+      "se_excess_kurtosis": 0.01852840767609192,
+      "se_mean": 0.002780118229160709,
+      "se_skewness": 0.007811354981326638,
+      "se_variance": 0.0022431246742702633,
+      "skewness": -0.7862421188953146,
+      "variance": 0.3864528684055838
+    },
+    {
+      "excess_kurtosis": 0.4339714092512166,
+      "mean": 0.5286466918359171,
+      "num_paths": 50000,
+      "se_excess_kurtosis": 0.028451972018936872,
+      "se_mean": 0.0023745191760538484,
+      "se_skewness": 0.008919215173025505,
+      "se_variance": 0.001966898033224539,
+      "skewness": -1.03610759175016,
+      "variance": 0.28191706587237236
+    }
+  ],
+  "notes": [],
+  "path": "A",
+  "plan": {
+    "boundary_treatment": null,
+    "declared": true,
+    "exact_sampling_components": [],
+    "levy_area_treatment": null,
+    "scheme": "euler-maruyama",
+    "scheme_family": "euler-maruyama",
+    "scheme_family_source": "declared",
+    "spatial_order": null
+  },
+  "provenance": "analytic",
+  "reference": {
+    "components": {
+      "mean": [
+        0,
+        1
+      ],
+      "variance": [
+        0,
+        1
+      ]
+    },
+    "moments_evaluated": [
+      "mean",
+      "variance"
+    ],
+    "route": "analytic_moments",
+    "values": {
+      "mean": [
+        0.32770991402245986,
+        0.5103779515445728
+      ],
+      "variance": [
+        0.36444653725532805,
+        0.26767402157322967
+      ]
+    }
+  },
+  "schema_version": 1,
+  "score": 3,
+  "solver_sha256": "af56c6c31aafe6d2d931d494097ddef9a4e34422f7a41829e55506708a4d4d06",
+  "summary": {
+    "accuracy_seed_study": {
+      "ran": false,
+      "reason": "not requested (accuracy_seeds is 0)"
+    },
+    "ci_mult": 2.0,
+    "constraints_ok": false,
+    "cost_source": "cpu",
+    "design_order": 0.5,
+    "error_is_estimate": false,
+    "estimated_rel_error": 0.06038287897035964,
+    "expected_provenance": "analytic",
+    "graded_peak_mem_mb": 57.2,
+    "invariant_max_drift": 0.07016,
+    "invariant_worst_headroom": -6.846089580357984,
+    "invariants_not_reported": [
+      "second_moment_sum"
+    ],
+    "invariants_ok": false,
+    "ladder_mem_fraction": 0.014,
+    "mc_se_rel": 0.0069768675661334755,
+    "mean_rel_err": 0.0357945327302182,
+    "mem_fraction_used": 0.014,
+    "mem_mb_limit": 4096.0,
+    "observed_order": null,
+    "order_check": "not_run",
+    "order_floor": 0.5,
+    "peak_mem_mb": 57.2,
+    "provenance": "analytic",
+    "reference_outcome": "validated",
+    "reported_moment_agreement": 5.316460990419202e-15,
+    "resolution_evidence": "not_used_as_accuracy_evidence",
+    "resolved": true,
+    "scheme_family": "euler-maruyama",
+    "score": 3,
+    "solve_time_s": 0.11,
+    "solve_wall_s": 0.114,
+    "terminal_excess_kurtosis": 0.4339714092512166,
+    "terminal_excess_kurtosis_se": 0.028451972018936872,
+    "terminal_skewness": -1.03610759175016,
+    "terminal_skewness_se": 0.008919215173025505,
+    "variance_rel_err": 0.06038287897035964,
+    "wall_time_s": 0.96
+  }
+}

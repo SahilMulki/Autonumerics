@@ -40,3 +40,8 @@ benchmark/results/*
 .claude/settings.local.json
 workspace/*
 !workspace/.gitkeep
+
+# Working review of the benchmark results, kept local: it is a reading of run
+# artifacts at one moment, not a design record, and it goes stale the next time
+# a suite is re-run.
+docs/paper-results-review.md

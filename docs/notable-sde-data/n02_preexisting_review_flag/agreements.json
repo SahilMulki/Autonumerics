@@ -1,0 +1,374 @@
+[
+  {
+    "a": "1-cayley-midpoint",
+    "b": "2-stochastic-heun",
+    "N": null,
+    "t_final": 1.0,
+    "rel_diff": 0.05714101119963961,
+    "tol": 0.05,
+    "metric": "moments",
+    "functional_z": null,
+    "functional_z_bar": 3.0,
+    "functional_disagreement": false,
+    "per_functional": [],
+    "agree": null,
+    "family_a": "implicit",
+    "family_b": "other",
+    "different_family": true,
+    "sha_a": "9aa89dcb5f133185777acd88007e4284325fbb242977f88c5f4dcb11933ce71d",
+    "sha_b": "3c8b30ae82a378a16f66ecd180d61f718a5259b1f165a13c149cfa45c43ffef8",
+    "interpolated": false,
+    "config": {
+      "num_paths": 2000,
+      "dt": 0.04,
+      "T": 1.0,
+      "seed": 42,
+      "seed_b_independent": 3444837047,
+      "ci_mult": 2.0
+    },
+    "agree_shared_seed": null,
+    "rel_diff_shared_seed": 0.06332436077742892,
+    "seeding": "both (D6): shared seed detects, independent seed earns the break",
+    "per_moment": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.33628723629683904,
+        "b": 0.3156456205810416,
+        "rel_diff": 0.06332436077742892,
+        "rel_se": 0.05915138071407671,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "mean",
+        "component": 1,
+        "a": 0.5030569431308908,
+        "b": 0.5052555348688288,
+        "rel_diff": 0.004360933313648088,
+        "rel_se": 0.03346968016290742,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.35738711847160964,
+        "b": 0.3861549007302674,
+        "rel_diff": 0.07738038070676169,
+        "rel_se": 0.035543486990283354,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 1,
+        "a": 0.2767745690437862,
+        "b": 0.29268567799284523,
+        "rel_diff": 0.055881368477808765,
+        "rel_se": 0.04826157481298849,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "per_moment_independent": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.33628723629683904,
+        "b": 0.31760519881771876,
+        "rel_diff": 0.05714101119963961,
+        "rel_se": 0.0587390601862243,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "mean",
+        "component": 1,
+        "a": 0.5030569431308908,
+        "b": 0.5319729817831915,
+        "rel_diff": 0.05587478768732423,
+        "rel_se": 0.03195457383821221,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.35738711847160964,
+        "b": 0.3802395629706855,
+        "rel_diff": 0.06196208752750661,
+        "rel_se": 0.03522308309235585,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 1,
+        "a": 0.2767745690437862,
+        "b": 0.2701681898239432,
+        "rel_diff": 0.02415747941711279,
+        "rel_se": 0.04992678143853967,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "recorded_at": 1794763424.618988
+  },
+  {
+    "a": "1-cayley-midpoint",
+    "b": "3-milstein",
+    "N": null,
+    "t_final": 1.0,
+    "rel_diff": 0.07445193978081024,
+    "tol": 0.05,
+    "metric": "moments",
+    "functional_z": null,
+    "functional_z_bar": 3.0,
+    "functional_disagreement": false,
+    "per_functional": [],
+    "agree": null,
+    "family_a": "implicit",
+    "family_b": "milstein",
+    "different_family": true,
+    "sha_a": "9aa89dcb5f133185777acd88007e4284325fbb242977f88c5f4dcb11933ce71d",
+    "sha_b": "909f397c5d33a34d32cec562e62609689fbc331386e08df3b1ef2dbc681cbb08",
+    "interpolated": false,
+    "config": {
+      "num_paths": 2000,
+      "dt": 0.04,
+      "T": 1.0,
+      "seed": 42,
+      "seed_b_independent": 3444837047,
+      "ci_mult": 2.0
+    },
+    "agree_shared_seed": null,
+    "rel_diff_shared_seed": 0.10643428169625335,
+    "seeding": "both (D6): shared seed detects, independent seed earns the break",
+    "per_moment": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.33628723629683904,
+        "b": 0.3221288986993481,
+        "rel_diff": 0.04300726195773728,
+        "rel_se": 0.05893861047588182,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "mean",
+        "component": 1,
+        "a": 0.5030569431308908,
+        "b": 0.5156927761296937,
+        "rel_diff": 0.02480655014653464,
+        "rel_se": 0.033566061954736263,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.35738711847160964,
+        "b": 0.39557082625893125,
+        "rel_diff": 0.10142321508005686,
+        "rel_se": 0.037324714828732786,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 1,
+        "a": 0.2767745690437862,
+        "b": 0.3078886752648834,
+        "rel_diff": 0.10643428169625335,
+        "rel_se": 0.04664564306378933,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "per_moment_independent": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.33628723629683904,
+        "b": 0.326186768796452,
+        "rel_diff": 0.030493173838465396,
+        "rel_se": 0.05833220711247272,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "mean",
+        "component": 1,
+        "a": 0.5030569431308908,
+        "b": 0.5419586626050192,
+        "rel_diff": 0.07445193978081024,
+        "rel_se": 0.03206634257442106,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.35738711847160964,
+        "b": 0.38927566638764505,
+        "rel_diff": 0.08541619741245406,
+        "rel_se": 0.036911253087345296,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 1,
+        "a": 0.2767745690437862,
+        "b": 0.28467973096134497,
+        "rel_diff": 0.02815959167998713,
+        "rel_se": 0.04808209475405601,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "recorded_at": 1794763425.030895
+  },
+  {
+    "a": "2-stochastic-heun",
+    "b": "3-milstein",
+    "N": null,
+    "t_final": 1.0,
+    "rel_diff": 0.07009669621502057,
+    "tol": 0.05,
+    "metric": "moments",
+    "functional_z": null,
+    "functional_z_bar": 3.0,
+    "functional_disagreement": false,
+    "per_functional": [],
+    "agree": null,
+    "family_a": "other",
+    "family_b": "milstein",
+    "different_family": true,
+    "sha_a": "3c8b30ae82a378a16f66ecd180d61f718a5259b1f165a13c149cfa45c43ffef8",
+    "sha_b": "909f397c5d33a34d32cec562e62609689fbc331386e08df3b1ef2dbc681cbb08",
+    "interpolated": false,
+    "config": {
+      "num_paths": 2000,
+      "dt": 0.04,
+      "T": 1.0,
+      "seed": 42,
+      "seed_b_independent": 3444837047,
+      "ci_mult": 2.0
+    },
+    "agree_shared_seed": null,
+    "rel_diff_shared_seed": 0.050628193460382415,
+    "seeding": "both (D6): shared seed detects, independent seed earns the break",
+    "per_moment": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.3156456205810416,
+        "b": 0.3221288986993481,
+        "rel_diff": 0.02033094117846425,
+        "rel_se": 0.06199762262655437,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "mean",
+        "component": 1,
+        "a": 0.5052555348688288,
+        "b": 0.5156927761296937,
+        "rel_diff": 0.02044616979807115,
+        "rel_se": 0.03394647110186945,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.3861549007302674,
+        "b": 0.39557082625893125,
+        "rel_diff": 0.024090100155534293,
+        "rel_se": 0.03661292798965625,
+        "tol": 0.1,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 1,
+        "a": 0.29268567799284523,
+        "b": 0.3078886752648834,
+        "rel_diff": 0.050628193460382415,
+        "rel_se": 0.0464628997073688,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "per_moment_independent": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.3156456205810416,
+        "b": 0.326186768796452,
+        "rel_diff": 0.03284704352684384,
+        "rel_se": 0.06135710026323232,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "mean",
+        "component": 1,
+        "a": 0.5052555348688288,
+        "b": 0.5419586626050192,
+        "rel_diff": 0.07009669621502057,
+        "rel_se": 0.032449264451982957,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.3861549007302674,
+        "b": 0.38927566638764505,
+        "rel_diff": 0.008049116941512254,
+        "rel_se": 0.036221942878571216,
+        "tol": 0.1,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 1,
+        "a": 0.29268567799284523,
+        "b": 0.28467973096134497,
+        "rel_diff": 0.02773268681267836,
+        "rel_se": 0.047863364580894616,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "recorded_at": 1794763425.458522
+  }
+]

@@ -1,0 +1,795 @@
+{
+  "agent_cap": null,
+  "agreement": {
+    "agreement": null,
+    "disagreement": {
+      "N": null,
+      "agree": false,
+      "different_family": true,
+      "interpolated": false,
+      "other": "3-log-coordinate-tamed-euler",
+      "other_family": "tamed-milstein",
+      "rel_diff": 0.7652772409566538,
+      "tol": 0.1
+    },
+    "entries": [
+      {
+        "N": null,
+        "agree": false,
+        "different_family": true,
+        "interpolated": false,
+        "other": "3-log-coordinate-tamed-euler",
+        "other_family": "tamed-milstein",
+        "rel_diff": 0.7652772409566538,
+        "tol": 0.1
+      },
+      {
+        "N": null,
+        "agree": null,
+        "different_family": true,
+        "interpolated": false,
+        "other": "2-balanced-implicit-v-coordinate",
+        "other_family": "implicit",
+        "rel_diff": 0.053884210016782584,
+        "tol": 0.1
+      }
+    ],
+    "stale": []
+  },
+  "certification": {
+    "agreement_is_break": false,
+    "bound_by": "cross_plan_disagreement",
+    "caps": [
+      {
+        "reason": "no surrogate: the orders, Dynkin and the constraints all hold and the Richardson moments are stable across the ladder",
+        "score": 9,
+        "source": "rubric"
+      },
+      {
+        "reason": "one circularity break (D1 against a validated operator); no Tier-B evidence",
+        "score": 9,
+        "source": "certification"
+      },
+      {
+        "reason": "disagrees with plan '3-log-coordinate-tamed-euler' (tamed-milstein) by 0.7652772409566538 at N=None at full T, above 0.1. Neither plan may be declared a winner until a third family or a refine cycle breaks the tie",
+        "score": 8,
+        "source": "cross_plan_disagreement"
+      }
+    ],
+    "certified": false,
+    "d1_is_break": true,
+    "gates_clean": true,
+    "headroom_decades": 0.05651808979740191,
+    "headroom_fraction": 1.0,
+    "provenance": "manufactured_partial",
+    "quality": 0.553777848182919,
+    "reason": "disagrees with plan '3-log-coordinate-tamed-euler' (tamed-milstein) by 0.7652772409566538 at N=None at full T, above 0.1. Neither plan may be declared a winner until a third family or a refine cycle breaks the tie",
+    "score": 8,
+    "tier": "C"
+  },
+  "certified": false,
+  "checks": {
+    "constraints_ok": true,
+    "cross_check_ok": "unavailable",
+    "cross_plan_agreement": false,
+    "dynkin_ok": true,
+    "functionals_ok": true,
+    "invariants_ok": true,
+    "moments_ok": "unavailable",
+    "orders_ok": true,
+    "provenance_as_expected": false,
+    "reported_moments_agree": true,
+    "resolved": "unavailable",
+    "richardson_stable": true,
+    "surrogate_ok": "unavailable",
+    "variance_ok": "unavailable"
+  },
+  "config": {
+    "T": {
+      "source": "spec",
+      "value": 0.1
+    },
+    "accuracy_seeds": {
+      "source": "kernel_default",
+      "value": 0
+    },
+    "ci_mult": {
+      "source": "spec",
+      "value": 2.0
+    },
+    "conv_levels": {
+      "source": "spec",
+      "value": 3
+    },
+    "conv_num_paths": {
+      "source": "kernel_default",
+      "value": 20000
+    },
+    "dt": {
+      "source": "spec",
+      "value": 0.004
+    },
+    "dt0": {
+      "source": "spec",
+      "value": 0.004
+    },
+    "dynkin_levels": {
+      "source": "kernel_default",
+      "value": 3
+    },
+    "dynkin_replicate_margin": {
+      "source": "kernel_default",
+      "value": 0.7
+    },
+    "expected_strong_order": {
+      "source": "spec",
+      "value": 0.5
+    },
+    "expected_weak_order": {
+      "source": "spec",
+      "value": 1.0
+    },
+    "mean_rel_err_max": {
+      "source": "spec",
+      "value": 0.05
+    },
+    "near_zero_mean_threshold": {
+      "source": "spec",
+      "value": 0.01
+    },
+    "noise_dimension": {
+      "source": "kernel_default",
+      "value": null
+    },
+    "num_paths": {
+      "source": "spec",
+      "value": 50000
+    },
+    "run_crn_ladder": {
+      "source": "kernel_default",
+      "value": true
+    },
+    "run_dynkin": {
+      "source": "kernel_default",
+      "value": true
+    },
+    "scheme_family": {
+      "source": "plan",
+      "value": "strang-splitting"
+    },
+    "seed": {
+      "source": "spec",
+      "value": 42
+    },
+    "seed_replicates": {
+      "source": "kernel_default",
+      "value": 3
+    },
+    "sub_increments_per_step": {
+      "source": "kernel_default",
+      "value": null
+    },
+    "timeout_s": {
+      "source": "kernel_default",
+      "value": 300
+    },
+    "variance_rel_err_max": {
+      "source": "spec",
+      "value": 0.1
+    }
+  },
+  "d2": {
+    "bars": {
+      "estimator_stability": 0.02,
+      "finite": 1e-08,
+      "martingale": 2.893078655738084,
+      "positivity": 1e-10
+    },
+    "declared": 5,
+    "drifts": {
+      "estimator_stability": 0.004473823665737931,
+      "finite": 0.0,
+      "martingale": 1.3602989247477808,
+      "positivity": -0.0
+    },
+    "gate_failed": [],
+    "headroom": {
+      "estimator_stability": 0.6503511331376516,
+      "finite": 6.0,
+      "martingale": 0.32772588644432393,
+      "positivity": 6.0
+    },
+    "invariants_ok": true,
+    "max_drift": 1.3602989247477808,
+    "non_gate_ok": true,
+    "not_reported": [],
+    "not_reported_gated": [],
+    "outcomes": {
+      "estimator_stability": true,
+      "finite": true,
+      "martingale": true,
+      "positivity": true
+    },
+    "worst_headroom": 0.32772588644432393
+  },
+  "detail": {
+    "constraints_ok": {
+      "bars": {
+        "estimator_stability": 0.02,
+        "finite": 1e-08,
+        "martingale": 2.893078655738084,
+        "positivity": 1e-10
+      },
+      "declared": 5,
+      "drifts": {
+        "estimator_stability": 0.004473823665737931,
+        "finite": 0.0,
+        "martingale": 1.3602989247477808,
+        "positivity": -0.0
+      },
+      "gate_failed": [],
+      "headroom": {
+        "estimator_stability": 0.6503511331376516,
+        "finite": 6.0,
+        "martingale": 0.32772588644432393,
+        "positivity": 6.0
+      },
+      "invariants_ok": true,
+      "max_drift": 1.3602989247477808,
+      "non_gate_ok": true,
+      "not_reported": [],
+      "not_reported_gated": [],
+      "outcomes": {
+        "estimator_stability": true,
+        "finite": true,
+        "martingale": true,
+        "positivity": true
+      },
+      "worst_headroom": 0.32772588644432393
+    },
+    "cross_check_ok": {
+      "relations": [],
+      "statement": null,
+      "violations": []
+    },
+    "cross_plan_agreement": {
+      "entries": [
+        {
+          "N": null,
+          "agree": false,
+          "different_family": true,
+          "interpolated": false,
+          "other": "3-log-coordinate-tamed-euler",
+          "other_family": "tamed-milstein",
+          "rel_diff": 0.7652772409566538,
+          "tol": 0.1
+        },
+        {
+          "N": null,
+          "agree": null,
+          "different_family": true,
+          "interpolated": false,
+          "other": "2-balanced-implicit-v-coordinate",
+          "other_family": "implicit",
+          "rel_diff": 0.053884210016782584,
+          "tol": 0.1
+        }
+      ],
+      "stale": 0
+    },
+    "dynkin_ok": {
+      "ci_mult": 2.0,
+      "cost": {
+        "increment_bytes_finest": 40000000,
+        "noise_dimension": 1,
+        "num_paths": 50000,
+        "steps_finest": 100
+      },
+      "extrapolated": [
+        -0.06807005798787699,
+        -1.1474501766758083,
+        0.0014902223401927577
+      ],
+      "extrapolation_order": [
+        null,
+        null,
+        null
+      ],
+      "extrapolation_order_source": [
+        "assumed_1",
+        "assumed_1",
+        "assumed_1"
+      ],
+      "family_wise_multiplier": 2.4283725526104085,
+      "initial_state": {
+        "initial_condition": "deterministic",
+        "x0": [
+          0.15
+        ]
+      },
+      "levels": 3,
+      "order_detail": [
+        {
+          "d_coarse": -0.00035595026358371524,
+          "d_fine": 3.7667685239471505e-06,
+          "reason": "the finer residual difference is inside its own Monte-Carlo noise, so no rate can be read from it",
+          "se_d_fine": 6.85806884655592e-05
+        },
+        {
+          "d_coarse": -0.010729374379960544,
+          "d_fine": 0.004109713159315896,
+          "reason": "the finer residual difference is inside its own Monte-Carlo noise, so no rate can be read from it",
+          "se_d_fine": 0.004110230648548988
+        },
+        {
+          "d_coarse": -0.00013497627941036735,
+          "d_fine": -1.0965519212258317e-05,
+          "reason": "the finer residual difference is inside its own Monte-Carlo noise, so no rate can be read from it",
+          "se_d_fine": 2.0353732776657908e-05
+        }
+      ],
+      "per_function_ok": [
+        true,
+        true,
+        true
+      ],
+      "replication": {
+        "decision": "replicated to 3 seeds: the first landed 0.592 from the bar",
+        "margin": 0.7,
+        "median_z": 1.7399438198822283,
+        "pooled_agrees": false,
+        "pooled_z": 2.602271577350705,
+        "replicated": true,
+        "rule": "median z over seeds (D9)",
+        "seeds": [
+          42,
+          3444837047,
+          2669555309
+        ],
+        "worst_z": [
+          1.8363631815907884,
+          1.7399438198822283,
+          0.9309595855908076
+        ]
+      },
+      "residual_coarse": [
+        -0.06806252445082908,
+        -1.1392307503571764,
+        0.0014682913017682404
+      ],
+      "residual_fine": [
+        -0.06806629121935304,
+        -1.1433404635164919,
+        0.0014792568209804988
+      ],
+      "residuals": [
+        [
+          -0.0684184747144128,
+          -0.06806252445082908,
+          -0.06806629121935304
+        ],
+        [
+          -1.1499601247371367,
+          -1.1392307503571764,
+          -1.1433404635164919
+        ],
+        [
+          0.0013333150223578732,
+          0.0014682913017682404,
+          0.0014792568209804988
+        ]
+      ],
+      "se": [
+        0.03706786253953854,
+        1.019432229729512,
+        0.0009769579454952271
+      ],
+      "test_functions": [
+        "1.0/X",
+        "1.0/X**2",
+        "np.tanh(X)"
+      ],
+      "window_agreement": {},
+      "z": [
+        -1.8363631815907884,
+        -1.125577692379084,
+        1.5253699988461151
+      ]
+    },
+    "functionals_ok": {
+      "errors": {
+        "inv_var_mean": 2.5734617383055374e-06,
+        "inv_var_variance": 2.9705798385437374e-07
+      },
+      "gate_failed": [],
+      "ladder_dts": [
+        0.004,
+        0.002,
+        0.001
+      ],
+      "ladder_num_paths": 20000,
+      "not_reported": [],
+      "outcomes": {
+        "inv_var_mean": "clean",
+        "inv_var_variance": "clean"
+      },
+      "values": {
+        "inv_var_mean": 11.614326441618184,
+        "inv_var_variance": 45.24009078459558
+      }
+    },
+    "moments_ok": {
+      "reason": "no reference to compare against"
+    },
+    "orders_ok": {
+      "band_half_width": 0.4,
+      "component": 0,
+      "dts": [
+        0.004,
+        0.002,
+        0.001
+      ],
+      "expected_strong_candidates": [
+        0.5,
+        1.0
+      ],
+      "expected_strong_order": 0.5,
+      "expected_weak_order": 1.0,
+      "orders_ok": true,
+      "richardson": {
+        "graded_relative_shift": 0.0024093941101836318,
+        "graded_shift": -0.00032041064877989247,
+        "graded_shift_in_se": 1.1302443579070838,
+        "graded_shift_within_noise": true,
+        "mean_finest": 0.13291262633051823,
+        "mean_star": 0.13298390969979101,
+        "p_used": 0.5,
+        "relative_shift": 0.0005360300312549091,
+        "se_graded_shift": 0.00028348794359231216,
+        "se_shift": 0.0001795896472666544,
+        "shift": 7.128336927278434e-05,
+        "shift_in_se": 0.39692359976041885,
+        "shift_within_noise": true,
+        "stable": true,
+        "statistic": "mean",
+        "value_finest": 0.13291262633051823,
+        "value_graded": 0.13266349905101119,
+        "value_star": 0.13298390969979101
+      },
+      "richardson_variance": {
+        "graded_relative_shift": 0.12919983779913394,
+        "graded_shift": -0.003070824360011526,
+        "graded_shift_in_se": 0.7817348432488073,
+        "graded_shift_within_noise": true,
+        "p_used": 0.5,
+        "relative_shift": 0.04873109461055224,
+        "se_graded_shift": 0.003928217331658782,
+        "se_shift": 0.0024354155626983105,
+        "shift": 0.001158241643095262,
+        "shift_in_se": 0.4755827550892349,
+        "shift_within_noise": true,
+        "stable": true,
+        "statistic": "variance",
+        "value_finest": 0.02260977859841946,
+        "value_graded": 0.020697195881503205,
+        "value_star": 0.023768020241514722
+      },
+      "strong_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+      "strong_detail": {
+        "count": 20000,
+        "median_order": 1.0310206226272434,
+        "median_s0": 0.0002800533075972868,
+        "median_s1": 0.00013704795919027707,
+        "roundoff_floor": 1.3291262633051823e-13,
+        "s0": 0.001164375789424576,
+        "s1": 0.0006300150757360282,
+        "se_order": 0.09836461425672419,
+        "se_s0": 7.298680029665659e-05,
+        "se_s1": 7.4255240601226e-05,
+        "terminal_scale": 0.13291262633051823
+      },
+      "strong_ok": true,
+      "strong_order": 0.8860984906579988,
+      "strong_order_above_band": false,
+      "strong_order_gate_floor": 0.5,
+      "strong_order_shrinking": true,
+      "weak_detail": {
+        "tanh": {
+          "reason": "at the noise floor, or not shrinking",
+          "se": 7.1414049649928934e-06,
+          "used": false,
+          "w0": 3.558082306501231e-05,
+          "w1": 5.193897812921788e-06
+        },
+        "x": {
+          "reason": "at the noise floor, or not shrinking",
+          "se": 7.438846755964852e-05,
+          "used": false,
+          "w0": 0.00021960074118260176,
+          "w1": 2.952653832444252e-05
+        },
+        "x2": {
+          "reason": "at the noise floor, or not shrinking",
+          "se": 0.001027954182777108,
+          "used": false,
+          "w0": 0.0014910659085993969,
+          "w1": 0.00048758343679934646
+        }
+      },
+      "weak_ok": true,
+      "weak_order": null,
+      "weak_order_out_of_band": false
+    },
+    "provenance_as_expected": {
+      "achieved": "manufactured_partial",
+      "expected": "self_convergence"
+    },
+    "reported_moments_agree": {
+      "agrees": true,
+      "per_moment": {
+        "empirical_mean": {
+          "kernel": [
+            0.13232898909496932
+          ],
+          "rel_diff": [
+            0.0
+          ],
+          "reported": [
+            0.13232898909496932
+          ]
+        },
+        "empirical_variance": {
+          "kernel": [
+            0.01856258127930447
+          ],
+          "rel_diff": [
+            0.0
+          ],
+          "reported": [
+            0.01856258127930447
+          ]
+        }
+      },
+      "rtol": 1e-06,
+      "worst_rel_diff": 0.0
+    },
+    "resolved": {
+      "reason": "no reference variance to resolve against",
+      "resolved": false
+    },
+    "surrogate_ok": {
+      "attempted": {
+        "kolmogorov": "no kolmogorov.bounds declared",
+        "moment_ode": "no moment ODE, or it does not close exactly",
+        "stationary_density": "no normalizable support declared"
+      },
+      "reason": "no surrogate route produced a reference",
+      "route": null
+    }
+  },
+  "evidence": {
+    "any_test_ran": true,
+    "constraints_ok": true,
+    "converged": true,
+    "converged_measurable": true,
+    "crashed": false,
+    "cross_moment_ok": "unavailable",
+    "cross_plan_agreement": null,
+    "cross_plan_disagreement": {
+      "N": null,
+      "agree": false,
+      "different_family": true,
+      "interpolated": false,
+      "other": "3-log-coordinate-tamed-euler",
+      "other_family": "tamed-milstein",
+      "rel_diff": 0.7652772409566538,
+      "tol": 0.1
+    },
+    "d1_outcome": "clean",
+    "dynkin_ok": true,
+    "e_fine": 0.0005360300312549091,
+    "functionals_ok": true,
+    "gate_violation": false,
+    "has_reference": false,
+    "headroom_decades": 0.05651808979740191,
+    "headroom_fraction": 1.0,
+    "ic_consistent": null,
+    "invariants_ok": true,
+    "kind": "sde",
+    "ks_critical": null,
+    "ks_statistic": null,
+    "mean_ok": "unavailable",
+    "mem_fraction_used": 0.014,
+    "mem_mb_limit": 4096.0,
+    "milstein_claim": null,
+    "moments_ok": "unavailable",
+    "not_reported_functionals": [],
+    "not_reported_invariants": [],
+    "observed_order": 0.8860984906579988,
+    "operator_validated": true,
+    "operator_validation_route": "spec_generator",
+    "order_floor": 0.5,
+    "order_ok": true,
+    "orders_ok": true,
+    "path": "B",
+    "peak_mem_mb": 150.3,
+    "quality": 0.553777848182919,
+    "reference_evaluable": null,
+    "reference_outcome": null,
+    "rel_err_tol": 0.1,
+    "resolved": "unavailable",
+    "richardson_stable": true,
+    "stability_ok": "unavailable",
+    "surrogate_ok": "unavailable",
+    "temporal_ok": "unavailable",
+    "terminal_law_ok": "unavailable",
+    "tier_b": "unavailable",
+    "variance_ok": "unavailable"
+  },
+  "functionals": {
+    "detail": {
+      "inv_var_mean": {
+        "d10": 9.887150094733954e-05,
+        "d21": 4.143377410947835e-05,
+        "gate": true,
+        "levels": 3,
+        "observed_order": 1.2547474954983608,
+        "order_floor": 0.25,
+        "order_floor_source": "design_order",
+        "rel_tol": 0.05,
+        "value": 11.614326441618184
+      },
+      "inv_var_variance": {
+        "d10": 0.010235474763270247,
+        "d21": 0.00020158395236791193,
+        "gate": true,
+        "levels": 3,
+        "observed_order": 4.0,
+        "order_floor": 0.25,
+        "order_floor_source": "design_order",
+        "rel_tol": 0.1,
+        "value": 45.24009078459558
+      }
+    },
+    "errors": {
+      "inv_var_mean": 2.5734617383055374e-06,
+      "inv_var_variance": 2.9705798385437374e-07
+    },
+    "functionals_ok": true,
+    "gate_failed": [],
+    "not_reported": [],
+    "not_reported_gated": [],
+    "outcomes": {
+      "inv_var_mean": "clean",
+      "inv_var_variance": "clean"
+    },
+    "values": {
+      "inv_var_mean": 11.614326441618184,
+      "inv_var_variance": 45.24009078459558
+    }
+  },
+  "kind": "sde",
+  "moments": [
+    {
+      "excess_kurtosis": 94.35880061265878,
+      "mean": 0.13232898909496932,
+      "num_paths": 50000,
+      "se_excess_kurtosis": 10.529827933898531,
+      "se_mean": 0.0006093042143183398,
+      "se_skewness": 0.4043424415009642,
+      "se_variance": 0.000814873665536031,
+      "skewness": 6.99094709828088,
+      "variance": 0.01856258127930447
+    }
+  ],
+  "notes": [],
+  "path": "B",
+  "plan": {
+    "boundary_treatment": null,
+    "declared": true,
+    "exact_sampling_components": [],
+    "levy_area_treatment": null,
+    "scheme": "reciprocal-chart-strang-splitting",
+    "scheme_family": "strang-splitting",
+    "scheme_family_source": "declared",
+    "spatial_order": null
+  },
+  "provenance": "manufactured_partial",
+  "reference": {
+    "attempted": {
+      "kolmogorov": "no kolmogorov.bounds declared",
+      "moment_ode": "no moment ODE, or it does not close exactly",
+      "stationary_density": "no normalizable support declared"
+    },
+    "reason": "no surrogate route produced a reference",
+    "values": null
+  },
+  "schema_version": 1,
+  "score": 8,
+  "solver_sha256": "adaf4b4b9b88de9725bfb431e89c604fc26dffdcb517755d88bd7be4d3e71443",
+  "summary": {
+    "accuracy_seed_study": {
+      "ran": false,
+      "reason": "not requested (accuracy_seeds is 0)"
+    },
+    "ci_mult": 2.0,
+    "constraints_ok": true,
+    "cost_source": "cpu",
+    "design_order": 0.5,
+    "dynkin_bar": 2.4283725526104085,
+    "dynkin_median_z": 1.7399438198822283,
+    "dynkin_replicated": true,
+    "dynkin_seeds": 3,
+    "dynkin_z": 1.8363631815907884,
+    "error_is_estimate": true,
+    "estimated_rel_error": 0.0005360300312549091,
+    "expected_provenance": "self_convergence",
+    "functional_bias_rel": 2.9705798385437374e-07,
+    "functional_limited_by": "sampling",
+    "functional_name": "inv_var_variance",
+    "functional_rel_error": 0.006994018129777141,
+    "functional_rel_tol": 0.1,
+    "functional_se_rel": 0.006993721071793286,
+    "functional_values": {
+      "inv_var_mean": 11.612370592678003,
+      "inv_var_variance": 44.87490714147692
+    },
+    "graded_num_paths": 200000,
+    "graded_peak_mem_mb": 57.0,
+    "invariant_max_drift": 1.3602989247477808,
+    "invariant_worst_headroom": 0.32772588644432393,
+    "invariants_ok": true,
+    "ladder_mem_fraction": 0.037,
+    "mc_se_rel": 0.04389872579004406,
+    "mem_fraction_used": 0.014,
+    "mem_mb_limit": 4096.0,
+    "moment_bias": {
+      "actionable": false,
+      "bias_frac_tol": null,
+      "binding": null,
+      "moments": {
+        "mean": {
+          "bias_frac_tol": 0.048187882203672636,
+          "bias_rel": 0.0024093941101836318,
+          "real": false,
+          "shift_in_se": 1.1302443579070838,
+          "tol": 0.05,
+          "value_extrapolated": 0.13298390969979101,
+          "value_graded": 0.13266349905101119
+        },
+        "variance": {
+          "bias_frac_tol": 1.2919983779913393,
+          "bias_rel": 0.12919983779913394,
+          "real": false,
+          "shift_in_se": 0.7817348432488073,
+          "tol": 0.1,
+          "value_extrapolated": 0.023768020241514722,
+          "value_graded": 0.020697195881503205
+        }
+      },
+      "note": "the graded step's discretization bias in each moment, as a fraction of that moment's own tolerance; report-only"
+    },
+    "observed_order": 0.8860984906579988,
+    "observed_order_median": 1.0310206226272434,
+    "observed_order_se": 0.09836461425672419,
+    "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+    "order_check": "true",
+    "order_floor": 0.5,
+    "peak_mem_mb": 150.3,
+    "projected_peak_mem_mb": 228.0,
+    "provenance": "manufactured_partial",
+    "reference_outcome": null,
+    "reported_moment_agreement": 0.0,
+    "resolution_evidence": "not_used_as_accuracy_evidence",
+    "resolved": false,
+    "scheme_family": "strang-splitting",
+    "score": 8,
+    "solve_time_s": 0.112,
+    "solve_wall_s": 0.115,
+    "terminal_excess_kurtosis": 94.35880061265878,
+    "terminal_excess_kurtosis_se": 10.529827933898531,
+    "terminal_skewness": 6.99094709828088,
+    "terminal_skewness_se": 0.4043424415009642,
+    "wall_time_s": 5.55
+  }
+}

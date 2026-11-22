@@ -5218,7 +5218,11 @@ scheme on the same path. **M03 is the only loss, at 1.374×**, and it is a regre
 which tied — the one entry of this arm that still needs an answer.
 
 Verdicts: **8 `VERIFIED_PASS`, 1 `UNDERCLAIM` (M02), 0 overclaims.** `wrong_plan_won` false on 7 of
-9, and both of the true cells sit inside the harness margin. Totals: **$44.00 and 146.3 min**, of
+9, and ~~both of the true cells sit inside the harness margin~~ **both true cells are *outside* it**
+— M03 by 12.2× its margin and M08 by 10.9× (§10r). Regret geomean **1.0857** over the nine, against
+run 1's 3.7412. The §10o figure of "0 of 9 outside the margin" was an **offline re-rank of the
+run-2-era pools** and does not transfer to pools this arm generated fresh; the live arm has two
+resolved wrong picks. Totals: **$44.00 and 146.3 min**, of
 which M09 alone is $10.03 and 54.6 min — 23% of the cost of the suite for one ninth of it, which is
 the price of a pool that planned four plans and a problem with two noise channels.
 
@@ -5307,6 +5311,110 @@ last), and hands the top pair to `consistency` — which here prefers plan 1, **
 So it repairs M01-Sonnet. It is recorded as a candidate on **n = 1** and goes nowhere until it is
 priced on both corpora the way §10m and §10o priced theirs; three of this plan's shipped rules were
 argued from a single pool and two of those readings were later wrong.
+
+---
+
+#### 10r. The SciML scheme-matched arm, consolidated `[rev27 2026-11-21]`
+
+**Status: the arm's result of record.** Every number below is read from the committed result JSONs,
+not recomputed. The Sonnet sweep (§10q) is excluded: it is a different generator and is 1 of 9.
+
+##### What each column is
+
+All four columns are graded by the **same harness** on the **same CRN path** per problem (seed 42,
+the problem's own `num_paths`/`dt`), so the cells are directly comparable and the exact ties are
+bit-identical rather than approximate. The error is the raw relative one — `pathwise_rel_err` for
+M01–M08, `worst_functional_rel_err` for M09 — **not** the gate-relative `harness_error` the ranker
+and `wrong_plan_won` use.
+
+- **Opus cold** — `oneshot_sciml_scheme_matched.json`, 2026-11-10: one Opus sample per problem at
+  `c0_max_turns: 4`, `reps: 1`, no manuals. pass@1, 9/9 PASS.
+- **run 1** — 2026-11-12/13, pre-fix pipeline, assembled from three invocations (`sciml_probe` →
+  M01/M02/M06/M09, `sciml_probe_rest` → M03–M05/M07/M08, `sciml_probe_m09` → M09). M09's first
+  attempt was a `RUN_ERROR` at 1.500e-02 after a 3600 s timeout; the third attempt is the cell.
+- **run 2** — 2026-11-14, **three entries only** (M01, M05, M09), the §10n re-runs under the
+  selection fixes. Blank elsewhere by design, not by failure.
+- **run 3** — 2026-11-16 (M01–M08) and 2026-11-20 (M09), all nine under the shipped ranker.
+
+| | problem | Opus cold | run 1 | run 2 | **run 3** | run 3 vs Opus |
+|---|---|---|---|---|---|---|
+| M01 | Linear Itô (Black–Scholes) | 2.477e-03 | 2.058e-02 | 2.477e-03 | **3.574e-05** | **0.014×** |
+| M02 | Additive noise, time-dependent | 5.430e-08 | 1.338e-07 | — | **5.429e-08** | 1.000× |
+| M03 | Cubic SDE | 1.938e-04 | 1.938e-04 | — | **2.663e-04** | **1.374×** |
+| M04 | Wave SDE | 3.248e-07 | 3.248e-07 | — | **2.159e-07** | 0.665× |
+| M05 | Nonlinear test (Tocino & Ardanuy) | 3.338e-03 | 3.338e-03 | 5.364e-06 | **5.364e-06** | **0.002×** |
+| M06 | Quadratic stiffness, mild | 6.256e-03 | 7.433e-03 | — | **1.451e-03** | 0.232× |
+| M07 | Quadratic stiffness, high det. | 8.577e-04 | 8.569e-04 | — | **8.577e-04** | 1.000× |
+| M08 | Quadratic stiffness, mixed | 5.136e-03 | 5.136e-03 | — | **5.136e-03** | 1.000× |
+| M09 | Non-commutative noise (weak) | 1.866e-03 | 9.433e-04 | 3.317e-03 | **9.466e-04** | 0.507× |
+| | **geomean vs Opus cold** | 1.000 | **1.321** | — | **0.238** | |
+
+**run 1 was 1.321× worse than one Opus sample; run 3 is 0.238×, a 5.5× move.** Eight of nine tie or
+beat Opus cold. The three exact 1.000s (M02, M07, M08) are the same scheme on the same path, agreeing
+to roundoff. **M03 is the only loss, 1.374×, and it is a regression against a run-1 tie.**
+
+##### Selection, which is what the arm was built to measure
+
+Regret is `harness_error(the plan that shipped) / harness_error(the pool's best)`.
+
+| | run 1 regret | run 3 regret | run 3 outside its margin? |
+|---|---|---|---|
+| M01 | **17.706** | 1.000 | — |
+| M02 | 2.464 | 1.000 | — |
+| M03 | 1.000 | **1.374** | **yes, 12.2×** |
+| M04 | 1.000 | 1.000 | — |
+| M05 | **622.233** | 1.000 | — |
+| M06 | 5.122 | 1.000 | — |
+| M07 | 1.000 | 1.001 | no |
+| M08 | 1.000 | **1.323** | **yes, 10.9×** |
+| M09 | 1.033 | 1.152 | no (gap 0.0075 < margin 0.0617) |
+| **geomean** | **3.741** | **1.086** | |
+
+`wrong_plan_won`: **4 of 9 in run 1 → 2 of 9 in run 3.** The two surviving cells are **new**: M03 and
+M08 both read `false` in run 1 and `true` now, while all four of run 1's true cells (M01, M02, M05,
+M06) are repaired. So the fixes did not shrink one population — they emptied it and the arm acquired
+two different failures from pools it generated fresh.
+
+**A correction to §10p, which this consolidation found.** §10p said both run-3 true cells sit inside
+the harness margin. They do not: M03's winner misses the pool's best by 0.001479 against a margin of
+0.000121, and M08's by 0.011408 against 0.001044 — **12.2× and 10.9× resolved**. The cell that *is*
+inside its margin is M09, which reads `false` for exactly that reason. §10o's "0 of 9 outside the
+margin" was measured by **re-ranking the run-2-era pools offline** and does not transfer to pools
+this arm generated fresh. The live arm has **two resolved wrong picks**, and M03 is both of this
+table's open problems at once — the only accuracy loss and one of the two selection losses.
+
+##### Verdicts and budget
+
+| | run 1 | run 2 | **run 3** |
+|---|---|---|---|
+| `VERIFIED_PASS` | 5 | 1 | **8** |
+| `UNDERCLAIM` | 4 | 2 | **1** (M02) |
+| overclaims | **0** | **0** | **0** |
+| harness independently passed | 9/9 | 3/3 | **9/9** |
+| wall time | 139.3 min | 50.4 min | **146.3 min** |
+| cost | not captured | not captured | **$44.00** |
+
+Per §10i the `UNDERCLAIM`/`VERIFIED_PASS` split is **not** a pass/fail distinction — both are harness
+passes, and `UNDERCLAIM` is the pipeline under-scoring a success, the one error direction this
+benchmark rewards. Opus cold has no self-score and cannot receive the verdict at all, so the honest
+comparison is 9/9 against 9/9 on the harness, with **zero overclaims in 21 graded entries** across
+the three runs. Cost capture shipped with §10o step 3, so only run 3 has it: **$44.00 / 146.3 min**,
+of which M09 alone is $10.03 / 54.6 min.
+
+##### The unrestricted arm, for scale
+
+| | M01 | M02 | M03 | M04 | M05 | M06 | M07 | M08 | M09 |
+|---|---|---|---|---|---|---|---|---|---|
+| Opus cold, unrestricted | 1.3e-15 | 9.8e-17 | 5.0e-16 | 5.4e-17 | 3.4e-16 | 7.8e-16 | 1.5e-15 | 3.7e-16 | 4.0e-03 |
+
+Eight of nine at machine precision, because without the scheme constraint every one of M01–M08 has
+an exact sampler and Opus writes it cold. This is §6's reason the second arm **is** the suite: the
+scheme-matched arm measures whether the pipeline can discretise well, and the unrestricted arm
+measures whether it recognises that it should not discretise at all. M09 is the one problem that
+resists — no exact sampler exists for non-commutative noise, and it is 2.2× *worse* unrestricted
+than scheme-matched (4.023e-03 against 1.866e-03), which is the single strongest argument for having
+built it. **The pipeline has not run this arm**, so there is no comparison to report here, only the
+target.
 
 ---
 

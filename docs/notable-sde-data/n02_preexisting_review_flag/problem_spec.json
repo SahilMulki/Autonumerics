@@ -1,0 +1,300 @@
+{
+  "id": "sde_kubo_oscillator",
+  "equation_type": "SDE",
+  "sde_family": "kubo_oscillator",
+  "state_dimension": 2,
+  "noise_dimension": 1,
+  "noise_structure": "multiplicative",
+  "linear": true,
+  "stiff": false,
+  "calculus": "stratonovich",
+  "equation": "Stratonovich: dX1 = -a X2 dt - sigma X2 o dW,  dX2 = a X1 dt + sigma X1 o dW,  X(0) = (1, 0).  Equivalent Ito form (Stratonovich-to-Ito drift correction 0.5*(dg/dX) g = -0.5*sigma**2*X): dX1 = (-a X2 - 0.5 sigma^2 X1) dt - sigma X2 dW,  dX2 = (a X1 - 0.5 sigma^2 X2) dt + sigma X1 dW.  In matrix form dX = a J X dt + sigma J X o dW with J = [[0,-1],[1,0]].",
+  "exact_pathwise_solution": "X1(t) = X_0*cos(a*t + sigma*W(t)) - Y_0*sin(a*t + sigma*W(t)),  X2(t) = X_0*sin(a*t + sigma*W(t)) + Y_0*cos(a*t + sigma*W(t))  (a rotation of X(0) by the angle a*t + sigma*W(t); |X(t)| = |X(0)| on every path)",
+  "parameters": {
+    "a": 1.0,
+    "sigma": 1.0,
+    "X_0": 1.0,
+    "Y_0": 0.0
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "initial_condition": {
+    "law": "deterministic",
+    "value": [
+      "X_0",
+      "Y_0"
+    ]
+  },
+  "milstein_eligible": true,
+  "diffusion_derivative": "Single noise channel with g(X) = sigma*J*X, so the Jacobian is dg/dX = sigma*J and (dg/dX) g = sigma**2 * J @ J @ X = -sigma**2 * X. One channel means the noise is trivially commutative: no Levy area enters the Milstein correction.",
+  "milstein_correction": "Ito-form Milstein: X_{n+1} = X_n + (a J X_n - 0.5 sigma^2 X_n) dt + sigma J X_n dW_n + 0.5 * (-sigma^2 X_n) * (dW_n^2 - dt)",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 2,
+    "mean_expression": "np.exp(-0.5*sigma**2*t)*(X_0*np.cos(a*t) - Y_0*np.sin(a*t))",
+    "variance_expression": "0.5*(X_0**2 + Y_0**2) + 0.5*np.exp(-2*sigma**2*t)*((X_0**2 - Y_0**2)*np.cos(2*a*t) - 2*X_0*Y_0*np.sin(2*a*t)) - (np.exp(-0.5*sigma**2*t)*(X_0*np.cos(a*t) - Y_0*np.sin(a*t)))**2",
+    "mean_X": "np.exp(-0.5*sigma**2*t)*(X_0*np.cos(a*t) - Y_0*np.sin(a*t))",
+    "variance_X": "0.5*(X_0**2 + Y_0**2) + 0.5*np.exp(-2*sigma**2*t)*((X_0**2 - Y_0**2)*np.cos(2*a*t) - 2*X_0*Y_0*np.sin(2*a*t)) - (np.exp(-0.5*sigma**2*t)*(X_0*np.cos(a*t) - Y_0*np.sin(a*t)))**2",
+    "mean_Y": "np.exp(-0.5*sigma**2*t)*(X_0*np.sin(a*t) + Y_0*np.cos(a*t))",
+    "variance_Y": "0.5*(X_0**2 + Y_0**2) - 0.5*np.exp(-2*sigma**2*t)*((X_0**2 - Y_0**2)*np.cos(2*a*t) - 2*X_0*Y_0*np.sin(2*a*t)) - (np.exp(-0.5*sigma**2*t)*(X_0*np.sin(a*t) + Y_0*np.cos(a*t)))**2",
+    "values_at_T": {
+      "mean_X": 0.32770991402245986,
+      "mean_Y": 0.5103779515445728,
+      "variance_X": 0.36444653725532805,
+      "variance_Y": 0.26767402157322967
+    },
+    "derivation": "theta = a*t + sigma*W(t) ~ N(a*t, sigma^2 t); E[cos theta] = cos(a t) e^{-sigma^2 t/2}, E[cos 2theta] = cos(2 a t) e^{-2 sigma^2 t}. Cross-checked against verification.moment_ode to 1e-14 at random (a, sigma, X_0, Y_0, T).",
+    "component_note": "mean_expression / variance_expression duplicate mean_X / variance_X (component 0) so the reference check can pair them with verification.moment_ode (applies_to_component 0); they are one fact, not two."
+  },
+  "drift_expression": "Ito drift (the generator uses this, not the Stratonovich coefficient): component 0: -a*X[:, 1] - 0.5*sigma**2*X[:, 0]; component 1: a*X[:, 0] - 0.5*sigma**2*X[:, 1]",
+  "diffusion_expression": "single channel: component 0: -sigma*X[:, 1]; component 1: sigma*X[:, 0]",
+  "diffusion_matrix_expression": "G(X) = [[-sigma*X[:, 1]], [sigma*X[:, 0]]]  (2 x 1, one independent channel)",
+  "stratonovich_drift_expression": "component 0: -a*X[:, 1]; component 1: a*X[:, 0]  (what problem.md states; use only with a Stratonovich-consistent scheme such as stochastic Heun or the midpoint rule)",
+  "diffusion_derivative_expression": "sigma*J with J = [[0, -1], [1, 0]]; (dg/dX) g = -sigma**2*X",
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.1,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 2000,
+    "graded_num_paths": 2000,
+    "seed": 42,
+    "stability_check": null,
+    "ci_mult": 2.0,
+    "dt": 0.04,
+    "dt0": 0.04,
+    "conv_levels": 3
+  },
+  "verification": {
+    "expected_provenance": "analytic",
+    "theoretical_order": 1.0,
+    "moment_ode": {
+      "state": [
+        "m1",
+        "m2",
+        "p11",
+        "p12",
+        "p22"
+      ],
+      "rhs": [
+        "-a*m2 - 0.5*sigma**2*m1",
+        "a*m1 - 0.5*sigma**2*m2",
+        "-2*a*p12 - sigma**2*p11 + sigma**2*p22",
+        "a*(p11 - p22) - 2*sigma**2*p12",
+        "2*a*p12 + sigma**2*p11 - sigma**2*p22"
+      ],
+      "initial": [
+        "X_0",
+        "Y_0",
+        "X_0**2",
+        "X_0*Y_0",
+        "Y_0**2"
+      ],
+      "closes_exactly": true,
+      "mean_from": "m1",
+      "variance_from": "p11 - m1**2",
+      "applies_to_component": 0,
+      "applies_to_name": "X",
+      "note": "Linear SDE (Ito form drift (aJ - sigma^2/2) X, diffusion sigma J X), so the first and second moment equations close exactly. The same hierarchy also gives component 1 exactly: mean m2, variance p22 - m2**2. p11 + p22 is constant (= |X_0|^2), the moment-level shadow of amplitude conservation."
+    },
+    "kolmogorov": null,
+    "stationary_density": {
+      "ergodic": false,
+      "note": "Not a scalar ergodic SDE; the state lives on the circle |X| = |X_0| and the angle diffuses without a confining drift. Not needed: the moments close exactly."
+    },
+    "expected_weak_order": 1.0,
+    "expected_strong_order": 0.5,
+    "expected_strong_order_milstein": 1.0,
+    "strong_order_note": "0.5 is Euler-Maruyama on the Ito form (multiplicative noise). Milstein, stochastic Heun on the Stratonovich form, and the (Cayley) midpoint rule are all strong order 1.0 here because the single noise channel is commutative. Measured on 50 000 paths against the exact pathwise solution, relative strong error at dt = 0.04 / 0.02 / 0.01: EM 0.151 / 0.104 / 0.072, Milstein 0.063 / 0.032 / 0.016, Heun 0.037 / 0.018 / 0.009, midpoint 0.016 / 0.008 / 0.004; Ito-misread EM 0.69 / 0.67 / 0.66.",
+    "generator": {
+      "drift": [
+        "-a*X[:, 1] - 0.5*sigma**2*X[:, 0]",
+        "a*X[:, 0] - 0.5*sigma**2*X[:, 1]"
+      ],
+      "diffusion_matrix": [
+        [
+          "-sigma*X[:, 1]"
+        ],
+        [
+          "sigma*X[:, 0]"
+        ]
+      ],
+      "note": "Ito generator. L(x1^2 + x2^2) = 0 identically, which is the generator-level statement of amplitude conservation; L(x1) = -a x2 - sigma^2/2 x1."
+    },
+    "dynkin_test_functions": [
+      "X[:, 0]",
+      "X[:, 0]*X[:, 1]",
+      "np.tanh(X[:, 1])"
+    ],
+    "dynkin_note": "|X|^2 is deliberately not a test function: its generator is zero and a norm-preserving midpoint scheme gives an identically zero residual at every level, which no rate can be read from.",
+    "terminal_law": null,
+    "terminal_law_note": "X(T) = R(theta) X(0) with theta ~ N(a T, sigma^2 T): a wrapped-normal law on the unit circle, not one of the implemented laws (normal, lognormal, noncentral_chi2).",
+    "constraints": [
+      {
+        "name": "finite",
+        "expr": "np.isfinite(X)",
+        "gate": true,
+        "note": "linear SDE on a bounded orbit; any non-finite state is a defect"
+      },
+      {
+        "name": "amplitude_conservation",
+        "expr": "np.mean(np.abs(np.sqrt(X[:, 0]**2 + X[:, 1]**2) - np.sqrt(X_0**2 + Y_0**2))) < 0.25",
+        "gate": true,
+        "note": "Exact flow is a rotation, so |X(T)| = |X(0)| = 1 on every path. Checked on the path mean of the amplitude deviation, not per path: Euler-Maruyama on the correct Ito form is a legitimate scheme whose worst path drifts by 1.07 at dt = 0.04 (mean 0.11), whereas reading the Stratonovich coefficients as Ito gives |X(T)| = exp(sigma^2 T/2) = 1.65 in continuous time (mean deviation 0.65 at every dt measured). Midpoint conserves it to round-off, Heun to mean 0.016, Milstein 0.044."
+      }
+    ],
+    "invariants": [
+      {
+        "name": "finite",
+        "gate": true
+      },
+      {
+        "name": "amplitude_rms",
+        "gate": false,
+        "expr": "np.sqrt(np.mean((X[:, 0]**2 + X[:, 1]**2 - (X_0**2 + Y_0**2))**2))",
+        "note": "diagnostic: RMS of |X|^2 - |X_0|^2 over paths; exactly 0 for a norm-preserving scheme, O(dt^0.5)-O(dt) otherwise"
+      }
+    ],
+    "structural_facts": {}
+  },
+  "implementation_notes": "Stratonovich SDE: the coefficients in problem.md are Stratonovich. Either (i) integrate the Stratonovich form with a Stratonovich-consistent scheme (stochastic Heun / predictor-corrector, or the implicit midpoint rule, which for this linear skew-symmetric system is the explicit Cayley rotation X_{n+1} = (I - th J)^{-1}(I + th J) X_n with th = (a dt + sigma dW_n)/2 and conserves |X| exactly), or (ii) convert to Ito by adding the drift -0.5*sigma**2*X and use Euler-Maruyama or Milstein. Euler-Maruyama applied directly to the Stratonovich coefficients solves a different equation (amplitude grows to exp(sigma^2 T/2)) and must fail. Graded path by path: the solver MUST consume the supplied dW of shape (num_paths, Nt) (single channel) step by step; evaluating the closed-form rotation from the summed increments is not a discretised scheme and is excluded by the harness. milstein_eligible is set true although state_dimension = 2, because the single noise channel makes the noise commutative (no Levy area) and (dg/dX) g = -sigma^2 X is closed-form. Note Milstein's variance at dt = 0.04 is measured at +8.7% relative error against the 10% tolerance, so it has the thinnest moment margin of the order-1 schemes; the midpoint rule has the smallest error on every measured axis.",
+  "requirements": [
+    {
+      "id": "R1",
+      "kind": "equation",
+      "quote": "dX1 = -a X2 dt - sigma X2 o dW\n    dX2 =  a X1 dt + sigma X1 o dW",
+      "status": "mapped",
+      "spec_path": "equation, stratonovich_drift_expression, drift_expression, diffusion_expression, verification.generator, verification.moment_ode"
+    },
+    {
+      "id": "R2",
+      "kind": "initial_condition",
+      "quote": "X(0) = (1, 0)",
+      "status": "mapped",
+      "spec_path": "parameters.X_0, parameters.Y_0, initial_condition"
+    },
+    {
+      "id": "R3",
+      "kind": "parameter",
+      "quote": "with a = 1 and sigma = 1",
+      "status": "mapped",
+      "spec_path": "parameters.a, parameters.sigma"
+    },
+    {
+      "id": "R4",
+      "kind": "equation",
+      "quote": "driven by a single Brownian motion W",
+      "status": "mapped",
+      "spec_path": "noise_dimension, verification.generator.diffusion_matrix"
+    },
+    {
+      "id": "R5",
+      "kind": "domain",
+      "quote": "over the time interval [0, 1]",
+      "status": "mapped",
+      "spec_path": "time_interval"
+    },
+    {
+      "id": "R6",
+      "kind": "equation",
+      "quote": "the coefficients above are Stratonovich coefficients, not Ito ones",
+      "status": "mapped",
+      "spec_path": "calculus, drift_expression, verification.generator.drift, implementation_notes"
+    },
+    {
+      "id": "R7",
+      "kind": "evaluation",
+      "quote": "The harness checks that the sample you return has conserved it; a scheme that reads the coefficients as Ito coefficients solves a different equation, whose amplitude grows.",
+      "status": "ambiguous",
+      "spec_path": "verification.constraints",
+      "note": "problem.md states the amplitude check but not its tolerance. Encoded as a gated constraint on the path-mean amplitude deviation < 0.25, calibrated so that every consistent scheme passes (EM on the Ito form 0.11, Milstein 0.044, Heun 0.016, midpoint 0) and the Ito-misread scheme fails (0.65). A per-path bound cannot separate EM (worst path 1.07) from the misread, so a stricter harness tolerance may reject EM even though it solves the right equation."
+    },
+    {
+      "id": "R8",
+      "kind": "evaluation",
+      "quote": "This problem is graded **path by path**, not in distribution.",
+      "status": "ambiguous",
+      "spec_path": "exact_pathwise_solution, verification.expected_strong_order, analytic_moments",
+      "note": "spec-vocabulary lists no evaluation_thresholds key for a pathwise reference, so the kernel cannot grade against the exact path solution. Carried instead by the exact moments (Tier A), the CRN strong-order study (pathwise differences across dt) and the exact pathwise solution recorded in exact_pathwise_solution for solvers and reviewers."
+    },
+    {
+      "id": "R9",
+      "kind": "evaluation",
+      "quote": "gates the relative strong error `sqrt(mean((X_num - X_exact)^2)) / sqrt(mean(X_exact^2))` over paths at < 20%",
+      "status": "ambiguous",
+      "spec_path": "exact_pathwise_solution, verification.strong_order_note",
+      "note": "No evaluation_thresholds key exists for a pathwise strong-error tolerance (not in spec-vocabulary), so the 20% gate cannot be carried as a kernel threshold. Recorded with the measured strong errors at dt = 0.04 (EM 0.151, Milstein 0.063, Heun 0.037, midpoint 0.016, Ito-misread 0.69) so plans know their margin; EM's margin is the thinnest."
+    },
+    {
+      "id": "R10",
+      "kind": "method",
+      "quote": "**A discretised scheme is required.**",
+      "status": "mapped",
+      "spec_path": "implementation_notes, verification.expected_strong_order"
+    },
+    {
+      "id": "R11",
+      "kind": "method",
+      "quote": "Advance the state step by step from the increments you are given.",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R12",
+      "kind": "evaluation",
+      "quote": "solve_sde(num_paths=2000, dt=0.04, T=1, seed=42)",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.num_paths, evaluation_thresholds.graded_num_paths, evaluation_thresholds.dt, evaluation_thresholds.dt0, evaluation_thresholds.seed, time_interval.T"
+    },
+    {
+      "id": "R13",
+      "kind": "method",
+      "quote": "Use the `dt` you are given (do not hardcode a different step).",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.dt"
+    },
+    {
+      "id": "R14",
+      "kind": "method",
+      "quote": "`dW` is always supplied: a numpy array of shape `(2000, 25)` holding the Brownian increments, **already scaled by sqrt(dt)**. Use exactly these",
+      "status": "mapped",
+      "spec_path": "noise_dimension, implementation_notes"
+    },
+    {
+      "id": "R15",
+      "kind": "other",
+      "quote": "`terminal_paths`: 2-D numpy array of shape `(num_paths, 2)` \u2014 the 2 state components (X, Y) at time T, in that column order",
+      "status": "mapped",
+      "spec_path": "state_dimension, initial_condition.value"
+    },
+    {
+      "id": "R16",
+      "kind": "other",
+      "quote": "`empirical_variance`: list of floats, one per component (use `ddof=1`)",
+      "status": "mapped",
+      "spec_path": "analytic_moments"
+    },
+    {
+      "id": "R17",
+      "kind": "method",
+      "quote": "Seed all randomness with `np.random.default_rng(seed)` (not `np.random.seed`).",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.seed"
+    },
+    {
+      "id": "R18",
+      "kind": "method",
+      "quote": "Round the step count: `Nt = max(1, round(T / dt))`, then `dt = T / Nt`.",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.dt"
+    },
+    {
+      "id": "R19",
+      "kind": "method",
+      "quote": "Use the Python standard library and numpy only.",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    }
+  ]
+}

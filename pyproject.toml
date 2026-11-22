@@ -28,7 +28,16 @@ line-length = 100
 target-version = "py313"
 # Test fixtures are archived pipeline artifacts, preserved byte-for-byte because
 # the leakage tests assert on their exact text. Never lint or reformat them.
-extend-exclude = ["outputs_new_paper", "verifylib/tests/fixtures"]
+# docs/notable-sde-data/*_run/ holds the same kind of thing for a different reason:
+# solvers a graded run actually produced, kept as the evidence a plan section cites,
+# because workspace/ is gitignored and --fresh destroys it. Linting them would edit
+# a measurement.
+extend-exclude = ["outputs_new_paper", "verifylib/tests/fixtures",
+                  "docs/notable-sde-data/n08_rule6_run", "docs/notable-sde-data/n08_pinned_run",
+                  "docs/notable-sde-data/n02_preexisting_review_flag",
+                  "docs/notable-sde-data/kubo_oscillator_run_9b",
+                  "docs/notable-sde-data/merton_jump_call_run_9b",
+                  "docs/notable-sde-data/geometric_asian_run_9b"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "SIM"]

@@ -1,0 +1,584 @@
+[
+  {
+    "a": "2-split-step-milstein-v",
+    "b": "3-truncated-milstein-log",
+    "N": null,
+    "t_final": 0.1,
+    "rel_diff": 0.19781862979749967,
+    "tol": 0.1,
+    "metric": "moments",
+    "functional_z": 2.37595325890503,
+    "functional_z_bar": 3.0,
+    "functional_disagreement": false,
+    "per_functional": [
+      {
+        "functional": "inv_var_mean",
+        "a": 11.587532306971514,
+        "b": 11.688194995921938,
+        "rel_diff": 0.008649584834920288,
+        "se": 0.042367285035234466,
+        "z": 2.37595325890503
+      },
+      {
+        "functional": "inv_var_variance",
+        "a": 44.69395749329348,
+        "b": 45.055384569546625,
+        "rel_diff": 0.00805414430782304,
+        "se": 0.5520016720299371,
+        "z": 0.6547572128251484
+      }
+    ],
+    "agree": null,
+    "family_a": "strang-splitting",
+    "family_b": "tamed-milstein",
+    "different_family": true,
+    "sha_a": "99d44f98f4dc063f44f94f3974c1f9b82d4e486eedbf2da04718def48de38311",
+    "sha_b": "167da499b1ba34eefdb03fa810ddca3a57c3149b1b2f24a87ae854776daa1cfa",
+    "interpolated": false,
+    "config": {
+      "num_paths": 50000,
+      "dt": 0.004,
+      "T": 0.1,
+      "seed": 42,
+      "seed_b_independent": 3444837047,
+      "ci_mult": 2.0
+    },
+    "agree_shared_seed": null,
+    "rel_diff_shared_seed": 1.9995653069019121,
+    "seeding": "both (D6): shared seed detects, independent seed earns the break",
+    "per_moment": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.13232898909496926,
+        "b": 0.18841130221926092,
+        "rel_diff": 0.3497054448288672,
+        "rel_se": 0.36445950556158524,
+        "tol": 0.05,
+        "agree": false,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.018562581279304453,
+        "b": 170.79235078218016,
+        "rel_diff": 1.9995653069019121,
+        "rel_se": 1.9994940908823908,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "per_moment_independent": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.13232898909496926,
+        "b": 0.12999799038912607,
+        "rel_diff": 0.01777170392787995,
+        "rel_se": 0.006920730961406143,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.018562581279304453,
+        "b": 0.022637669896788188,
+        "rel_diff": 0.19781862979749967,
+        "rel_se": 0.18314857236272022,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "recorded_at": 1795247260.8303528
+  },
+  {
+    "a": "1-lamperti-strang-split",
+    "b": "2-split-step-milstein-v",
+    "N": null,
+    "t_final": 0.1,
+    "rel_diff": 0.03282229444952468,
+    "tol": 0.1,
+    "metric": "moments",
+    "functional_z": 0.8113538101911563,
+    "functional_z_bar": 3.0,
+    "functional_disagreement": false,
+    "per_functional": [
+      {
+        "functional": "inv_var_mean",
+        "a": 11.622591535346306,
+        "b": 11.647115708661595,
+        "rel_diff": 0.0021078196694205432,
+        "se": 0.030226237933745383,
+        "z": 0.8113538101911563
+      },
+      {
+        "functional": "inv_var_variance",
+        "a": 45.29742995963952,
+        "b": 45.51442196901052,
+        "rel_diff": 0.004778935893554644,
+        "se": 0.4080253974109573,
+        "z": 0.5318100558148502
+      }
+    ],
+    "agree": null,
+    "family_a": "other",
+    "family_b": "strang-splitting",
+    "different_family": true,
+    "sha_a": "dbc24d24d4cea399467550d997adb3c9fc6523407a5dd2e7ab81a2da553c8b51",
+    "sha_b": "00b859aeaa3c484c4fe6992bd56bf8a2fe211287ed8fcfb16a03bfb5278a014a",
+    "interpolated": false,
+    "config": {
+      "num_paths": 50000,
+      "dt": 0.004,
+      "T": 0.1,
+      "seed": 42,
+      "seed_b_independent": 3444837047,
+      "ci_mult": 2.0
+    },
+    "agree_shared_seed": null,
+    "rel_diff_shared_seed": 0.0305035161923101,
+    "seeding": "both (D6): shared seed detects, independent seed earns the break",
+    "per_moment": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.13219784605896936,
+        "b": 0.13232898909496926,
+        "rel_diff": 0.0009915291650737848,
+        "rel_se": 0.00656518294210597,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.019137574942181816,
+        "b": 0.018562581279304453,
+        "rel_diff": 0.0305035161923101,
+        "rel_se": 0.07526523359116034,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "per_moment_independent": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.13219784605896936,
+        "b": 0.13170979811042832,
+        "rel_diff": 0.003698626844077114,
+        "rel_se": 0.006685665970690075,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.019137574942181816,
+        "b": 0.01977619454226148,
+        "rel_diff": 0.03282229444952468,
+        "rel_se": 0.0900747238068856,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "recorded_at": 1795247643.854639
+  },
+  {
+    "a": "1-lamperti-strang-split",
+    "b": "3-truncated-milstein-log",
+    "N": null,
+    "t_final": 0.1,
+    "rel_diff": 0.18459838779713417,
+    "tol": 0.1,
+    "metric": "moments",
+    "functional_z": 3.419160842255222,
+    "functional_z_bar": 3.0,
+    "functional_disagreement": true,
+    "per_functional": [
+      {
+        "functional": "inv_var_mean",
+        "a": 11.622591535346306,
+        "b": 11.660675620049531,
+        "rel_diff": 0.0032713694731110314,
+        "se": 0.011138430293353995,
+        "z": 3.419160842255222
+      },
+      {
+        "functional": "inv_var_variance",
+        "a": 45.29742995963952,
+        "b": 44.70824845632713,
+        "rel_diff": 0.013092096269514427,
+        "se": 0.4560632392584519,
+        "z": 1.2918855382213912
+      }
+    ],
+    "agree": null,
+    "family_a": "other",
+    "family_b": "tamed-milstein",
+    "different_family": true,
+    "sha_a": "dbc24d24d4cea399467550d997adb3c9fc6523407a5dd2e7ab81a2da553c8b51",
+    "sha_b": "757534e9f62e37df9594e05cd3a23d6e8066ee363f3afc7334cb2b1bc5d15501",
+    "interpolated": false,
+    "config": {
+      "num_paths": 50000,
+      "dt": 0.004,
+      "T": 0.1,
+      "seed": 42,
+      "seed_b_independent": 3444837047,
+      "ci_mult": 2.0
+    },
+    "agree_shared_seed": null,
+    "rel_diff_shared_seed": 0.6032906048450475,
+    "seeding": "both (D6): shared seed detects, independent seed earns the break",
+    "per_moment": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.13219784605896936,
+        "b": 0.13070193657840365,
+        "rel_diff": 0.011380073924435888,
+        "rel_se": 0.007964805724596775,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.019137574942181816,
+        "b": 0.03567003216225431,
+        "rel_diff": 0.6032906048450475,
+        "rel_se": 0.49340751927412985,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "per_moment_independent": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.13219784605896936,
+        "b": 0.13062470288438038,
+        "rel_diff": 0.011971143122335864,
+        "rel_se": 0.006988266523217094,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.019137574942181816,
+        "b": 0.023029568269638243,
+        "rel_diff": 0.18459838779713417,
+        "rel_se": 0.18112971646104728,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "recorded_at": 1795247659.4781592
+  },
+  {
+    "a": "1-log-coordinate-tamed-milstein",
+    "b": "3-log-coordinate-tamed-euler",
+    "N": null,
+    "t_final": 0.1,
+    "rel_diff": 0.7652772409566538,
+    "tol": 0.1,
+    "metric": "moments",
+    "functional_z": 7.945302989260174,
+    "functional_z_bar": 3.0,
+    "functional_disagreement": true,
+    "per_functional": [
+      {
+        "functional": "inv_var_mean",
+        "a": 11.612370592678003,
+        "b": 11.698791803153652,
+        "rel_diff": 0.007414577532272887,
+        "se": 0.010877018861642693,
+        "z": 7.945302989260174
+      },
+      {
+        "functional": "inv_var_variance",
+        "a": 44.87490714147692,
+        "b": 45.65035690016989,
+        "rel_diff": 0.01713222859722829,
+        "se": 0.4440524595061453,
+        "z": 1.7463021363633278
+      }
+    ],
+    "agree": false,
+    "family_a": "strang-splitting",
+    "family_b": "tamed-milstein",
+    "different_family": true,
+    "sha_a": "adaf4b4b9b88de9725bfb431e89c604fc26dffdcb517755d88bd7be4d3e71443",
+    "sha_b": "7b3ad0f5fcb1bbff4544a55cbac2e4244d312fa36e8a063020cb466b0521b9f2",
+    "interpolated": false,
+    "config": {
+      "num_paths": 50000,
+      "dt": 0.004,
+      "T": 0.1,
+      "seed": 42,
+      "seed_b_independent": 3444837047,
+      "ci_mult": 2.0
+    },
+    "agree_shared_seed": null,
+    "rel_diff_shared_seed": 0.5280029553180606,
+    "seeding": "both (D6): shared seed detects, independent seed earns the break",
+    "per_moment": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.13232898909496932,
+        "b": 0.13391108457690007,
+        "rel_diff": 0.01188472839652698,
+        "rel_se": 0.00754513959988797,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.01856258127930447,
+        "b": 0.0318793169469664,
+        "rel_diff": 0.5280029553180606,
+        "rel_se": 0.29564998237591983,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "per_moment_independent": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.13232898909496932,
+        "b": 0.13391344860279908,
+        "rel_diff": 0.011902381314795492,
+        "rel_se": 0.008238196859641837,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.01856258127930447,
+        "b": 0.041572639014801446,
+        "rel_diff": 0.7652772409566538,
+        "rel_se": 0.2797529757722214,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": true
+      }
+    ],
+    "recorded_at": 1795281000.523545
+  },
+  {
+    "a": "2-balanced-implicit-v-coordinate",
+    "b": "3-log-coordinate-tamed-euler",
+    "N": null,
+    "t_final": 0.1,
+    "rel_diff": 0.7562052103477358,
+    "tol": 0.1,
+    "metric": "moments",
+    "functional_z": 4.602853426535236,
+    "functional_z_bar": 3.0,
+    "functional_disagreement": true,
+    "per_functional": [
+      {
+        "functional": "inv_var_mean",
+        "a": 11.555459063266145,
+        "b": 11.698791803153652,
+        "rel_diff": 0.012327444191675585,
+        "se": 0.031139974838477424,
+        "z": 4.602853426535236
+      },
+      {
+        "functional": "inv_var_variance",
+        "a": 45.532350364223255,
+        "b": 45.65035690016989,
+        "rel_diff": 0.0025883534167166714,
+        "se": 0.5107883515165228,
+        "z": 0.23102824407853942
+      }
+    ],
+    "agree": false,
+    "family_a": "implicit",
+    "family_b": "tamed-milstein",
+    "different_family": true,
+    "sha_a": "38359e8de0f94bdd7802167ce92682ad9007432dcc9ca782f5fbf10645bb1849",
+    "sha_b": "7b3ad0f5fcb1bbff4544a55cbac2e4244d312fa36e8a063020cb466b0521b9f2",
+    "interpolated": false,
+    "config": {
+      "num_paths": 50000,
+      "dt": 0.004,
+      "T": 0.1,
+      "seed": 42,
+      "seed_b_independent": 3444837047,
+      "ci_mult": 2.0
+    },
+    "agree_shared_seed": null,
+    "rel_diff_shared_seed": 0.5181218124834838,
+    "seeding": "both (D6): shared seed detects, independent seed earns the break",
+    "per_moment": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.13301050449260476,
+        "b": 0.13391108457690007,
+        "rel_diff": 0.006747899916486704,
+        "rel_se": 0.007540626391899148,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.018760515945828567,
+        "b": 0.0318793169469664,
+        "rel_diff": 0.5181218124834838,
+        "rel_se": 0.29925338806186474,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "per_moment_independent": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.13301050449260476,
+        "b": 0.13391344860279908,
+        "rel_diff": 0.006765553257572091,
+        "rel_se": 0.008230675194220804,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.018760515945828567,
+        "b": 0.041572639014801446,
+        "rel_diff": 0.7562052103477358,
+        "rel_se": 0.2823821782508871,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": true
+      }
+    ],
+    "recorded_at": 1795281010.082113
+  },
+  {
+    "a": "1-log-coordinate-tamed-milstein",
+    "b": "2-balanced-implicit-v-coordinate",
+    "N": null,
+    "t_final": 0.1,
+    "rel_diff": 0.053884210016782584,
+    "tol": 0.1,
+    "metric": "moments",
+    "functional_z": 2.3187231447291743,
+    "functional_z_bar": 3.0,
+    "functional_disagreement": false,
+    "per_functional": [
+      {
+        "functional": "inv_var_mean",
+        "a": 11.612370592678003,
+        "b": 11.586981528052728,
+        "rel_diff": 0.002188773591016547,
+        "se": 0.011272598966672572,
+        "z": 2.2522813683283966
+      },
+      {
+        "functional": "inv_var_variance",
+        "a": 44.87490714147692,
+        "b": 45.914635253344905,
+        "rel_diff": 0.022904138173677764,
+        "se": 0.4484054572153015,
+        "z": 2.3187231447291743
+      }
+    ],
+    "agree": null,
+    "family_a": "strang-splitting",
+    "family_b": "implicit",
+    "different_family": true,
+    "sha_a": "adaf4b4b9b88de9725bfb431e89c604fc26dffdcb517755d88bd7be4d3e71443",
+    "sha_b": "c1a4ddf368bbf1ca1d2f092b6bc8f62d8acf4430a38a1b7f742915e95ad56bf5",
+    "interpolated": false,
+    "config": {
+      "num_paths": 50000,
+      "dt": 0.004,
+      "T": 0.1,
+      "seed": 42,
+      "seed_b_independent": 3444837047,
+      "ci_mult": 2.0
+    },
+    "agree_shared_seed": null,
+    "rel_diff_shared_seed": 0.010606550969237849,
+    "seeding": "both (D6): shared seed detects, independent seed earns the break",
+    "per_moment": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.13232898909496932,
+        "b": 0.13301050449260476,
+        "rel_diff": 0.005136931471609332,
+        "rel_se": 0.006512263063829418,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.01856258127930447,
+        "b": 0.018760515945828567,
+        "rel_diff": 0.010606550969237849,
+        "rel_se": 0.09494814232783351,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "per_moment_independent": [
+      {
+        "moment": "mean",
+        "component": 0,
+        "a": 0.13232898909496932,
+        "b": 0.13210682890753134,
+        "rel_diff": 0.0016802579099619548,
+        "rel_se": 0.006431109659503288,
+        "tol": 0.05,
+        "agree": true,
+        "disagree": false
+      },
+      {
+        "moment": "variance",
+        "component": 0,
+        "a": 0.01856258127930447,
+        "b": 0.017588592557613615,
+        "rel_diff": 0.053884210016782584,
+        "rel_se": 0.06815079227527845,
+        "tol": 0.1,
+        "agree": false,
+        "disagree": false
+      }
+    ],
+    "recorded_at": 1795281217.782012
+  }
+]
