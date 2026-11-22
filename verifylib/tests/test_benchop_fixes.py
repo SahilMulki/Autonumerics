@@ -1336,25 +1336,82 @@ def test_the_more_accurate_plans_error_is_the_one_inside_its_own_noise():
     assert f"{ranking.accuracy(_M06_EM, _M06_TOL):.3f}" == "0.801"
 
 
-def test_a_component_missing_on_one_plan_is_dropped_from_the_comparison():
+def test_a_component_unresolved_on_one_plan_is_compared_on_the_bounds():
+    """Supersedes ``..._is_dropped_from_the_comparison`` (2026-11-22).
+
+    Dropping the axis pool-wide was the first repair of this pool, and it relocated
+    the failure rather than fixing it. On ``sde_clark_cameron`` three plans all
+    certified at 10, one of them a Euler-Maruyama **control** whose own
+    ``SOLUTION.md`` says "it is not the candidate to ship, and it must not win a
+    tie"; deleting accuracy left exactly that plan ahead on the components that
+    remained, and the harness measured the shipped solver **11.7x** less accurate
+    than a sibling in the same pool -- an OVERCLAIM, where M06 had been a
+    suboptimal pass.
+
+    So the axis is kept and read off :func:`ranking.error_upper_bound` for every
+    plan in the pool. The bound is located for a noise-limited plan and a resolved
+    one alike; it is the point estimate that F16 declines to score.
+    """
     pool = [_M06_EM, _M06_TRAP]
+    assert ranking.accuracy_on_bounds(pool, _M06_TOL) is True
     shared = ranking.comparable_keys(_M06_TOL, pool)
-    assert "accuracy" not in shared
-    assert "order" in shared and "structure" in shared
+    assert shared == ranking.CERT_COMPONENTS      # nothing is restricted away now
+    assert ranking.accuracy(_M06_TRAP, _M06_TOL) is None
+    assert ranking.accuracy_bound(_M06_TRAP, _M06_TOL) is not None
 
 
 def test_the_too_accurate_plan_no_longer_loses_to_the_renormalisation():
-    """The regression this exists for, with the run's own numbers. Unrestricted,
-    the indices are 0.722 for the plan that shipped and 0.708 for the plan that
-    should have -- backwards, and by 2%. Over the components the pool actually
-    compared, the order is right."""
-    pool = [_M06_EM, _M06_TRAP]
-    assert f"{ranking.sqi(_M06_EM, _M06_TOL, pool)[0]:.3f}" == "0.722"
-    assert f"{ranking.sqi(_M06_TRAP, _M06_TOL, pool)[0]:.3f}" == "0.708"
+    """The regression this exists for, with the run's own numbers.
 
-    shared = ranking.comparable_keys(_M06_TOL, pool)
-    assert (ranking.sqi(_M06_TRAP, _M06_TOL, pool, keys=shared)[0]
-            > ranking.sqi(_M06_EM, _M06_TOL, pool, keys=shared)[0])
+    The first repair needed the restricted key set to reach the right order and got
+    there by 2% (0.722 against 0.708, backwards unrestricted). On the bounds the
+    order is right **unrestricted**, by 21%: TRAP's error bound of 1.137e-2 is half
+    EM's 2.312e-2, because the half-widths are the same to three figures and the
+    estimates are 2.545e-3 against 1.430e-2. The quantity that separates the plans
+    is the one the old rule deleted.
+    """
+    pool = [_M06_EM, _M06_TRAP]
+    assert f"{ranking.error_upper_bound(_M06_TRAP):.4e}" == "1.1365e-02"
+    assert f"{ranking.error_upper_bound(_M06_EM):.4e}" == "2.3124e-02"
+    assert f"{ranking.sqi(_M06_TRAP, _M06_TOL, pool)[0]:.3f}" == "0.781"
+    assert f"{ranking.sqi(_M06_EM, _M06_TOL, pool)[0]:.3f}" == "0.645"
+    assert (ranking.sqi(_M06_TRAP, _M06_TOL, pool)[0]
+            > ranking.sqi(_M06_EM, _M06_TOL, pool)[0])
+
+
+#: ``sde_sciml_linear_ito``'s real pool (2026-11-22), the configuration the bound
+#: rule must **not** engage on: every plan noise-limited, so no error is located and
+#: the bounds differ only by the sampling noise in the estimates. ``mc_se_rel`` is
+#: the half-width over ``ci_mult``.
+_M01_POOL = [
+    dict(_M06_EM, estimated_rel_error=5.190e-3, mc_se_rel=3.148e-2 / 2.0,
+         mean_rel_err=5.190e-3, scheme_family="milstein"),
+    dict(_M06_EM, estimated_rel_error=5.299e-3, mc_se_rel=3.140e-2 / 2.0,
+         mean_rel_err=5.299e-3, scheme_family="platen"),
+    dict(_M06_EM, estimated_rel_error=3.842e-3, mc_se_rel=3.120e-2 / 2.0,
+         mean_rel_err=3.842e-3, scheme_family="euler-maruyama"),
+]
+
+
+def test_a_pool_with_nothing_resolved_is_not_ranked_on_its_bounds():
+    """The guard, and the reason it is not optional.
+
+    Without it the bound rule inverted two pools it had no business touching:
+    ``sde_sciml_linear_ito`` by **7.0x** (a Euler-Maruyama the harness measures at
+    2.058e-2 ranked over a Platen at 2.925e-3) and ``sde_sciml_cubic`` by **31.1x**,
+    both because the winning estimate was simply the luckiest draw inside a
+    half-width an order of magnitude larger.
+
+    Where every plan is noise-limited no error is located at the path count the run
+    bought, the spread of the bounds *is* the sampling noise, and the honest reading
+    is the one :func:`ranking.comparable_keys` already makes. The bounds are for the
+    **mixed** pool, where a resolved error anchors what the unresolved plan is
+    bounded against.
+    """
+    assert all(ranking.noise_limited(s) for s in _M01_POOL)
+    assert all(ranking.accuracy(s, _M06_TOL) is None for s in _M01_POOL)
+    assert ranking.accuracy_on_bounds(_M01_POOL, _M06_TOL) is False
+    assert "accuracy" not in ranking.comparable_keys(_M06_TOL, _M01_POOL)
 
 
 def test_the_rank_key_ships_the_right_plan_on_the_real_pool():

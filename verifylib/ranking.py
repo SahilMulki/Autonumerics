@@ -771,8 +771,97 @@ def comparable_keys(tol, pool, keys=CERT_COMPONENTS):
     return shared or tuple(keys)
 
 
+def error_upper_bound(summary):
+    """Upper confidence limit on the plan's relative error, or None.
+
+    ``estimated_rel_error + uncertainty``, on the one statistic
+    :func:`noise_limited` compares (a seed median with its between-seed bar where the
+    study ran, the single graded run otherwise).
+
+    **Why a bound where :func:`accuracy` has a point.** The point estimate is what
+    goes missing: F16 returns None exactly when the error sits inside its own bar, so
+    the estimate does not locate it. The *bound* is unaffected -- it is located for a
+    noise-limited plan and a resolved one alike, which is what lets a comparison keep
+    the accuracy axis instead of deleting it for the whole pool.
+    """
+    seeded = seed_resolved(summary)
+    err = seeded[0] if seeded else _num(summary.get("estimated_rel_error"))
+    half_width = uncertainty(summary)
+    if err is None or half_width is None:
+        return None
+    return float(err) + float(half_width)
+
+
+def accuracy_bound(summary, tol):
+    """:func:`accuracy` read off :func:`error_upper_bound` instead of the estimate.
+
+    Same ceiling (:func:`achievable_decades`) and the same clip, so a pool ranked on
+    this is ranked on one quantity throughout -- the worst case each plan's own
+    evidence permits. Ordering by it is ordering by how much a plan has *shown*,
+    which is the question a comparison asks; it is deliberately not a certification
+    input, where what matters is where the error actually is.
+    """
+    hi = error_upper_bound(summary)
+    gate = _num(tol)
+    if hi is None or hi <= 0.0 or gate is None or gate <= 0.0:
+        return None
+    ceiling = achievable_decades(summary, tol)
+    decades = math.log10(gate / hi)
+    return _clip01(decades / ceiling if ceiling and ceiling > 0.0 else 1.0)
+
+
+def accuracy_on_bounds(pool, tol):
+    """Should this pool's accuracy component be read off the bounds?
+
+    Yes where some plan's estimate did not resolve *and* every plan has a bound --
+    the configuration in which :func:`comparable_keys` would otherwise drop accuracy
+    for all of them.
+
+    This is the repair of a failure the rule that replaced it merely relocated.
+    ``comparable_keys`` exists because on ``sde_sciml_stiffquad_mild`` an unresolved
+    plan renormalised over three components and lost to a Euler-Maruyama **5.1x less
+    accurate**; dropping the axis pool-wide then shipped, on
+    ``sde_clark_cameron`` (2026-11-22), a Euler-Maruyama control **11.7x less
+    accurate** than a sibling in the same pool -- a plan whose own ``SOLUTION.md``
+    says "it is not the candidate to ship, and it must not win a tie". Both times the
+    accurate plan lost for the same reason: accuracy could not be used at all. The
+    bounds are usable in both.
+
+    Measured on that pool, tol 0.1: bounds 2.2313e-2 / 4.2816e-2 / 5.0258e-2 give
+    0.837 / 0.474 / 0.383, and the index orders the plans the way the harness does
+    (4.468e-3 < 8.475e-3 < 5.227e-2) where the restricted index had the control first.
+    """
+    summaries = [s for s in pool if isinstance(s, dict)]
+    if len(summaries) < 2:
+        return False
+    unresolved = [s for s in summaries if accuracy(s, tol) is None
+                  and noise_limited(s) and not seed_resolved(s)]
+    if not unresolved:
+        return False
+    # **At least one plan's error has to be located, or the bounds rank on noise.**
+    # Measured on `sde_sciml_linear_ito`, tol 0.1: all three plans noise-limited,
+    # estimates 5.190e-3 / 5.299e-3 / 3.842e-3 inside bars of ~3.1e-2, so the bounds
+    # come out 3.667e-2 / 3.670e-2 / 3.504e-2 -- a 4% spread that is entirely the
+    # sampling noise in the estimates. Ranking on it put a Euler-Maruyama the harness
+    # measures at 2.058e-2 ahead of a Platen at 2.925e-3, a real 7.0x inversion
+    # bought with the luckiest draw; `sde_sciml_cubic` inverted 31.1x the same way.
+    # Where nothing is resolved there is no accuracy evidence at any path count the
+    # run bought, and the honest reading is the one `comparable_keys` already makes:
+    # the axis decides nothing. The bounds are for the **mixed** pool, where a
+    # located error anchors the comparison the unresolved plan is bounded against --
+    # `sde_clark_cameron` (two resolved, one not) and `sde_sciml_stiffquad_det`.
+    if len(unresolved) == len(summaries):
+        return False
+    return all(accuracy_bound(s, tol) is not None for s in summaries)
+
+
 def components(summary, tol, pool=()):
-    return {"accuracy": accuracy(summary, tol), "order": order(summary, pool),
+    # Accuracy is read off the bounds for the whole pool or for none of it: a mean
+    # mixing a point-estimate headroom with a bound headroom is the "means over
+    # different quantities" error `comparable_keys` and `sqi` both exist to refuse.
+    acc = (accuracy_bound(summary, tol) if accuracy_on_bounds(pool, tol)
+           else accuracy(summary, tol))
+    return {"accuracy": acc, "order": order(summary, pool),
             "structure": structure(summary), "consistency": consistency(summary),
             "cost": cost(summary, pool) if cost_admissible(tol, pool) else None}
 
