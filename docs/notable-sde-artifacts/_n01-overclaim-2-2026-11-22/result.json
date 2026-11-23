@@ -1,0 +1,467 @@
+{
+  "config": {
+    "generated_at": "2026-11-22 14:28",
+    "claude_version": "2.1.326 (Claude Code)",
+    "command_template": "claude --plugin-dir . -p \"/conductor workspace/{slug}/problem.md\"",
+    "timeout_seconds": 2400,
+    "verify_sandbox": true,
+    "solver_timeout_s": 300,
+    "mem_mb": 4096,
+    "work_precision": true,
+    "arm": "scheme-matched",
+    "model_override": null,
+    "conductor_env": {
+      "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "1800000"
+    },
+    "n_selected": 9,
+    "agent_file_hashes": {
+      "agents/README.md": "6076499cfa2b0f77",
+      "agents/evaluator-pde.md": "dc62d0fc71e08c7f",
+      "agents/evaluator-sde.md": "aabef5a37f00dfdd",
+      "agents/formulator.md": "de3e26b5b43ca4c0",
+      "agents/plan-creator-pde.md": "2202f1c77ce92271",
+      "agents/plan-creator-sde.md": "776c2caf06a7d883",
+      "agents/solver-pde.md": "26f24e1a637da3a2",
+      "agents/solver-sde.md": "e01539ba703dc127",
+      "commands/conductor.md": "8d070de9b2cd7731",
+      "references/pde_manual.md": "a0a067e8c9ec064c",
+      "references/project_manual.md": "d3f5e0978dc43777",
+      "references/sde_manual.md": "d56974dc2594f147",
+      "references/verification_manual.md": "fc03633ef266d2d9",
+      "verifylib/README.md": "e19e0a15a17b8e3b",
+      "verifylib/__init__.py": "cb5f54774244b3dc",
+      "verifylib/audit.py": "9ccfb909bddfd11d",
+      "verifylib/cli.py": "f3e457e783dcbf2b",
+      "verifylib/findings.py": "e745e40289fcb506",
+      "verifylib/gate.py": "56330f4c913ece66",
+      "verifylib/leakage.py": "ef604cb8acd26b7f",
+      "verifylib/operator.py": "822873215b566841",
+      "verifylib/pool.py": "e66ea1048baf410b",
+      "verifylib/ranking.py": "ee6891655035b33e",
+      "verifylib/reference.py": "bf3c9aa449e137fc",
+      "verifylib/review.py": "bfe2a877aa05b8d6",
+      "verifylib/schema.py": "fd798541f2133f7c",
+      "verifylib/kernel/__init__.py": "195c01b2e40e23eb",
+      "verifylib/kernel/agreement.py": "6add76182df1660b",
+      "verifylib/kernel/degenerate.py": "75385cee18b44bad",
+      "verifylib/kernel/driver.py": "546d8028c2136032",
+      "verifylib/kernel/functionals.py": "e9013bea0e9b8d65",
+      "verifylib/kernel/invariants.py": "aec957ee6d840fc2",
+      "verifylib/kernel/ladder.py": "645a7eacda6206f9",
+      "verifylib/kernel/metrics.py": "fb9ab72894240c34",
+      "verifylib/kernel/mms.py": "ffe549b3384df506",
+      "verifylib/kernel/plan_meta.py": "3d9ca7d8571b8707",
+      "verifylib/kernel/residual.py": "eaf6951083a12e80",
+      "verifylib/kernel/richardson.py": "a878383a079a31f4",
+      "verifylib/kernel/sandbox.py": "6c0f09152210257c",
+      "verifylib/kernel/schema_bridge.py": "2d291842a5218d6a",
+      "verifylib/kernel/score.py": "edee94bab8a9a052",
+      "verifylib/kernel/temporal.py": "f2dfedb9593d4530",
+      "verifylib/kernel/sde/__init__.py": "d5048e1182909dc6",
+      "verifylib/kernel/sde/constraints.py": "74bcef1b0f3775b0",
+      "verifylib/kernel/sde/crn.py": "b668e2ca9c83cd2a",
+      "verifylib/kernel/sde/driver.py": "4e7a1a732cceaf38",
+      "verifylib/kernel/sde/dynkin.py": "30171224196339a4",
+      "verifylib/kernel/sde/laws.py": "8ff5056a2fb531ad",
+      "verifylib/kernel/sde/surrogates.py": "5e4b85d82ffb13fb"
+    },
+    "agent_models": {
+      "agents/evaluator-pde.md": "sonnet",
+      "agents/evaluator-sde.md": "sonnet",
+      "agents/formulator.md": "opus",
+      "agents/plan-creator-pde.md": "opus",
+      "agents/plan-creator-sde.md": "opus",
+      "agents/solver-pde.md": "sonnet",
+      "agents/solver-sde.md": "sonnet"
+    },
+    "model": "mixed:opus+sonnet",
+    "invocation_seconds": 2581.6
+  },
+  "results": [
+    {
+      "id": "N01",
+      "slug": "sde_clark_cameron",
+      "type": "sde",
+      "tier": 3,
+      "family": "clark_cameron",
+      "title": "Clark-Cameron system (Levy area)",
+      "challenge": "The counterexample of the strong-convergence literature: no scheme built from the Brownian increments alone beats strong order 1/2 on U = int S dW1 (Clark & Cameron 1980). Fine sub-increments are supplied so a Milstein scheme that assembles the Levy area from them converges at order 1; Euler-Maruyama at the graded step does not.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "pathwise",
+      "arm": "scheme-matched",
+      "model": "mixed:opus+sonnet",
+      "model_override": null,
+      "workspace": "workspace/sde_clark_cameron",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 1608.0,
+        "wall_clock_seconds": 1608.0,
+        "cost": {
+          "session_id": "5360efe2-8c97-4093-ba23-bed9190d1f07",
+          "transcript": "/Users/sahilmulki/.claude/projects/-Users-sahilmulki-Autonumerics/5360efe2-8c97-4093-ba23-bed9190d1f07.jsonl",
+          "usd": 10.218225,
+          "model_usage": {
+            "claude-opus-5": {
+              "inputTokens": 162,
+              "outputTokens": 109428,
+              "thinkingTokens": 37565,
+              "cacheReadInputTokens": 5282553,
+              "cacheCreationInputTokens": 412291,
+              "cacheCreationEphemeral5mInputTokens": 302114,
+              "cacheCreationEphemeral1hInputTokens": 110177,
+              "webSearchRequests": 0,
+              "costUSD": 8.367769000000003
+            },
+            "claude-sonnet-5-5": {
+              "inputTokens": 98,
+              "outputTokens": 39201,
+              "thinkingTokens": 2732,
+              "cacheReadInputTokens": 2045624,
+              "cacheCreationInputTokens": 501475,
+              "cacheCreationEphemeral5mInputTokens": 501475,
+              "cacheCreationEphemeral1hInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 1.8504559
+            }
+          }
+        },
+        "started_at": "2026-11-22T14:28:51",
+        "ended_at": "2026-11-22T14:55:39",
+        "log": "benchmark/results/pipeline/logs/sde_clark_cameron.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "state_mtime": 1795377318.1399992,
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "3-euler-maruyama-control",
+        "best_plan_source": "state",
+        "best_score": 10,
+        "certified": true,
+        "n_plans": 4,
+        "total_iters": 6,
+        "plans": {
+          "1-levy-area-milstein-trapezoid": {
+            "iter": 2,
+            "score": 10,
+            "one_sentence": "Order-1 Levy-area Milstein -- exact step for S, U advanced with S_n*dW1_n plus the iterated integral I_{1,2} assembled exactly from dW_sub, plus a trapezoidal mu*(dt/2)*dW1_n surrogate for I_{0,1}.",
+            "state": "winner",
+            "certified": true
+          },
+          "2-levy-area-milstein": {
+            "iter": 2,
+            "score": 10,
+            "one_sentence": "Canonical Levy-area Milstein exactly as the spec's milstein_correction states it -- I_{1,2} only, no further correction.",
+            "state": "winner",
+            "certified": true
+          },
+          "3-euler-maruyama-control": {
+            "iter": 2,
+            "score": 10,
+            "one_sentence": "Euler-Maruyama on the step increments only, dW_sub accepted and ignored; the order-0.5 baseline that measures the Clark-Cameron lower bound.",
+            "state": "winner",
+            "certified": true
+          },
+          "4-conditional-mc-projection": {
+            "iter": 0,
+            "score": 0,
+            "one_sentence": "Rao-Blackwellised dW1-only scheme -- U's increment replaced by its exact conditional expectation given the resolved S/W2 sub-path; L2-optimal in its class, so it measures the Clark-Cameron bound.",
+            "state": "unfinished (never solved -- three plans certified before it was dispatched)",
+            "certified": null
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "pathwise",
+        "passed": false,
+        "verified_score": 10,
+        "pathwise_rel_err": 0.052269202000353975,
+        "pathwise_tol_used": 0.02,
+        "pathwise_truth": "reference",
+        "pathwise_reference_error": 0.002,
+        "pathwise_abs_l2": null,
+        "pathwise_abs_l2_note": "problem declares no save grid",
+        "noise_dimension": 2,
+        "run": {
+          "num_paths": 1000,
+          "dt": 0.04,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 0.00029,
+          "crn": {
+            "seed": 42,
+            "Nt_fine": 6400,
+            "aggregate": 256,
+            "m": 2
+          }
+        },
+        "pathwise_level": {
+          "num_paths": 1000,
+          "dt": 0.04,
+          "Nt_fine": 6400,
+          "aggregate": 256
+        },
+        "pathwise_ladder": {
+          "status": "ok",
+          "levels": [
+            {
+              "dt": 0.04,
+              "num_paths": 1000
+            },
+            {
+              "dt": 0.02,
+              "num_paths": 1000
+            },
+            {
+              "dt": 0.01,
+              "num_paths": 1000
+            }
+          ],
+          "mean_abs_diff": [
+            0.0394086916349971,
+            0.027831350618460263
+          ],
+          "rel_to_scale": [
+            0.024340168090620336,
+            0.01718960270278871
+          ],
+          "terminal_std_across_paths": 1.3214716546588683,
+          "roundoff_rel": 1e-12,
+          "degenerate": false,
+          "solve_s": [
+            0.000421,
+            0.000688
+          ]
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 1000,
+              "dt": 0.04,
+              "rel_err": 0.052269202000353975,
+              "solve_s": 0.00029,
+              "wall_s": 0.22,
+              "graded": true,
+              "steps": 25,
+              "paths": 1000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "euler-maruyama",
+              "evals": 25000
+            },
+            {
+              "num_paths": 1000,
+              "dt": 0.02,
+              "rel_err": 0.03587436221717799,
+              "solve_s": 0.000418,
+              "wall_s": 0.21,
+              "graded": false,
+              "steps": 50,
+              "paths": 1000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "euler-maruyama",
+              "evals": 50000
+            },
+            {
+              "num_paths": 1000,
+              "dt": 0.01,
+              "rel_err": 0.025808401136306166,
+              "solve_s": 0.000697,
+              "wall_s": 0.21,
+              "graded": false,
+              "steps": 100,
+              "paths": 1000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "euler-maruyama",
+              "evals": 100000
+            }
+          ]
+        },
+        "plan_dir": "workspace/sde_clark_cameron/plans/3-euler-maruyama-control"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 10,
+        "provenance": "analytic",
+        "certified": true,
+        "tier": "A",
+        "bound_by": "rubric",
+        "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved",
+        "agent_cap": null
+      },
+      "verdict": "OVERCLAIM",
+      "harness_by_plan": {
+        "plans": {
+          "1-levy-area-milstein-trapezoid": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "pathwise"
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.0114,
+              "reference_outcome": "validated",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.0186,
+              "dynkin_z": 2.203,
+              "solve_time_s": 1.663,
+              "observed_order": 0.9343,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "milstein",
+              "observed_order_se": 0.0351,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.1573,
+              "mc_se_rel": 0.015,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.531,
+              "kind": "sde",
+              "solver_sha256": "78612944dd9c1d53a3af432cfeca13373450e54f66af179ddfa9be64b805bf96"
+            },
+            "is_winner": false,
+            "scheme_family": "milstein",
+            "harness_error": 0.22338102703433282,
+            "harness_error_margin": 0.004994951613324864,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "analytic",
+              "certified": true,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          },
+          "2-levy-area-milstein": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "pathwise"
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.009803,
+              "reference_outcome": "validated",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.0183,
+              "dynkin_z": 2.203,
+              "solve_time_s": 1.762,
+              "observed_order": 0.9827,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "milstein",
+              "observed_order_se": 0.0307,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.1597,
+              "mc_se_rel": 0.015,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.531,
+              "kind": "sde",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 0.2131,
+              "moment_bias_actionable": true,
+              "solver_sha256": "1bf8136df5597817d1c9c3cb3208c596580f47ef5760c2cbc1d5b20739bb7191"
+            },
+            "is_winner": false,
+            "scheme_family": "milstein",
+            "harness_error": 0.4237606268617263,
+            "harness_error_margin": 0.009475575678507433,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "analytic",
+              "certified": true,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          },
+          "3-euler-maruyama-control": {
+            "harness": {
+              "status": "ok",
+              "passed": false,
+              "verified_score": 10,
+              "gt_kind": "pathwise"
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.0162,
+              "reference_outcome": "validated",
+              "design_order": 0.5,
+              "invariant_max_drift": 0.0178,
+              "dynkin_z": 2.2261,
+              "solve_time_s": 1.379,
+              "observed_order": 0.4965,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "euler-maruyama",
+              "observed_order_se": 0.0348,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.1714,
+              "mc_se_rel": 0.0149,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.531,
+              "kind": "sde",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 0.3874,
+              "moment_bias_actionable": true,
+              "solver_sha256": "9ecba45853196392a018bcbdb6021c80156916382a4c8ee5ca603813e902a2e0"
+            },
+            "is_winner": true,
+            "scheme_family": "euler-maruyama",
+            "harness_error": 2.6134601000176985,
+            "harness_error_margin": 0.05843874440122973,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "analytic",
+              "certified": true,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved",
+              "agent_cap": null
+            },
+            "verdict": "OVERCLAIM"
+          }
+        },
+        "winner": "3-euler-maruyama-control",
+        "not_implemented": {
+          "4-conditional-mc-projection": {
+            "state": "unfinished (never solved -- three plans certified before it was dispatched)",
+            "iter": 0,
+            "one_sentence": "Rao-Blackwellised dW1-only scheme -- U's increment replaced by its exact conditional expectation given the resolved S/W2 sub-path; L2-optimal in its class, so it measures the Clark-Cameron bound."
+          }
+        },
+        "best_plan_by_harness": "1-levy-area-milstein-trapezoid",
+        "best_harness_err": 0.22338102703433282,
+        "winner_harness_err": 2.6134601000176985,
+        "harness_error_metric": "relative strong error / its gate",
+        "harness_error_margin": 0.05843874440122973,
+        "wrong_plan_won": true,
+        "plans_implemented": 3,
+        "plans_planned": 4
+      }
+    }
+  ]
+}

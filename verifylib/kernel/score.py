@@ -816,6 +816,44 @@ def certify(evidence):
                      "reason": f"declared invariant(s) {not_reported} could not be "
                                f"evaluated and are reported as not_reported, never as a "
                                f"pass"})
+    strong_tol = evidence.get("strong_rel_err_tol")
+    if strong_tol is not None and not evidence.get("strong_rel_err_gated"):
+        # The same rule as `not_reported_invariants` below, for the pathwise strong
+        # error: a declared gate the kernel cannot evaluate is not a pass. The kernel
+        # has no exact-path reference -- that is the harness's -- so where a problem
+        # gates on strong error the moment evidence cannot stand in for it, however
+        # clean it is. Certifying anyway is what produced `sde_clark_cameron`'s
+        # OVERCLAIM twice: moments at 7% and 16% of their gates, strong error at 261%
+        # of its own, score 10, `certified: true`.
+        #
+        # Capping at 9 rather than failing is deliberate and is the distinction the
+        # rest of this module keeps: the plan has not been shown wrong, it has not
+        # been shown right, and `rank_key` reads `score` before quality -- so a plan
+        # that cannot be certified pathwise can no longer win a tie decided on
+        # moments.
+        #
+        # **The cap keys on `strong_rel_err_gated`, not on the presence of a
+        # number.** Since 2026-11-22 the kernel does publish a `strong_rel_err` --
+        # `crn.strong_error`'s self-convergence estimate -- and that number is
+        # deliberately not allowed to lift this cap. It is calibrated for *ranking*,
+        # where a shared bias is free, and it runs 2.1x to 4.2x above the harness's
+        # true graded error with a bias that grows as the fitted order falls. A gate
+        # would be decided by exactly that bias: N01's shipped plan estimates 0.0180
+        # against a 0.02 gate, a 10% margin on a 2x-biased statistic. Certifying on
+        # it would be the same mistake this cap exists to stop, moved one step later.
+        measured = evidence.get("strong_rel_err")
+        caps.append({"source": "strong_gate_not_measured", "score": 9,
+                     "reason": (
+                         f"the problem declares a pathwise strong-error gate "
+                         f"(strong_rel_err_max {strong_tol:g}) and the kernel's "
+                         f"strong error ({measured:.3g}) is a self-convergence "
+                         f"estimate calibrated for ranking only, so the gate could "
+                         f"not be evaluated"
+                         if isinstance(measured, (int, float)) else
+                         f"the problem declares a pathwise strong-error gate "
+                         f"(strong_rel_err_max {strong_tol:g}) and nothing measured "
+                         f"a strong error, so the gate could not be evaluated; "
+                         f"moment evidence does not stand in for it")})
     not_reported_fn = list(evidence.get("not_reported_functionals") or [])
     if not_reported_fn:
         # The same rule as above, for a declared scalar quantity of interest. A gate

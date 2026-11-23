@@ -727,3 +727,99 @@ def richardson_moment(terminals, weak, component=0, *, ci_mult=2.0, statistic="m
         # `mean_finest`, and a rename would make this change a migration.
         out["mean_star"], out["mean_finest"] = star, m2
     return out
+
+
+#: The smallest fitted strong order :func:`strong_error` will inflate with. Below it
+#: the Richardson factor ``1 / (1 - 2**-p)`` is both large and badly conditioned --
+#: it passes 5 at p = 0.26 and diverges at p = 0 -- so the estimate stops being a
+#: measurement of the error and becomes a measurement of the fit's own wobble. A
+#: scheme reading below this is one whose levels barely separate, and the honest
+#: output there is no estimate rather than a big one.
+STRONG_ERROR_MIN_ORDER = 0.2
+
+#: The widest ``se_s0 / s0`` that still supports an estimate. ``s0`` is a sample mean
+#: of absolute pathwise differences, and :func:`strong_order`'s own note records what
+#: heavy tails do to it: ``sde_ginzburg_landau_s6/2-tamed-milstein`` returns 0.220 and
+#: 2.730 for the same scheme against the same spec, a factor of 12.4, because at
+#: ``sigma = 6`` the differences are violently heavy-tailed. An error built on that
+#: mean inherits all of it, so the estimate abstains where the mean is not tight.
+#: 0.25 is loose enough that every N01 plan passes it at 0.017 and tight enough that
+#: the Ginzburg-Landau case cannot.
+STRONG_ERROR_MAX_SE_FRAC = 0.25
+
+
+def strong_error(detail, order, *, ci_mult=ORDER_CI_MULT):
+    """The relative strong error at the ladder's **coarsest** step, by self-convergence.
+
+    ``{"rel_err": float, "se_rel": float, ...}``, or ``{"rel_err": None, "reason": ...}``.
+
+    The ladder starts at the graded ``dt``, so ``s0 = mean|X(dt) - X(dt/2)|`` is a
+    difference taken at the step the problem is graded on, under common random
+    numbers. If the scheme converges as ``e(dt) ~ C dt^p`` then that difference is
+    ``C dt^p (1 - 2^-p)``, so the error itself is the difference divided by
+    ``1 - 2^-p``: Richardson's argument, in pathwise space rather than on a moment.
+    Relative is against ``mean|X|`` at the finest level, matching the norm ``s0`` is
+    already a mean of.
+
+    **This is a ranking statistic, not a gate.** Measured against the harness's true
+    graded error on N01's three plans (2026-11-22) it comes out 2.86x, 2.12x and
+    4.16x high -- the ordering is right and the separation is far outside the bar
+    (``se_s0/s0`` is 1.7% on all three), but the level is biased and the bias is not
+    uniform, and it grows as ``p`` falls. Ranking is scale-free so a shared bias
+    costs nothing there; a gate would be decided by it. Three things have to be
+    settled before this number may certify: the norm against the harness's RMS, the
+    Richardson factor's validity for a strong error at low ``p``, and the heavy-tail
+    behaviour of ``s0``. Until then :func:`verifylib.kernel.score.certify` keeps
+    capping a declared-but-unevaluated pathwise gate.
+
+    ``order`` is the fitted strong order, i.e. ``strong_order``'s first return. The
+    ``bracket`` carries the estimate re-inflated at ``p -/+ ci_mult * se_order``, so
+    the sensitivity to the exponent is visible rather than implied.
+    """
+    out = {"rel_err": None, "se_rel": None, "source": "self-convergence at dt0"}
+    detail = detail or {}
+    s0 = detail.get("s0")
+    scale = detail.get("terminal_scale")
+    se_s0 = detail.get("se_s0")
+    p = None if isinstance(order, bool) else order
+    if not isinstance(p, (int, float)) or p != p:
+        return {**out, "reason": "the strong order did not fit, so there is no "
+                                 "exponent to invert the ladder difference with"}
+    if at_roundoff(detail):
+        # Not a failure and not an error of zero: the component is integrated
+        # exactly, the difference is arithmetic, and the caller takes the worst
+        # component anyway -- so abstaining here cannot hide a real error elsewhere.
+        return {**out, "reason": "the ladder differences are at the roundoff floor: "
+                                 "this component is integrated exactly, so there is "
+                                 "no discretization error to estimate"}
+    if not isinstance(s0, (int, float)) or s0 <= 0.0:
+        return {**out, "reason": "no pathwise difference at the coarsest level"}
+    if not isinstance(scale, (int, float)) or scale <= 0.0:
+        return {**out, "reason": "the terminal scale is zero, so there is no relative "
+                                 "error to report"}
+    if p < STRONG_ERROR_MIN_ORDER:
+        return {**out, "reason": f"the fitted strong order {p:.3g} is below "
+                                 f"{STRONG_ERROR_MIN_ORDER:g}, where the Richardson "
+                                 f"factor stops being conditioned"}
+    se_frac = (float(se_s0) / float(s0)
+               if isinstance(se_s0, (int, float)) and se_s0 >= 0.0 else None)
+    if se_frac is None:
+        return {**out, "reason": "the ladder difference carries no standard error"}
+    if se_frac > STRONG_ERROR_MAX_SE_FRAC:
+        return {**out, "reason": f"the ladder difference's own standard error is "
+                                 f"{se_frac:.1%} of it, above "
+                                 f"{STRONG_ERROR_MAX_SE_FRAC:.0%}: heavy tails, and "
+                                 f"the mean is not tight enough to build an error on"}
+    inflation = 1.0 / (1.0 - 2.0 ** -float(p))
+    rel = (float(s0) / float(scale)) * inflation
+    out.update({"rel_err": rel, "se_rel": (float(se_s0) / float(scale)) * inflation,
+                "order_used": float(p), "inflation": inflation,
+                "s0_rel": float(s0) / float(scale), "se_frac": se_frac})
+    se_order = detail.get("se_order")
+    if isinstance(se_order, (int, float)) and se_order > 0.0:
+        lo_p, hi_p = float(p) - ci_mult * se_order, float(p) + ci_mult * se_order
+        bracket = [(float(s0) / float(scale)) / (1.0 - 2.0 ** -q)
+                   for q in (hi_p, lo_p) if q >= STRONG_ERROR_MIN_ORDER]
+        if len(bracket) == 2:
+            out["bracket"] = bracket
+    return out

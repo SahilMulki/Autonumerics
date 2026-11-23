@@ -273,6 +273,10 @@ observed_order_se: 9.6e-03         # the estimate's own standard error; a pool c
                                    # will not rank two rates it cannot resolve apart
 order_floor: 1.50
 order_band: two-sided | one-sided (<reason>)   # which side of the floor counts, from `crn.guards`
+strong_rel_err: 1.28e-02   # SDE, pathwise route -- the relative strong error the CRN ladder
+strong_rel_err_se: 2.2e-04 #   implies at the graded dt, and its own (tight) bar
+strong_rel_err_tol: 2.0e-02  # the spec's `strong_rel_err_max`, carried so the block can be read
+strong_rel_err_component: 1  # which state component it came off
 design_order: 2            # the scheme's own declared rate, from SOLUTION.md frontmatter
 scheme_family: fd
 invariants_ok: true

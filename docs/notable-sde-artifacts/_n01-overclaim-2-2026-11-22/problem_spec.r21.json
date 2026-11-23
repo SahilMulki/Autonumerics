@@ -1,0 +1,333 @@
+{
+  "id": "sde_clark_cameron",
+  "equation_type": "SDE",
+  "sde_family": "clark_cameron",
+  "state_dimension": 2,
+  "noise_dimension": 2,
+  "sub_increments_per_step": 256,
+  "noise_structure": "multiplicative",
+  "linear": true,
+  "stiff": false,
+  "equation": "dS = mu dt + dW2,  S(0) = 1;   dU = S dW1,  U(0) = 0.  State is (S, U) in that order; W1 and W2 are two independent Brownian motions, carried on the last axis of dW as channel 0 = W1 and channel 1 = W2.",
+  "parameters": {
+    "S_0": 1.0,
+    "U_0": 0.0,
+    "mu": 1.0
+  },
+  "time_interval": {
+    "T0": 0.0,
+    "T": 1.0
+  },
+  "initial_condition": {
+    "law": "deterministic",
+    "value": [
+      1.0,
+      0.0
+    ],
+    "note": "S(0) = 1, U(0) = 0, in state order (S, U) -- numerically identical to parameters.S_0 and parameters.U_0. Declared at the TOP LEVEL because that is where the kernel's Dynkin reader looks (it calls spec.get('initial_condition')); a copy nested under `verification` is never read. Written as explicit floats rather than the names ['S_0', 'U_0'] so that no reader has to resolve them against `parameters` -- the Dynkin reader does, but nothing else is guaranteed to."
+  },
+  "milstein_eligible": false,
+  "milstein_ineligible_reason": "levy_area",
+  "diffusion_derivative": "The diffusion matrix G(S, U) = [[0, 1], [S, 0]] depends on the state, so the multi-dimensional Milstein correction is non-zero; but it requires the Levy area A_12 = int (W1 dW2 - W2 dW1) of the channel pair (W1, W2) over each step, which cannot be recovered from the step increments dW alone (Clark & Cameron, 1980). This problem therefore supplies dW_sub (256 sub-increments per step) so that a plan may *approximate* the Levy area to high accuracy and build an order-1 scheme. A Milstein/Levy-area plan here is legitimate and must declare its levy_area_treatment; see implementation_notes.",
+  "milstein_correction": "For the Clark-Cameron system the only non-trivial iterated integral is I_{1,2}(t_n, t_{n+1}) = int_{t_n}^{t_{n+1}} (W2(s) - W2(t_n)) dW1(s). The order-1 (Milstein / Levy-area) step is: S_{n+1} = S_n + mu*dt + dW2_n (exact), U_{n+1} = U_n + S_n*dW1_n + I_{1,2}_n, with I_{1,2}_n assembled from the 256 sub-increments as sum_j (partial sum of dW2 up to j) * dW1_j.",
+  "analytic_moments": {
+    "has_analytic_solution": true,
+    "state_dimension": 2,
+    "mean_X": "S_0 + mu*t",
+    "variance_X": "t",
+    "mean_expression": "S_0 + mu*t",
+    "variance_expression": "t",
+    "mean_Y": "0.0*t",
+    "variance_Y": "((S_0 + mu*t)**3 - S_0**3)/(3*mu) + t**2/2",
+    "cross_moment_XY": "0.0*t",
+    "derivation": "S solves dS = mu dt + dW2 exactly: S(t) = S_0 + mu*t + W2(t), so S(t) ~ Normal(S_0 + mu*t, t). U(t) = int_0^t S dW1 is an L2 martingale with U(0) = 0, hence E[U(t)] = 0, and by the Ito isometry Var[U(t)] = E[int_0^t S_s^2 ds] = int_0^t ((S_0 + mu*s)^2 + s) ds = ((S_0 + mu*t)^3 - S_0^3)/(3*mu) + t^2/2. By Ito, d(SU) = S^2 dW1 + U(mu dt + dW2) and dW1 dW2 = 0, so d E[SU]/dt = mu E[U] = 0 and E[S U] = 0 for all t. At t = T = 1 with S_0 = 1, mu = 1: mean_S = 2, var_S = 1, mean_U = 0, var_U = 17/6 = 2.8333333333333335, cov = 0. Verified against a 40000-path simulation on a 20000-step grid: 1.9979 / 1.0036 / 0.0126 / 2.8176 / 0.0007.",
+    "note": "U(T) is NOT Gaussian (it is a Levy-area-type quadratic functional of the pair (W1, W2)); its measured excess kurtosis at T = 1 is 1.32. That is why verification.terminal_law is omitted -- see implementation_notes.",
+    "scalar_key_note": "mean_expression / variance_expression duplicate mean_X / variance_X, i.e. they describe state component 0 (S). They exist because the reference check pairs the moment-ODE surrogate against those scalar keys; the per-component mean_X/variance_X/mean_Y/variance_Y are the authoritative ones for a 2-component state and the scalar pair must stay identical to the X pair."
+  },
+  "drift_expression": "f(S, U) = [mu, 0.0]  (the U component has zero drift)",
+  "diffusion_expression": "G(S, U) = [[0.0, 1.0], [S, 0.0]] against the independent channels (dW1, dW2): dS = 1.0*dW2, dU = S*dW1",
+  "diffusion_derivative_expression": null,
+  "evaluation_thresholds": {
+    "variance_rel_err_max": 0.1,
+    "mean_rel_err_max": 0.05,
+    "near_zero_mean_threshold": 0.01,
+    "num_paths": 16000,
+    "graded_num_paths": 1000,
+    "conv_num_paths": 2000,
+    "seed": 42,
+    "dt": 0.04,
+    "dt0": 0.04,
+    "conv_levels": 3,
+    "stability_check": null,
+    "ci_mult": 2.0,
+    "expected_weak_order": 1.0,
+    "theoretical_order": 1.0,
+    "min_spatial_order": 0.0,
+    "order_check": true
+  },
+  "verification": {
+    "expected_provenance": "analytic",
+    "expected_weak_order": 1.0,
+    "expected_strong_order": 0.5,
+    "expected_strong_order_milstein": 1.0,
+    "theoretical_order": 1.0,
+    "generator": {
+      "drift": [
+        "mu + 0.0*X[:, 0]",
+        "0.0*X[:, 1]"
+      ],
+      "diffusion_matrix": [
+        [
+          "0.0*X[:, 0]",
+          "1.0 + 0.0*X[:, 0]"
+        ],
+        [
+          "X[:, 0]",
+          "0.0*X[:, 0]"
+        ]
+      ],
+      "note": "Channel 0 is W1, channel 1 is W2, matching the dW layout the contract supplies. Hand-checked: L(S^2) = 2*mu*S + 1, L(U^2) = S^2, L(S*U) = mu*U -- each reproducing the Ito derivation in analytic_moments.derivation."
+    },
+    "moment_ode": {
+      "state": [
+        "m_S",
+        "m_SS",
+        "m_UU"
+      ],
+      "rhs": [
+        "mu + 0.0*m_S",
+        "2*mu*m_S + 1.0",
+        "m_SS"
+      ],
+      "initial": [
+        "S_0",
+        "S_0**2",
+        "U_0**2"
+      ],
+      "closes_exactly": true,
+      "mean_from": "m_S",
+      "variance_from": "m_SS - m_S**2",
+      "applies_to_component": 0,
+      "applies_to_name": "S",
+      "note": "The drift is affine and every entry of G*G^T is affine or quadratic in the state, so the moment hierarchy closes exactly with no closure approximation. mean_from / variance_from take one marginal, and they are pointed at component 0 (S), where the reference check can pair them against the declared closed form: integrating m_S, m_SS reproduces E[S] = S_0 + mu*t and Var[S] = t to machine precision. The third state variable m_UU is carried in the same system on purpose -- it integrates to Var[U(t)] = ((S_0 + mu*t)^3 - S_0^3)/(3*mu) + t^2/2 = 17/6 at T = 1, which is the declared variance_Y, and E[U] = 0 is exact because U is a martingale. So the hierarchy backs both components even though only one marginal can be declared here; U's half is additionally cross-checked by the dynkin_test_function X[:, 1]**2, whose generator image is S^2, and numerically against a 40000-path / 20000-step simulation (2.8176 vs 2.8333)."
+    },
+    "kolmogorov": null,
+    "stationary_density": {
+      "ergodic": false,
+      "note": "Neither component is ergodic: S is a Brownian motion with drift and U is a divergent martingale with E[U^2] growing like t^3/3. No invariant density exists."
+    },
+    "terminal_law": null,
+    "terminal_law_note": "Omitted deliberately. S(T) ~ Normal(S_0 + mu*T, T) exactly, but U(T) is a quadratic (Levy-area-type) functional of (W1, W2) and is not normal, lognormal or noncentral chi-squared -- its measured excess kurtosis at T = 1 is 1.32. terminal_law takes one entry per component on a vector problem, and declaring U as any of the three implemented laws would be a false reference, so the field is null rather than half-declared. The exact mean, variance and cross moment in analytic_moments carry the distributional evidence that is genuinely available.",
+    "dynkin_test_functions": [
+      "X[:, 0]**2",
+      "X[:, 1]**2",
+      "X[:, 0]*X[:, 1]",
+      "np.tanh(X[:, 1])"
+    ],
+    "dynkin_note": "X[:, 0] = S, X[:, 1] = U. The first three have generator images 2*mu*S + 1, S^2 and mu*U respectively, so between them they probe the S diffusion, the state-dependent U diffusion, and the vanishing W1-W2 cross-variation (a solver that correlates the two channels, or swaps them, breaks the third). tanh(U) is the bounded nonlinear probe of the U tail.",
+    "constraints": [
+      {
+        "name": "finite",
+        "expr": "np.isfinite(X)",
+        "gate": true,
+        "note": "The coefficients are affine and the system is linear with bounded growth; no terminal state may be Inf or NaN."
+      }
+    ],
+    "invariants": [
+      {
+        "name": "martingale",
+        "expr": "X[:, 1]",
+        "reference_value_at_T": 0.0,
+        "ci_mult": 2.0,
+        "gate": false,
+        "note": "U(t) = int_0^t S dW1 is a square-integrable martingale started at 0, so E[U(T)] = 0 exactly. A scheme that evaluates the integrand S at the right endpoint (a Stratonovich rather than Ito step) picks up a non-zero mean and is caught here even though its variance may look right."
+      },
+      {
+        "name": "estimator_stability",
+        "gate": false,
+        "n_batches": 8,
+        "note": "Batch-means scatter over the path count, to confirm num_paths has settled; diagnostic only."
+      },
+      {
+        "name": "zero_channel_cross_variation",
+        "gate": false,
+        "note": "DECLARED BUT NOT CHECKED -- not a registry name and not reducible to one, recorded for the reader only. W1 and W2 are independent, so Cov[S(T), U(T)] = 0; the gated version of this claim is carried by the dynkin_test_function X[:, 0]*X[:, 1], whose generator image is mu*U. No tol is given here precisely because nothing evaluates it."
+      }
+    ],
+    "initial_condition_note": "The machine-readable initial condition is the TOP-LEVEL `initial_condition` field, which is what the kernel's Dynkin reader consumes. It was previously declared here under `verification`, where nothing reads it, so E[phi(X_0)] could not be formed and dynkin_ok returned `unavailable` -- capping every plan on this problem at 9 and uncertified. Value unchanged: (S, U)(0) = (1, 0)."
+  },
+  "implementation_notes": "Clark-Cameron (1980) is the canonical counterexample to order-1 strong convergence from step increments alone: for this system the strong error of ANY scheme that sees only dW is bounded below by c*sqrt(dt). The problem statement therefore hands the solver dW_sub of shape (num_paths, Nt, 256, 2) -- the same Brownian path at 256x resolution -- and the intended winning scheme uses it to assemble the single non-trivial iterated integral I_{1,2} per step and attain strong order 1.\n\nWhat a solver must do:\n(1) Take Nt = dW.shape[1] and dt = T/Nt; never draw its own Brownian path. Nt = 25 at the contract's dt = 0.04 with T = 1.\n(2) Advance the state ONCE PER STEP of dW. A solver that simply loops over all Nt*256 sub-increments at the sub-step is *excluded* from the comparison (recorded as having bypassed the step), not merely failed, per problem.md. dW_sub is to be reduced to per-step iterated-integral data and then used in a single step update.\n(3) S is exactly integrable: S_{n+1} = S_n + mu*dt + dW[:, n, 1]. All of the discretization error lives in U.\n(4) Euler-Maruyama U_{n+1} = U_n + S_n*dW[:, n, 0] has strong order 0.5 (the Clark-Cameron bound). Adding I_{1,2}_n = sum_{j} W2_partial_j * dW1_j, where W2_partial_j is the accumulated W2 sub-path within the step before sub-step j, gives strong order 1.\n(5) Channel convention: channel 0 = W1 (drives U), channel 1 = W2 (drives S). See requirement R12 -- problem.md numbers the Brownian motions W1, W2 and states the last axis indexes them, which fixes this mapping, but the pathwise grade depends on it so it is flagged.\n\nScoring notes for the evaluator: milstein_eligible is false with reason levy_area because the multi-dimensional Milstein correction is not constructible from dW alone. That reason normally caps a Milstein plan at 8 absent a declared levy_area_treatment -- here dW_sub IS supplied, so a plan that declares its levy_area_treatment is making a claim it can actually implement and should be graded against expected_strong_order_milstein = 1.0, not 0.5. A plan using only dW must be graded at 0.5.\n\nMemory: dW_sub holds num_paths * (T/(dt/256)) * 2 float64s = num_paths * 102400 bytes, independent of the ladder level (the kernel holds the sub-step fixed at the graded dt/256). num_paths = 16000 is ~1.6 GB; conv_num_paths = 2000 keeps each CRN ladder level near 0.2 GB. num_paths cannot be lowered to the contract's 1000 without losing moment resolution: U's measured excess kurtosis is 1.32, so the resolution floor 2 * 4 * (ci_mult/variance_rel_err_max)^2 * (2 + 1.32) is ~10600 paths. The moment checks do not need dW_sub at all (the Ito left-endpoint Euler step already gives the exact variance of U in the dt -> 0 limit), so if the kernel withholds dW_sub at the 16000-path call the moment evidence is unaffected.\n\nNo closed-form terminal law for U; see verification.terminal_law_note.",
+  "requirements": [
+    {
+      "id": "R1",
+      "kind": "equation",
+      "quote": "dS = mu dt + dW2,        S(0) = 1",
+      "status": "mapped",
+      "spec_path": "equation, verification.generator, drift_expression, diffusion_expression, parameters.mu, parameters.S_0, initial_condition.value"
+    },
+    {
+      "id": "R2",
+      "kind": "equation",
+      "quote": "dU = S dW1,              U(0) = 0",
+      "status": "mapped",
+      "spec_path": "equation, verification.generator, drift_expression, diffusion_expression, parameters.U_0, initial_condition.value"
+    },
+    {
+      "id": "R3",
+      "kind": "equation",
+      "quote": "the two-dimensional Ito system driven by **two independent** Brownian motions W1 and W2",
+      "status": "mapped",
+      "spec_path": "state_dimension, noise_dimension, verification.generator.diffusion_matrix"
+    },
+    {
+      "id": "R4",
+      "kind": "parameter",
+      "quote": "with mu = 1, over the time interval [0, 1]",
+      "status": "mapped",
+      "spec_path": "parameters.mu, time_interval"
+    },
+    {
+      "id": "R5",
+      "kind": "equation",
+      "quote": "The state is (S, U), in that order.",
+      "status": "mapped",
+      "spec_path": "equation, analytic_moments (mean_X/variance_X = S, mean_Y/variance_Y = U), verification.generator"
+    },
+    {
+      "id": "R6",
+      "kind": "evaluation",
+      "quote": "This problem is graded **path by path**, not in distribution: the harness compares your terminal states to a reference solution driven by the very same Brownian path.",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.dt, verification.expected_strong_order, verification.expected_strong_order_milstein"
+    },
+    {
+      "id": "R7",
+      "kind": "evaluation",
+      "quote": "`dW_sub[:, k, :, :]` holds the 256 sub-increments that sum to `dW[:, k, :]` for step k",
+      "status": "mapped",
+      "spec_path": "sub_increments_per_step"
+    },
+    {
+      "id": "R8",
+      "kind": "method",
+      "quote": "The strong error of any scheme that uses only the step increments `dW` is bounded below by a constant times sqrt(dt), whatever the scheme (Clark and Cameron, 1980); the quantity that bound depends on is the Levy area of (W1, W2) over each step, which the sub-increments carry and the step increments do not.",
+      "status": "mapped",
+      "spec_path": "verification.expected_strong_order, verification.expected_strong_order_milstein, milstein_ineligible_reason, milstein_correction, implementation_notes"
+    },
+    {
+      "id": "R9",
+      "kind": "method",
+      "quote": "Advance the state step by step at the step `dt` you are given.",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.dt, implementation_notes"
+    },
+    {
+      "id": "R10",
+      "kind": "evaluation",
+      "quote": "solve_sde(num_paths=1000, dt=0.04, T=1, seed=42)",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.graded_num_paths, evaluation_thresholds.dt, evaluation_thresholds.seed, time_interval.T"
+    },
+    {
+      "id": "R11",
+      "kind": "method",
+      "quote": "Use the `dt` you are given (do not hardcode a different step).",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.dt, implementation_notes"
+    },
+    {
+      "id": "R12",
+      "kind": "equation",
+      "quote": "a numpy array of shape `(1000, 25, 2)` holding the Brownian increments, **already scaled by sqrt(dt)**, whose last axis indexes the 2 independent noise sources",
+      "status": "ambiguous",
+      "spec_path": "equation, verification.generator.diffusion_matrix, implementation_notes",
+      "note": "problem.md names the Brownian motions W1 and W2 and says the last axis indexes 'the 2 independent noise sources', but never states explicitly that index 0 is W1 and index 1 is W2. The pathwise grade depends on the mapping (swapping the channels gives a different terminal state against the same reference path, not a distributionally equivalent one). I encoded the only natural reading -- channel 0 = W1 (drives U), channel 1 = W2 (drives S) -- consistent with the numbering in the equation display, and recorded it in implementation_notes item (5) so the solver and evaluator both see the assumption."
+    },
+    {
+      "id": "R13",
+      "kind": "method",
+      "quote": "Use exactly these -- take `Nt = dW.shape[1]` and `dt = T / Nt` -- and do not draw your own randomness for the Brownian path.",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R14",
+      "kind": "evaluation",
+      "quote": "a numpy array of shape `(1000, 25, 256, 2)` holding, for each step, the 256 finer increments that sum to it (`dW_sub.sum(axis=2) == dW` to rounding), each already scaled by the square root of its own sub-step `dt / 256`",
+      "status": "mapped",
+      "spec_path": "sub_increments_per_step, implementation_notes"
+    },
+    {
+      "id": "R15",
+      "kind": "evaluation",
+      "quote": "`terminal_paths`: 2-D numpy array of shape `(num_paths, 2)` -- the 2 state components (X, Y) at time T, in that column order",
+      "status": "mapped",
+      "spec_path": "state_dimension, implementation_notes"
+    },
+    {
+      "id": "R16",
+      "kind": "evaluation",
+      "quote": "`empirical_variance`: list of floats, one per component (use `ddof=1`)",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R17",
+      "kind": "method",
+      "quote": "Seed all randomness with `np.random.default_rng(seed)` (not `np.random.seed`).",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.seed, implementation_notes"
+    },
+    {
+      "id": "R18",
+      "kind": "method",
+      "quote": "Round the step count: `Nt = max(1, round(T / dt))`, then `dt = T / Nt`.",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R19",
+      "kind": "method",
+      "quote": "Keep `solve_sde` importable -- no work at module load outside `if __name__ == \"__main__\"`.",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R20",
+      "kind": "method",
+      "quote": "Use the Python standard library and numpy only.",
+      "status": "mapped",
+      "spec_path": "implementation_notes"
+    },
+    {
+      "id": "R21",
+      "kind": "evaluation",
+      "quote": "the harness gates the relative strong error `sqrt(mean((X_num - X_exact)^2)) / sqrt(mean(X_exact^2))` over paths at < 2%",
+      "status": "ambiguous",
+      "spec_path": "verification.expected_strong_order, verification.expected_strong_order_milstein, evaluation_thresholds.variance_rel_err_max",
+      "note": "This is a scoring rule and so belongs in evaluation_thresholds, but `cli.py spec-vocabulary` reports no SDE-side key that carries a *pathwise strong-error* tolerance: the SDE kernel's accuracy keys (variance_rel_err_max, mean_rel_err_max, functionals) are all moment- or solver-reported-scalar space, and the strong error is neither -- the solver does not report it and no declared functional can stand in for it. A genuine vocabulary gap. I did not repurpose rel_l2_err_max for it, because that key's SDE-side effect on band placement is unspecified and setting it to 0.02 risks silently demoting correct plans on a number the kernel would be reading in moment space. What the spec does carry instead: the strong-order floors (0.5 for a dW-only scheme, 1.0 for a Levy-area scheme) so the CRN ladder measures the rate the 2% gate actually depends on at dt = 0.04, and the 2% figure verbatim in implementation_notes so solver and evaluator can measure it directly against the exact S path and a fine-grid U reference."
+    },
+    {
+      "id": "R22",
+      "kind": "method",
+      "quote": "**A discretised scheme at the step `dt` is required.** The harness re-solves at `dt`, `dt/2` and `dt/4` driven by coarsenings of one Brownian path, and a solver that simply integrates on the sub-grid whatever `dt` it is given returns terminal states identical to rounding at all three. Such a run is **excluded** from the comparison rather than failed",
+      "status": "mapped",
+      "spec_path": "evaluation_thresholds.conv_levels, evaluation_thresholds.dt0, implementation_notes"
+    },
+    {
+      "id": "R23",
+      "kind": "method",
+      "quote": "Use `dW_sub` to inform the step (for instance to assemble the iterated integrals a higher-order scheme needs), and advance the state once per step of `dW`.",
+      "status": "mapped",
+      "spec_path": "milstein_correction, implementation_notes"
+    },
+    {
+      "id": "R24",
+      "kind": "evaluation",
+      "quote": "the reference's own error, measured, is 0.2% relative, far below the gate",
+      "status": "mapped",
+      "spec_path": "implementation_notes",
+      "note": "Context on the harness's reference rather than a constraint on the solver; recorded so the evaluator does not read a ~0.2% floor in its own pathwise comparison as a solver defect."
+    }
+  ]
+}

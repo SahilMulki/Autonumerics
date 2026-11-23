@@ -1203,6 +1203,14 @@ def _evidence(spec, m, path, tol, e_fine, d1, d2, tier_b, agent, chaotic):
         "interpolated": bool(m.get("ladder", {}).get("interpolated")),
         "any_test_ran": e_fine is not None or tier_b["outcome"] is True,
         "e_fine": e_fine, "rel_err_tol": tol,
+        # Named, and always None: `certify`'s `strong_gate_not_measured` cap is a
+        # shared check, and `test_the_drivers_supply_every_evidence_key_certify_reads`
+        # requires both drivers to name every key it reads rather than let one hand
+        # over a silent None. A pathwise strong error is an SDE quantity -- a PDE has
+        # no Brownian path to be strong against -- so the gate is never declared here
+        # and the cap can never fire on this path.
+        "strong_rel_err_tol": None, "strong_rel_err": None,
+        "strong_rel_err_gated": False,
         "chaotic": chaotic,
         "ic_consistent": d1.get("ic_consistent"),
         "cross_plan_agreement": (m.get("agreement") or {}).get("agreement"),

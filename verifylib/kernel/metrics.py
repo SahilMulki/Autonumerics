@@ -203,6 +203,23 @@ BLOCK_KEYS = (
     # (11-sde-accuracy-fixes.md §3). A reader still needs it to know which band the
     # order check itself applied.
     "order_band",
+    # The pathwise strong error, its bar, and the gate it is measured against. On a
+    # pathwise-graded problem this is the quantity the problem is *scored* on, and
+    # `ranking.accuracy` prefers it over the moment error for a measured reason: on
+    # `sde_clark_cameron` the two order-1 plans report moment errors identical to
+    # four digits, because they produce the same moments, and differ 1.9x in the
+    # pathwise error the harness grades. The tolerance travels with the pair because
+    # it is a spec threshold the block's reader has no other way to see, and the axis
+    # is inert without it.
+    #
+    # Ranking only. `score.certify` keeps capping a declared pathwise gate at 9 --
+    # see `crn.strong_error` for the 2-4x calibration bias that makes this number
+    # good enough to order a pool and not good enough to certify one.
+    "strong_rel_err", "strong_rel_err_se", "strong_rel_err_tol",
+    # Which state component the strong error came off. Diagnostic: on a system where
+    # one component is integrated exactly the error belongs to the other, and a
+    # reader comparing two plans needs to know they are the same component.
+    "strong_rel_err_component",
     # The scheme's own declared rate (`spatial_order` from SOLUTION.md frontmatter).
     # `order_floor` is a pass bar -- 1.0, and 0.0 on pde_kuramoto_sivashinsky -- so
     # `observed_order - order_floor` is not a quality margin. Against the *design*

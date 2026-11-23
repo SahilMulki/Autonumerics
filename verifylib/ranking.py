@@ -144,6 +144,16 @@ def accuracy(summary, tol):
     # a proxy for it at best. `functional_rel_error` is the sum of a dt-bias term
     # and the solver's reported sampling term, so unlike the moment error it is
     # never below its own noise -- the noise is inside it rather than under it.
+    # The same rule, one route earlier. Where the problem is graded pathwise and the
+    # ladder produced a strong error, *that* is the quantity the problem is scored on
+    # and the moment error is not even a proxy for it -- on `sde_clark_cameron` the
+    # two order-1 plans report moment errors identical to four digits (0.0121 each)
+    # because they produce the same moments, and differ 1.9x in the pathwise error
+    # the harness grades. Ranking them on the moment is ranking them on a quantity
+    # the problem does not ask about.
+    sf = _strong_fraction(summary)
+    if sf is not None:
+        return _clip01(sf)
     fn = _functional_fraction(summary)
     if fn is not None:
         return _clip01(fn)
@@ -196,6 +206,55 @@ def accuracy(summary, tol):
 #: the axis C0 beat the pipeline on -- is rewarded with a *higher* bar. The ceiling
 #: has to be a property of the problem for the fraction to order anything.
 FUNCTIONAL_DECADES = 2.0
+
+
+def _strong_fraction(summary):
+    """Accuracy headroom on the pathwise strong error, or None.
+
+    ``strong_rel_err`` is written by the SDE kernel wherever the CRN ladder could
+    estimate one (``crn.strong_error``), and ``strong_rel_err_tol`` wherever the spec
+    declares the gate. Both are relative and in the same units.
+
+    Shaped like :func:`headroom_fraction` rather than like
+    :func:`_functional_fraction`, and the difference matters. A Monte-Carlo
+    functional gets a *fixed* two-decade ceiling because a tighter plan would buy its
+    headroom with paths. A strong error is not sampling-limited in the same way:
+    common random numbers make ``X(dt) - X(dt/2)`` a pathwise difference whose mean
+    carries very little variance -- 1.7% of itself on all three N01 plans -- so the
+    statistic really is resolved, and the ceiling its own bar implies is the honest
+    one. Normalising against a fixed two decades instead would compress a 1.4x
+    separation to 0.097 against 0.023 and leave the axis barely able to outvote a
+    0.05 difference in fitted order.
+
+    **The snap is kept.** A plan may not claim a strong error finer than the bar on
+    its own ladder difference, exactly as :func:`accuracy` does not let one claim a
+    moment error finer than its Monte-Carlo bar.
+    """
+    err = _num(summary.get("strong_rel_err"))
+    tol = _num(summary.get("strong_rel_err_tol"))
+    if err is None or tol is None or tol <= 0.0 or err <= 0.0:
+        return None
+    ci = _num(summary.get("ci_mult")) or 2.0
+    se = _num(summary.get("strong_rel_err_se"))
+    half_width = se * ci if se is not None and se > 0.0 else None
+    if half_width is not None:
+        # F16, for this axis. An estimate inside its own bar does not locate the
+        # error, and the vocabulary for that is None -- not the ceiling. Returning
+        # 1.0 here would hand a plan the top of the component for being imprecise,
+        # which is the exact inversion the moment path's `noise_limited` exists to
+        # refuse. In practice CRN makes this rare: on all three N01 plans the bar is
+        # 3.4% of the estimate.
+        if err < half_width:
+            return None
+        # ...and if the bar is wider than the gate itself, no plan can be placed
+        # against that gate at this budget, so the axis has nothing to say about any
+        # of them rather than something flattering about all of them.
+        ceiling = math.log10(tol / half_width)
+        if ceiling <= 0.0:
+            return None
+    else:
+        ceiling = FUNCTIONAL_DECADES
+    return math.log10(tol / err) / ceiling
 
 
 def _functional_fraction(summary):

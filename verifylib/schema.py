@@ -812,6 +812,72 @@ def check_ledger(spec) -> list[Finding]:
     return out
 
 
+#: Words that make a ledger quote a *pathwise strong-error gate* rather than any
+#: other kind of accuracy clause. Deliberately narrow: "strong order" is an order and
+#: not a gate, so the match needs an error word beside the strong/pathwise word.
+_STRONG_GATE_WORDS = ("strong error", "strong relative error", "relative strong error",
+                      "pathwise error", "pathwise relative error", "path by path")
+
+
+def check_strong_gate_carried(spec) -> list[Finding]:
+    """A stated pathwise strong-error gate has to reach
+    ``evaluation_thresholds.strong_rel_err_max``.
+
+    The defect this closes, in full, because it is the one the requirements gate
+    could not see. `sde_clark_cameron`'s ``problem.md`` says "the harness gates the
+    relative strong error ... over paths at < 2%". Its formulator quoted that as R21,
+    reasoned correctly that "this is a scoring rule and so belongs in
+    evaluation_thresholds", found that ``cli.py spec-vocabulary`` named no SDE key
+    carrying a pathwise strong-error tolerance, called it "a genuine vocabulary gap",
+    declined to repurpose ``rel_l2_err_max`` for a documented reason -- and marked the
+    entry ``ambiguous``, which :func:`check_ledger` accepts as long as it carries a
+    note. The gate then existed nowhere the kernel reads.
+
+    So the kernel certified on moments, which it could measure, and said so honestly:
+    "every checked moment is within tolerance of the exact moments". On 2026-11-22 a
+    Euler-Maruyama control -- a plan whose own ``SOLUTION.md`` says "it is not the
+    candidate to ship, and it must not win a tie" -- certified at 10 with its mean
+    error at 7% of its gate and its variance error at 16% of its gate, while missing
+    the harness's pathwise gate by **2.6x**. Twice: the fresh pool did it again.
+
+    The ledger gate could not fire because it asks whether every constraint in
+    ``problem.md`` reached the spec, and a constraint with no field to reach is
+    indistinguishable from a problem that states none. The field exists now
+    (``sde/driver.py`` picks it, so ``spec-vocabulary`` advertises it), which is what
+    makes this check fair to ask for.
+    """
+    thresholds = spec.get("evaluation_thresholds")
+    thresholds = thresholds if isinstance(thresholds, dict) else {}
+    declared = thresholds.get("strong_rel_err_max")
+    reqs = spec.get("requirements")
+    if not isinstance(reqs, list):
+        return []
+    out = []
+    for entry in reqs:
+        if not isinstance(entry, dict) or entry.get("kind") != "evaluation":
+            continue
+        quote = (entry.get("quote") or "").lower()
+        if not any(w in quote for w in _STRONG_GATE_WORDS):
+            continue
+        if declared is None:
+            out.append(error(
+                "threshold", "evaluation_thresholds.strong_rel_err_max",
+                f"requirement {entry.get('id') or '?'} states a pathwise "
+                f"strong-error gate and no strong_rel_err_max carries it. The kernel "
+                f"reads this key, so a gate left out of it is enforced by nothing and "
+                f"the plan is certified on moment evidence that cannot stand in for "
+                f"it -- `sde_clark_cameron`'s OVERCLAIM. Set it to the stated "
+                f"tolerance; do not map the gate onto expected_strong_order, which is "
+                f"an order and not an error"))
+            break
+    if declared is not None and not (
+            isinstance(declared, (int, float)) and not isinstance(declared, bool)
+            and float(declared) > 0.0):
+        out.append(error("threshold", "evaluation_thresholds.strong_rel_err_max",
+                         f"must be a positive number, got {declared!r}"))
+    return out
+
+
 def check_operator_ledgered(spec) -> list[Finding]:
     """§4g's common-mode mitigation, and the only thing that catches it.
 
@@ -894,6 +960,7 @@ def check_spec(spec) -> list[Finding]:
         *check_chaotic(spec),
         *check_unshadowable(spec),
         *check_graded_n(spec),
+        *check_strong_gate_carried(spec),
         *check_ledger(spec),
         *check_operator_ledgered(spec),
     ]

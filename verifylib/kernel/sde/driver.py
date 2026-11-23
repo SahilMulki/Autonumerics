@@ -47,6 +47,28 @@ def evaluate_sde(spec, plan_dir, agent):
                               thresholds.get("mean_rel_err_max"), 0.05))
     near_zero = float(cfg.pick("near_zero_mean_threshold", agent,
                                thresholds.get("near_zero_mean_threshold"), 0.01))
+    # The pathwise strong-error gate, and the whole reason this key exists.
+    #
+    # `sde_clark_cameron`'s formulator recorded the problem's gate as requirement R21
+    # and marked it **ambiguous**, with the right diagnosis: "no SDE-side key that
+    # carries a *pathwise strong-error* tolerance ... the SDE kernel's accuracy keys
+    # are all moment- or solver-reported-scalar space, and the strong error is
+    # neither". It mapped the 2% to `expected_strong_order` -- an order, not an error
+    # -- and the kernel then certified on moments. A Euler-Maruyama control whose own
+    # SOLUTION.md says "it must not win a tie" scored 10 with a mean error at 7% of
+    # its gate and a variance error at 16% of its gate, while missing the harness's
+    # pathwise gate by 2.6x: an OVERCLAIM on 2026-11-22 (and again on the re-run).
+    #
+    # Declaring it here is what makes it exist. `cli.py spec-vocabulary` scans the
+    # kernel for the keys something reads, so a threshold the kernel never picks is a
+    # threshold the formulator is told not to set -- which is precisely why R21 had
+    # nowhere to go. The kernel cannot *measure* this error (the exact path reference
+    # is the harness's, not its own), and that is the point: a declared gate it cannot
+    # evaluate must cap the plan rather than be omitted from the evidence. See
+    # `score.py`'s `strong_gate_not_measured` cap.
+    strong_tol = cfg.pick("strong_rel_err_max", agent,
+                          thresholds.get("strong_rel_err_max"), None)
+    strong_tol = float(strong_tol) if strong_tol is not None else None
     m_plan = plan_meta.read(plan_dir)
     expected_strong, strong_candidates, family_declared = crn.expected_orders(
         verification, m_plan.get("scheme_family"),
@@ -504,6 +526,18 @@ def evaluate_sde(spec, plan_dir, agent):
             m["summary"]["moment_bias_actionable"] = bias["actionable"]
     m["summary"]["observed_order"] = order_detail.get("strong_order")
     m["summary"]["order_floor"] = expected_strong
+    # The pathwise error, where the ladder could estimate one. It is published
+    # unconditionally -- not only where the spec declares `strong_rel_err_max` --
+    # because it is a measurement of the plan either way, and `ranking` decides
+    # whether the pool can be compared on it. The gate is a separate question and
+    # `score.certify` still refuses it; see `crn.strong_error` for why.
+    if order_detail.get("strong_rel_err") is not None:
+        m["summary"]["strong_rel_err"] = order_detail["strong_rel_err"]
+        m["summary"]["strong_rel_err_se"] = order_detail.get("strong_rel_err_se")
+        m["summary"]["strong_rel_err_component"] = order_detail.get(
+            "strong_rel_err_component")
+    if strong_tol is not None:
+        m["summary"]["strong_rel_err_tol"] = strong_tol
     # F17. `ranking.order` needs a *design* rate to measure the observed one
     # against, and `kernel/driver.py` sets `design_order` from the plan's declared
     # `spatial_order` on the PDE path only. Nothing set it here, so across all 88
@@ -797,6 +831,15 @@ def evaluate_sde(spec, plan_dir, agent):
                          or not metrics.is_skip(m["checks"]["orders_ok"])
                          or not metrics.is_skip(m["checks"]["dynkin_ok"])),
         "e_fine": e_fine, "rel_err_tol": var_tol,
+        # The declared gate, the kernel's own strong error, and -- separately --
+        # whether that error may decide the gate. It may not: `crn.strong_error` is a
+        # self-convergence estimate with a 2-4x bias, good enough to order a pool and
+        # not good enough to certify one. The flag stays False until the calibration
+        # work lands, so `score.certify` keeps capping, and the number still reaches
+        # `ranking` through the summary.
+        "strong_rel_err_tol": strong_tol,
+        "strong_rel_err": (m["summary"] or {}).get("strong_rel_err"),
+        "strong_rel_err_gated": False,
         # The one PDE-side gate with no SDE counterpart: there is no declared
         # initial *field* to check the solver reproduces at t0.
         "ic_consistent": None,
@@ -1427,6 +1470,11 @@ def _orders(plan_dir, solve, num_paths, dt0, T, levels, seed, expected_strong,
                             exact_sampling=component in exact_sampling)
         per.append({**checks, "component": component, "strong_detail": strong_detail,
                     "weak_detail": weak_detail,
+                    # The pathwise error this component's ladder implies, which on a
+                    # pathwise-graded problem is the quantity the problem is scored
+                    # on and the moment error is only a proxy for. Ranking reads it;
+                    # certification still does not. See `crn.strong_error`.
+                    "strong_error": crn.strong_error(strong_detail, strong),
                     "richardson": crn.richardson_moment(runs, weak, component),
                     # The variance's own extrapolation, which is new (2026-11-18) and
                     # is the one the graded moment usually needs: `richardson_moment`
@@ -1460,6 +1508,26 @@ def _orders(plan_dir, solve, num_paths, dt0, T, levels, seed, expected_strong,
     else:
         binding = _worst_component(per, expected_strong)
     detail = {**binding, "dts": [p["dt"] for p in payloads]}
+    # **Worst component, not the binding one.** `binding` is chosen by how far the
+    # measured order sits from the expected one, which is a different question from
+    # which component carries the most error -- and the component that abstains at
+    # roundoff carries none at all. Taking the max over the components that produced
+    # an estimate is `_compare`'s rule for the moments, applied to the pathwise axis.
+    # Measured on N01: S is exact under every scheme and abstains, U carries the whole
+    # question, and the max is U's.
+    estimates = [(e["strong_error"]["rel_err"], e) for e in per
+                 if (e.get("strong_error") or {}).get("rel_err") is not None]
+    if estimates:
+        worst_rel, worst = max(estimates, key=lambda pair: pair[0])
+        detail["strong_rel_err"] = worst_rel
+        detail["strong_rel_err_se"] = worst["strong_error"].get("se_rel")
+        detail["strong_rel_err_component"] = worst["component"]
+        detail["strong_rel_err_detail"] = worst["strong_error"]
+    else:
+        detail["strong_rel_err"] = None
+        detail["strong_rel_err_reason"] = (
+            (per[0].get("strong_error") or {}).get("reason") if per else
+            "the ladder produced no components")
     if exact and binding not in exact:
         detail["exact_components"] = [e["component"] for e in exact]
         detail["exact_components_note"] = (

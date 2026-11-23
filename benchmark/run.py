@@ -936,6 +936,16 @@ RECORDED_METRICS = (
         # records just below. A record without them re-ranks as though the study had
         # never run, i.e. back to the single-seed lottery it exists to replace.
         "accuracy_seeds", "accuracy_seed_median_rel_error", "accuracy_seed_median_se_rel",
+        # The pathwise axis, for the same reason: `ranking.accuracy` prefers
+        # `strong_rel_err` over the moment error on a pathwise-graded problem, so a
+        # record without these three re-ranks as though the axis did not exist --
+        # which is the one pool where the moment error is known to be the wrong
+        # quantity. Measured on the 2026-11-23 N01 run: the fields reached the plans'
+        # `<metrics>` blocks and the kernel's own evaluation.json and were absent from
+        # this file, so `harness_by_plan` reported `strong_rel_err: null` on all three
+        # plans while the kernel had ranked them on it.
+        "strong_rel_err", "strong_rel_err_se", "strong_rel_err_tol",
+        "strong_rel_err_component",
         # `observed_order_se` **is** read by `ranking.order()` as of
         # plan-sciml-benchmark.md SS10o -- it is the resolution test that decides
         # whether a pool's two best measured rates may be ranked against each other,
