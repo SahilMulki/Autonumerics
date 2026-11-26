@@ -1,0 +1,749 @@
+{
+  "agent_cap": null,
+  "agreement": {
+    "agreement": null,
+    "disagreement": null,
+    "entries": [],
+    "stale": []
+  },
+  "certification": {
+    "agreement_is_break": false,
+    "bound_by": "rubric",
+    "caps": [
+      {
+        "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved (the order study reported 'unresolved' and is not counted against the plan either way)",
+        "score": 10,
+        "source": "rubric"
+      },
+      {
+        "reason": "Tier A: the closed form was validated against the spec's own operator, IC and BC",
+        "score": 10,
+        "source": "certification"
+      }
+    ],
+    "certified": true,
+    "d1_is_break": true,
+    "gates_clean": true,
+    "headroom_decades": 0.8293477314497936,
+    "headroom_fraction": 1.0,
+    "provenance": "analytic",
+    "quality": 0.26308699186621204,
+    "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved (the order study reported 'unresolved' and is not counted against the plan either way)",
+    "score": 10,
+    "tier": "A"
+  },
+  "certified": true,
+  "checks": {
+    "constraints_ok": true,
+    "cross_check_ok": "unavailable",
+    "cross_plan_agreement": "unavailable",
+    "dynkin_ok": true,
+    "functionals_ok": "unavailable",
+    "invariants_ok": true,
+    "moments_ok": true,
+    "orders_ok": "unresolved",
+    "provenance_as_expected": true,
+    "reported_moments_agree": true,
+    "resolved": true,
+    "richardson_stable": true,
+    "surrogate_ok": "unavailable",
+    "variance_ok": true
+  },
+  "config": {
+    "T": {
+      "source": "spec",
+      "value": 1.0
+    },
+    "accuracy_seeds": {
+      "source": "kernel_default",
+      "value": 0
+    },
+    "ci_mult": {
+      "source": "spec",
+      "value": 2.0
+    },
+    "conv_levels": {
+      "source": "spec",
+      "value": 3
+    },
+    "conv_num_paths": {
+      "source": "spec",
+      "value": 50000
+    },
+    "dt": {
+      "source": "spec",
+      "value": 0.04
+    },
+    "dt0": {
+      "source": "spec",
+      "value": 0.04
+    },
+    "dynkin_levels": {
+      "source": "kernel_default",
+      "value": 3
+    },
+    "dynkin_replicate_margin": {
+      "source": "kernel_default",
+      "value": 0.7
+    },
+    "expected_strong_order": {
+      "source": "spec",
+      "value": 0.4
+    },
+    "expected_weak_order": {
+      "source": "spec",
+      "value": 1.0
+    },
+    "mean_rel_err_max": {
+      "source": "spec",
+      "value": 0.05
+    },
+    "near_zero_mean_threshold": {
+      "source": "spec",
+      "value": 0.01
+    },
+    "noise_dimension": {
+      "source": "spec",
+      "value": null
+    },
+    "num_paths": {
+      "source": "spec",
+      "value": 50000
+    },
+    "run_crn_ladder": {
+      "source": "kernel_default",
+      "value": true
+    },
+    "run_dynkin": {
+      "source": "kernel_default",
+      "value": true
+    },
+    "scheme_family": {
+      "source": "plan",
+      "value": "other"
+    },
+    "seed": {
+      "source": "spec",
+      "value": 42
+    },
+    "seed_replicates": {
+      "source": "kernel_default",
+      "value": 3
+    },
+    "strong_rel_err_max": {
+      "source": "kernel_default",
+      "value": null
+    },
+    "sub_increments_per_step": {
+      "source": "kernel_default",
+      "value": null
+    },
+    "timeout_s": {
+      "source": "kernel_default",
+      "value": 300
+    },
+    "variance_rel_err_max": {
+      "source": "spec",
+      "value": 0.1
+    }
+  },
+  "d2": {
+    "bars": {
+      "estimator_stability": 0.01,
+      "finite": 1e-08,
+      "support": 1e-10
+    },
+    "declared": 3,
+    "drifts": {
+      "estimator_stability": 0.003794328294432019,
+      "finite": 0.0,
+      "support": 0.0
+    },
+    "gate_failed": [],
+    "headroom": {
+      "estimator_stability": 0.42086509561602836,
+      "finite": 6.0,
+      "support": 6.0
+    },
+    "invariants_ok": true,
+    "max_drift": 0.003794328294432019,
+    "non_gate_ok": true,
+    "not_reported": [],
+    "not_reported_gated": [],
+    "outcomes": {
+      "estimator_stability": true,
+      "finite": true,
+      "support": true
+    },
+    "worst_headroom": 0.42086509561602836
+  },
+  "detail": {
+    "constraints_ok": {
+      "bars": {
+        "estimator_stability": 0.01,
+        "finite": 1e-08,
+        "support": 1e-10
+      },
+      "declared": 3,
+      "drifts": {
+        "estimator_stability": 0.003794328294432019,
+        "finite": 0.0,
+        "support": 0.0
+      },
+      "gate_failed": [],
+      "headroom": {
+        "estimator_stability": 0.42086509561602836,
+        "finite": 6.0,
+        "support": 6.0
+      },
+      "invariants_ok": true,
+      "max_drift": 0.003794328294432019,
+      "non_gate_ok": true,
+      "not_reported": [],
+      "not_reported_gated": [],
+      "outcomes": {
+        "estimator_stability": true,
+        "finite": true,
+        "support": true
+      },
+      "worst_headroom": 0.42086509561602836
+    },
+    "cross_check_ok": {
+      "relations": [],
+      "statement": null,
+      "violations": []
+    },
+    "cross_plan_agreement": {
+      "entries": [],
+      "stale": 0
+    },
+    "dynkin_ok": {
+      "ci_mult": 2.0,
+      "cost": {
+        "increment_bytes_finest": 40000000,
+        "noise_dimension": 1,
+        "num_paths": 50000,
+        "steps_finest": 100
+      },
+      "extrapolated": [
+        -0.0019470069710561472,
+        -2.0907725007245403e-06,
+        -0.008276632033305607
+      ],
+      "extrapolation_order": [
+        null,
+        null,
+        null
+      ],
+      "extrapolation_order_source": [
+        "assumed_1",
+        "assumed_1",
+        "assumed_1"
+      ],
+      "family_wise_multiplier": 2.4283725526104085,
+      "initial_state": {
+        "initial_condition": "deterministic",
+        "x0": [
+          0.05
+        ]
+      },
+      "levels": 3,
+      "order_detail": [
+        {
+          "d_coarse": 0.0007632435893355719,
+          "d_fine": 0.0010860663954955442,
+          "reason": "the finer residual difference is inside its own Monte-Carlo noise, so no rate can be read from it",
+          "se_d_fine": 0.001904454366495818
+        },
+        {
+          "d_coarse": 0.0003970954830355194,
+          "d_fine": -0.00015988330379555811,
+          "reason": "the finer residual difference is inside its own Monte-Carlo noise, so no rate can be read from it",
+          "se_d_fine": 0.0012758449874873351
+        },
+        {
+          "d_coarse": -0.00035512810330357025,
+          "d_fine": 0.004379600512589984,
+          "reason": "the finer residual difference is inside its own Monte-Carlo noise, so no rate can be read from it",
+          "se_d_fine": 0.004383227540092974
+        }
+      ],
+      "per_function_ok": [
+        true,
+        true,
+        true
+      ],
+      "replication": {
+        "decision": "not replicated: |z - bar| = 1.235 is outside the 0.7 margin, so the verdict is not seed-sensitive",
+        "margin": 0.7,
+        "replicated": false,
+        "rule": "median z over seeds (D9)",
+        "seeds": [
+          42
+        ],
+        "worst_z": [
+          1.1930976936506459
+        ]
+      },
+      "residual_coarse": [
+        0.00022512581993494208,
+        -0.0003218573800918409,
+        0.0004825689918743592
+      ],
+      "residual_fine": [
+        -0.0008609405755606016,
+        -0.00016197407629628288,
+        -0.003897031520715625
+      ],
+      "residuals": [
+        [
+          0.0009883694092705144,
+          0.00022512581993494208,
+          -0.0008609405755606016
+        ],
+        [
+          7.523810294367802e-05,
+          -0.0003218573800918409,
+          -0.00016197407629628288
+        ],
+        [
+          0.00012744088857079042,
+          0.0004825689918743592,
+          -0.003897031520715625
+        ]
+      ],
+      "se": [
+        0.0030181504816089895,
+        0.0020231262063035538,
+        0.006937094990084785
+      ],
+      "test_functions": [
+        "X",
+        "X**2",
+        "np.sin(np.pi*X)"
+      ],
+      "window_agreement": {},
+      "z": [
+        -0.6450993689414019,
+        -0.0010334365173117809,
+        -1.1930976936506459
+      ]
+    },
+    "functionals_ok": {
+      "errors": {},
+      "gate_failed": [],
+      "ladder_dts": [
+        0.04,
+        0.02,
+        0.01
+      ],
+      "ladder_num_paths": 50000,
+      "not_reported": [],
+      "outcomes": {},
+      "values": {}
+    },
+    "moments_ok": {
+      "family_wise": {
+        "ci_mult": 2.0,
+        "multiplier": 2.2776048388094585,
+        "tests": 2
+      },
+      "mean": [
+        {
+          "component": 0,
+          "empirical": 0.22772464695997255,
+          "outcome": true,
+          "reference": 0.22706120312931494,
+          "rel_error": 0.002921872259611612,
+          "se": 0.0011045052208596157,
+          "tol": 0.05
+        }
+      ],
+      "mean_ok": true,
+      "mean_rel_err": 0.002921872259611612,
+      "variance": [
+        {
+          "component": 0,
+          "empirical": 0.06099658914530742,
+          "outcome": true,
+          "reference": 0.0609928976136204,
+          "rel_error": 6.0523959861778144e-05,
+          "se": 0.0004517808553846767,
+          "tol": 0.1
+        }
+      ],
+      "variance_ok": true,
+      "variance_rel_err": 6.0523959861778144e-05,
+      "worst_rel_error": 0.002921872259611612
+    },
+    "orders_ok": {
+      "abstained": "the plan declares this component's transition to be sampled exactly, so it draws from the exact conditional law instead of consuming the supplied Brownian increment: the CRN levels decorrelate, the pathwise differences do not shrink, and the ratio measures the auxiliary randomness rather than a discretization that is not there",
+      "abstaining_component_order": 0.0006179923966484917,
+      "band_half_width": 0.4,
+      "component": 0,
+      "dts": [
+        0.04,
+        0.02,
+        0.01
+      ],
+      "exact_sampling": true,
+      "expected_strong_candidates": [
+        0.4,
+        0.5
+      ],
+      "expected_strong_order": 0.4,
+      "expected_weak_order": 1.0,
+      "orders_ok": "unresolved",
+      "richardson": {
+        "graded_relative_shift": 0.017184343805055142,
+        "graded_shift": 0.0038471872380638353,
+        "graded_shift_in_se": 0.8116582268405625,
+        "graded_shift_within_noise": true,
+        "mean_finest": 0.22629429272094814,
+        "mean_star": 0.2238774597219087,
+        "p_used": 0.5,
+        "relative_shift": 0.010795338673403853,
+        "se_graded_shift": 0.0047399103598558786,
+        "se_shift": 0.003755125327628938,
+        "shift": 0.002416832999039442,
+        "shift_in_se": 0.6436091443492458,
+        "shift_within_noise": true,
+        "stable": true,
+        "statistic": "mean",
+        "value_finest": 0.22629429272094814,
+        "value_graded": 0.22772464695997255,
+        "value_star": 0.2238774597219087
+      },
+      "richardson_variance": {
+        "graded_relative_shift": 0.029950224896927967,
+        "graded_shift": -0.0018832657970088798,
+        "graded_shift_in_se": 0.9674046969476137,
+        "graded_shift_within_noise": true,
+        "p_used": 0.5,
+        "relative_shift": 0.025914431476963377,
+        "se_graded_shift": 0.00194671971611366,
+        "se_shift": 0.0015415655968223408,
+        "shift": 0.0016294956921843115,
+        "shift_in_se": 1.0570394769727753,
+        "shift_within_noise": true,
+        "stable": true,
+        "statistic": "variance",
+        "value_finest": 0.06125035925013197,
+        "value_graded": 0.06099658914530742,
+        "value_star": 0.06287985494231628
+      },
+      "strong_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+      "strong_detail": {
+        "count": 50000,
+        "median_order": -0.008687166565528504,
+        "median_s0": 0.18571230933846394,
+        "median_s1": 0.18683394679820473,
+        "roundoff_floor": 2.2629429272094813e-13,
+        "s0": 0.2575846855294353,
+        "s1": 0.2574743702630706,
+        "se_order": 0.00714835508191879,
+        "se_s0": 0.00104801135858612,
+        "se_s1": 0.0010456939411283496,
+        "terminal_scale": 0.22629429272094814
+      },
+      "strong_error": {
+        "reason": "the fitted strong order 0.000618 is below 0.2, where the Richardson factor stops being conditioned",
+        "rel_err": null,
+        "se_rel": null,
+        "source": "self-convergence at dt0"
+      },
+      "strong_ok": "unresolved",
+      "strong_order": null,
+      "strong_order_above_band": false,
+      "strong_order_gate_floor": 0.4,
+      "strong_order_shrinking": true,
+      "strong_order_source": "none: every component abstained",
+      "strong_rel_err": null,
+      "strong_rel_err_reason": "the fitted strong order 0.000618 is below 0.2, where the Richardson factor stops being conditioned",
+      "weak_detail": {
+        "tanh": {
+          "reason": "at the noise floor, or not shrinking",
+          "se": 0.0013175942431539833,
+          "used": false,
+          "w0": 0.0002599445059513483,
+          "w1": 0.0011226518162643362
+        },
+        "x": {
+          "reason": "at the noise floor, or not shrinking",
+          "se": 0.0015554238391146185,
+          "used": false,
+          "w0": 0.0004292692328314307,
+          "w1": 0.0010010850061929755
+        },
+        "x2": {
+          "reason": "at the noise floor, or not shrinking",
+          "se": 0.0012610750833705394,
+          "used": false,
+          "w0": 0.0006165067838449223,
+          "w1": 0.0002208638982973965
+        }
+      },
+      "weak_ok": true,
+      "weak_order": null,
+      "weak_order_out_of_band": false
+    },
+    "provenance_as_expected": {
+      "achieved": "analytic",
+      "expected": "analytic"
+    },
+    "reported_moments_agree": {
+      "agrees": true,
+      "per_moment": {
+        "empirical_mean": {
+          "kernel": [
+            0.22772464695997255
+          ],
+          "rel_diff": [
+            0.0
+          ],
+          "reported": [
+            0.22772464695997255
+          ]
+        },
+        "empirical_variance": {
+          "kernel": [
+            0.06099658914530742
+          ],
+          "rel_diff": [
+            0.0
+          ],
+          "reported": [
+            0.06099658914530742
+          ]
+        }
+      },
+      "rtol": 1e-06,
+      "worst_rel_diff": 0.0
+    },
+    "resolved": {
+      "per_component": [
+        {
+          "bar": 0.05,
+          "ci_mult": 2.0,
+          "ci_width_rel": 0.01481421191846163,
+          "component": 0,
+          "resolved": true
+        }
+      ],
+      "resolved": true
+    },
+    "surrogate_ok": {
+      "components": {
+        "mean": [
+          0
+        ],
+        "variance": [
+          0
+        ]
+      },
+      "moments_evaluated": [
+        "mean",
+        "variance"
+      ],
+      "route": "analytic_moments"
+    }
+  },
+  "evidence": {
+    "any_test_ran": true,
+    "constraints_ok": true,
+    "converged": true,
+    "converged_measurable": true,
+    "crashed": false,
+    "cross_moment_ok": "unavailable",
+    "cross_plan_agreement": null,
+    "cross_plan_disagreement": null,
+    "d1_outcome": "clean",
+    "dynkin_ok": true,
+    "e_fine": 0.002921872259611612,
+    "functionals_ok": "unavailable",
+    "gate_violation": false,
+    "has_reference": true,
+    "headroom_decades": 0.8293477314497936,
+    "headroom_fraction": 1.0,
+    "ic_consistent": null,
+    "invariants_ok": true,
+    "kind": "sde",
+    "ks_critical": null,
+    "ks_statistic": null,
+    "mean_ok": true,
+    "mem_fraction_used": 0.011,
+    "mem_mb_limit": 4096.0,
+    "milstein_claim": null,
+    "moments_ok": true,
+    "not_reported_functionals": [],
+    "not_reported_invariants": [],
+    "observed_order": null,
+    "operator_validated": true,
+    "operator_validation_route": "spec_generator",
+    "order_floor": 0.4,
+    "order_ok": "unresolved",
+    "orders_ok": "unresolved",
+    "path": "A",
+    "peak_mem_mb": 133.5,
+    "quality": 0.26308699186621204,
+    "reference_evaluable": true,
+    "reference_outcome": "validated",
+    "rel_err_tol": 0.1,
+    "resolved": true,
+    "richardson_stable": true,
+    "stability_ok": "unavailable",
+    "strong_rel_err": null,
+    "strong_rel_err_gated": false,
+    "strong_rel_err_tol": null,
+    "surrogate_ok": "unavailable",
+    "temporal_ok": "unavailable",
+    "terminal_law_ok": "unavailable",
+    "tier_b": "unavailable",
+    "variance_ok": true
+  },
+  "functionals": {
+    "detail": {},
+    "errors": {},
+    "functionals_ok": "unavailable",
+    "gate_failed": [],
+    "not_reported": [],
+    "not_reported_gated": [],
+    "outcomes": {},
+    "values": {}
+  },
+  "kind": "sde",
+  "moments": [
+    {
+      "excess_kurtosis": 0.7430786203272199,
+      "mean": 0.22772464695997255,
+      "num_paths": 50000,
+      "se_excess_kurtosis": 0.031522718163926766,
+      "se_mean": 0.0011045052208596157,
+      "se_skewness": 0.009281855388405529,
+      "se_variance": 0.0004517808553846767,
+      "skewness": 1.263348428138376,
+      "variance": 0.06099658914530742
+    }
+  ],
+  "notes": [],
+  "path": "A",
+  "plan": {
+    "boundary_treatment": "none",
+    "declared": true,
+    "exact_sampling_components": [
+      0
+    ],
+    "levy_area_treatment": null,
+    "scheme": "moment-matched-beta-step",
+    "scheme_family": "other",
+    "scheme_family_source": "declared",
+    "spatial_order": null
+  },
+  "provenance": "analytic",
+  "reference": {
+    "components": {
+      "mean": [
+        0
+      ],
+      "variance": [
+        0
+      ]
+    },
+    "moments_evaluated": [
+      "mean",
+      "variance"
+    ],
+    "route": "analytic_moments",
+    "values": {
+      "mean": [
+        0.22706120312931494
+      ],
+      "variance": [
+        0.0609928976136204
+      ]
+    }
+  },
+  "schema_version": 1,
+  "score": 10,
+  "solver_sha256": "7279c30f9ec7927ed1b7c5815047f19347dbaaed625311748d0c0447c8a4ea34",
+  "summary": {
+    "accuracy_seed_study": {
+      "ran": false,
+      "reason": "not requested (accuracy_seeds is 0)"
+    },
+    "ci_mult": 2.0,
+    "constraints_ok": true,
+    "cost_source": "cpu",
+    "design_order": 0.4,
+    "dynkin_bar": 2.4283725526104085,
+    "dynkin_replicated": false,
+    "dynkin_seeds": 1,
+    "dynkin_z": 1.1930976936506459,
+    "error_is_estimate": false,
+    "estimated_rel_error": 0.002921872259611612,
+    "exact_sampling_components": [
+      0
+    ],
+    "expected_provenance": "analytic",
+    "graded_num_paths": 200000,
+    "graded_peak_mem_mb": 44.9,
+    "invariant_max_drift": 0.003794328294432019,
+    "invariant_worst_headroom": 0.42086509561602836,
+    "invariants_ok": true,
+    "ladder_mem_fraction": 0.033,
+    "mc_se_rel": 0.007406657678978743,
+    "mean_rel_err": 0.002921872259611612,
+    "mem_fraction_used": 0.011,
+    "mem_mb_limit": 4096.0,
+    "moment_bias": {
+      "actionable": false,
+      "bias_frac_tol": null,
+      "binding": null,
+      "moments": {
+        "mean": {
+          "bias_frac_tol": 0.3436868761011028,
+          "bias_rel": 0.017184343805055142,
+          "real": false,
+          "shift_in_se": 0.8116582268405625,
+          "tol": 0.05,
+          "value_extrapolated": 0.2238774597219087,
+          "value_graded": 0.22772464695997255
+        },
+        "variance": {
+          "bias_frac_tol": 0.2995022489692796,
+          "bias_rel": 0.029950224896927967,
+          "real": false,
+          "shift_in_se": 0.9674046969476137,
+          "tol": 0.1,
+          "value_extrapolated": 0.06287985494231628,
+          "value_graded": 0.06099658914530742
+        }
+      },
+      "note": "the graded step's discretization bias in each moment, as a fraction of that moment's own tolerance; report-only"
+    },
+    "observed_order": null,
+    "observed_order_median": -0.008687166565528504,
+    "observed_order_se": 0.00714835508191879,
+    "order_abstained": "the plan declares this component's transition to be sampled exactly, so it draws from the exact conditional law instead of consuming the supplied Brownian increment: the CRN levels decorrelate, the pathwise differences do not shrink, and the ratio measures the auxiliary randomness rather than a discretization that is not there",
+    "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+    "order_check": "unresolved",
+    "order_floor": 0.4,
+    "peak_mem_mb": 133.5,
+    "projected_peak_mem_mb": 179.6,
+    "provenance": "analytic",
+    "reference_outcome": "validated",
+    "reported_moment_agreement": 0.0,
+    "resolution_evidence": "not_used_as_accuracy_evidence",
+    "resolved": true,
+    "scheme_family": "other",
+    "score": 10,
+    "solve_time_s": 0.149,
+    "solve_wall_s": 0.152,
+    "terminal_excess_kurtosis": 0.7430786203272199,
+    "terminal_excess_kurtosis_se": 0.031522718163926766,
+    "terminal_skewness": 1.263348428138376,
+    "terminal_skewness_se": 0.009281855388405529,
+    "variance_rel_err": 6.0523959861778144e-05,
+    "wall_time_s": 2.8
+  }
+}

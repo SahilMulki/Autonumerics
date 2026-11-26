@@ -1,0 +1,30 @@
+{
+  // The benchmark rewrites every file under workspace*/ on each run -- 1261 files in
+  // `workspace/` alone, plus four backup trees. Watching them makes the file-watcher
+  // and the extension host grow for the whole length of a suite, on a machine whose
+  // RAM the run itself needs. None of these directories are tracked by git.
+  "files.watcherExclude": {
+    "**/workspace/**": true,
+    "**/workspace_*/**": true,
+    "**/.venv/**": true,
+    "**/__pycache__/**": true,
+    "**/benchmark/results/**": true,
+    "**/.git/objects/**": true
+  },
+  "search.exclude": {
+    "**/workspace_*/**": true,
+    "**/.venv/**": true,
+    "**/__pycache__/**": true
+  },
+  "files.exclude": {
+    "**/__pycache__": true
+  },
+  // The suite's console output is long-lived and large; the default 1000-line
+  // scrollback is per-terminal and is held in the renderer process.
+  "terminal.integrated.scrollback": 1000,
+  "python.analysis.exclude": [
+    "**/workspace/**",
+    "**/workspace_*/**",
+    "**/benchmark/results/**"
+  ]
+}

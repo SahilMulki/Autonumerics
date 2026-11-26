@@ -1,0 +1,56 @@
+[
+ {
+  "id": "N01",
+  "slug": "sde_clark_cameron",
+  "plan": "1-levy-area-milstein-drift-corrected",
+  "solver_mtime": "2026-11-23 01:15"
+ },
+ {
+  "id": "N02",
+  "slug": "sde_kubo_oscillator",
+  "plan": "2-stochastic-heun",
+  "solver_mtime": "2026-11-23 03:41"
+ },
+ {
+  "id": "N03",
+  "slug": "sde_aitsahalia_rate",
+  "plan": "1-lamperti-trapezoidal",
+  "solver_mtime": "2026-11-23 03:56"
+ },
+ {
+  "id": "N04",
+  "slug": "sde_wright_fisher_mutation",
+  "plan": "1-beta-moment-matched",
+  "solver_mtime": "2026-11-23 11:53"
+ },
+ {
+  "id": "N05",
+  "slug": "sde_merton_jump_call",
+  "plan": "1-milstein-cv",
+  "solver_mtime": "2026-11-23 16:46"
+ },
+ {
+  "id": "N06",
+  "slug": "sde_sis_epidemic",
+  "plan": "1-logit-strang-heun",
+  "solver_mtime": "2026-11-23 20:33"
+ },
+ {
+  "id": "N07",
+  "slug": "sde_langevin_baoab",
+  "plan": "2-stochastic-trapezoidal",
+  "solver_mtime": "2026-11-23 23:47"
+ },
+ {
+  "id": "N08",
+  "slug": "sde_three_halves_vol",
+  "plan": "3-log-implicit-euler",
+  "solver_mtime": "2026-11-24 00:01"
+ },
+ {
+  "id": "N09",
+  "slug": "sde_geometric_asian",
+  "plan": "1-milstein-bridge-cv",
+  "solver_mtime": "2026-11-26 17:05"
+ }
+]

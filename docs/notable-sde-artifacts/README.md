@@ -44,3 +44,15 @@ not close the same-arm case.
 The three are recoverable only by re-running, which the frozen re-run of the whole suite
 does -- writing all nine at one revision, in one invocation, with artifacts that match
 their records.
+
+---
+
+## Superseded by the frozen run
+
+The frozen re-run happened on 2026-11-23/26 and is in `../notable-frozen-v5/`: all nine
+winners at one revision, in one invocation, each solver's mtime inside the window of the
+run that reported it. The three entries missing here (N01, N06, N08) are recovered there.
+
+This folder is kept as the record of the artifacts behind `docs/paper-results-review.md`
+§3c, which the frozen run's numbers replace, and of the overwrite hole described above --
+which `benchmark/run.py` still has.

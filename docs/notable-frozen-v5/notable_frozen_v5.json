@@ -1,0 +1,4144 @@
+{
+  "config": {
+    "generated_at": "2026-11-26 17:00",
+    "claude_version": "2.1.326 (Claude Code)",
+    "command_template": "claude --plugin-dir . -p \"/conductor workspace/{slug}/problem.md\"",
+    "timeout_seconds": 2400,
+    "verify_sandbox": true,
+    "solver_timeout_s": 300,
+    "mem_mb": 4096,
+    "work_precision": true,
+    "arm": "scheme-matched",
+    "model_override": null,
+    "conductor_env": {
+      "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "1800000"
+    },
+    "n_selected": 9,
+    "agent_file_hashes": {
+      "agents/README.md": "6076499cfa2b0f77",
+      "agents/evaluator-pde.md": "dc62d0fc71e08c7f",
+      "agents/evaluator-sde.md": "aabef5a37f00dfdd",
+      "agents/formulator.md": "de3e26b5b43ca4c0",
+      "agents/plan-creator-pde.md": "2202f1c77ce92271",
+      "agents/plan-creator-sde.md": "776c2caf06a7d883",
+      "agents/solver-pde.md": "26f24e1a637da3a2",
+      "agents/solver-sde.md": "e01539ba703dc127",
+      "commands/conductor.md": "8d070de9b2cd7731",
+      "references/pde_manual.md": "a0a067e8c9ec064c",
+      "references/project_manual.md": "3c3eb4c07e4a128c",
+      "references/sde_manual.md": "d56974dc2594f147",
+      "references/verification_manual.md": "fc03633ef266d2d9",
+      "verifylib/README.md": "e19e0a15a17b8e3b",
+      "verifylib/__init__.py": "cb5f54774244b3dc",
+      "verifylib/audit.py": "9ccfb909bddfd11d",
+      "verifylib/cli.py": "f3e457e783dcbf2b",
+      "verifylib/findings.py": "e745e40289fcb506",
+      "verifylib/gate.py": "56330f4c913ece66",
+      "verifylib/leakage.py": "ef604cb8acd26b7f",
+      "verifylib/operator.py": "822873215b566841",
+      "verifylib/pool.py": "e66ea1048baf410b",
+      "verifylib/ranking.py": "20e79e4403ae4b58",
+      "verifylib/reference.py": "bf3c9aa449e137fc",
+      "verifylib/review.py": "bfe2a877aa05b8d6",
+      "verifylib/schema.py": "b1cb317d4a0d83ba",
+      "verifylib/kernel/__init__.py": "195c01b2e40e23eb",
+      "verifylib/kernel/agreement.py": "6add76182df1660b",
+      "verifylib/kernel/degenerate.py": "75385cee18b44bad",
+      "verifylib/kernel/driver.py": "51f0d9de1b2346ed",
+      "verifylib/kernel/functionals.py": "e9013bea0e9b8d65",
+      "verifylib/kernel/invariants.py": "aec957ee6d840fc2",
+      "verifylib/kernel/ladder.py": "645a7eacda6206f9",
+      "verifylib/kernel/metrics.py": "ae9cbc94ae578b07",
+      "verifylib/kernel/mms.py": "ffe549b3384df506",
+      "verifylib/kernel/plan_meta.py": "3d9ca7d8571b8707",
+      "verifylib/kernel/residual.py": "eaf6951083a12e80",
+      "verifylib/kernel/richardson.py": "a878383a079a31f4",
+      "verifylib/kernel/sandbox.py": "6c0f09152210257c",
+      "verifylib/kernel/schema_bridge.py": "2d291842a5218d6a",
+      "verifylib/kernel/score.py": "c620d77aa16b38d1",
+      "verifylib/kernel/temporal.py": "f2dfedb9593d4530",
+      "verifylib/kernel/sde/__init__.py": "d5048e1182909dc6",
+      "verifylib/kernel/sde/constraints.py": "74bcef1b0f3775b0",
+      "verifylib/kernel/sde/crn.py": "a158819e75177b6d",
+      "verifylib/kernel/sde/driver.py": "7248150add82ff17",
+      "verifylib/kernel/sde/dynkin.py": "30171224196339a4",
+      "verifylib/kernel/sde/laws.py": "8ff5056a2fb531ad",
+      "verifylib/kernel/sde/surrogates.py": "5e4b85d82ffb13fb"
+    },
+    "agent_models": {
+      "agents/evaluator-pde.md": "sonnet",
+      "agents/evaluator-sde.md": "sonnet",
+      "agents/formulator.md": "opus",
+      "agents/plan-creator-pde.md": "opus",
+      "agents/plan-creator-sde.md": "opus",
+      "agents/solver-pde.md": "sonnet",
+      "agents/solver-sde.md": "sonnet"
+    },
+    "model": "mixed:opus+sonnet",
+    "invocation_seconds": 603.5
+  },
+  "results": [
+    {
+      "id": "N01",
+      "slug": "sde_clark_cameron",
+      "type": "sde",
+      "tier": 3,
+      "family": "clark_cameron",
+      "title": "Clark-Cameron system (Levy area)",
+      "challenge": "The counterexample of the strong-convergence literature: no scheme built from the Brownian increments alone beats strong order 1/2 on U = int S dW1 (Clark & Cameron 1980). Fine sub-increments are supplied so a Milstein scheme that assembles the Levy area from them converges at order 1; Euler-Maruyama at the graded step does not.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "pathwise",
+      "arm": "scheme-matched",
+      "model": "mixed:opus+sonnet",
+      "model_override": null,
+      "workspace": "workspace/sde_clark_cameron",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 1096.4,
+        "wall_clock_seconds": 1096.4,
+        "cost": {
+          "session_id": "f69ba66a-0ca9-47b8-84d5-8fcbc06357b3",
+          "transcript": "/Users/sahilmulki/.claude/projects/-Users-sahilmulki-Autonumerics/f69ba66a-0ca9-47b8-84d5-8fcbc06357b3.jsonl",
+          "usd": 6.685508,
+          "model_usage": {
+            "claude-opus-5-5": {
+              "inputTokens": 128,
+              "outputTokens": 82223,
+              "thinkingTokens": 31902,
+              "cacheReadInputTokens": 4671983,
+              "cacheCreationInputTokens": 306771,
+              "cacheCreationEphemeral5mInputTokens": 218496,
+              "cacheCreationEphemeral1hInputTokens": 88275,
+              "webSearchRequests": 0,
+              "costUSD": 4.3780486
+            },
+            "claude-sonnet-5-5": {
+              "inputTokens": 126,
+              "outputTokens": 39617,
+              "thinkingTokens": 2582,
+              "cacheReadInputTokens": 2912000,
+              "cacheCreationInputTokens": 647935,
+              "cacheCreationEphemeral5mInputTokens": 647935,
+              "cacheCreationEphemeral1hInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 2.3074595000000007
+            }
+          }
+        },
+        "started_at": "2026-11-23T01:02:17",
+        "ended_at": "2026-11-23T01:20:34",
+        "log": "benchmark/results/pipeline/logs/sde_clark_cameron.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "state_mtime": 1795414821.6086884,
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "1-levy-area-milstein-drift-corrected",
+        "best_plan_source": "state",
+        "best_score": 9,
+        "certified": false,
+        "n_plans": 3,
+        "total_iters": 6,
+        "plans": {
+          "1-levy-area-milstein-drift-corrected": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": "Milstein with Levy area I_(2,1) assembled from dW_sub and mu*I_(0,1) replaced by its conditional mean 0.5*mu*dt*dW1; strong order 1.0.",
+            "state": "stopped",
+            "certified": false
+          },
+          "2-levy-area-milstein": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": "Standard Milstein with Levy area I_(2,1) from dW_sub, omitting the mu*I_(0,1) term; strong order 1.0.",
+            "state": "stopped",
+            "certified": false
+          },
+          "3-step-increment-conditional-expectation": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": "Control scheme using only step increments dW, iterated integrals replaced by conditional expectations (trapezoid on U); strong order 0.5, expected to miss the 2% gate.",
+            "state": "stopped",
+            "certified": false
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "pathwise",
+        "passed": true,
+        "verified_score": 10,
+        "pathwise_rel_err": 0.004467620540686654,
+        "pathwise_tol_used": 0.02,
+        "pathwise_truth": "reference",
+        "pathwise_reference_error": 0.002,
+        "pathwise_abs_l2": null,
+        "pathwise_abs_l2_note": "problem declares no save grid",
+        "noise_dimension": 2,
+        "run": {
+          "num_paths": 1000,
+          "dt": 0.04,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 0.041673,
+          "crn": {
+            "seed": 42,
+            "Nt_fine": 6400,
+            "aggregate": 256,
+            "m": 2
+          }
+        },
+        "pathwise_level": {
+          "num_paths": 1000,
+          "dt": 0.04,
+          "Nt_fine": 6400,
+          "aggregate": 256
+        },
+        "pathwise_ladder": {
+          "status": "ok",
+          "levels": [
+            {
+              "dt": 0.04,
+              "num_paths": 1000
+            },
+            {
+              "dt": 0.02,
+              "num_paths": 1000
+            },
+            {
+              "dt": 0.01,
+              "num_paths": 1000
+            }
+          ],
+          "mean_abs_diff": [
+            0.0037421606009019207,
+            0.0020456173077424322
+          ],
+          "rel_to_scale": [
+            0.002307198635631259,
+            0.0012612086879193584
+          ],
+          "terminal_std_across_paths": 1.325711440376647,
+          "roundoff_rel": 1e-12,
+          "degenerate": false,
+          "solve_s": [
+            0.034141,
+            0.035813
+          ]
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 1000,
+              "dt": 0.04,
+              "rel_err": 0.004467620540686654,
+              "solve_s": 0.041673,
+              "wall_s": 0.26,
+              "graded": true,
+              "steps": 25,
+              "paths": 1000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "milstein",
+              "evals": 25000
+            },
+            {
+              "num_paths": 1000,
+              "dt": 0.02,
+              "rel_err": 0.003128254293875747,
+              "solve_s": 0.034429,
+              "wall_s": 0.25,
+              "graded": false,
+              "steps": 50,
+              "paths": 1000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "milstein",
+              "evals": 50000
+            },
+            {
+              "num_paths": 1000,
+              "dt": 0.01,
+              "rel_err": 0.002486506874430036,
+              "solve_s": 0.035963,
+              "wall_s": 0.25,
+              "graded": false,
+              "steps": 100,
+              "paths": 1000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "milstein",
+              "evals": 100000
+            }
+          ]
+        },
+        "plan_dir": "workspace/sde_clark_cameron/plans/1-levy-area-milstein-drift-corrected"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 9,
+        "provenance": "analytic",
+        "certified": false,
+        "tier": "A",
+        "bound_by": "strong_gate_not_measured",
+        "reason": "the problem declares a pathwise strong-error gate (strong_rel_err_max 0.02) and the kernel's strong error (0.0124) is a self-convergence estimate calibrated for ranking only, so the gate could not be evaluated",
+        "agent_cap": null
+      },
+      "verdict": "UNDERCLAIM",
+      "harness_by_plan": {
+        "plans": {
+          "1-levy-area-milstein-drift-corrected": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "pathwise"
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.0142,
+              "reference_outcome": "validated",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.0277,
+              "dynkin_z": 1.402,
+              "solve_time_s": 1.846,
+              "observed_order": 0.97,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "milstein",
+              "strong_rel_err": 0.0124,
+              "strong_rel_err_se": 0.0001498,
+              "strong_rel_err_tol": 0.02,
+              "strong_rel_err_component": 1.0,
+              "observed_order_se": 0.0246,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.0745,
+              "mc_se_rel": 0.0182,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "solver_sha256": "99fe334884c9ff0e8a3f3c943411dfb3aaa4979d6067a75274d0c973dd3d8c55"
+            },
+            "is_winner": true,
+            "scheme_family": "milstein",
+            "harness_error": 0.22338102703433269,
+            "harness_error_margin": 0.0049949516133248615,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 9,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "strong_gate_not_measured",
+              "reason": "the problem declares a pathwise strong-error gate (strong_rel_err_max 0.02) and the kernel's strong error (0.0124) is a self-convergence estimate calibrated for ranking only, so the gate could not be evaluated",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "2-levy-area-milstein": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "pathwise"
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.0142,
+              "reference_outcome": "validated",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.0277,
+              "dynkin_z": 1.402,
+              "solve_time_s": 1.957,
+              "observed_order": 0.97,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "milstein",
+              "strong_rel_err": 0.0124,
+              "strong_rel_err_se": 0.0001498,
+              "strong_rel_err_tol": 0.02,
+              "strong_rel_err_component": 1.0,
+              "observed_order_se": 0.0246,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.0745,
+              "mc_se_rel": 0.0182,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_frac_tol": 0.0581,
+              "moment_bias_actionable": false,
+              "solver_sha256": "529366c9e1f3ec5158b78295b8000c12d77bdd150645c6fafbfdca7bbc97b0c7"
+            },
+            "is_winner": false,
+            "scheme_family": "milstein",
+            "harness_error": 0.22338102703433277,
+            "harness_error_margin": 0.004994951613324862,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 9,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "strong_gate_not_measured",
+              "reason": "the problem declares a pathwise strong-error gate (strong_rel_err_max 0.02) and the kernel's strong error (0.0124) is a self-convergence estimate calibrated for ranking only, so the gate could not be evaluated",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "3-step-increment-conditional-expectation": {
+            "harness": {
+              "status": "ok",
+              "passed": false,
+              "verified_score": 10,
+              "gt_kind": "pathwise"
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.0142,
+              "reference_outcome": "validated",
+              "design_order": 0.5,
+              "invariant_max_drift": 0.0283,
+              "dynkin_z": 1.5108,
+              "solve_time_s": 1.531,
+              "observed_order": 0.5027,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "other",
+              "strong_rel_err": 0.1531,
+              "strong_rel_err_se": 0.001865,
+              "strong_rel_err_tol": 0.02,
+              "strong_rel_err_component": 1.0,
+              "observed_order_se": 0.0248,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.065,
+              "mc_se_rel": 0.0182,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 0.0764,
+              "moment_bias_actionable": false,
+              "solver_sha256": "1b35f32dc71a8406ab4e14ce33911961d5109cbed8f0a6f585c0a6edbc5aadba"
+            },
+            "is_winner": false,
+            "scheme_family": "other",
+            "harness_error": 1.7980421824218211,
+            "harness_error_margin": 0.04020544546307269,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 9,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "strong_gate_not_measured",
+              "reason": "the problem declares a pathwise strong-error gate (strong_rel_err_max 0.02) and the kernel's strong error (0.153) is a self-convergence estimate calibrated for ranking only, so the gate could not be evaluated",
+              "agent_cap": null
+            },
+            "verdict": "FAIL"
+          }
+        },
+        "winner": "1-levy-area-milstein-drift-corrected",
+        "best_plan_by_harness": "1-levy-area-milstein-drift-corrected",
+        "best_harness_err": 0.22338102703433269,
+        "winner_harness_err": 0.22338102703433269,
+        "harness_error_metric": "relative strong error / its gate",
+        "harness_error_margin": 0.0049949516133248615,
+        "wrong_plan_won": false
+      }
+    },
+    {
+      "id": "N02",
+      "slug": "sde_kubo_oscillator",
+      "type": "sde",
+      "tier": 3,
+      "family": "kubo_oscillator",
+      "title": "Kubo oscillator (Stratonovich)",
+      "challenge": "The textbook Stratonovich system (Kloeden & Platen; Milstein, Repin & Tretyakov 2002): the exact flow is a rotation and conserves |X|. Reading the coefficients as Ito solves a different equation whose amplitude grows by e^{sigma^2 T/2}.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "pathwise",
+      "arm": "scheme-matched",
+      "model": "mixed:opus+sonnet",
+      "model_override": null,
+      "workspace": "workspace/sde_kubo_oscillator",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 797.9,
+        "wall_clock_seconds": 797.9,
+        "cost": {
+          "session_id": "d0539f3c-0009-4606-bf20-66698a8a2d63",
+          "transcript": "/Users/sahilmulki/.claude/projects/-Users-sahilmulki-Autonumerics/d0539f3c-0009-4606-bf20-66698a8a2d63.jsonl",
+          "usd": 5.892817,
+          "model_usage": {
+            "claude-opus-5-5": {
+              "inputTokens": 106,
+              "outputTokens": 65066,
+              "thinkingTokens": 22933,
+              "cacheReadInputTokens": 3449258,
+              "cacheCreationInputTokens": 272961,
+              "cacheCreationEphemeral5mInputTokens": 193063,
+              "cacheCreationEphemeral1hInputTokens": 79898,
+              "webSearchRequests": 0,
+              "costUSD": 3.5960946000000007
+            },
+            "claude-sonnet-5-5": {
+              "inputTokens": 134,
+              "outputTokens": 43905,
+              "thinkingTokens": 3097,
+              "cacheReadInputTokens": 3036794,
+              "cacheCreationInputTokens": 621490,
+              "cacheCreationEphemeral5mInputTokens": 621490,
+              "cacheCreationEphemeral1hInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 2.2967224000000006
+            }
+          }
+        },
+        "started_at": "2026-11-23T03:30:45",
+        "ended_at": "2026-11-23T03:44:03",
+        "log": "benchmark/results/pipeline/logs/sde_kubo_oscillator.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "state_mtime": 1795423403.1969337,
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "2-stochastic-heun",
+        "best_plan_source": "state",
+        "best_score": 9,
+        "certified": false,
+        "n_plans": 3,
+        "total_iters": 6,
+        "plans": {
+          "1-cayley-midpoint": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": "Stratonovich implicit midpoint (Cayley rational rotation), norm-preserving per path, strong order 1, dt=0.04.",
+            "state": "stopped",
+            "certified": false
+          },
+          "2-stochastic-heun": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": "Was explicit Stratonovich Heun; bias retry replaced it with a 4-stage RK step on f*dt+g*dW (one shared dW), dt=0.04.",
+            "state": "stopped",
+            "certified": false
+          },
+          "3-milstein": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": "Was Ito Milstein; bias retry rewrote it into the Cayley midpoint step (identical to plan 1), dt=0.04.",
+            "state": "stopped",
+            "certified": false
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "pathwise",
+        "passed": true,
+        "verified_score": 10,
+        "pathwise_rel_err": 0.0005278802161259215,
+        "pathwise_tol_used": 0.2,
+        "pathwise_truth": "exact",
+        "pathwise_abs_l2": null,
+        "pathwise_abs_l2_note": "problem declares no save grid",
+        "noise_dimension": 1,
+        "run": {
+          "num_paths": 2000,
+          "dt": 0.04,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 0.002422,
+          "crn": {
+            "seed": 42,
+            "Nt_fine": 400,
+            "aggregate": 16,
+            "m": null
+          }
+        },
+        "pathwise_level": {
+          "num_paths": 2000,
+          "dt": 0.04,
+          "Nt_fine": 400,
+          "aggregate": 16
+        },
+        "diagnostics": [
+          {
+            "name": "conserved_norm",
+            "gate": true,
+            "value": 0.00036293514540963745,
+            "passed": true
+          },
+          {
+            "name": "amplitude_spread",
+            "gate": false,
+            "value": 0.0003049292922210956,
+            "passed": true
+          }
+        ],
+        "pathwise_ladder": {
+          "status": "ok",
+          "levels": [
+            {
+              "dt": 0.04,
+              "num_paths": 2000
+            },
+            {
+              "dt": 0.02,
+              "num_paths": 2000
+            },
+            {
+              "dt": 0.01,
+              "num_paths": 2000
+            }
+          ],
+          "mean_abs_diff": [
+            0.00017381863871484093,
+            4.496477635850797e-05
+          ],
+          "rel_to_scale": [
+            0.00027289658884351167,
+            7.059504191883023e-05
+          ],
+          "terminal_std_across_paths": 0.5560440977249776,
+          "roundoff_rel": 1e-12,
+          "degenerate": false,
+          "solve_s": [
+            0.004394,
+            0.008773
+          ]
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 2000,
+              "dt": 0.04,
+              "rel_err": 0.0005278802161259215,
+              "solve_s": 0.002422,
+              "wall_s": 0.12,
+              "graded": true,
+              "steps": 25,
+              "paths": 2000,
+              "stages": 1,
+              "stages_source": "default",
+              "scheme_family": "other",
+              "evals": 50000
+            }
+          ]
+        },
+        "plan_dir": "workspace/sde_kubo_oscillator/plans/2-stochastic-heun"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 9,
+        "provenance": "analytic",
+        "certified": false,
+        "tier": "A",
+        "bound_by": "strong_gate_not_measured",
+        "reason": "the problem declares a pathwise strong-error gate (strong_rel_err_max 0.2) and the kernel's strong error (0.000407) is a self-convergence estimate calibrated for ranking only, so the gate could not be evaluated",
+        "agent_cap": null
+      },
+      "verdict": "UNDERCLAIM",
+      "harness_by_plan": {
+        "plans": {
+          "1-cayley-midpoint": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "pathwise"
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.0234,
+              "reference_outcome": "validated",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.0,
+              "dynkin_z": 1.5483,
+              "solve_time_s": 0.117,
+              "observed_order": 0.9628,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "implicit",
+              "strong_rel_err": 0.0175,
+              "strong_rel_err_se": 0.0001296,
+              "strong_rel_err_tol": 0.2,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.0111,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 6.0,
+              "mc_se_rel": 0.00697,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_binding": "mean",
+              "moment_bias_frac_tol": 0.0722,
+              "moment_bias_actionable": false,
+              "solver_sha256": "8c7c362b1d0fd32b6ec234ae1288ca34ecda3790f2c58b9a598d50220c3c5d27"
+            },
+            "is_winner": false,
+            "scheme_family": "implicit",
+            "harness_error": 0.08114020030702909,
+            "harness_error_margin": 0.001282939213862528,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 9,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "strong_gate_not_measured",
+              "reason": "the problem declares a pathwise strong-error gate (strong_rel_err_max 0.2) and the kernel's strong error (0.0175) is a self-convergence estimate calibrated for ranking only, so the gate could not be evaluated",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "2-stochastic-heun": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "pathwise"
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.0102,
+              "reference_outcome": "validated",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.0003632,
+              "dynkin_z": 1.5111,
+              "solve_time_s": 0.178,
+              "observed_order": 1.9006,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "other",
+              "strong_rel_err": 0.0004069,
+              "strong_rel_err_se": 4.377e-06,
+              "strong_rel_err_tol": 0.2,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.0158,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 2.4399,
+              "mc_se_rel": 0.00695,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 0.005197,
+              "moment_bias_actionable": false,
+              "solver_sha256": "a5abd73bdd1ceb7f177bfbf810bdf551aeb35d701f8f6878fe645dfbf4f7247f"
+            },
+            "is_winner": true,
+            "scheme_family": "other",
+            "harness_error": 0.0026394010806296076,
+            "harness_error_margin": 4.173259536749643e-05,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 9,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "strong_gate_not_measured",
+              "reason": "the problem declares a pathwise strong-error gate (strong_rel_err_max 0.2) and the kernel's strong error (0.000407) is a self-convergence estimate calibrated for ranking only, so the gate could not be evaluated",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "3-milstein": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "pathwise"
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.0234,
+              "reference_outcome": "validated",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.0,
+              "dynkin_z": 1.5483,
+              "solve_time_s": 0.119,
+              "observed_order": 0.9628,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "implicit",
+              "strong_rel_err": 0.0175,
+              "strong_rel_err_se": 0.0001296,
+              "strong_rel_err_tol": 0.2,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.0111,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 6.0,
+              "mc_se_rel": 0.00697,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_binding": "mean",
+              "moment_bias_frac_tol": 0.0722,
+              "moment_bias_actionable": false,
+              "solver_sha256": "10c19b66b1c4d6c3d45330890170652c7114f8baae4427da6901ad70a7bab786"
+            },
+            "is_winner": false,
+            "scheme_family": "implicit",
+            "harness_error": 0.08114020030702908,
+            "harness_error_margin": 0.0012829392138625276,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 9,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "strong_gate_not_measured",
+              "reason": "the problem declares a pathwise strong-error gate (strong_rel_err_max 0.2) and the kernel's strong error (0.0175) is a self-convergence estimate calibrated for ranking only, so the gate could not be evaluated",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          }
+        },
+        "winner": "2-stochastic-heun",
+        "best_plan_by_harness": "2-stochastic-heun",
+        "best_harness_err": 0.0026394010806296076,
+        "winner_harness_err": 0.0026394010806296076,
+        "harness_error_metric": "relative strong error / its gate",
+        "harness_error_margin": 4.173259536749643e-05,
+        "wrong_plan_won": false
+      }
+    },
+    {
+      "id": "N03",
+      "slug": "sde_aitsahalia_rate",
+      "type": "sde",
+      "tier": 3,
+      "family": "aitsahalia",
+      "title": "Ait-Sahalia interest-rate model",
+      "challenge": "Ait-Sahalia's (1996) strongly nonlinear short rate: a 1/X drift that repels the origin, a superlinear X^2 mean reversion and an X^{3/2} diffusion. Backward Euler-Maruyama preserves positivity (Szpruch, Mao, Higham & Pan 2011); the explicit step overshoots into X < 0 and the variance it reports is garbage.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "reference",
+      "arm": "scheme-matched",
+      "model": "mixed:opus+sonnet",
+      "model_override": null,
+      "workspace": "workspace/sde_aitsahalia_rate",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 926.4,
+        "wall_clock_seconds": 926.4,
+        "cost": {
+          "session_id": "67fa307b-fda4-4dd4-98e0-96aa9147b064",
+          "transcript": "/Users/sahilmulki/.claude/projects/-Users-sahilmulki-Autonumerics/67fa307b-fda4-4dd4-98e0-96aa9147b064.jsonl",
+          "usd": 5.199197,
+          "model_usage": {
+            "claude-opus-5-5": {
+              "inputTokens": 118,
+              "outputTokens": 71586,
+              "thinkingTokens": 26931,
+              "cacheReadInputTokens": 4287851,
+              "cacheCreationInputTokens": 278712,
+              "cacheCreationEphemeral5mInputTokens": 212889,
+              "cacheCreationEphemeral1hInputTokens": 65823,
+              "webSearchRequests": 0,
+              "costUSD": 3.8807911999999996
+            },
+            "claude-sonnet-5-5": {
+              "inputTokens": 64,
+              "outputTokens": 22709,
+              "thinkingTokens": 1421,
+              "cacheReadInputTokens": 1517880,
+              "cacheCreationInputTokens": 375760,
+              "cacheCreationEphemeral5mInputTokens": 375760,
+              "cacheCreationEphemeral1hInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 1.318406
+            }
+          }
+        },
+        "started_at": "2026-11-23T03:44:21",
+        "ended_at": "2026-11-23T03:59:48",
+        "log": "benchmark/results/pipeline/logs/sde_aitsahalia_rate.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "state_mtime": 1795424344.069154,
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "1-lamperti-trapezoidal",
+        "best_plan_source": "state",
+        "best_score": 10,
+        "certified": true,
+        "n_plans": 3,
+        "total_iters": 3,
+        "plans": {
+          "1-lamperti-trapezoidal": {
+            "iter": 1,
+            "score": 10,
+            "one_sentence": "Lamperti transform Z = X^(-1/2) (additive noise) with a drift-implicit trapezoidal step, dt=0.02, 200k paths; family implicit.",
+            "state": "winner",
+            "certified": true
+          },
+          "2-drift-implicit-milstein": {
+            "iter": 1,
+            "score": 10,
+            "one_sentence": "Drift-implicit Milstein directly in X with a per-step cubic solve (unique positive root), dt=0.02, 200k paths; family milstein.",
+            "state": "await_solver",
+            "certified": true
+          },
+          "3-drift-implicit-euler": {
+            "iter": 1,
+            "score": 10,
+            "one_sentence": "Drift-implicit Euler baseline in X with the same cubic solve, no Milstein term, dt=0.02, 200k paths; family implicit.",
+            "state": "await_solver",
+            "certified": true
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "reference",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.004424208368942819,
+        "worst_mean_rel_err": 0.00023730746114296843,
+        "components": [
+          {
+            "component": "X",
+            "empirical_mean": 0.7486883718488225,
+            "exact_mean": 0.7488660833578002,
+            "mean_rel_err": 0.00023730746114296843,
+            "empirical_variance": 0.049581202499988146,
+            "exact_variance": 0.04936281113783758,
+            "variance_rel_err": 0.004424208368942819,
+            "near_zero_mean": false,
+            "mean_ok": true,
+            "variance_ok": true,
+            "passed": true,
+            "mean_tol": 0.05,
+            "variance_tol": 0.1,
+            "reference_se_mean": 2e-06,
+            "reference_se_variance": 5e-06,
+            "empirical_se_mean": 0.0004979016092562272,
+            "empirical_se_variance": 0.000330879248596621,
+            "mean_resolved": false,
+            "variance_resolved": false
+          }
+        ],
+        "run": {
+          "num_paths": 200000,
+          "dt": 0.02,
+          "T": 0.1,
+          "seed": 42,
+          "solve_s": 1.80503
+        },
+        "diagnostics": [
+          {
+            "name": "positive",
+            "gate": true,
+            "value": 0.0,
+            "passed": true
+          }
+        ],
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 200000,
+              "dt": 0.02,
+              "rel_err": 0.004424208368942819,
+              "solve_s": 1.80503,
+              "wall_s": 1.9,
+              "graded": true,
+              "steps": 5,
+              "paths": 200000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "implicit",
+              "evals": 1000000
+            }
+          ]
+        },
+        "seed_study": {
+          "status": "not_run",
+          "reason": "not requested"
+        },
+        "plan_dir": "workspace/sde_aitsahalia_rate/plans/1-lamperti-trapezoidal"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 10,
+        "provenance": "surrogate",
+        "certified": true,
+        "tier": "A_prime",
+        "bound_by": "rubric",
+        "reason": "a surrogate reference passed its trust guard and the moments match it",
+        "agent_cap": null
+      },
+      "verdict": "VERIFIED_PASS",
+      "harness_by_plan": {
+        "plans": {
+          "1-lamperti-trapezoidal": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "reference",
+              "worst_variance_rel_err": 0.004424208368942819,
+              "worst_mean_rel_err": 0.00023730746114296843,
+              "components": [
+                {
+                  "component": "X",
+                  "empirical_mean": 0.7486883718488225,
+                  "exact_mean": 0.7488660833578002,
+                  "mean_rel_err": 0.00023730746114296843,
+                  "empirical_variance": 0.049581202499988146,
+                  "exact_variance": 0.04936281113783758,
+                  "variance_rel_err": 0.004424208368942819,
+                  "near_zero_mean": false,
+                  "mean_ok": true,
+                  "variance_ok": true,
+                  "passed": true,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "reference_se_mean": 2e-06,
+                  "reference_se_variance": 5e-06,
+                  "empirical_se_mean": 0.0004979016092562272,
+                  "empirical_se_variance": 0.000330879248596621,
+                  "mean_resolved": false,
+                  "variance_resolved": false
+                }
+              ],
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "surrogate",
+              "estimated_rel_error": 0.004391,
+              "design_order": 0.5,
+              "invariant_max_drift": 0.0007279,
+              "dynkin_z": 1.2872,
+              "solve_time_s": 1.96,
+              "observed_order": 0.9879,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "implicit",
+              "strong_rel_err": 0.0183,
+              "strong_rel_err_se": 0.0001198,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.0118,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 1.1379,
+              "mc_se_rel": 0.006673,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_binding": "mean",
+              "moment_bias_frac_tol": 0.007629,
+              "moment_bias_actionable": false,
+              "solver_sha256": "9c110e34e86136b825281f6f1de755bf3afe295fa90f76fb2024239d5ca7d16a"
+            },
+            "is_winner": true,
+            "scheme_family": "implicit",
+            "harness_error": 0.04424208368942818,
+            "harness_error_margin": 0.06703771866808592,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "surrogate",
+              "certified": true,
+              "tier": "A_prime",
+              "bound_by": "rubric",
+              "reason": "a surrogate reference passed its trust guard and the moments match it",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          },
+          "2-drift-implicit-milstein": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "reference",
+              "worst_variance_rel_err": 0.0006010138864856985,
+              "worst_mean_rel_err": 0.01837881021062916,
+              "components": [
+                {
+                  "component": "X",
+                  "empirical_mean": 0.7626293509770105,
+                  "exact_mean": 0.7488660833578002,
+                  "mean_rel_err": 0.01837881021062916,
+                  "empirical_variance": 0.04939247887280739,
+                  "exact_variance": 0.04936281113783758,
+                  "variance_rel_err": 0.0006010138864856985,
+                  "near_zero_mean": false,
+                  "mean_ok": true,
+                  "variance_ok": true,
+                  "passed": true,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "reference_se_mean": 2e-06,
+                  "reference_se_variance": 5e-06,
+                  "empirical_se_mean": 0.0004969531108304253,
+                  "empirical_se_variance": 0.0003241637676240338,
+                  "mean_resolved": true,
+                  "variance_resolved": false
+                }
+              ],
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "surrogate",
+              "estimated_rel_error": 0.0184,
+              "d1_outcome": "clean",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.000712,
+              "dynkin_z": 0.423,
+              "solve_time_s": 0.681,
+              "observed_order": 0.924,
+              "order_floor": 1.0,
+              "scheme_family": "milstein",
+              "strong_rel_err": 0.0295,
+              "strong_rel_err_se": 0.000209,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.0121,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 1.15,
+              "mc_se_rel": 0.00656,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.428,
+              "kind": "sde",
+              "moment_bias_binding": "mean",
+              "moment_bias_frac_tol": 0.365,
+              "moment_bias_actionable": true,
+              "solver_sha256": "9b2bd50bb3f88cb491b72a75b9ec59a8fbecd07a85736f76acef442f5cad5024"
+            },
+            "is_winner": false,
+            "scheme_family": "milstein",
+            "harness_error": 0.36757620421258314,
+            "harness_error_margin": 0.013272256452326178,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "surrogate",
+              "certified": true,
+              "tier": "A_prime",
+              "bound_by": "rubric",
+              "reason": "a surrogate reference passed its trust guard and the moments match it",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          },
+          "3-drift-implicit-euler": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "reference",
+              "worst_variance_rel_err": 0.005237529616057344,
+              "worst_mean_rel_err": 0.019626756226928766,
+              "components": [
+                {
+                  "component": "X",
+                  "empirical_mean": 0.7635638954224787,
+                  "exact_mean": 0.7488660833578002,
+                  "mean_rel_err": 0.019626756226928766,
+                  "empirical_variance": 0.04910427195257131,
+                  "exact_variance": 0.04936281113783758,
+                  "variance_rel_err": 0.005237529616057344,
+                  "near_zero_mean": false,
+                  "mean_ok": true,
+                  "variance_ok": true,
+                  "passed": true,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "reference_se_mean": 2e-06,
+                  "reference_se_variance": 5e-06,
+                  "empirical_se_mean": 0.000495501119840164,
+                  "empirical_se_variance": 0.00022919480721455087,
+                  "mean_resolved": true,
+                  "variance_resolved": false
+                }
+              ],
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "surrogate",
+              "estimated_rel_error": 0.0196,
+              "design_order": 0.5,
+              "invariant_max_drift": 0.000773,
+              "dynkin_z": 0.4736,
+              "solve_time_s": 0.986,
+              "observed_order": 0.512,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "implicit",
+              "strong_rel_err": 0.1084,
+              "strong_rel_err_se": 0.0007765,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.0127,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 1.1118,
+              "mc_se_rel": 0.004668,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_binding": "mean",
+              "moment_bias_frac_tol": 0.3978,
+              "moment_bias_actionable": true,
+              "solver_sha256": "6a054903bd06c980464a41ca388c4aa42fbac74f6022dbd06f990697370d3975"
+            },
+            "is_winner": false,
+            "scheme_family": "implicit",
+            "harness_error": 0.3925351245385753,
+            "harness_error_margin": 0.013233478378931941,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "surrogate",
+              "certified": true,
+              "tier": "A_prime",
+              "bound_by": "rubric",
+              "reason": "a surrogate reference passed its trust guard and the moments match it",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          }
+        },
+        "winner": "1-lamperti-trapezoidal",
+        "best_plan_by_harness": "1-lamperti-trapezoidal",
+        "best_harness_err": 0.04424208368942818,
+        "winner_harness_err": 0.04424208368942818,
+        "harness_error_metric": "worst moment error / its gate",
+        "harness_error_margin": 0.06703771866808592,
+        "wrong_plan_won": false
+      }
+    },
+    {
+      "id": "N04",
+      "slug": "sde_wright_fisher_mutation",
+      "type": "sde",
+      "tier": 3,
+      "family": "wright_fisher",
+      "title": "Wright-Fisher diffusion with mutation",
+      "challenge": "Kimura's diffusion of population genetics (the Jacobi diffusion in finance), bounded in [0,1] with both boundaries attainable at these mutation rates. A boundary-preserving step is required; clipping to [0,1] stays finite and biases the mean by 8%.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "arm": "scheme-matched",
+      "model": "mixed:opus+sonnet",
+      "model_override": null,
+      "workspace": "workspace/sde_wright_fisher_mutation",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 574.0,
+        "wall_clock_seconds": 574.0,
+        "cost": {
+          "session_id": "ccd3f7ec-1c49-4d03-a4ae-611392329cc4",
+          "transcript": "/Users/sahilmulki/.claude/projects/-Users-sahilmulki-Autonumerics/ccd3f7ec-1c49-4d03-a4ae-611392329cc4.jsonl",
+          "usd": 4.380083,
+          "model_usage": {
+            "claude-opus-5-5": {
+              "inputTokens": 82,
+              "outputTokens": 57893,
+              "thinkingTokens": 24896,
+              "cacheReadInputTokens": 2550307,
+              "cacheCreationInputTokens": 247898,
+              "cacheCreationEphemeral5mInputTokens": 176125,
+              "cacheCreationEphemeral1hInputTokens": 71773,
+              "webSearchRequests": 0,
+              "costUSD": 3.1230583999999997
+            },
+            "claude-sonnet-5-5": {
+              "inputTokens": 66,
+              "outputTokens": 19965,
+              "thinkingTokens": 983,
+              "cacheReadInputTokens": 1556156,
+              "cacheCreationInputTokens": 360651,
+              "cacheCreationEphemeral5mInputTokens": 360651,
+              "cacheCreationEphemeral1hInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 1.2570251000000001
+            }
+          }
+        },
+        "started_at": "2026-11-23T11:45:44",
+        "ended_at": "2026-11-23T11:55:18",
+        "log": "benchmark/results/pipeline/logs/sde_wright_fisher_mutation.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "state_mtime": 1795452907.3303626,
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "1-beta-moment-matched",
+        "best_plan_source": "state",
+        "best_score": 10,
+        "certified": true,
+        "n_plans": 3,
+        "total_iters": 3,
+        "plans": {
+          "1-beta-moment-matched": {
+            "iter": 1,
+            "score": 10,
+            "one_sentence": "Per-step Beta draw matching the exact one-step conditional mean and variance, dt=0.04 (25 steps), support-preserving.",
+            "state": "winner",
+            "certified": true
+          },
+          "2-milstein-reflected": {
+            "iter": 1,
+            "score": 10,
+            "one_sentence": "Scalar Milstein with bounded correction 0.25\u03c3\u00b2(1\u22122X)(dW\u00b2\u2212dt), reflected into [0,1] each step.",
+            "state": "certified (runner-up)",
+            "certified": true
+          },
+          "3-euler-maruyama-projected": {
+            "iter": 1,
+            "score": 8,
+            "one_sentence": "Euler\u2013Maruyama with per-step projection onto [0,1]; control plan, expected to miss the 5% mean gate.",
+            "state": "await_solver",
+            "certified": false
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0016912915606566612,
+        "worst_mean_rel_err": 0.00015927278883094017,
+        "components": [
+          {
+            "component": "X",
+            "empirical_mean": 0.22702503845825725,
+            "exact_mean": 0.22706120312931496,
+            "mean_rel_err": 0.00015927278883094017,
+            "empirical_variance": 0.06109605438661433,
+            "exact_variance": 0.060992897613620416,
+            "variance_rel_err": 0.0016912915606566612,
+            "near_zero_mean": false,
+            "mean_ok": true,
+            "variance_ok": true,
+            "passed": true,
+            "mean_tol": 0.05,
+            "variance_tol": 0.1,
+            "empirical_se_mean": 0.0005527026975988734,
+            "empirical_se_variance": 0.00022730372496806717,
+            "mean_resolved": false,
+            "variance_resolved": false
+          }
+        ],
+        "run": {
+          "num_paths": 200000,
+          "dt": 0.04,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 0.268764
+        },
+        "diagnostics": [
+          {
+            "name": "within_unit_interval",
+            "gate": true,
+            "value": 0.0,
+            "passed": true
+          }
+        ],
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 200000,
+              "dt": 0.04,
+              "rel_err": 0.0016912915606566612,
+              "solve_s": 0.268764,
+              "wall_s": 0.36,
+              "graded": true,
+              "steps": 25,
+              "paths": 200000,
+              "stages": 1,
+              "stages_source": "default",
+              "scheme_family": "other",
+              "evals": 5000000
+            }
+          ]
+        },
+        "seed_study": {
+          "status": "not_run",
+          "reason": "not requested"
+        },
+        "plan_dir": "workspace/sde_wright_fisher_mutation/plans/1-beta-moment-matched"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 10,
+        "provenance": "analytic",
+        "certified": true,
+        "tier": "A",
+        "bound_by": "rubric",
+        "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved (the order study reported 'unresolved' and is not counted against the plan either way)",
+        "agent_cap": null
+      },
+      "verdict": "VERIFIED_PASS",
+      "harness_by_plan": {
+        "plans": {
+          "1-beta-moment-matched": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0016912915606566612,
+              "worst_mean_rel_err": 0.00015927278883094017,
+              "components": [
+                {
+                  "component": "X",
+                  "empirical_mean": 0.22702503845825725,
+                  "exact_mean": 0.22706120312931496,
+                  "mean_rel_err": 0.00015927278883094017,
+                  "empirical_variance": 0.06109605438661433,
+                  "exact_variance": 0.060992897613620416,
+                  "variance_rel_err": 0.0016912915606566612,
+                  "near_zero_mean": false,
+                  "mean_ok": true,
+                  "variance_ok": true,
+                  "passed": true,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "empirical_se_mean": 0.0005527026975988734,
+                  "empirical_se_variance": 0.00022730372496806717,
+                  "mean_resolved": false,
+                  "variance_resolved": false
+                }
+              ],
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.002922,
+              "reference_outcome": "validated",
+              "design_order": 0.4,
+              "invariant_max_drift": 0.003794,
+              "dynkin_z": 1.1931,
+              "solve_time_s": 0.158,
+              "order_check": "unresolved",
+              "order_floor": 0.4,
+              "scheme_family": "other",
+              "observed_order_se": 0.007148,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.4209,
+              "mc_se_rel": 0.007407,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "solver_sha256": "7279c30f9ec7927ed1b7c5815047f19347dbaaed625311748d0c0447c8a4ea34"
+            },
+            "is_winner": true,
+            "scheme_family": "other",
+            "harness_error": 0.01691291560656661,
+            "harness_error_margin": 0.0372672448533266,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "analytic",
+              "certified": true,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved (the order study reported 'unresolved' and is not counted against the plan either way)",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          },
+          "2-milstein-reflected": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.036329293324758635,
+              "worst_mean_rel_err": 0.015224998839993512,
+              "components": [
+                {
+                  "component": "X",
+                  "empirical_mean": 0.23051820968356632,
+                  "exact_mean": 0.22706120312931496,
+                  "mean_rel_err": 0.015224998839993512,
+                  "empirical_variance": 0.0632087264817526,
+                  "exact_variance": 0.060992897613620416,
+                  "variance_rel_err": 0.036329293324758635,
+                  "near_zero_mean": false,
+                  "mean_ok": true,
+                  "variance_ok": true,
+                  "passed": true,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "empirical_se_mean": 0.0005621775808485812,
+                  "empirical_se_variance": 0.00023181776534106629,
+                  "mean_resolved": true,
+                  "variance_resolved": true
+                }
+              ],
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.029,
+              "reference_outcome": "validated",
+              "design_order": 0.5,
+              "invariant_max_drift": 0.005098,
+              "dynkin_z": 2.2272,
+              "solve_time_s": 0.123,
+              "observed_order": 0.5585,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "milstein",
+              "strong_rel_err": 0.2212,
+              "strong_rel_err_se": 0.001563,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.0116,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.2926,
+              "mc_se_rel": 0.007386,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 0.2646,
+              "moment_bias_actionable": true,
+              "solver_sha256": "a54f1209751b91985ea6010139a5c6482d9d0cd9bf1098258037c02a7e17a8ed"
+            },
+            "is_winner": false,
+            "scheme_family": "milstein",
+            "harness_error": 0.3632929332475863,
+            "harness_error_margin": 0.03800733764275182,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "analytic",
+              "certified": true,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          },
+          "3-euler-maruyama-projected": {
+            "harness": {
+              "status": "ok",
+              "passed": false,
+              "verified_score": 8,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.010359902002857769,
+              "worst_mean_rel_err": 0.08684422549509341,
+              "components": [
+                {
+                  "component": "X",
+                  "empirical_mean": 0.2467801574550644,
+                  "exact_mean": 0.22706120312931496,
+                  "mean_rel_err": 0.08684422549509341,
+                  "empirical_variance": 0.06162477805576786,
+                  "exact_variance": 0.060992897613620416,
+                  "variance_rel_err": 0.010359902002857769,
+                  "near_zero_mean": false,
+                  "mean_ok": false,
+                  "variance_ok": true,
+                  "passed": false,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "empirical_se_mean": 0.0005550890831919137,
+                  "empirical_se_variance": 0.0002186657319338749,
+                  "mean_resolved": true,
+                  "variance_resolved": true
+                }
+              ],
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 8.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.0817,
+              "reference_outcome": "validated",
+              "design_order": 0.4,
+              "invariant_max_drift": 0.005114,
+              "solve_time_s": 0.111,
+              "observed_order": 0.3739,
+              "order_check": true,
+              "order_floor": 0.4,
+              "scheme_family": "euler-maruyama",
+              "strong_rel_err": 0.5189,
+              "strong_rel_err_se": 0.002516,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.008221,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.2912,
+              "mc_se_rel": 0.007143,
+              "ci_mult": 2.0,
+              "kind": "sde",
+              "moment_bias_binding": "mean",
+              "moment_bias_frac_tol": 1.6387,
+              "moment_bias_actionable": true,
+              "solver_sha256": "251c84f6d09fa9ab437405a59fc075bd7a3ded0e5502b2bbe65769634d5fd849"
+            },
+            "is_winner": false,
+            "scheme_family": "euler-maruyama",
+            "harness_error": 1.7368845099018682,
+            "harness_error_margin": 0.0488933446614199,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 8,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "the variance passes; the mean did not",
+              "agent_cap": null
+            },
+            "verdict": "FAIL"
+          }
+        },
+        "winner": "1-beta-moment-matched",
+        "best_plan_by_harness": "1-beta-moment-matched",
+        "best_harness_err": 0.01691291560656661,
+        "winner_harness_err": 0.01691291560656661,
+        "harness_error_metric": "worst moment error / its gate",
+        "harness_error_margin": 0.0372672448533266,
+        "wrong_plan_won": false
+      }
+    },
+    {
+      "id": "N05",
+      "slug": "sde_merton_jump_call",
+      "type": "sde",
+      "tier": 3,
+      "family": "merton_jump",
+      "title": "Merton jump diffusion (European call)",
+      "challenge": "Merton's (1976) lognormal jump diffusion, the first jump-diffusion option model, at a published parameter set. The only non-Gaussian driver in the benchmark; the compensator is the decision -- dropping it moves the mean by 1.4% (inside the gate) and the price by 19%.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "arm": "scheme-matched",
+      "model": "mixed:opus+sonnet",
+      "model_override": null,
+      "workspace": "workspace/sde_merton_jump_call",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 1599.6,
+        "wall_clock_seconds": 1599.6,
+        "cost": {
+          "session_id": "2e81c297-b709-40d8-af3e-5e05742ee934",
+          "transcript": "/Users/sahilmulki/.claude/projects/-Users-sahilmulki-Autonumerics/2e81c297-b709-40d8-af3e-5e05742ee934.jsonl",
+          "usd": 5.79512,
+          "model_usage": {
+            "claude-opus-5-5": {
+              "inputTokens": 136,
+              "outputTokens": 87972,
+              "thinkingTokens": 35141,
+              "cacheReadInputTokens": 4403619,
+              "cacheCreationInputTokens": 266046,
+              "cacheCreationEphemeral5mInputTokens": 206118,
+              "cacheCreationEphemeral1hInputTokens": 59928,
+              "webSearchRequests": 0,
+              "costUSD": 4.1507218
+            },
+            "claude-sonnet-5-5": {
+              "inputTokens": 78,
+              "outputTokens": 35811,
+              "thinkingTokens": 3579,
+              "cacheReadInputTokens": 1404093,
+              "cacheCreationInputTokens": 458289,
+              "cacheCreationEphemeral5mInputTokens": 458289,
+              "cacheCreationEphemeral1hInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 1.6443978
+            }
+          }
+        },
+        "started_at": "2026-11-23T16:34:02",
+        "ended_at": "2026-11-23T17:00:42",
+        "log": "benchmark/results/pipeline/logs/sde_merton_jump_call.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "state_mtime": 1795471183.8395395,
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "1-milstein-cv",
+        "best_plan_source": "state",
+        "best_score": 10,
+        "certified": true,
+        "n_plans": 3,
+        "total_iters": 3,
+        "plans": {
+          "1-milstein-cv": {
+            "iter": 1,
+            "score": 10,
+            "one_sentence": "Scalar Milstein on the diffusion with multiplicative jumps at step ends; call price with X_T control variate whose scheme mean is known exactly.",
+            "state": "winner",
+            "certified": true
+          },
+          "2-weak-order2-taylor": {
+            "iter": 1,
+            "score": 10,
+            "one_sentence": "Kloeden-Platen simplified order-2.0 weak Taylor scheme with same jump handling; plain MC price.",
+            "state": "certified",
+            "certified": true
+          },
+          "3-euler-maruyama": {
+            "iter": 1,
+            "score": 10,
+            "one_sentence": "Plain Euler-Maruyama with same jump handling; plain MC price (discretised baseline).",
+            "state": "certified",
+            "certified": true
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 400000,
+          "dt": 0.01,
+          "T": 0.25,
+          "seed": 42,
+          "solve_s": 0.205477
+        },
+        "functional_errs": {
+          "call_price": 0.003717933869985081
+        },
+        "functional_abs_errs": {
+          "call_price": 0.016326361079312512
+        },
+        "functional_tol": 0.01,
+        "functional_tol_used": {
+          "call_price": 0.01
+        },
+        "worst_functional_rel_err": 0.003717933869985081,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 400000,
+          "num_paths_coarse": 100000,
+          "dt": 0.01,
+          "band_factor": 3.0,
+          "values": {
+            "call_price": {
+              "graded": 4.374919328123328,
+              "coarse": 4.362935787456708,
+              "delta": 0.011983540666619774,
+              "band": 0.1317373706760792,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.006446895425492073,
+          "solve_s": 0.047199,
+          "wall_s": 0.13,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 100000,
+              "dt": 0.01,
+              "rel_err": 0.006446895425492073,
+              "solve_s": 0.047199,
+              "wall_s": 0.13,
+              "graded": false,
+              "steps": 25,
+              "paths": 100000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "milstein",
+              "evals": 2500000
+            },
+            {
+              "num_paths": 400000,
+              "dt": 0.01,
+              "rel_err": 0.003717933869985081,
+              "solve_s": 0.205477,
+              "wall_s": 0.3,
+              "graded": true,
+              "steps": 25,
+              "paths": 400000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "milstein",
+              "evals": 10000000
+            }
+          ]
+        },
+        "seed_study": {
+          "status": "not_run",
+          "reason": "not requested"
+        },
+        "plan_dir": "workspace/sde_merton_jump_call/plans/1-milstein-cv"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 10,
+        "provenance": "analytic",
+        "certified": true,
+        "tier": "A",
+        "bound_by": "rubric",
+        "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved",
+        "agent_cap": null
+      },
+      "verdict": "VERIFIED_PASS",
+      "harness_by_plan": {
+        "plans": {
+          "1-milstein-cv": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "call_price": 0.003717933869985081
+              },
+              "functional_abs_errs": {
+                "call_price": 0.016326361079312512
+              },
+              "functional_tol": 0.01,
+              "functional_tol_used": {
+                "call_price": 0.01
+              },
+              "worst_functional_rel_err": 0.003717933869985081,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 400000,
+                "num_paths_coarse": 100000,
+                "dt": 0.01,
+                "band_factor": 3.0,
+                "values": {
+                  "call_price": {
+                    "graded": 4.374919328123328,
+                    "coarse": 4.362935787456708,
+                    "delta": 0.011983540666619774,
+                    "band": 0.1317373706760792,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.006446895425492073,
+                "solve_s": 0.047199,
+                "wall_s": 0.13,
+                "level_ignored": false
+              },
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.00566,
+              "reference_outcome": "validated",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.00438,
+              "dynkin_z": 0.655,
+              "solve_time_s": 0.286,
+              "observed_order": 0.997,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "milstein",
+              "strong_rel_err": 6.45e-05,
+              "strong_rel_err_se": 1.65e-07,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.00115,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 1.03,
+              "mc_se_rel": 0.00679,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.28,
+              "kind": "sde",
+              "functional_name": "call_price",
+              "functional_rel_tol": 0.01,
+              "functional_rel_error": 0.00169,
+              "functional_bias_rel": 0.000215,
+              "functional_se_rel": 0.00148,
+              "functional_limited_by": "sampling",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 0.00869,
+              "moment_bias_actionable": false,
+              "solver_sha256": "4f9e457f715fcdaea46b681901f24b809869262753e8e6ad8725bff315f2ee42"
+            },
+            "is_winner": true,
+            "scheme_family": "milstein",
+            "harness_error": 0.3717933869985081,
+            "harness_error_margin": 0.1575566688680097,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "analytic",
+              "certified": true,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          },
+          "2-weak-order2-taylor": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "call_price": 0.003067933186947672
+              },
+              "functional_abs_errs": {
+                "call_price": 0.013472048381945712
+              },
+              "functional_tol": 0.01,
+              "functional_tol_used": {
+                "call_price": 0.01
+              },
+              "worst_functional_rel_err": 0.003067933186947672,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 400000,
+                "num_paths_coarse": 100000,
+                "dt": 0.01,
+                "band_factor": 3.0,
+                "values": {
+                  "call_price": {
+                    "graded": 4.377773640820695,
+                    "coarse": 4.361671623949478,
+                    "delta": 0.016102016871216485,
+                    "band": 0.1317373706760792,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.00673477808947926,
+                "solve_s": 0.055451,
+                "wall_s": 0.14,
+                "level_ignored": false
+              },
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.00481,
+              "reference_outcome": "validated",
+              "design_order": 0.5,
+              "invariant_max_drift": 0.003,
+              "dynkin_z": 0.655,
+              "solve_time_s": 0.344,
+              "observed_order": 0.973,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "other",
+              "strong_rel_err": 9.18e-06,
+              "strong_rel_err_se": 2.6e-08,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.0051,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 1.19,
+              "mc_se_rel": 0.00678,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.278,
+              "kind": "sde",
+              "functional_name": "call_price",
+              "functional_rel_tol": 0.01,
+              "functional_rel_error": 0.00198,
+              "functional_bias_rel": 1.76e-07,
+              "functional_se_rel": 0.00198,
+              "functional_limited_by": "sampling",
+              "moment_bias_actionable": false,
+              "solver_sha256": "d1ce0b2ed094efc8ed7f2186d891f5cb855a190eff9581ac0d08152e382c8ead"
+            },
+            "is_winner": false,
+            "scheme_family": "other",
+            "harness_error": 0.30679331869476717,
+            "harness_error_margin": 0.2117053891553216,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "analytic",
+              "certified": true,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          },
+          "3-euler-maruyama": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "call_price": 0.0035183962897231595
+              },
+              "functional_abs_errs": {
+                "call_price": 0.015450142540153422
+              },
+              "functional_tol": 0.01,
+              "functional_tol_used": {
+                "call_price": 0.01
+              },
+              "worst_functional_rel_err": 0.0035183962897231595,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 400000,
+                "num_paths_coarse": 100000,
+                "dt": 0.01,
+                "band_factor": 3.0,
+                "values": {
+                  "call_price": {
+                    "graded": 4.375795546662487,
+                    "coarse": 4.359677992153379,
+                    "delta": 0.016117554509108345,
+                    "band": 0.1317373706760792,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.00718877951349468,
+                "solve_s": 0.037457,
+                "wall_s": 0.12,
+                "level_ignored": false
+              },
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.0057,
+              "reference_outcome": "validated",
+              "design_order": 0.5,
+              "invariant_max_drift": 0.00438,
+              "dynkin_z": 0.679,
+              "solve_time_s": 0.246,
+              "observed_order": 0.4925,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "euler-maruyama",
+              "strong_rel_err": 0.00154,
+              "strong_rel_err_se": 3.87e-06,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.00492,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 1.03,
+              "mc_se_rel": 0.00679,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.278,
+              "kind": "sde",
+              "functional_name": "call_price",
+              "functional_rel_tol": 0.01,
+              "functional_rel_error": 0.00212,
+              "functional_bias_rel": 0.000138,
+              "functional_se_rel": 0.00198,
+              "functional_limited_by": "sampling",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 0.0114,
+              "moment_bias_actionable": false,
+              "solver_sha256": "99e42c80c705e755e56d48051092385cfbaec4577ca50e4ba48de0630fe0438f"
+            },
+            "is_winner": false,
+            "scheme_family": "euler-maruyama",
+            "harness_error": 0.35183962897231597,
+            "harness_error_margin": 0.21190967422735693,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "analytic",
+              "certified": true,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          }
+        },
+        "winner": "1-milstein-cv",
+        "best_plan_by_harness": "2-weak-order2-taylor",
+        "best_harness_err": 0.30679331869476717,
+        "winner_harness_err": 0.3717933869985081,
+        "harness_error_metric": "worst functional error / its gate",
+        "harness_error_margin": 0.2117053891553216,
+        "wrong_plan_won": false
+      }
+    },
+    {
+      "id": "N06",
+      "slug": "sde_sis_epidemic",
+      "type": "sde",
+      "tier": 3,
+      "family": "stochastic_sis",
+      "title": "Stochastic SIS epidemic",
+      "challenge": "The SDE SIS model of Gray, Greenhalgh, Hu, Mao & Pan (2011) at its own Example 5.2: a superlinear sigma I (N - I) diffusion on (0, N) and a stiff logistic drift. Explicit Euler diverges at the graded step; the same splitting with the noise step clipped in I rather than taken in the logit chart biases the mean by 10%.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "reference",
+      "arm": "scheme-matched",
+      "model": "mixed:opus+sonnet",
+      "model_override": null,
+      "workspace": "workspace/sde_sis_epidemic",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 657.0,
+        "wall_clock_seconds": 657.0,
+        "cost": {
+          "session_id": "eb723f7f-0f8e-4fa0-9d48-5dca0b00031b",
+          "transcript": "/Users/sahilmulki/.claude/projects/-Users-sahilmulki-Autonumerics/eb723f7f-0f8e-4fa0-9d48-5dca0b00031b.jsonl",
+          "usd": 3.953529,
+          "model_usage": {
+            "claude-sonnet-5-5": {
+              "inputTokens": 114,
+              "outputTokens": 42875,
+              "thinkingTokens": 4018,
+              "cacheReadInputTokens": 2756361,
+              "cacheCreationInputTokens": 527330,
+              "cacheCreationEphemeral5mInputTokens": 454498,
+              "cacheCreationEphemeral1hInputTokens": 72832,
+              "webSearchRequests": 0,
+              "costUSD": 2.1321871000000003
+            },
+            "claude-opus-5-5": {
+              "inputTokens": 52,
+              "outputTokens": 36245,
+              "thinkingTokens": 15730,
+              "cacheReadInputTokens": 1497397,
+              "cacheCreationInputTokens": 159351,
+              "cacheCreationEphemeral5mInputTokens": 159351,
+              "cacheCreationEphemeral1hInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 1.8213424000000003
+            }
+          }
+        },
+        "started_at": "2026-11-23T20:26:10",
+        "ended_at": "2026-11-23T20:37:07",
+        "log": "benchmark/results/pipeline/logs/sde_sis_epidemic.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "state_mtime": 1795484221.3826082,
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "1-logit-strang-heun",
+        "best_plan_source": "state",
+        "best_score": 10,
+        "certified": true,
+        "n_plans": 3,
+        "total_iters": 3,
+        "plans": {
+          "1-logit-strang-heun": {
+            "iter": 1,
+            "score": 10,
+            "one_sentence": "Logit-coordinate Strang splitting, exact logistic half-flows, Heun on bounded drift plus additive noise.",
+            "state": "done",
+            "certified": true
+          },
+          "2-strang-milstein-in-i": {
+            "iter": 1,
+            "score": 10,
+            "one_sentence": "Strang splitting with exact logistic half-flows and Milstein noise step in I.",
+            "state": "done",
+            "certified": true
+          },
+          "3-logit-drift-implicit-euler": {
+            "iter": 1,
+            "score": 7,
+            "one_sentence": "Backward-Euler on full logit-coordinate drift, Newton with bisection fallback.",
+            "state": "stopped-unfinished (another plan certified)",
+            "certified": false
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "reference",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.007264769344810725,
+        "worst_mean_rel_err": 0.0036021193661009933,
+        "components": [
+          {
+            "component": "X",
+            "empirical_mean": 6.625505277652874,
+            "exact_mean": 6.601725075907273,
+            "mean_rel_err": 0.0036021193661009933,
+            "empirical_variance": 39.50971307349062,
+            "exact_variance": 39.79884248432973,
+            "variance_rel_err": 0.007264769344810725,
+            "near_zero_mean": false,
+            "mean_ok": true,
+            "variance_ok": true,
+            "passed": true,
+            "mean_tol": 0.05,
+            "variance_tol": 0.1,
+            "reference_se_mean": 1e-05,
+            "reference_se_variance": 0.0001,
+            "empirical_se_mean": 0.014055197094578685,
+            "empirical_se_variance": 0.19875105207075364,
+            "mean_resolved": false,
+            "variance_resolved": false
+          }
+        ],
+        "run": {
+          "num_paths": 200000,
+          "dt": 0.02,
+          "T": 0.5,
+          "seed": 42,
+          "solve_s": 0.332848
+        },
+        "diagnostics": [
+          {
+            "name": "within_population",
+            "gate": true,
+            "value": 0.0,
+            "passed": true
+          }
+        ],
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 200000,
+              "dt": 0.02,
+              "rel_err": 0.007264769344810725,
+              "solve_s": 0.332848,
+              "wall_s": 0.42,
+              "graded": true,
+              "steps": 25,
+              "paths": 200000,
+              "stages": 1,
+              "stages_source": "default",
+              "scheme_family": "strang-splitting",
+              "evals": 5000000
+            }
+          ]
+        },
+        "seed_study": {
+          "status": "not_run",
+          "reason": "not requested"
+        },
+        "plan_dir": "workspace/sde_sis_epidemic/plans/1-logit-strang-heun"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 10,
+        "provenance": "surrogate",
+        "certified": true,
+        "tier": "A_prime",
+        "bound_by": "rubric",
+        "reason": "a surrogate reference passed its trust guard and the moments match it",
+        "agent_cap": null
+      },
+      "verdict": "VERIFIED_PASS",
+      "harness_by_plan": {
+        "plans": {
+          "1-logit-strang-heun": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "reference",
+              "worst_variance_rel_err": 0.007264769344810725,
+              "worst_mean_rel_err": 0.0036021193661009933,
+              "components": [
+                {
+                  "component": "X",
+                  "empirical_mean": 6.625505277652874,
+                  "exact_mean": 6.601725075907273,
+                  "mean_rel_err": 0.0036021193661009933,
+                  "empirical_variance": 39.50971307349062,
+                  "exact_variance": 39.79884248432973,
+                  "variance_rel_err": 0.007264769344810725,
+                  "near_zero_mean": false,
+                  "mean_ok": true,
+                  "variance_ok": true,
+                  "passed": true,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "reference_se_mean": 1e-05,
+                  "reference_se_variance": 0.0001,
+                  "empirical_se_mean": 0.014055197094578685,
+                  "empirical_se_variance": 0.19875105207075364,
+                  "mean_resolved": false,
+                  "variance_resolved": false
+                }
+              ],
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "surrogate",
+              "estimated_rel_error": 0.007517,
+              "design_order": 0.5,
+              "invariant_max_drift": 0.002708,
+              "dynkin_z": 1.3763,
+              "solve_time_s": 0.254,
+              "observed_order": 0.9993,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "strang-splitting",
+              "strong_rel_err": 0.0398,
+              "strong_rel_err_se": 0.0004124,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.0157,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.5673,
+              "mc_se_rel": 0.007162,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 0.0862,
+              "moment_bias_actionable": false,
+              "solver_sha256": "bb7c98bb59d0f6fc1087f8a33c6e15ff500883b62873d26582aa5bee63769a68"
+            },
+            "is_winner": true,
+            "scheme_family": "strang-splitting",
+            "harness_error": 0.07264769344810725,
+            "harness_error_margin": 0.049938908978598345,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "surrogate",
+              "certified": true,
+              "tier": "A_prime",
+              "bound_by": "rubric",
+              "reason": "a surrogate reference passed its trust guard and the moments match it",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          },
+          "2-strang-milstein-in-i": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "reference",
+              "worst_variance_rel_err": 0.007264769344819117,
+              "worst_mean_rel_err": 0.0036021193660938627,
+              "components": [
+                {
+                  "component": "X",
+                  "empirical_mean": 6.6255052776528265,
+                  "exact_mean": 6.601725075907273,
+                  "mean_rel_err": 0.0036021193660938627,
+                  "empirical_variance": 39.50971307349029,
+                  "exact_variance": 39.79884248432973,
+                  "variance_rel_err": 0.007264769344819117,
+                  "near_zero_mean": false,
+                  "mean_ok": true,
+                  "variance_ok": true,
+                  "passed": true,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "reference_se_mean": 1e-05,
+                  "reference_se_variance": 0.0001,
+                  "empirical_se_mean": 0.014055197094578626,
+                  "empirical_se_variance": 0.19875105207075267,
+                  "mean_resolved": false,
+                  "variance_resolved": false
+                }
+              ],
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "surrogate",
+              "estimated_rel_error": 0.007517,
+              "design_order": 0.5,
+              "invariant_max_drift": 0.002708,
+              "dynkin_z": 1.3763,
+              "solve_time_s": 0.177,
+              "observed_order": 0.9993,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "strang-splitting",
+              "strong_rel_err": 0.0398,
+              "strong_rel_err_se": 0.0004124,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.0157,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.5673,
+              "mc_se_rel": 0.007162,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 0.0862,
+              "moment_bias_actionable": false,
+              "solver_sha256": "3cace4b947aeb27df76fd03854b87ef63a15afd6fbe2f5391fd842a3a0e92255"
+            },
+            "is_winner": false,
+            "scheme_family": "strang-splitting",
+            "harness_error": 0.07264769344819116,
+            "harness_error_margin": 0.0499389089785981,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "surrogate",
+              "certified": true,
+              "tier": "A_prime",
+              "bound_by": "rubric",
+              "reason": "a surrogate reference passed its trust guard and the moments match it",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          },
+          "3-logit-drift-implicit-euler": {
+            "harness": {
+              "status": "ok",
+              "passed": false,
+              "verified_score": 8,
+              "gt_kind": "reference",
+              "worst_variance_rel_err": 0.00164182875664078,
+              "worst_mean_rel_err": 0.06564440614914711,
+              "components": [
+                {
+                  "component": "X",
+                  "empirical_mean": 7.0350913980751395,
+                  "exact_mean": 6.601725075907273,
+                  "mean_rel_err": 0.06564440614914711,
+                  "empirical_variance": 39.86418536840152,
+                  "exact_variance": 39.79884248432973,
+                  "variance_rel_err": 0.00164182875664078,
+                  "near_zero_mean": false,
+                  "mean_ok": false,
+                  "variance_ok": true,
+                  "passed": false,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "reference_se_mean": 1e-05,
+                  "reference_se_variance": 0.0001,
+                  "empirical_se_mean": 0.014118106347595192,
+                  "empirical_se_variance": 0.18757445111377952,
+                  "mean_resolved": true,
+                  "variance_resolved": false
+                }
+              ],
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 7.0,
+              "certified": false,
+              "provenance": "surrogate",
+              "estimated_rel_error": 0.065,
+              "design_order": 0.5,
+              "invariant_max_drift": 0.002576,
+              "dynkin_z": 12.7676,
+              "solve_time_s": 0.606,
+              "observed_order": 0.9433,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "implicit",
+              "strong_rel_err": 0.0745,
+              "strong_rel_err_se": 0.0004759,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.009978,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.5891,
+              "mc_se_rel": 0.006697,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_binding": "mean",
+              "moment_bias_frac_tol": 1.2607,
+              "moment_bias_actionable": true,
+              "solver_sha256": "04d0e1c943a8192080867f663971f02f29f96cc66262b9ff8e83cb6f08c3eb94"
+            },
+            "is_winner": false,
+            "scheme_family": "implicit",
+            "harness_error": 1.312888122982942,
+            "harness_error_margin": 0.04277097191056824,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 7,
+              "provenance": "surrogate",
+              "certified": false,
+              "tier": "A_prime",
+              "bound_by": "rubric",
+              "reason": "the Richardson-extrapolated moments are unstable, or Dynkin failed",
+              "agent_cap": null
+            },
+            "verdict": "FAIL"
+          }
+        },
+        "winner": "1-logit-strang-heun",
+        "best_plan_by_harness": "1-logit-strang-heun",
+        "best_harness_err": 0.07264769344810725,
+        "winner_harness_err": 0.07264769344810725,
+        "harness_error_metric": "worst moment error / its gate",
+        "harness_error_margin": 0.049938908978598345,
+        "wrong_plan_won": false
+      }
+    },
+    {
+      "id": "N07",
+      "slug": "sde_langevin_baoab",
+      "type": "sde",
+      "tier": 3,
+      "family": "underdamped_langevin",
+      "title": "Underdamped Langevin dynamics (BAOAB)",
+      "challenge": "The workhorse of molecular sampling, at moderate friction. Leimkuhler & Matthews (2012/13) compare integrators by the invariant measure they sample: BAOAB's bias on Var(q) is a hundredth of the gate here, Euler-Maruyama's is 2.8x the gate while linearly stable.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "arm": "scheme-matched",
+      "model": "mixed:opus+sonnet",
+      "model_override": null,
+      "workspace": "workspace/sde_langevin_baoab",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 490.3,
+        "wall_clock_seconds": 490.3,
+        "cost": {
+          "session_id": "a698e8cf-9e31-432b-99ce-8220bfe2190a",
+          "transcript": "/Users/sahilmulki/.claude/projects/-Users-sahilmulki-Autonumerics/a698e8cf-9e31-432b-99ce-8220bfe2190a.jsonl",
+          "usd": 3.88897,
+          "model_usage": {
+            "claude-sonnet-5-5": {
+              "inputTokens": 124,
+              "outputTokens": 36526,
+              "thinkingTokens": 1515,
+              "cacheReadInputTokens": 3049104,
+              "cacheCreationInputTokens": 566504,
+              "cacheCreationEphemeral5mInputTokens": 496222,
+              "cacheCreationEphemeral1hInputTokens": 70282,
+              "webSearchRequests": 0,
+              "costUSD": 2.1921014000000003
+            },
+            "claude-opus-5-5": {
+              "inputTokens": 42,
+              "outputTokens": 32970,
+              "thinkingTokens": 10264,
+              "cacheReadInputTokens": 1226305,
+              "cacheCreationInputTokens": 158408,
+              "cacheCreationEphemeral5mInputTokens": 158408,
+              "cacheCreationEphemeral1hInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 1.696869
+            }
+          }
+        },
+        "started_at": "2026-11-23T23:42:16",
+        "ended_at": "2026-11-23T23:50:27",
+        "log": "benchmark/results/pipeline/logs/sde_langevin_baoab.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "state_mtime": 1795495821.8182464,
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "2-stochastic-trapezoidal",
+        "best_plan_source": "state",
+        "best_score": 9,
+        "certified": false,
+        "n_plans": 3,
+        "total_iters": 6,
+        "plans": {
+          "1-baoab-splitting": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": "BAOAB Langevin splitting, dt=0.04, 100k paths.",
+            "state": "stopped",
+            "certified": false
+          },
+          "2-stochastic-trapezoidal": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": "Stochastic trapezoidal (Crank-Nicolson), dt=0.04, 100k paths.",
+            "state": "stopped",
+            "certified": false
+          },
+          "3-euler-maruyama": {
+            "iter": 2,
+            "score": 4,
+            "one_sentence": "Euler-Maruyama control, dt=0.04, 100k paths.",
+            "state": "stopped",
+            "certified": false
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.007093845890114652,
+        "worst_mean_rel_err": 0.006752318009781924,
+        "components": [
+          {
+            "component": "X",
+            "empirical_mean": -0.47004737235634203,
+            "exact_mean": -0.46689475052370816,
+            "mean_rel_err": 0.006752318009781924,
+            "empirical_variance": 0.036049879361170475,
+            "exact_variance": 0.0362254786489285,
+            "variance_rel_err": 0.004847397310048193,
+            "near_zero_mean": false,
+            "mean_ok": true,
+            "variance_ok": true,
+            "passed": true,
+            "mean_tol": 0.05,
+            "variance_tol": 0.1,
+            "empirical_se_mean": 0.0006004155174641181,
+            "empirical_se_variance": 0.00016117924534652934,
+            "mean_resolved": true,
+            "variance_resolved": false
+          },
+          {
+            "component": "Y",
+            "empirical_mean": 1.7920148870601755,
+            "exact_mean": 1.7995627626756225,
+            "mean_rel_err": 0.0041942830625283055,
+            "empirical_variance": 0.667216410800808,
+            "exact_variance": 0.6719833571773459,
+            "variance_rel_err": 0.007093845890114652,
+            "near_zero_mean": false,
+            "mean_ok": true,
+            "variance_ok": true,
+            "passed": true,
+            "mean_tol": 0.05,
+            "variance_tol": 0.1,
+            "empirical_se_mean": 0.002583053253033719,
+            "empirical_se_variance": 0.0029977039941681952,
+            "mean_resolved": true,
+            "variance_resolved": false
+          }
+        ],
+        "run": {
+          "num_paths": 100000,
+          "dt": 0.04,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 0.058518
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 100000,
+              "dt": 0.04,
+              "rel_err": 0.007093845890114652,
+              "solve_s": 0.058518,
+              "wall_s": 0.14,
+              "graded": true,
+              "steps": 25,
+              "paths": 100000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "implicit",
+              "evals": 2500000
+            }
+          ]
+        },
+        "seed_study": {
+          "status": "not_run",
+          "reason": "not requested"
+        },
+        "plan_dir": "workspace/sde_langevin_baoab/plans/2-stochastic-trapezoidal"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 9,
+        "provenance": "analytic",
+        "certified": false,
+        "tier": "A",
+        "bound_by": "rubric",
+        "reason": "every checked moment is within tolerance of the exact moments and the Monte Carlo is resolved, but the generator check ran and could not reach a verdict: the residual's own convergence rate is outside the band any extrapolation on it would need, so the leftover is the scheme's bias rather than evidence about the generator. Exact terminal moments cannot separate a correct solve from a process that shares them (manual \u00a724's own argument), so this is everything measurable here passing without the one check that distinguishes this SDE -- uncertified, not suspect",
+        "agent_cap": null
+      },
+      "verdict": "UNDERCLAIM",
+      "harness_by_plan": {
+        "plans": {
+          "1-baoab-splitting": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.01061419675933479,
+              "worst_mean_rel_err": 0.006554087652019117,
+              "components": [
+                {
+                  "component": "X",
+                  "empirical_mean": -0.4638346814045082,
+                  "exact_mean": -0.46689475052370816,
+                  "mean_rel_err": 0.006554087652019117,
+                  "empirical_variance": 0.03620116366851019,
+                  "exact_variance": 0.0362254786489285,
+                  "variance_rel_err": 0.0006712121226595786,
+                  "near_zero_mean": false,
+                  "mean_ok": true,
+                  "variance_ok": true,
+                  "passed": true,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "empirical_se_mean": 0.0006016740285944722,
+                  "empirical_se_variance": 0.00016186604302772056,
+                  "mean_resolved": true,
+                  "variance_resolved": false
+                },
+                {
+                  "component": "Y",
+                  "empirical_mean": 1.8014177664065658,
+                  "exact_mean": 1.7995627626756225,
+                  "mean_rel_err": 0.0010308080214914087,
+                  "empirical_variance": 0.6648507936052672,
+                  "exact_variance": 0.6719833571773459,
+                  "variance_rel_err": 0.01061419675933479,
+                  "near_zero_mean": false,
+                  "mean_ok": true,
+                  "variance_ok": true,
+                  "passed": true,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "empirical_se_mean": 0.0025784700766254146,
+                  "empirical_se_variance": 0.002987186872204667,
+                  "mean_resolved": false,
+                  "variance_resolved": true
+                }
+              ],
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.0106,
+              "reference_outcome": "validated",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.001214,
+              "dynkin_z": 23.7152,
+              "solve_time_s": 0.127,
+              "observed_order": 1.0034,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "other",
+              "strong_rel_err": 0.0285,
+              "strong_rel_err_se": 0.0001514,
+              "strong_rel_err_component": 1.0,
+              "observed_order_se": 0.0108,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.9157,
+              "mc_se_rel": 0.004493,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 0.0561,
+              "moment_bias_actionable": false,
+              "solver_sha256": "f2ece4d12848741a48ca6b0351bceaae0bafb7932389e40c6c352eeb9241edd8"
+            },
+            "is_winner": false,
+            "scheme_family": "other",
+            "harness_error": 0.13108175304038233,
+            "harness_error_margin": 0.025773433002602163,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 9,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments and the Monte Carlo is resolved, but the generator check ran and could not reach a verdict: the residual's own convergence rate is outside the band any extrapolation on it would need, so the leftover is the scheme's bias rather than evidence about the generator. Exact terminal moments cannot separate a correct solve from a process that shares them (manual \u00a724's own argument), so this is everything measurable here passing without the one check that distinguishes this SDE -- uncertified, not suspect",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "2-stochastic-trapezoidal": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.007093845890114652,
+              "worst_mean_rel_err": 0.006752318009781924,
+              "components": [
+                {
+                  "component": "X",
+                  "empirical_mean": -0.47004737235634203,
+                  "exact_mean": -0.46689475052370816,
+                  "mean_rel_err": 0.006752318009781924,
+                  "empirical_variance": 0.036049879361170475,
+                  "exact_variance": 0.0362254786489285,
+                  "variance_rel_err": 0.004847397310048193,
+                  "near_zero_mean": false,
+                  "mean_ok": true,
+                  "variance_ok": true,
+                  "passed": true,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "empirical_se_mean": 0.0006004155174641181,
+                  "empirical_se_variance": 0.00016117924534652934,
+                  "mean_resolved": true,
+                  "variance_resolved": false
+                },
+                {
+                  "component": "Y",
+                  "empirical_mean": 1.7920148870601755,
+                  "exact_mean": 1.7995627626756225,
+                  "mean_rel_err": 0.0041942830625283055,
+                  "empirical_variance": 0.667216410800808,
+                  "exact_variance": 0.6719833571773459,
+                  "variance_rel_err": 0.007093845890114652,
+                  "near_zero_mean": false,
+                  "mean_ok": true,
+                  "variance_ok": true,
+                  "passed": true,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "empirical_se_mean": 0.002583053253033719,
+                  "empirical_se_variance": 0.0029977039941681952,
+                  "mean_resolved": true,
+                  "variance_resolved": false
+                }
+              ],
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.007094,
+              "reference_outcome": "validated",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.001194,
+              "dynkin_z": 30.3178,
+              "solve_time_s": 0.15,
+              "observed_order": 1.0173,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "implicit",
+              "strong_rel_err": 0.0287,
+              "strong_rel_err_se": 0.0001527,
+              "strong_rel_err_component": 1.0,
+              "observed_order_se": 0.0108,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.9231,
+              "mc_se_rel": 0.004493,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "moment_bias_binding": "mean",
+              "moment_bias_frac_tol": 0.086,
+              "moment_bias_actionable": false,
+              "solver_sha256": "eb1b609bde23d5731c0b451361896b205134b274c6ba60a8ea233e1e7d215679"
+            },
+            "is_winner": true,
+            "scheme_family": "implicit",
+            "harness_error": 0.13504636019563845,
+            "harness_error_margin": 0.02571952315979744,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 9,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments and the Monte Carlo is resolved, but the generator check ran and could not reach a verdict: the residual's own convergence rate is outside the band any extrapolation on it would need, so the leftover is the scheme's bias rather than evidence about the generator. Exact terminal moments cannot separate a correct solve from a process that shares them (manual \u00a724's own argument), so this is everything measurable here passing without the one check that distinguishes this SDE -- uncertified, not suspect",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "3-euler-maruyama": {
+            "harness": {
+              "status": "ok",
+              "passed": false,
+              "verified_score": 3,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.3910278307383515,
+              "worst_mean_rel_err": 0.4324126698650605,
+              "components": [
+                {
+                  "component": "X",
+                  "empirical_mean": -0.6147238400191678,
+                  "exact_mean": -0.46689475052370816,
+                  "mean_rel_err": 0.3166218710526134,
+                  "empirical_variance": 0.04646119794458284,
+                  "exact_variance": 0.0362254786489285,
+                  "variance_rel_err": 0.2825558054001613,
+                  "near_zero_mean": false,
+                  "mean_ok": false,
+                  "variance_ok": false,
+                  "passed": false,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "empirical_se_mean": 0.0006816245149976842,
+                  "empirical_se_variance": 0.0002075118654981939,
+                  "mean_resolved": true,
+                  "variance_resolved": true
+                },
+                {
+                  "component": "Y",
+                  "empirical_mean": 2.5777165014739327,
+                  "exact_mean": 1.7995627626756225,
+                  "mean_rel_err": 0.4324126698650605,
+                  "empirical_variance": 0.9347475516266783,
+                  "exact_variance": 0.6719833571773459,
+                  "variance_rel_err": 0.3910278307383515,
+                  "near_zero_mean": false,
+                  "mean_ok": false,
+                  "variance_ok": false,
+                  "passed": false,
+                  "mean_tol": 0.05,
+                  "variance_tol": 0.1,
+                  "empirical_se_mean": 0.0030573641451856503,
+                  "empirical_se_variance": 0.004195415464277217,
+                  "mean_resolved": true,
+                  "variance_resolved": true
+                }
+              ],
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 4.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.4324,
+              "reference_outcome": "validated",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.0009885,
+              "solve_time_s": 0.157,
+              "observed_order": 1.1171,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "euler-maruyama",
+              "strong_rel_err": 0.3836,
+              "strong_rel_err_se": 0.0006625,
+              "strong_rel_err_component": 1.0,
+              "observed_order_se": 0.001286,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 1.005,
+              "mc_se_rel": 0.004488,
+              "ci_mult": 2.0,
+              "kind": "sde",
+              "moment_bias_binding": "mean",
+              "moment_bias_frac_tol": 8.3805,
+              "moment_bias_actionable": true,
+              "solver_sha256": "7823fb47f2edd91652a8ac405919cc7acc5b6446c513a083f6d0494e544c496b"
+            },
+            "is_winner": false,
+            "scheme_family": "euler-maruyama",
+            "harness_error": 8.64825339730121,
+            "harness_error_margin": 0.033978966542293924,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 4,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "the variance check fails, though the code ran cleanly",
+              "agent_cap": null
+            },
+            "verdict": "FAIL"
+          }
+        },
+        "winner": "2-stochastic-trapezoidal",
+        "best_plan_by_harness": "1-baoab-splitting",
+        "best_harness_err": 0.13108175304038233,
+        "winner_harness_err": 0.13504636019563845,
+        "harness_error_metric": "worst moment error / its gate",
+        "harness_error_margin": 0.025773433002602163,
+        "wrong_plan_won": false
+      }
+    },
+    {
+      "id": "N08",
+      "slug": "sde_three_halves_vol",
+      "type": "sde",
+      "tier": 3,
+      "family": "three_halves",
+      "title": "3/2 stochastic-volatility model (Ahn-Gao)",
+      "challenge": "The 3/2 model of Ahn & Gao (1999) at Drimus's (2012) S&P 500 fit: a V^{3/2} diffusion with a vol-of-vol of 8.56. 1/V is a CIR process with exact moments; explicit Euler on V reflected at 0 biases E[1/V] by 18% and Var[1/V] by 39x.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "arm": "scheme-matched",
+      "model": "mixed:opus+sonnet",
+      "model_override": null,
+      "workspace": "workspace/sde_three_halves_vol",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 719.3,
+        "wall_clock_seconds": 719.3,
+        "cost": {
+          "session_id": "91f45080-2a73-4fba-9c96-f0c9ad772bee",
+          "transcript": "/Users/sahilmulki/.claude/projects/-Users-sahilmulki-Autonumerics/91f45080-2a73-4fba-9c96-f0c9ad772bee.jsonl",
+          "usd": 5.316884,
+          "model_usage": {
+            "claude-sonnet-5-5": {
+              "inputTokens": 158,
+              "outputTokens": 77373,
+              "thinkingTokens": 11082,
+              "cacheReadInputTokens": 3792374,
+              "cacheCreationInputTokens": 785056,
+              "cacheCreationEphemeral5mInputTokens": 698707,
+              "cacheCreationEphemeral1hInputTokens": 86349,
+              "webSearchRequests": 0,
+              "costUSD": 3.2454469
+            },
+            "claude-opus-5-5": {
+              "inputTokens": 52,
+              "outputTokens": 41544,
+              "thinkingTokens": 17658,
+              "cacheReadInputTokens": 1687420,
+              "cacheCreationInputTokens": 180573,
+              "cacheCreationEphemeral5mInputTokens": 180573,
+              "cacheCreationEphemeral1hInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 2.071437
+            }
+          }
+        },
+        "started_at": "2026-11-23T23:51:25",
+        "ended_at": "2026-11-24T00:03:25",
+        "log": "benchmark/results/pipeline/logs/sde_three_halves_vol.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "state_mtime": 1795496598.59546,
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "3-log-implicit-euler",
+        "best_plan_source": "state",
+        "best_score": 9,
+        "certified": false,
+        "n_plans": 3,
+        "total_iters": 6,
+        "plans": {
+          "1-reciprocal-implicit-milstein": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": null,
+            "state": "stopped  # plateau; resolved:false (stopped unresolved on V-variance, see REPORT)",
+            "certified": false
+          },
+          "2-lamperti-implicit-euler": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": null,
+            "state": "stopped  # plateau; resolved:false (stopped unresolved on V-variance, see REPORT)",
+            "certified": false
+          },
+          "3-log-implicit-euler": {
+            "iter": 2,
+            "score": 9,
+            "one_sentence": null,
+            "state": "stopped  # plateau",
+            "certified": false
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 200000,
+          "dt": 0.004,
+          "T": 0.1,
+          "seed": 42,
+          "solve_s": 0.312352
+        },
+        "functional_errs": {
+          "inv_var_mean": 0.000625876304248822,
+          "inv_var_variance": 0.0002740874405339568
+        },
+        "functional_abs_errs": {
+          "inv_var_mean": 0.007274426525162525,
+          "inv_var_variance": 0.012398374556283898
+        },
+        "functional_tol": 0.1,
+        "functional_tol_used": {
+          "inv_var_mean": 0.05,
+          "inv_var_variance": 0.1
+        },
+        "worst_functional_rel_err": 0.000625876304248822,
+        "functional_ok": true,
+        "diagnostics": [
+          {
+            "name": "positive",
+            "gate": true,
+            "value": 0.0,
+            "passed": true
+          }
+        ],
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 200000,
+          "num_paths_coarse": 50000,
+          "dt": 0.004,
+          "band_factor": 3.0,
+          "values": {
+            "inv_var_mean": {
+              "graded": 11.61551185852728,
+              "coarse": 11.62074085843244,
+              "delta": 0.0052289999051602365,
+              "band": 1.7434179427578664,
+              "moved": true,
+              "consistent": true
+            },
+            "inv_var_variance": {
+              "graded": 45.24750485054184,
+              "coarse": 45.20875001317622,
+              "delta": 0.03875483736561591,
+              "band": 13.570531942795665,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.000582655040799432,
+          "solve_s": 0.075917,
+          "wall_s": 0.16,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 50000,
+              "dt": 0.004,
+              "rel_err": 0.000582655040799432,
+              "solve_s": 0.075917,
+              "wall_s": 0.16,
+              "graded": false,
+              "steps": 25,
+              "paths": 50000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "implicit",
+              "evals": 1250000
+            },
+            {
+              "num_paths": 200000,
+              "dt": 0.004,
+              "rel_err": 0.000625876304248822,
+              "solve_s": 0.312352,
+              "wall_s": 0.4,
+              "graded": true,
+              "steps": 25,
+              "paths": 200000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "implicit",
+              "evals": 5000000
+            }
+          ]
+        },
+        "seed_study": {
+          "status": "not_run",
+          "reason": "not requested"
+        },
+        "plan_dir": "workspace/sde_three_halves_vol/plans/3-log-implicit-euler"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 8,
+        "provenance": "manufactured_partial",
+        "certified": false,
+        "tier": "C",
+        "bound_by": "cross_plan_disagreement",
+        "reason": "disagrees with plan '1-reciprocal-implicit-milstein' (milstein) by 0.23378429828638006 at N=None at full T, above 0.1. Neither plan may be declared a winner until a third family or a refine cycle breaks the tie",
+        "agent_cap": null
+      },
+      "verdict": "UNDERCLAIM",
+      "harness_by_plan": {
+        "plans": {
+          "1-reciprocal-implicit-milstein": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 8,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "inv_var_mean": 0.002719507445346244,
+                "inv_var_variance": 0.028617237098787354
+              },
+              "functional_abs_errs": {
+                "inv_var_mean": 0.03160825383786836,
+                "inv_var_variance": 1.29450376721217
+              },
+              "functional_tol": 0.1,
+              "functional_tol_used": {
+                "inv_var_mean": 0.05,
+                "inv_var_variance": 0.1
+              },
+              "worst_functional_rel_err": 0.028617237098787354,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 200000,
+                "num_paths_coarse": 50000,
+                "dt": 0.004,
+                "band_factor": 3.0,
+                "values": {
+                  "inv_var_mean": {
+                    "graded": 11.591178031214573,
+                    "coarse": 11.587998566167858,
+                    "delta": 0.0031794650467151797,
+                    "band": 1.7434179427578664,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "inv_var_variance": {
+                    "graded": 43.94060270877338,
+                    "coarse": 43.546307049567126,
+                    "delta": 0.3942956592062572,
+                    "band": 13.570531942795665,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.037333822289441904,
+                "solve_s": 0.022256,
+                "wall_s": 0.1,
+                "level_ignored": false
+              },
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "manufactured_partial",
+              "estimated_rel_error": 0.00825,
+              "design_order": 1.0,
+              "invariant_max_drift": 2.4971,
+              "dynkin_z": 1.8365,
+              "solve_time_s": 0.101,
+              "observed_order": 0.9132,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "milstein",
+              "strong_rel_err": 0.0336,
+              "strong_rel_err_se": 0.001993,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.0721,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.404,
+              "mc_se_rel": 0.0311,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "functional_name": "inv_var_variance",
+              "functional_rel_tol": 0.1,
+              "functional_rel_error": 0.015,
+              "functional_bias_rel": 0.006331,
+              "functional_se_rel": 0.008667,
+              "functional_limited_by": "both",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 3.467,
+              "moment_bias_actionable": true,
+              "solver_sha256": "5e886e374f727f74b90e32821e3a72664999c1620c65f2c75786654b95f3eb40"
+            },
+            "is_winner": false,
+            "scheme_family": "milstein",
+            "harness_error": 0.2861723709878735,
+            "harness_error_margin": 0.050325228062387074,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 8,
+              "provenance": "manufactured_partial",
+              "certified": false,
+              "tier": "C",
+              "bound_by": "cross_plan_disagreement",
+              "reason": "disagrees with plan '2-lamperti-implicit-euler' (implicit) by 0.43047236168914527 at N=None at full T, above 0.1. Neither plan may be declared a winner until a third family or a refine cycle breaks the tie",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "2-lamperti-implicit-euler": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "inv_var_mean": 0.0027427500824011553,
+                "inv_var_variance": 0.002790664814302734
+              },
+              "functional_abs_errs": {
+                "inv_var_mean": 0.03187839804105863,
+                "inv_var_variance": 0.12623602001377066
+              },
+              "functional_tol": 0.1,
+              "functional_tol_used": {
+                "inv_var_mean": 0.05,
+                "inv_var_variance": 0.1
+              },
+              "worst_functional_rel_err": 0.002790664814302734,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 200000,
+                "num_paths_coarse": 50000,
+                "dt": 0.004,
+                "band_factor": 3.0,
+                "values": {
+                  "inv_var_mean": {
+                    "graded": 11.590907887011383,
+                    "coarse": 11.587682136057298,
+                    "delta": 0.0032257509540851714,
+                    "band": 1.7434179427578664,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "inv_var_variance": {
+                    "graded": 45.10887045597178,
+                    "coarse": 44.704205646612365,
+                    "delta": 0.4046648093594172,
+                    "band": 13.570531942795665,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.011736477942304233,
+                "solve_s": 0.02801,
+                "wall_s": 0.11,
+                "level_ignored": false
+              },
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "manufactured_partial",
+              "estimated_rel_error": 0.0005864,
+              "design_order": 0.5,
+              "invariant_max_drift": 1.3466,
+              "dynkin_z": 1.8369,
+              "solve_time_s": 0.118,
+              "observed_order": 0.9073,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "implicit",
+              "strong_rel_err": 0.0189,
+              "strong_rel_err_se": 0.001497,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.116,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.3419,
+              "mc_se_rel": 0.047,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "functional_name": "inv_var_variance",
+              "functional_rel_tol": 0.1,
+              "functional_rel_error": 0.008671,
+              "functional_bias_rel": 1.192e-05,
+              "functional_se_rel": 0.008659,
+              "functional_limited_by": "sampling",
+              "solver_sha256": "38eceab3f9ac7928d049bd4d05450613005f415c87f793b26c393782257734b5"
+            },
+            "is_winner": false,
+            "scheme_family": "implicit",
+            "harness_error": 0.0548550016480231,
+            "harness_error_margin": 0.003204718964978135,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 8,
+              "provenance": "manufactured_partial",
+              "certified": false,
+              "tier": "C",
+              "bound_by": "cross_plan_disagreement",
+              "reason": "disagrees with plan '1-reciprocal-implicit-milstein' (milstein) by 0.43047236168914527 at N=None at full T, above 0.1. Neither plan may be declared a winner until a third family or a refine cycle breaks the tie",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          },
+          "3-log-implicit-euler": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "inv_var_mean": 0.000625876304248822,
+                "inv_var_variance": 0.0002740874405339568
+              },
+              "functional_abs_errs": {
+                "inv_var_mean": 0.007274426525162525,
+                "inv_var_variance": 0.012398374556283898
+              },
+              "functional_tol": 0.1,
+              "functional_tol_used": {
+                "inv_var_mean": 0.05,
+                "inv_var_variance": 0.1
+              },
+              "worst_functional_rel_err": 0.000625876304248822,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 200000,
+                "num_paths_coarse": 50000,
+                "dt": 0.004,
+                "band_factor": 3.0,
+                "values": {
+                  "inv_var_mean": {
+                    "graded": 11.61551185852728,
+                    "coarse": 11.62074085843244,
+                    "delta": 0.0052289999051602365,
+                    "band": 1.7434179427578664,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "inv_var_variance": {
+                    "graded": 45.24750485054184,
+                    "coarse": 45.20875001317622,
+                    "delta": 0.03875483736561591,
+                    "band": 13.570531942795665,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.000582655040799432,
+                "solve_s": 0.075917,
+                "wall_s": 0.16,
+                "level_ignored": false
+              },
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 9.0,
+              "certified": false,
+              "provenance": "manufactured_partial",
+              "estimated_rel_error": 0.001844,
+              "design_order": 0.5,
+              "invariant_max_drift": 1.2642,
+              "dynkin_z": 1.962,
+              "solve_time_s": 0.169,
+              "observed_order": 0.4577,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "implicit",
+              "strong_rel_err": 0.1453,
+              "strong_rel_err_se": 0.003646,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.0287,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 0.3622,
+              "mc_se_rel": 0.0839,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "functional_name": "inv_var_variance",
+              "functional_rel_tol": 0.1,
+              "functional_rel_error": 0.00275,
+              "functional_bias_rel": 0.0003771,
+              "functional_se_rel": 0.002373,
+              "functional_limited_by": "sampling",
+              "moment_bias_actionable": false,
+              "solver_sha256": "6e434fed76b1b4668d9e452287349b65b100d8e5f8ef219e71aeca9dfc6f08c9"
+            },
+            "is_winner": true,
+            "scheme_family": "implicit",
+            "harness_error": 0.01251752608497644,
+            "harness_error_margin": 0.005194906675208075,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 8,
+              "provenance": "manufactured_partial",
+              "certified": false,
+              "tier": "C",
+              "bound_by": "cross_plan_disagreement",
+              "reason": "disagrees with plan '1-reciprocal-implicit-milstein' (milstein) by 0.23378429828638006 at N=None at full T, above 0.1. Neither plan may be declared a winner until a third family or a refine cycle breaks the tie",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          }
+        },
+        "winner": "3-log-implicit-euler",
+        "best_plan_by_harness": "3-log-implicit-euler",
+        "best_harness_err": 0.01251752608497644,
+        "winner_harness_err": 0.01251752608497644,
+        "harness_error_metric": "worst functional error / its gate",
+        "harness_error_margin": 0.005194906675208075,
+        "wrong_plan_won": false
+      }
+    },
+    {
+      "id": "N09",
+      "slug": "sde_geometric_asian",
+      "type": "sde",
+      "tier": 3,
+      "family": "geometric_asian",
+      "title": "Geometric-average Asian option (Kemna-Vorst)",
+      "challenge": "Kemna & Vorst's (1990) closed-form Asian option, the standard MLMC test problem (Giles 2008). The only entry grading a time integral along the path: an endpoint Riemann sum of int ln S dt misprices the call by 3.4% against a 1% gate; the trapezoid by 0.02%.",
+      "has_ground_truth": true,
+      "ground_truth_kind": "exact",
+      "arm": "scheme-matched",
+      "model": "mixed:opus+sonnet",
+      "model_override": null,
+      "workspace": "workspace/sde_geometric_asian",
+      "run": {
+        "status": "completed",
+        "returncode": 0,
+        "timed_out": false,
+        "wall_seconds": 499.3,
+        "wall_clock_seconds": 499.3,
+        "cost": {
+          "session_id": "4b930c7c-eaae-45cc-9be2-50e3c6e9a98b",
+          "transcript": "/Users/sahilmulki/.claude/projects/-Users-sahilmulki-Autonumerics/4b930c7c-eaae-45cc-9be2-50e3c6e9a98b.jsonl",
+          "usd": 3.207889,
+          "model_usage": {
+            "claude-sonnet-5-5": {
+              "inputTokens": 94,
+              "outputTokens": 40450,
+              "thinkingTokens": 4854,
+              "cacheReadInputTokens": 2343605,
+              "cacheCreationInputTokens": 442880,
+              "cacheCreationEphemeral5mInputTokens": 374876,
+              "cacheCreationEphemeral1hInputTokens": 68004,
+              "webSearchRequests": 0,
+              "costUSD": 1.8482545
+            },
+            "claude-opus-5-5": {
+              "inputTokens": 36,
+              "outputTokens": 27729,
+              "thinkingTokens": 7773,
+              "cacheReadInputTokens": 874228,
+              "cacheCreationInputTokens": 126013,
+              "cacheCreationEphemeral5mInputTokens": 126013,
+              "cacheCreationEphemeral1hInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 1.3596346000000001
+            }
+          }
+        },
+        "started_at": "2026-11-26T17:00:12",
+        "ended_at": "2026-11-26T17:08:31",
+        "log": "benchmark/results/pipeline/logs/sde_geometric_asian.log",
+        "limit_hit": false
+      },
+      "pipeline": {
+        "phase": "done",
+        "state_mtime": 1795730905.1653936,
+        "blocked_reason": null,
+        "problem_type": "sde",
+        "best_plan": "1-milstein-bridge-cv",
+        "best_plan_source": "state",
+        "best_score": 10,
+        "certified": true,
+        "n_plans": 3,
+        "total_iters": 3,
+        "plans": {
+          "1-milstein-bridge-cv": {
+            "iter": 1,
+            "score": 10,
+            "one_sentence": "Milstein steps on S, trapezoid+bridge-corrected integral of ln S, control variate on discounted S(T).",
+            "state": "winner",
+            "certified": true
+          },
+          "2-log-euler-bridge": {
+            "iter": 1,
+            "score": 10,
+            "one_sentence": "Log-Euler (exact per-step law) with bridge-corrected trapezoid integral, plain MC.",
+            "state": "winner",
+            "certified": true
+          },
+          "3-euler-maruyama-trapezoid": {
+            "iter": 1,
+            "score": 8,
+            "one_sentence": "Plain Euler-Maruyama with trapezoid rule on grid nodes, discretised baseline.",
+            "state": "unfinished (another plan certified)",
+            "certified": false
+          }
+        }
+      },
+      "verify": {
+        "status": "ok",
+        "gt_kind": "exact",
+        "passed": true,
+        "verified_score": 10,
+        "worst_variance_rel_err": 0.0,
+        "worst_mean_rel_err": 0.0,
+        "components": [],
+        "run": {
+          "num_paths": 400000,
+          "dt": 0.04,
+          "T": 1.0,
+          "seed": 42,
+          "solve_s": 0.354175
+        },
+        "functional_errs": {
+          "call_price": 0.0028661531281402417,
+          "geo_average_variance": 0.003510072654907352
+        },
+        "functional_abs_errs": {
+          "call_price": 0.01589803157846159,
+          "geo_average_variance": 0.4920087015945285
+        },
+        "functional_tol": 0.03,
+        "functional_tol_used": {
+          "call_price": 0.01,
+          "geo_average_variance": 0.03
+        },
+        "worst_functional_rel_err": 0.003510072654907352,
+        "functional_ok": true,
+        "functional_levels": {
+          "status": "ok",
+          "num_paths_graded": 400000,
+          "num_paths_coarse": 100000,
+          "dt": 0.04,
+          "band_factor": 3.0,
+          "values": {
+            "call_price": {
+              "graded": 5.530920602210761,
+              "coarse": 5.507899515348763,
+              "delta": 0.02302108686199844,
+              "band": 0.16640455901367668,
+              "moved": true,
+              "consistent": true
+            },
+            "geo_average_variance": {
+              "graded": 139.6785091099563,
+              "coarse": 139.16818011869773,
+              "delta": 0.5103289912585751,
+              "band": 12.615346603039576,
+              "moved": true,
+              "consistent": true
+            }
+          },
+          "passed": true,
+          "worst_functional_rel_err": 0.007150845331117877,
+          "solve_s": 0.084108,
+          "wall_s": 0.17,
+          "level_ignored": false
+        },
+        "work_precision": {
+          "axis": "paths_dt",
+          "path": "sandbox",
+          "points": [
+            {
+              "num_paths": 100000,
+              "dt": 0.04,
+              "rel_err": 0.007150845331117877,
+              "solve_s": 0.084108,
+              "wall_s": 0.17,
+              "graded": false,
+              "steps": 25,
+              "paths": 100000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "milstein",
+              "evals": 2500000
+            },
+            {
+              "num_paths": 400000,
+              "dt": 0.04,
+              "rel_err": 0.003510072654907352,
+              "solve_s": 0.354175,
+              "wall_s": 0.45,
+              "graded": true,
+              "steps": 25,
+              "paths": 400000,
+              "stages": 1,
+              "stages_source": "declared",
+              "scheme_family": "milstein",
+              "evals": 10000000
+            }
+          ]
+        },
+        "seed_study": {
+          "status": "not_run",
+          "reason": "not requested"
+        },
+        "plan_dir": "workspace/sde_geometric_asian/plans/1-milstein-bridge-cv"
+      },
+      "kernel": {
+        "status": "ok",
+        "score": 10,
+        "provenance": "analytic",
+        "certified": true,
+        "tier": "A",
+        "bound_by": "rubric",
+        "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved",
+        "agent_cap": null
+      },
+      "verdict": "VERIFIED_PASS",
+      "harness_by_plan": {
+        "plans": {
+          "1-milstein-bridge-cv": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "call_price": 0.0028661531281402417,
+                "geo_average_variance": 0.003510072654907352
+              },
+              "functional_abs_errs": {
+                "call_price": 0.01589803157846159,
+                "geo_average_variance": 0.4920087015945285
+              },
+              "functional_tol": 0.03,
+              "functional_tol_used": {
+                "call_price": 0.01,
+                "geo_average_variance": 0.03
+              },
+              "worst_functional_rel_err": 0.003510072654907352,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 400000,
+                "num_paths_coarse": 100000,
+                "dt": 0.04,
+                "band_factor": 3.0,
+                "values": {
+                  "call_price": {
+                    "graded": 5.530920602210761,
+                    "coarse": 5.507899515348763,
+                    "delta": 0.02302108686199844,
+                    "band": 0.16640455901367668,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "geo_average_variance": {
+                    "graded": 139.6785091099563,
+                    "coarse": 139.16818011869773,
+                    "delta": 0.5103289912585751,
+                    "band": 12.615346603039576,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.007150845331117877,
+                "solve_s": 0.084108,
+                "wall_s": 0.17,
+                "level_ignored": false
+              },
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.005325,
+              "reference_outcome": "validated",
+              "design_order": 1.0,
+              "invariant_max_drift": 0.002202,
+              "dynkin_z": 0.3346,
+              "solve_time_s": 0.484,
+              "observed_order": 0.9835,
+              "order_check": true,
+              "order_floor": 1.0,
+              "scheme_family": "milstein",
+              "strong_rel_err": 0.0003645,
+              "strong_rel_err_se": 1.043e-06,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.00347,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 1.5457,
+              "mc_se_rel": 0.002581,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "functional_name": "call_price",
+              "functional_rel_tol": 0.01,
+              "functional_rel_error": 0.001664,
+              "functional_bias_rel": 0.000332,
+              "functional_se_rel": 0.001332,
+              "functional_limited_by": "sampling",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 0.0416,
+              "moment_bias_actionable": false,
+              "solver_sha256": "6b09dcbb4e0f2061a0549470616cbcf5ad3a8a02e77c6018003859f4099b3018"
+            },
+            "is_winner": true,
+            "scheme_family": "milstein",
+            "harness_error": 0.28661531281402414,
+            "harness_error_margin": 0.23961898836654158,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "analytic",
+              "certified": true,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          },
+          "2-log-euler-bridge": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "call_price": 0.001040644451415315,
+                "geo_average_variance": 0.0005270112316977355
+              },
+              "functional_abs_errs": {
+                "call_price": 0.005772266034259843,
+                "geo_average_variance": 0.07387143723957479
+              },
+              "functional_tol": 0.03,
+              "functional_tol_used": {
+                "call_price": 0.01,
+                "geo_average_variance": 0.03
+              },
+              "worst_functional_rel_err": 0.001040644451415315,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 400000,
+                "num_paths_coarse": 100000,
+                "dt": 0.04,
+                "band_factor": 3.0,
+                "values": {
+                  "call_price": {
+                    "graded": 5.541046367754963,
+                    "coarse": 5.532746496517992,
+                    "delta": 0.008299871236970624,
+                    "band": 0.16640455901367668,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "geo_average_variance": {
+                    "graded": 140.2443892487904,
+                    "coarse": 139.73305719735745,
+                    "delta": 0.5113320514329587,
+                    "band": 12.615346603039576,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.0031209174441484064,
+                "solve_s": 0.054841,
+                "wall_s": 0.14,
+                "level_ignored": false
+              },
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 10.0,
+              "certified": true,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.001168,
+              "reference_outcome": "validated",
+              "design_order": 0.5,
+              "invariant_max_drift": 0.002789,
+              "dynkin_z": 0.3312,
+              "solve_time_s": 0.314,
+              "order_check": "unresolved",
+              "order_floor": 0.5,
+              "scheme_family": "exact-transition",
+              "observed_order_se": 0.003614,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 1.4439,
+              "mc_se_rel": 0.002582,
+              "ci_mult": 2.0,
+              "dynkin_bar": 2.4284,
+              "kind": "sde",
+              "functional_name": "call_price",
+              "functional_rel_tol": 0.01,
+              "functional_rel_error": 0.002206,
+              "functional_bias_rel": 7.629e-06,
+              "functional_se_rel": 0.002199,
+              "functional_limited_by": "sampling",
+              "moment_bias_binding": "mean",
+              "moment_bias_frac_tol": 4.443e-13,
+              "moment_bias_actionable": false,
+              "solver_sha256": "943de93b2a70c4be1b6d099dbb912ba106cf0f96602836aff4b84655c8f353a4"
+            },
+            "is_winner": false,
+            "scheme_family": "exact-transition",
+            "harness_error": 0.10406444514153149,
+            "harness_error_margin": 0.08639065398160833,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 10,
+              "provenance": "analytic",
+              "certified": true,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "every checked moment is within tolerance of the exact moments, and the estimates are MC-resolved (the order study reported 'unresolved' and is not counted against the plan either way)",
+              "agent_cap": null
+            },
+            "verdict": "VERIFIED_PASS"
+          },
+          "3-euler-maruyama-trapezoid": {
+            "harness": {
+              "status": "ok",
+              "passed": true,
+              "verified_score": 10,
+              "gt_kind": "exact",
+              "worst_variance_rel_err": 0.0,
+              "worst_mean_rel_err": 0.0,
+              "components": [],
+              "functional_errs": {
+                "call_price": 0.0013197218276955777,
+                "geo_average_variance": 0.003553360052182216
+              },
+              "functional_abs_errs": {
+                "call_price": 0.007320257625280213,
+                "geo_average_variance": 0.49807631848526057
+              },
+              "functional_tol": 0.03,
+              "functional_tol_used": {
+                "call_price": 0.01,
+                "geo_average_variance": 0.03
+              },
+              "worst_functional_rel_err": 0.003553360052182216,
+              "functional_ok": true,
+              "functional_levels": {
+                "status": "ok",
+                "num_paths_graded": 400000,
+                "num_paths_coarse": 100000,
+                "dt": 0.04,
+                "band_factor": 3.0,
+                "values": {
+                  "call_price": {
+                    "graded": 5.539498376163943,
+                    "coarse": 5.530072512242897,
+                    "delta": 0.009425863921046052,
+                    "band": 0.16640455901367668,
+                    "moved": true,
+                    "consistent": true
+                  },
+                  "geo_average_variance": {
+                    "graded": 139.67244149306558,
+                    "coarse": 139.169766987642,
+                    "delta": 0.5026745054235846,
+                    "band": 12.615346603039576,
+                    "moved": true,
+                    "consistent": true
+                  }
+                },
+                "passed": true,
+                "worst_functional_rel_err": 0.007139524341732707,
+                "solve_s": 0.050443,
+                "wall_s": 0.13,
+                "level_ignored": false
+              },
+              "seed_study": {
+                "status": "not_run",
+                "reason": "not requested"
+              }
+            },
+            "kernel": {
+              "score": 8.0,
+              "certified": false,
+              "provenance": "analytic",
+              "estimated_rel_error": 0.00613,
+              "reference_outcome": "validated",
+              "design_order": 0.5,
+              "invariant_max_drift": 0.001287,
+              "solve_time_s": 0.328,
+              "observed_order": 0.4907,
+              "order_check": true,
+              "order_floor": 0.5,
+              "scheme_family": "euler-maruyama",
+              "strong_rel_err": 0.011,
+              "strong_rel_err_se": 2.834e-05,
+              "strong_rel_err_component": 0.0,
+              "observed_order_se": 0.004981,
+              "order_band": "one-sided below the declared floor (an overshoot is flagged, not failed)",
+              "invariant_worst_headroom": 1.5695,
+              "mc_se_rel": 0.002551,
+              "ci_mult": 2.0,
+              "kind": "sde",
+              "functional_name": "call_price",
+              "functional_rel_tol": 0.01,
+              "functional_rel_error": 0.002192,
+              "functional_bias_rel": 8.087e-06,
+              "functional_se_rel": 0.002184,
+              "functional_limited_by": "sampling",
+              "moment_bias_binding": "variance",
+              "moment_bias_frac_tol": 0.0613,
+              "moment_bias_actionable": false,
+              "solver_sha256": "0483be498578ad91a380c8ac543316eb9668d7faf10303fb9ec8f39aaa693886"
+            },
+            "is_winner": false,
+            "scheme_family": "euler-maruyama",
+            "harness_error": 0.13197218276955777,
+            "harness_error_margin": 0.09811074476114762,
+            "kernel_rerun": {
+              "status": "ok",
+              "score": 8,
+              "provenance": "analytic",
+              "certified": false,
+              "tier": "A",
+              "bound_by": "rubric",
+              "reason": "the variance passes; the terminal-law shape test did not (KS D = 0.00208 against 0.00145, 1.44x the critical value). The shape test is a *distributional* check and says nothing about pathwise accuracy -- a scheme can be strictly more accurate path by path and still miss it",
+              "agent_cap": null
+            },
+            "verdict": "UNDERCLAIM"
+          }
+        },
+        "winner": "1-milstein-bridge-cv",
+        "best_plan_by_harness": "2-log-euler-bridge",
+        "best_harness_err": 0.10406444514153149,
+        "winner_harness_err": 0.28661531281402414,
+        "harness_error_metric": "worst functional error / its gate",
+        "harness_error_margin": 0.23961898836654158,
+        "wrong_plan_won": false
+      }
+    }
+  ]
+}
